@@ -1,8 +1,9 @@
-use std::fs;
 use std::io::Write;
 use clap::{Parser, Subcommand};
 use inquire::{InquireError, Select};
+use crate::analytics::init_logging;
 use crate::config::{Config, create_default_config};
+use crate::init::initialize;
 use crate::setup::setup;
 
 mod os_setup;
@@ -11,6 +12,8 @@ mod setup;
 mod tools;
 mod config;
 mod tests;
+mod init;
+mod analytics;
 
 #[derive(Parser)]
 #[clap(name = "jarvy", version = "1.0", author = "Zac Clifton")]
@@ -32,39 +35,9 @@ enum Commands {
 
 fn main() {
 
-    // check jarvy config for the usr
-    let home_dir = dirs::home_dir().expect("Failed to get home directory");
+    let global_config = initialize();
 
-    // Create the .jarvy directory path
-    let jarvy_dir = home_dir.join(".jarvy");
-
-    // Create the .jarvy directory if it doesn't exist
-    if !jarvy_dir.exists() {
-        fs::create_dir(&jarvy_dir).expect("Unable to create jarvy config file");
-        println!(r"
-Jarvy tool collects telemetry data to help us improve your experience.
-The data collected is anonymized and used solely for analytics purposes.
-If you wish to opt-out of telemetry collection, you can disable it by adding the following line to your configuration file located at ~/.jarvy/config.toml:
-[settings]
-TELEMETRY = false
-
-Thank you for using Jarvy!
-        ");
-
-        // Define the path to the config.toml file
-        let config_file_path = jarvy_dir.join("config.toml");
-
-        // Sample configuration content
-        let config_content = r#"
-        [settings]
-        "#;
-
-        // Write the content to the config.toml file
-        let mut file = fs::File::create(config_file_path).expect("Unable to create config file");
-        file.write_all(config_content.as_bytes()).expect("Unable to write content to config file");
-
-    }
-
+    init_logging(global_config.telemetry);
 
     // Run the CLI Parser and commands
     let cli = Cli::parse();
@@ -85,6 +58,9 @@ Thank you for using Jarvy!
         Commands::Configure { } => {
             create_default_config()
         }
+    }
+    if global_config.telemetry  {
+        global::shutdown_tracer_provider(); // Ensure all spans are exported before exit
     }
     print_logo();
 
