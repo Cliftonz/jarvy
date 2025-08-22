@@ -45,29 +45,35 @@ fn main() {
     match &cli.command {
         Commands::Setup { file } => {
             let config = Config::new(file);
-            let tools = config.get_tool_configs();
 
+            setup();
+
+            let tools = config.get_tool_configs();
             for (id, tool) in tools {
                 println!(
                     "Installing {}: {} version {} using package manager: {}",
-                    id,tool.name, tool.version, tool.version_manager
+                    id, tool.name, tool.version, tool.version_manager
                 );
                 // Call the appropriate installer function here
             }
         }
-        Commands::Configure { } => {
+        Commands::Configure {} => {
             create_default_config()
         }
+        _ => {
+            user_select();
+        }
     }
+}
+
+fn user_select() {
+
     print_logo();
 
     println!(
         "\t\tHi, I'm Jarvy! I'm here to help you get your development environment set up."
     );
 
-}
-
-fn user_select() {
     let options = vec![
         "Run the project",
         "Test the project",
@@ -83,6 +89,7 @@ fn user_select() {
             match choice {
                 "Run the project" => {
                     println!("R");
+                    // TODO set the override command in settings
                     match std::process::Command::new("cargo").arg("run").output() {
                         Ok(output) => {
                             // Handle the output here
@@ -93,7 +100,7 @@ fn user_select() {
                 }
                 "Test the project" => {
                     println!("T");
-
+                    // TODO set the override command in settings
                     match std::process::Command::new("cargo").arg("test").output() {
                         Ok(output) => {
                             // Handle the output here
@@ -103,6 +110,7 @@ fn user_select() {
                     }
                 }
                 "Development environment setup" => {
+                    // TODO set the override command in settings
                     println!("D");
                     setup();
                 }
@@ -118,35 +126,9 @@ fn user_select() {
 fn print_logo() {
     println!(
         "
-
-  @@@                        @@@                        @@@
-  @@@@@                     @@@@@                     @@@@@@
- @@@@@@@@                  @@@*@@@                  @@@@@@@@
-  @@@@@@@@@@             @@@%-:-@@@              @@@@@@@@@@
-   @@@@@%%@@@@          @@@%-::::%@@@          @@@@%%@@@@@
-    @@@@@%=#@@@@       @@@%-:::::-%@@@       @@@@#=#@@@@@
-     @@@@@%--#@@@@    @@@#::::::::-%@@@    @@@@*--%@@@@@
-      @@@@@%---*@@@@ @@@*:::::::::::#@@@ @@@@+--=@@@@@@
-       @@@@@@=---+@@@@@+:::::=#=:::::*@@@@@+---=@@@@@@
-        @@@@@@=----#@@+:::::+@@@=:::::+@@*----=@@@@@
-          @@@@@=--#@@=:::::=@@@@@=:::::+@@*--+@@@@@
-           @@@@@+#@@=:::::-@@#:#@@=:::::=@@#*@@@@@
-            @@@@@@@-:::::-@@#---%@%-:::::-@@@@@@@
-             @@@@%-::::::%@%=----%@@-:::::-@@@@@
-             @@@#---::--%@%=======@@%-::::--%@@@
-            @@@#------=@@@+=======*@@@=------#@@@
-           @@@#-----+@@@%@@@#+++#@@@%@@@+-----#@@@
-          @@@*----*@@@@-::+@@@@@@@+::=@@@@*----*@@@
-         @@@+---#@@@@@@@=:::=@@@=:::=@@@@@@@*---*@@@
-        @@@+--#@@@@@@@@@@=:::::::::+@@@@@@@@@@#--+@@@
-       @@@==%@@@@@@@@@@@@@+:::::::+@@@@@@@@@@@@@%=+@@@
-     @@@%+@@@@@@@@    @@@@@*:::::#@@@@@    @@@@@@@%*@@@
-    @@@@@@@@@@@@       @@@@@*:::#@@@@@       @@@@@@@@@@@@
-   @@@@@@@@@@@          @@@@@#-#@@@@@          @@@@@@@@@@@
-  @@@@@@@@@@             @@@@@@@@@@@             @@@@@@@@@@
-  @@@@@@@@                @@@@@@@@@                @@@@@@@@@
- @@@@@@                    @@@@@@@                   @@@@@@@
-  @@@                        @@@                        @@@
+ .----------------.
+|   J A R V Y  ⚡   |
+ '----------------'
     "
     );
 }
