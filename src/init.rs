@@ -67,5 +67,5 @@ pub(crate) fn initialize() -> CliConfig {
         return config;
     }
 
-    return CliConfig::default();
+    CliConfig::default()
 }
