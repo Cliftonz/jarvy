@@ -12,7 +12,7 @@
 // #[test]
 // fn test_cli_custom_config() {
 //     let toml_content = r#"
-//     [tools]
+//     [provisioner]
 //     git = "latest"
 //     node = { version = "14.15.0", package_manager = true }
 //     python3 = { version = "3.9.0", package_manager = false }

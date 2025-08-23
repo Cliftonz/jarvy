@@ -1,10 +1,16 @@
-use crate::tools::common::{InstallError, PkgOps, PackageManager, run, detect_linux_pm};
+use crate::tools::common::{InstallError, PkgOps, PackageManager, run};
+#[cfg(target_os = "linux")]
+use crate::tools::common::detect_linux_pm;
 
 #[cfg(target_os = "macos")]
 fn install_macos() -> Result<(), InstallError> {
-    // Desktop via Homebrew cask
-    run("brew", &["install", "--cask", "docker"])?;
-    Ok(())
+    match run("brew", &["install", "--cask", "docker"]) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            error_message("Docker");
+            Err(e)
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -17,9 +23,7 @@ fn install_windows() -> Result<(), InstallError> {
 fn install_linux() -> Result<(), InstallError> {
     match detect_linux_pm() {
         Some(PackageManager::Apt) => {
-            // Vendor-repo flow (Ubuntu/Debian): add Docker’s APT repo, then install.
-            // (This is where you keep the precise steps.)
-            run("sudo", &["apt-get", "update"])?; /* ...add repo & key..., then: */
+            run("sudo", &["apt-get", "update"])?;
             run("sudo", &["apt-get", "install", "-y",
                 "docker-ce","docker-ce-cli","containerd.io",
                 "docker-buildx-plugin","docker-compose-plugin"
@@ -27,10 +31,19 @@ fn install_linux() -> Result<(), InstallError> {
             Ok(())
         }
         Some(PackageManager::Dnf | PackageManager::Yum) => {
-            // Fedora/RHEL flow (Docker RPM repo)...
-            // (Add repo, then `dnf install -y docker-ce ...`)
+            run("sudo", &["dnf", "remove", "docker",
+                "docker-client",
+                "docker-client-latest",
+                "docker-common",
+                "docker-latest",
+                "docker-latest-logrotate",
+                "docker-logrotate",
+                "docker-selinux",
+                "docker-engine-selinux" ,
+                "docker-engine"])?;
 
-            run("sudo", &["dnf", "install", "-y", "docker-ce"])?;
+            run("sudo", &["dnf", "install", "-y", "dnf-plugins-core"])?;
+            run("sudo", &["dnf-3", "config-manager", "--add-repo", "https://download.docker.com/linux/fedora/docker-ce.repo"])?;
 
             Ok(())
         }

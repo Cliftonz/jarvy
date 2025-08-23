@@ -1,0 +1,75 @@
+name: Tools E2E
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tools-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-testcontainers:
+    name: Linux (Testcontainers harness)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install stable Rust toolchain
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Speed up builds by caching Cargo/target
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      # Build the jarvy binary used by tests; your tests read JARVY_BIN
+      - name: Build jarvy
+        run: cargo build --release --bin jarvy
+
+      # Run the Testcontainers-based matrix test (spins up multiple distros)
+      - name: Run Test Containers tests
+        env:
+          JARVY_BIN: target/release/jarvy
+        run: cargo test --test tools_matrix -- --nocapture
+
+  native-host:
+    name: Native host (macOS & Windows)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build jarvy
+        run: cargo build --release --bin jarvy
+
+      # Windows: ensure winget is ready, then run the host harness
+      - name: Run host tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          winget --info
+          winget source update
+          # Your jarvy tool should add --accept-* flags when calling winget
+          $env:JARVY_BIN="${{ github.workspace }}\target\release\jarvy.exe"
+          cargo test --test tools_host -- --nocapture
+
+      # macOS: brew is available on the hosted runner; run the host harness
+      - name: Run host tests (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew --version || true
+          brew update || true
+          JARVY_BIN=target/release/jarvy cargo test --test tools_host -- --nocapture

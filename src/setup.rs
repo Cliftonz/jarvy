@@ -7,9 +7,8 @@ use inquire::Select;
 
 use crate::os_setup::set_up_os;
 use crate::outputs::{error_message, installing_dependency, success_message};
-use crate::tools::{
-    check_and_install_git, install_docker, install_homebrew, install_nvm_mac, install_pnpm,
-    start_docker_infra,
+use crate::provisioner::{
+    check_and_install_git, install_docker, install_homebrew, start_docker_infra,
 };
 
 pub(crate) fn handle_installation_cmd(output: &Result<std::process::Output, std::io::Error>) {
@@ -42,8 +41,8 @@ pub fn setup() {
     match PLATFORM {
         "macos" => {
             install_homebrew();
-            install_nvm_mac();
-            install_pnpm();
+            // install_nvm_mac();
+            // install_pnpm();
             install_docker();
         }
         "windows" => {}
@@ -108,7 +107,7 @@ fn check_zsh() {
     if response == "Yes" {
         let ohmyzsh_dir = format!("{}/.oh-my-zsh", env::var("HOME").unwrap());
 
-        // Check if directory .oh-my-zsh exists in home directory
+        // Check if directory .oh-my-zsh exists in the home directory
         if !Path::new(&ohmyzsh_dir).exists() {
             // Download and install Oh My Zsh!
             Command::new("sh")

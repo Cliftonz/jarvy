@@ -3,7 +3,7 @@ use crate::config::Config;
 #[test]
 fn test_parse_simple_config() {
     let toml_content = r#"
-    [tools]
+    [provisioner]
     git = "latest"
     "#;
 
@@ -12,13 +12,13 @@ fn test_parse_simple_config() {
     let tools = config.get_tool_configs();
 
     assert_eq!(tools["git"].version, "latest");
-    // assert_eq!(tools["git"].package_manager, true);
+    // assert_eq!(provisioner["git"].package_manager, true);
 }
 
 #[test]
 fn test_parse_complex_config() {
     let toml_content = r#"
-    [tools]
+    [provisioner]
     node = { version = "14.15.0", package_manager = true }
     "#;
 
@@ -27,13 +27,13 @@ fn test_parse_complex_config() {
     let tools = config.get_tool_configs();
 
     assert_eq!(tools["node"].version, "14.15.0");
-    // assert_eq!(tools["node"].package_manager, true);
+    // assert_eq!(provisioner["node"].package_manager, true);
 }
 
 #[test]
 fn test_parse_mixed_config() {
     let toml_content = r#"
-    [tools]
+    [provisioner]
     git = "latest"
     node = { version = "14.15.0", package_manager = true }
     python3 = { version = "3.9.0", package_manager = false }
@@ -45,11 +45,11 @@ fn test_parse_mixed_config() {
     let tools = config.get_tool_configs();
 
     assert_eq!(tools["git"].version, "latest");
-    // assert_eq!(tools["git"].package_manager, true);
+    // assert_eq!(provisioner["git"].package_manager, true);
     assert_eq!(tools["node"].version, "14.15.0");
-    // assert_eq!(tools["node"].package_manager, true);
+    // assert_eq!(provisioner["node"].package_manager, true);
     assert_eq!(tools["python3"].version, "3.9.0");
-    // assert_eq!(tools["python3"].package_manager, false);
+    // assert_eq!(provisioner["python3"].package_manager, false);
     assert_eq!(tools["docker"].version, "latest");
-    // assert_eq!(tools["docker"].package_manager, true);
+    // assert_eq!(provisioner["docker"].package_manager, true);
 }

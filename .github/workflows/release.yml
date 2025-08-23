@@ -30,7 +30,7 @@ jobs:
               target/x86_64-unknown-linux-musl/generate-rpm/tooka*.rpm
             build_args: "--target=x86_64-unknown-linux-musl"
             cross: true
-            apt: musl-tools
+            apt: musl-provisioner
             sysroot: ""
             pkg_arch: musl
             rust_target: x86_64-unknown-linux-musl

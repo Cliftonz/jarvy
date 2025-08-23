@@ -1,10 +1,12 @@
 use crate::analytics::init_logging;
 use crate::config::{Config, create_default_config};
 use crate::init::initialize;
+use crate::report::{Status, ToolReport, collect_reports};
 use crate::setup::setup;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use inquire::{InquireError, Select};
-use std::io::Write;
+use serde::Serialize;
+use std::fs;
 
 mod analytics;
 mod config;
@@ -12,15 +14,26 @@ mod error_codes;
 mod init;
 mod os_setup;
 mod outputs;
+mod provisioner;
+mod report;
 mod setup;
 mod tests;
 mod tools;
 
 #[derive(Parser)]
-#[clap(name = "jarvy", version = "1.0", author = "Zac Clifton")]
+#[clap(name = "jarvy", version = "0.2", author = "Zac Clifton")]
 struct Cli {
     #[clap(subcommand)]
     command: Commands,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+#[clap(rename_all = "lower")]
+pub enum OutputFormat {
+    Json,
+    Yaml,
+    Toml,
+    Pretty,
 }
 
 #[derive(Subcommand)]
@@ -32,6 +45,51 @@ enum Commands {
         file: String,
     },
     Configure {},
+    /// Display configured tools vs what is actually installed
+    Get {
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+        /// Output format: json, yaml, toml, pretty
+        #[clap(short = 'F', long = "format", value_enum, default_value = "pretty")]
+        format: OutputFormat,
+        /// Optional file to write output to; prints to stdout if omitted
+        #[clap(short, long)]
+        output: Option<String>,
+    },
+}
+
+#[derive(Serialize)]
+struct Reports {
+    tools: Vec<ToolReport>,
+}
+
+fn color_for_status(status: &Status) -> &'static str {
+    match status {
+        Status::Match => "\x1b[32m",        // green
+        Status::Mismatch => "\x1b[33m",     // yellow
+        Status::NotInstalled => "\x1b[31m", // red
+    }
+}
+
+fn pretty_output(reports: &[ToolReport]) -> String {
+    let mut s = String::new();
+    s.push_str("Tools status\n");
+    for r in reports {
+        let color = color_for_status(&r.status);
+        let reset = "\x1b[0m";
+        let status_label = match r.status {
+            Status::Match => "match",
+            Status::Mismatch => "mismatch",
+            Status::NotInstalled => "not_installed",
+        };
+        let installed = r.installed.as_deref().unwrap_or("-");
+        s.push_str(&format!(
+            "{}{}{}: expected={}, installed={} [{}]\n",
+            color, r.name, reset, r.expected, installed, status_label
+        ));
+    }
+    s
 }
 
 fn main() {
@@ -58,6 +116,45 @@ fn main() {
             }
         }
         Commands::Configure {} => create_default_config(),
+        Commands::Get {
+            file,
+            format,
+            output,
+        } => {
+            let config = Config::new(file);
+            let reports = collect_reports(&config);
+
+            let content = match format {
+                OutputFormat::Json => {
+                    let wrapper = Reports {
+                        tools: reports.clone(),
+                    };
+                    serde_json::to_string_pretty(&wrapper)
+                        .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e))
+                }
+                OutputFormat::Yaml => {
+                    let wrapper = Reports {
+                        tools: reports.clone(),
+                    };
+                    serde_yaml::to_string(&wrapper).unwrap_or_else(|e| format!("error: {}", e))
+                }
+                OutputFormat::Toml => {
+                    let wrapper = Reports {
+                        tools: reports.clone(),
+                    };
+                    toml::to_string(&wrapper).unwrap_or_else(|e| format!("error = \"{}\"", e))
+                }
+                OutputFormat::Pretty => pretty_output(&reports),
+            };
+
+            if let Some(path) = output {
+                if let Err(e) = fs::write(path, content) {
+                    eprintln!("Failed to write output: {}", e);
+                }
+            } else {
+                println!("{}", content);
+            }
+        }
         _ => {
             user_select();
         }

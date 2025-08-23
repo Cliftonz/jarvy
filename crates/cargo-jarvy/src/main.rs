@@ -12,7 +12,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Create a new tool: generates src/tools/<name>.rs and updates mod.rs
+    /// Create a new tool: generates src/provisioner/<name>.rs and updates mod.rs
     NewTool {
         /// Tool name (e.g., git, docker, nvm)
         name: String,
@@ -32,13 +32,13 @@ fn main() -> Result<()> {
 
 fn new_tool(name: String, bin: Option<String>) -> Result<()> {
     // Resolve paths relative to repo root (assume run from root)
-    let tools_dir = PathBuf::from("src/tools");
+    let tools_dir = PathBuf::from("provisioner");
     let mod_rs = tools_dir.join("mod.rs");
     let template = tools_dir.join("_template.rs");
     let target_rs = tools_dir.join(format!("{}.rs", &name));
 
     if target_rs.exists() {
-        anyhow::bail!("src/tools/{}.rs already exists", name);
+        anyhow::bail!("src/provisioner/{}.rs already exists", name);
     }
 
     // Read template
@@ -60,7 +60,7 @@ fn new_tool(name: String, bin: Option<String>) -> Result<()> {
     fs::write(&target_rs, contents)
         .with_context(|| format!("failed writing {}", target_rs.display()))?;
 
-    // If src/tools/mod.rs exists, declare the module; otherwise, skip (project may be using flat src/tools.rs)
+    // If src/provisioner/mod.rs exists, declare the module; otherwise, skip (project may be using flat src/provisioner.rs)
     if mod_rs.exists() {
         let mut mod_body = fs::read_to_string(&mod_rs).unwrap_or_else(|_| String::from(""));
         let decl = format!("pub mod {};\n", &tool_mod);
@@ -71,7 +71,7 @@ fn new_tool(name: String, bin: Option<String>) -> Result<()> {
         }
     } else {
         eprintln!(
-            "note: src/tools/mod.rs not found; skipped module declaration. If you're using a flat src/tools.rs, wire `pub mod {}` manually.",
+            "note: src/provisioner/mod.rs not found; skipped module declaration. If you're using a flat src/provisioner, wire `pub mod {}` manually.",
             &tool_mod
         );
     }
@@ -79,7 +79,10 @@ fn new_tool(name: String, bin: Option<String>) -> Result<()> {
     // (Optional) run rustfmt; ignore errors if not available
     let _ = std::process::Command::new("cargo").args(["fmt"]).status();
 
-    println!("✔ Created {} and updated tools/mod.rs", target_rs.display());
+    println!(
+        "✔ Created {} and updated provisioner/mod.rs",
+        target_rs.display()
+    );
     println!(
         "→ Open {} and fill in per-OS installers.",
         target_rs.display()

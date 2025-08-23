@@ -4,7 +4,7 @@
 use crate::tools::common::{
     InstallError, run, has, require_any, PkgOps, PackageManager,
     // linux-only helper (ok to import; no-op on other OSes)
-    #[cfg(target_os = "linux")] detect_linux_pm,
+    // detect_linux_pm,
 };
 
 /// Public entry: probe first; install if needed.
@@ -41,7 +41,7 @@ fn install_macos() -> Result<(), InstallError> {
     // Example: default to a brew formula; change as needed.
     // PkgOps::install(PackageManager::Brew, "__PKG_BREW__")
     //     .map_err(|_| InstallError::CommandFailed{ cmd: "brew install", code: None, stderr: String::new() })
-    // For tools that are casks, you can do: run("brew", &["install", "--cask", "__PKG_CASK__"])?;
+    // For provisioner that are casks, you can do: run("brew", &["install", "--cask", "__PKG_CASK__"])?;
     Err(InstallError::Prereq("Fill macOS installer for __TOOL_MOD__."))
 }
 
@@ -52,7 +52,7 @@ fn install_linux() -> Result<(), InstallError> {
         "No supported package manager found (apt/dnf/yum/zypper/pacman/apk).",
     ))?;
 
-    // Many tools work fine via distro pkg:
+    // Many provisioner work fine via distro pkg:
     // PkgOps::update(pm)?;
     // PkgOps::install(pm, "__PKG_LINUX__")?;
 
