@@ -1,6 +1,5 @@
-
-use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Registry;
+use tracing_subscriber::layer::SubscriberExt;
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::trace::SdkTracerProvider;
@@ -18,7 +17,8 @@ pub fn init_logging(enable_analytics: bool) {
         let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
 
         let subscriber = Registry::default().with(telemetry);
-        tracing::subscriber::set_global_default(subscriber).expect("setting tracing default failed");
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("setting tracing default failed");
     } else {
         tracing_subscriber::fmt().init();
     }

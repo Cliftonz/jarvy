@@ -1,7 +1,7 @@
-use std::{env, str};
 use std::os::unix::prelude::CommandExt;
 use std::path::Path;
 use std::process::{Command, exit};
+use std::{env, str};
 
 use inquire::Select;
 

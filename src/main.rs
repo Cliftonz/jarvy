@@ -1,19 +1,20 @@
-use std::io::Write;
-use clap::{Parser, Subcommand};
-use inquire::{InquireError, Select};
 use crate::analytics::init_logging;
 use crate::config::{Config, create_default_config};
 use crate::init::initialize;
 use crate::setup::setup;
+use clap::{Parser, Subcommand};
+use inquire::{InquireError, Select};
+use std::io::Write;
 
+mod analytics;
+mod config;
+mod error_codes;
+mod init;
 mod os_setup;
 mod outputs;
 mod setup;
-mod tools;
-mod config;
 mod tests;
-mod init;
-mod analytics;
+mod tools;
 
 #[derive(Parser)]
 #[clap(name = "jarvy", version = "1.0", author = "Zac Clifton")]
@@ -30,11 +31,10 @@ enum Commands {
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
     },
-    Configure {}
+    Configure {},
 }
 
 fn main() {
-
     let global_config = initialize();
 
     init_logging(global_config.telemetry);
@@ -57,9 +57,7 @@ fn main() {
                 // Call the appropriate installer function here
             }
         }
-        Commands::Configure {} => {
-            create_default_config()
-        }
+        Commands::Configure {} => create_default_config(),
         _ => {
             user_select();
         }
@@ -67,12 +65,9 @@ fn main() {
 }
 
 fn user_select() {
-
     print_logo();
 
-    println!(
-        "\t\tHi, I'm Jarvy! I'm here to help you get your development environment set up."
-    );
+    println!("\t\tHi, I'm Jarvy! I'm here to help you get your development environment set up.");
 
     let options = vec![
         "Run the project",

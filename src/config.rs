@@ -1,8 +1,8 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::{fs, process};
 use std::fs::File;
 use std::io::Write;
+use std::{fs, process};
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -12,7 +12,10 @@ pub struct Config {
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub enum ToolConfig {
-    Detailed { version: String, version_manager: Option<bool> },
+    Detailed {
+        version: String,
+        version_manager: Option<bool>,
+    },
     Simple(String),
 }
 
@@ -22,7 +25,7 @@ impl Config {
             Ok(content) => content,
             Err(_) => {
                 println!("Failed to read config file at: {}", config_path);
-                process::exit(1);
+                process::exit(crate::error_codes::CONFIG_ERROR);
             }
         };
 
@@ -30,31 +33,33 @@ impl Config {
             Ok(config) => config,
             Err(_) => {
                 println!("Failed to parse config file. Please ensure it's in correct format.");
-                process::exit(1);
+                process::exit(crate::error_codes::CONFIG_ERROR);
             }
         }
     }
 
     pub fn get_tool_configs(&self) -> HashMap<String, Tool> {
-        self.tools.iter().map(|(name, config)| {
-            let tool = match config {
-                ToolConfig::Detailed { version, version_manager } => {
-                    Tool {
+        self.tools
+            .iter()
+            .map(|(name, config)| {
+                let tool = match config {
+                    ToolConfig::Detailed {
+                        version,
+                        version_manager,
+                    } => Tool {
                         name: name.clone(),
                         version: version.clone(),
                         version_manager: version_manager.unwrap_or(true),
-                    }
-                },
-                ToolConfig::Simple(version) => {
-                    Tool {
+                    },
+                    ToolConfig::Simple(version) => Tool {
                         name: name.clone(),
                         version: version.clone(),
                         version_manager: true,
-                    }
-                }
-            };
-            (name.clone(), tool)
-        }).collect()
+                    },
+                };
+                (name.clone(), tool)
+            })
+            .collect()
     }
 }
 
@@ -72,6 +77,7 @@ git = "latest"
 docker = "latest"
 "#;
     let mut file = File::create("jarvy.toml").expect("Could not create file");
-    file.write_all(default_config.as_bytes()).expect("Could not write to file");
+    file.write_all(default_config.as_bytes())
+        .expect("Could not write to file");
     println!("Created jarvy.toml with default configuration");
 }

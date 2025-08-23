@@ -18,7 +18,13 @@ tracing-opentelemetry = "0.31.0"
 opentelemetry-stdout ={ version = "0.30.0", features = ["trace"] }
 opentelemetry_sdk = "0.30.0"
 uuid = { version = "1", features = ["v7"] }
+thiserror = "1"
 
 [dev-dependencies]
 tempfile = "3.20.0"
 assert_cmd = "2.0.17"
+
+[workspace]
+members = [
+    "crates/cargo-jarvy"
+]

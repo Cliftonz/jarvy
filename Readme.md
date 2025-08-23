@@ -204,3 +204,34 @@ This project is released under the MIT License. See the LICENSE file for details
 Jarvy exists to make the lives of developers and architects easier by eliminating the friction of environment setup. With a single config file and a one-time setup, teams can achieve a repeatable, reliable development environment on any machine. We believe that setting up a new project’s dev environment should be quick and hassle-free – and with Jarvy, it finally is. Give it a try in your next project and join us in evolving how dev environments are managed. Happy coding! 🎉
 
 GitHub Repository   •   Documentation   •   Report an Issue
+
+---
+
+Add a Cargo subcommand: scaffold new tools via `cargo jarvy`
+
+Sweet — let’s add a project-specific Cargo command that scaffolds a new tool from a template, so you can do:
+
+# creates src/tools/git.rs and wires it up
+cargo jarvy new-tool git
+
+Below is everything you need: a reusable template file and a small cargo-jarvy subcommand crate that copies the template, substitutes names, and updates src/tools/mod.rs.
+
+Why this approach?
+- Cargo treats any executable named cargo-<name> on your PATH as a subcommand, so cargo-jarvy becomes cargo jarvy ….
+- If you ever prefer a full template repo flow, you can swap to cargo-generate, but a tiny local subcommand keeps it simple for this workspace.
+- If you’ve seen the xtask pattern, this is the same spirit but integrated as a real Cargo subcommand.
+
+
+run via workspace without installing (Recommended)
+```bash
+
+cargo run -p cargo-jarvy -- new-tool git
+```
+or install locally so `cargo jarvy` is available on PATH:
+```bash
+cargo install --path crates/cargo-jarvy
+
+# now you can scaffold directly:
+cargo jarvy new-tool docker
+cargo jarvy new-tool nvm --bin nvm
+```
