@@ -5,14 +5,12 @@ use std::io::Write;
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct CliConfig {
     pub telemetry: bool,
-    pub silent: bool,
 }
 
 impl Default for CliConfig {
     fn default() -> Self {
         Self {
             telemetry: true,
-            silent: false,
         }
     }
 }
@@ -51,12 +49,15 @@ pub(crate) fn initialize() -> CliConfig {
         // Sample configuration content
         let config_content = r#"
                 [settings]
+                telemetry = true
                 "#;
 
         // Write the content to the config.toml file
         let mut file = fs::File::create(config_file_path).expect("Unable to create config file");
         file.write_all(config_content.as_bytes())
             .expect("Unable to write content to config file");
+
+        config
     } else {
         // Read the existing config.toml file
         let config_content =
@@ -66,8 +67,6 @@ pub(crate) fn initialize() -> CliConfig {
         let config: CliConfig =
             toml::from_str(&config_content).expect("Unable to parse config file");
 
-        return config;
+        config
     }
-
-    CliConfig::default()
 }

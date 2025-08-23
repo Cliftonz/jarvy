@@ -51,7 +51,7 @@ pub enum ToolConfig {
     Detailed {
         version: String,
         version_manager: Option<bool>,
-        use_sudo: Option<bool> ,
+        use_sudo: Option<bool>,
     },
     Simple(String),
 }

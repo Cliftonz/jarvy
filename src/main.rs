@@ -21,7 +21,13 @@ mod tests;
 mod tools;
 
 #[derive(Parser)]
-#[clap(name = "jarvy", version = "0.2", author = "Zac Clifton")]
+#[clap(
+    name = "jarvy",
+    version = "0.2",
+    author = "Zac Clifton",
+    about = "Jarvy: a helper to configure and verify your computer",
+    long_about = "Jarvy helps you set up and verify your computer based on a jarvy.toml configuration.\n\nUSAGE:\n    jarvy <COMMAND> [OPTIONS]\n\nEXAMPLES:\n    jarvy --help\n    jarvy configure\n    jarvy setup --file ./jarvy.toml\n    jarvy get --format json --output report.json\n\nRun without a subcommand to use the interactive menu."
+)]
 struct Cli {
     #[clap(subcommand)]
     command: Commands,
@@ -44,6 +50,7 @@ enum Commands {
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
     },
+    /// Generate a default jarvy.toml configuration in the current directory
     Configure {},
     /// Display configured tools vs what is actually installed
     Get {
@@ -52,7 +59,7 @@ enum Commands {
         file: String,
         /// Output format: json, yaml, toml, pretty
         #[clap(short = 'F', long = "format", value_enum, default_value = "pretty")]
-        format: OutputFormat,
+        output_format: OutputFormat,
         /// Optional file to write output to; prints to stdout if omitted
         #[clap(short, long)]
         output: Option<String>,
@@ -93,12 +100,13 @@ fn pretty_output(reports: &[ToolReport]) -> String {
 }
 
 fn main() {
-    let global_config = initialize();
-
-    init_logging(global_config.telemetry);
-
-    // Run the CLI Parser and commands
+    // Run the CLI Parser first so that -h/--help and -V/--version can exit without side effects
     let cli = Cli::parse();
+
+    // Initialize after parsing arguments
+    let global_config = initialize();
+    
+    init_logging(global_config.telemetry);
 
     match &cli.command {
         Commands::Setup { file } => {
@@ -118,13 +126,13 @@ fn main() {
         Commands::Configure {} => create_default_config(),
         Commands::Get {
             file,
-            format,
+            output_format,
             output,
         } => {
             let config = Config::new(file);
             let reports = collect_reports(&config);
 
-            let content = match format {
+            let content = match output_format {
                 OutputFormat::Json => {
                     let wrapper = Reports {
                         tools: reports.clone(),
