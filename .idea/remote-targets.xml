@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="RemoteTargetsManager">
+    <option name="projectDefaultTargetUuid" value="bef63829-2e7f-4a0e-aaaa-d29a7c85fbc6" />
     <targets>
       <target name="rust:latest" type="docker" uuid="bef63829-2e7f-4a0e-aaaa-d29a7c85fbc6">
         <config>

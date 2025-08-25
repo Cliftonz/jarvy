@@ -2,7 +2,7 @@ use std::fs;
 
 #[test]
 fn docs_error_codes_markdown_contains_all_codes() {
-    // Load the markdown file
+    // Load the Markdown file
     let md = fs::read_to_string("docs/error-codes.md").expect("docs/error-codes.md should exist");
 
     // Obtain the canonical list from code

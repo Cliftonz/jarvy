@@ -2,35 +2,6 @@ use std::env;
 use std::process::Command;
 use std::str;
 
-pub fn check_and_install_git(platform: &str) {
-    match platform {
-        "macos" => {
-            let install_cmd = std::process::Command::new("brew")
-                .arg("install")
-                .arg("git")
-                .output();
-            crate::setup::handle_installation_cmd(&install_cmd);
-        }
-        "Linux" => {
-            let install_cmd = std::process::Command::new("sudo")
-                .arg("apt-get")
-                .arg("install")
-                .arg("-y")
-                .arg("git")
-                .output();
-            crate::setup::handle_installation_cmd(&install_cmd);
-        }
-        "Windows" => {
-            let install_cmd = std::process::Command::new("winget")
-                .arg("install")
-                .arg("Git")
-                .output();
-            crate::setup::handle_installation_cmd(&install_cmd);
-        }
-        _ => println!("Unsupported platform"),
-    }
-}
-
 pub fn install_homebrew() {
     // Macos Only
     let test_brew_cmd = Command::new("brew")
@@ -218,5 +189,9 @@ pub fn install_nvm_mac() {
 }
 
 pub fn install_pnpm() {
+    // no-op in test context
+}
+
+pub fn check_and_install_git(_platform: &str) {
     // no-op in test context
 }

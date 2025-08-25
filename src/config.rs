@@ -112,7 +112,7 @@ impl Config {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Tool {
     pub name: String,
     pub version: String,

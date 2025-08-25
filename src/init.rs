@@ -9,9 +9,7 @@ pub(crate) struct CliConfig {
 
 impl Default for CliConfig {
     fn default() -> Self {
-        Self {
-            telemetry: true,
-        }
+        Self { telemetry: true }
     }
 }
 

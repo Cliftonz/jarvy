@@ -169,7 +169,9 @@ pub fn detect_linux_pm() -> Option<PackageManager> {
     None
 }
 
-pub struct PkgOps;
+pub struct PkgOps {
+    name: &'static str,
+}
 
 impl PkgOps {
     // use_sudo should come from config.use_sudo()

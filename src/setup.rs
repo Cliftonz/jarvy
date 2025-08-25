@@ -11,19 +11,6 @@ use crate::provisioner::{
     check_and_install_git, install_docker, install_homebrew, start_docker_infra,
 };
 
-pub(crate) fn handle_installation_cmd(output: &Result<std::process::Output, std::io::Error>) {
-    match output {
-        Ok(_output) => {
-            // git installation succeeded
-            println!("Git installed successfully");
-        }
-        Err(e) => {
-            // git installation failed
-            println!("Failed to install Git: {}", e);
-        }
-    }
-}
-
 // Main function
 pub fn setup() {
     const PLATFORM: &str = env::consts::OS;
@@ -37,14 +24,14 @@ pub fn setup() {
 
     check_hard_dependencies(PLATFORM);
     check_and_install_git(PLATFORM);
+    install_docker();
 
     match PLATFORM {
         "macos" => {
+            // install homebrew
             install_homebrew();
-            // install_nvm_mac();
-            // install_pnpm();
-            install_docker();
         }
+        "linux" => {}
         "windows" => {}
         _ => {}
     }

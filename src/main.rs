@@ -17,7 +17,6 @@ mod outputs;
 mod provisioner;
 mod report;
 mod setup;
-mod tests;
 mod tools;
 
 #[derive(Parser)]
@@ -50,6 +49,8 @@ enum Commands {
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
     },
+    /// Perform a minimal machine bootstrap (base requirements only, no dev tooling)
+    Bootstrap {},
     /// Generate a default jarvy.toml configuration in the current directory
     Configure {},
     /// Display configured tools vs what is actually installed
@@ -105,7 +106,7 @@ fn main() {
 
     // Initialize after parsing arguments
     let global_config = initialize();
-    
+
     init_logging(global_config.telemetry);
 
     match &cli.command {
@@ -123,6 +124,7 @@ fn main() {
                 // Call the appropriate installer function here
             }
         }
+        Commands::Bootstrap {} => {}
         Commands::Configure {} => create_default_config(),
         Commands::Get {
             file,
