@@ -235,3 +235,80 @@ cargo install --path crates/cargo-jarvy
 cargo jarvy new-tool docker
 cargo jarvy new-tool nvm --bin nvm
 ```
+
+
+## Use Jarvy in GitHub Actions
+
+You can install and run Jarvy in your CI pipelines using the provided composite action.
+
+- From crates.io (recommended for external repos):
+
+  jobs:
+    setup-jarvy:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - name: Install Jarvy
+          uses: OWNER/REPO/.github/actions/setup-jarvy@main
+          with:
+            method: cargo
+            # version: 0.1.0   # optionally pin a version
+        - run: jarvy --version
+
+- From source in this repository (useful when testing on this repo):
+
+  jobs:
+    setup-jarvy-from-source:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - name: Build and install Jarvy from source
+          uses: ./.github/actions/setup-jarvy
+          with:
+            method: path
+            path: .
+        - run: jarvy --help
+
+Notes:
+- The action installs Jarvy with Cargo and ensures the binary is on PATH.
+- Output jarvy-bin is available as steps.<id>.outputs.jarvy-bin if you need the absolute path.
+- The action works on Linux, macOS, and Windows runners that support Rust.
+
+
+## Use Jarvy in Azure DevOps Pipelines
+
+You can install and run Jarvy in Azure DevOps (ADO) using a reusable YAML template in this monorepo.
+
+- Template path: .azuredevops/templates/setup-jarvy.yml
+- Supported agents: Ubuntu (Linux), macOS, Windows
+- Parameters (align with the GitHub composite action):
+  - method: cargo (default) or path
+  - version: Optional crate version when method=cargo
+  - path: Source path when method=path (default: ".")
+  - locked: true|false (adds --locked to cargo install)
+
+Example azure-pipelines.yml:
+
+trigger:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+  - template: .azuredevops/templates/setup-jarvy.yml
+    parameters:
+      method: cargo
+      # version: '0.1.0'
+      # locked: true
+      # path: '.'
+  - script: jarvy --version
+    displayName: Show Jarvy version
+  - script: jarvy --help
+    displayName: Show Jarvy help
+
+Notes:
+- The template bootstraps Rust with rustup if it's not installed on the agent, and prepends Cargo's bin to PATH.
+- On Windows agents, it invokes rustup and ensures the toolchain is available; jarvy.exe will be on PATH for subsequent steps.
+- The parameters mirror the GitHub Action inputs to keep behavior consistent across CI systems.

@@ -13,8 +13,12 @@ concurrency:
 
 jobs:
   linux-testcontainers:
-    name: Linux (Testcontainers harness)
+    name: Linux (Testcontainers - ${{ matrix.pm }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pm: [apt, dnf, yum, zypper, pacman, apk]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -35,10 +39,11 @@ jobs:
       - name: Run Test Containers tests
         env:
           JARVY_BIN: target/release/jarvy
+          PACKAGE_MANAGER: ${{ matrix.pm }}
         run: cargo test --test tools_matrix -- --nocapture
 
   native-host:
-    name: Native host (macOS & Windows)
+    name: Native host (brew on macOS, winget on Windows)
     strategy:
       fail-fast: false
       matrix:

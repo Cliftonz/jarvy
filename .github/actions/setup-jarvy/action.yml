@@ -1,0 +1,90 @@
+name: Setup Jarvy
+
+branding:
+  icon: package
+  color: blue
+
+description: Install the Jarvy CLI and add it to PATH (for use in GitHub Actions workflows)
+
+author: Jarvy Maintainers
+
+inputs:
+  method:
+    description: "Install method: 'cargo' to install from crates.io, or 'path' to build from a local path in the workspace."
+    required: false
+    default: cargo
+  version:
+    description: "Jarvy version to install when using method=cargo (e.g., 0.1.0). If empty, installs the latest compatible version."
+    required: false
+    default: ""
+  path:
+    description: "Path to Jarvy source (used when method=path). For monorepos, this is typically '.' at the repository root."
+    required: false
+    default: "."
+  locked:
+    description: "Use --locked with cargo install to ensure Cargo.lock is honored."
+    required: false
+    default: "true"
+
+outputs:
+  jarvy-bin:
+    description: "The absolute path to the installed jarvy binary"
+    value: ${{ steps.resolve-bin.outputs.jarvy_bin }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Rust toolchain (stable)
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust build
+      uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true
+
+    - name: Ensure Cargo bin path on PATH
+      shell: bash
+      run: |
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+    - name: Install Jarvy via cargo (crates.io)
+      if: ${{ inputs.method == 'cargo' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        LOCKED_FLAG=""
+        if [ "${{ inputs.locked }}" = "true" ]; then LOCKED_FLAG="--locked"; fi
+        if [ -n "${{ inputs.version }}" ]; then
+          cargo install jarvy --version "${{ inputs.version }}" ${LOCKED_FLAG}
+        else
+          cargo install jarvy ${LOCKED_FLAG}
+        fi
+
+    - name: Install Jarvy from local path
+      if: ${{ inputs.method == 'path' }}
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+        LOCKED_FLAG=""
+        if [ "${{ inputs.locked }}" = "true" ]; then LOCKED_FLAG="--locked"; fi
+        cargo install --path . ${LOCKED_FLAG}
+
+    - name: Resolve installed binary path
+      id: resolve-bin
+      shell: bash
+      run: |
+        set -euo pipefail
+        BIN_PATH="$(command -v jarvy || true)"
+        if [ -z "$BIN_PATH" ]; then
+          echo "Jarvy binary not found on PATH after installation." >&2
+          exit 1
+        fi
+        echo "Found jarvy at: $BIN_PATH"
+        echo "jarvy_bin=$BIN_PATH" >> "$GITHUB_OUTPUT"
+
+    - name: Print jarvy version
+      shell: bash
+      run: |
+        set -euo pipefail
+        jarvy --version || true
