@@ -71,7 +71,6 @@ mod tests {
     }
 }
 
-
 // Tool struct for registry usage: wraps a name and an add handler
 #[derive(Clone)]
 pub struct Tool {
