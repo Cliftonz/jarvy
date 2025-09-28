@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.6", features = ["derive"] }
-inquire = "0.7.5"
+inquire = "0.9.1"
 serde = { version = "1.0.204", features = ["derive"] }
 toml = "0.9.5"
 serde_json = "1.0"
@@ -14,13 +14,13 @@ predicates = "3.1.0"
 tracing = "0.1.40"
 dirs = "6.0.0"
 tracing-subscriber = "0.3.18"
-opentelemetry = "0.30.0"
-opentelemetry-otlp = "0.30.0"
+opentelemetry = "0.31.0"
+#opentelemetry-otlp = "0.30.0"
 tracing-opentelemetry = "0.31.0"
-opentelemetry-stdout ={ version = "0.30.0", features = ["trace"] }
-opentelemetry_sdk = "0.30.0"
-uuid = { version = "1", features = ["v7"] }
-thiserror = "1"
+opentelemetry-stdout ={ version = "0.31.0", features = ["trace"] }
+opentelemetry_sdk = "0.31.0"
+#uuid = { version = "1", features = ["v7"] }
+thiserror = "2.0.16"
 
 [dev-dependencies]
 tempfile = "3.20.0"
@@ -30,3 +30,44 @@ assert_cmd = "2.0.17"
 members = [
     "crates/cargo-jarvy"
 ]
+
+[package.metadata.packager]
+product-name = "jarvy"
+identifier = "io.github.bearbinary.jarvy"
+category = "Utility"
+homepage = "https://github.com/bearbinary/jarvy"
+icons = ["assets/logo.png"]        # Optional; remove if you don't ship icons
+licenseFile = "LICENSE"
+formats = ["all"]                  # Or ["all"] if you want every supported format
+
+# Linux-wide options (optional)
+[package.metadata.packager.linux]
+generate-desktop-entry = false
+
+# AppImage extra files (optional; keep/remove to match your repo)
+[package.metadata.packager.appimage.files]
+"README.md" = "usr/share/doc/jarvy/README.md"
+"LICENSE" = "usr/share/doc/jarvy/LICENSE"
+
+# Debian package extra files (optional)
+[package.metadata.packager.deb.files]
+"README.md" = "usr/share/doc/jarvy/README.md"
+"LICENSE" = "usr/share/doc/jarvy/LICENSE"
+
+# Pacman package extra files (optional)
+[package.metadata.packager.pacman.files]
+"README.md" = "usr/share/doc/jarvy/README.md"
+"LICENSE" = "usr/share/doc/jarvy/LICENSE"
+
+# If you also build RPMs via generate-rpm (optional; remove if unused)
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/jarvy", dest = "/usr/bin/jarvy", mode = "0755" },
+    { source = "LICENSE", dest = "/usr/share/doc/jarvy/LICENSE", doc = true, mode = "0644" },
+    { source = "README.md", dest = "/usr/share/doc/jarvy/README.md", doc = true, mode = "0644" }
+]
+
+# Ensure your binary section matches the actual binary name/path
+[[bin]]
+name = "jarvy"
+path = "src/main.rs"

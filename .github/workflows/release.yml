@@ -16,34 +16,34 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            artifact_paths: target/release/tooka*_aarch64.dmg
+            artifact_paths: target/release/jarvy*_aarch64.dmg
             build_args: ""
             cross: false
           - platform: macos-13
-            artifact_paths: target/release/tooka*_x64.dmg
+            artifact_paths: target/release/jarvy*_x64.dmg
             build_args: ""
             cross: false
           - platform: ubuntu-latest
             artifact_paths: |
-              target/x86_64-unknown-linux-musl/release/tooka*_amd64.deb
-              target/x86_64-unknown-linux-musl/release/tooka*_x86_64.AppImage
-              target/x86_64-unknown-linux-musl/generate-rpm/tooka*.rpm
+              target/x86_64-unknown-linux-musl/release/jarvy*_amd64.deb
+              target/x86_64-unknown-linux-musl/release/jarvy*_x86_64.AppImage
+              target/x86_64-unknown-linux-musl/generate-rpm/jarvy*.rpm
             build_args: "--target=x86_64-unknown-linux-musl"
             cross: true
-            apt: musl-provisioner
+            apt: musl-tools
             sysroot: ""
             pkg_arch: musl
             rust_target: x86_64-unknown-linux-musl
           - platform: windows-latest
             artifact_paths: |
-              target/release/tooka*_x64_en-US.msi
-              target/release/tooka*_x64-setup.exe
+              target/release/jarvy*_x64_en-US.msi
+              target/release/jarvy*_x64-setup.exe
             build_args: ""
             cross: false
           - platform: ubuntu-latest
             artifact_paths: |
-              target/aarch64-unknown-linux-gnu/release/tooka*.deb
-              target/aarch64-unknown-linux-gnu/generate-rpm/tooka*.rpm
+              target/aarch64-unknown-linux-gnu/release/jarvy*.deb
+              target/aarch64-unknown-linux-gnu/generate-rpm/jarvy*.rpm
             build_args: "--target=aarch64-unknown-linux-gnu"
             cross: true
             apt: gcc-aarch64-linux-gnu
@@ -52,8 +52,8 @@ jobs:
             rust_target: aarch64-unknown-linux-gnu
           - platform: ubuntu-latest
             artifact_paths: |
-              target/armv7-unknown-linux-gnueabihf/release/tooka*.deb
-              target/armv7-unknown-linux-gnueabihf/generate-rpm/tooka*.rpm
+              target/armv7-unknown-linux-gnueabihf/release/jarvy*.deb
+              target/armv7-unknown-linux-gnueabihf/generate-rpm/jarvy*.rpm
             build_args: "--target=armv7-unknown-linux-gnueabihf"
             cross: true
             apt: gcc-arm-linux-gnueabihf
@@ -69,7 +69,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config build-essential curl ${{ matrix.apt }}
-
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: swatinem/rust-cache@v2
@@ -98,7 +97,6 @@ jobs:
           else
             cargo packager --release --verbose
           fi
-
       - name: Package RPM
         if: matrix.platform == 'ubuntu-latest'
         run: |
@@ -107,7 +105,6 @@ jobs:
           else
             cargo generate-rpm
           fi
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -118,9 +115,9 @@ jobs:
     name: Upload to GitHub Release
     runs-on: ubuntu-latest
     permissions: write-all
-    needs: [build_and_package]
+    needs: [ build_and_package ]
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
@@ -128,12 +125,12 @@ jobs:
       - name: Create attestation for all builds
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: artifacts/**/tooka*
+          subject-path: artifacts/**/jarvy*
 
       - name: Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
-          tag_name: Tooka v${{ env.VERSION }}
-          files: artifacts/**/tooka*
+          tag_name: Jarvy v${{ env.VERSION }}
+          files: artifacts/**/jarvy*

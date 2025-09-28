@@ -9,7 +9,7 @@ jobs:
   publish:
     runs-on: windows-latest
     steps:
-      # Only fetch latest tag when run manually
+      # Only fetch the latest tag when run manually
       - name: Get latest release tag name
         if: github.event_name == 'workflow_dispatch'
         id: get-latest-release

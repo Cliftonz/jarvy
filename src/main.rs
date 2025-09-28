@@ -107,7 +107,7 @@ fn main() {
     // Run the CLI Parser first so that -h/--help and -V/--version can exit without side effects
     let cli = Cli::parse();
 
-    // If user typed an unknown subcommand, handle it here (before any initialization)
+    // If a user typed an unknown subcommand, handle it here (before any initialization)
     if let Some(Commands::External(args)) = &cli.command {
         if let Some(first) = args.first() {
             eprintln!("Unrecognized command: '{}'", first);
