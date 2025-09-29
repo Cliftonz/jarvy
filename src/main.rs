@@ -125,8 +125,9 @@ fn main() {
     // Initialize after parsing arguments
     let global_config = initialize();
 
-    // Initialize PostHog client (no-op if disabled or no API key) before logging,
-    // so that the PostHog error layer can send events immediately.
+    init_logging(global_config.settings.telemetry);
+
+    // Initialize PostHog client (no-op if disabled or no API key)
     let fingerprint = global_config
         .settings
         .fingerprint
@@ -134,10 +135,7 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_string());
     posthog::init(global_config.settings.telemetry, fingerprint.clone());
 
-    // Initialize logging (stderr for errors, stdout for other logs, OTLP logs if enabled)
-    init_logging(global_config.settings.telemetry);
-
-    // Send a cli_start event
+    // Send a cli_start event and set global analytics context
     {
         let cmd_name = match &cli.command {
             Some(Commands::Setup { .. }) => "setup",
@@ -147,6 +145,24 @@ fn main() {
             Some(Commands::External(..)) => "external",
             None => "interactive",
         };
+        // Set global context for subsequent analytics/error events
+        let mut ctx = serde_json::Map::new();
+        ctx.insert(
+            "command".to_string(),
+            serde_json::Value::String(cmd_name.to_string()),
+        );
+        ctx.insert(
+            "telemetry_enabled".to_string(),
+            serde_json::Value::Bool(global_config.settings.telemetry),
+        );
+        let args_json = std::env::args()
+            .skip(1)
+            .map(serde_json::Value::String)
+            .collect::<Vec<_>>();
+        ctx.insert("args".to_string(), serde_json::Value::Array(args_json));
+        posthog::set_context_map(ctx);
+
+        // Emit cli_start
         let mut props = serde_json::Map::new();
         props.insert(
             "command".to_string(),
@@ -161,13 +177,15 @@ fn main() {
             // Print to stderr
             eprintln!("Jarvy panic: {}", info);
 
-            // Send to PostHog
-            let mut props = serde_json::Map::new();
-            props.insert(
-                "panic".to_string(),
-                serde_json::Value::String(format!("{}", info)),
+            // Send to PostHog using $exception format
+            let bt = std::backtrace::Backtrace::capture();
+            let stack_str = format!("{}", bt);
+            let mut ctx = serde_json::Map::new();
+            ctx.insert(
+                "kind".to_string(),
+                serde_json::Value::String("panic".to_string()),
             );
-            posthog::capture("cli_panic", props);
+            crate::posthog::capture_exception(&format!("{}", info), "panic", Some(stack_str), ctx);
         }));
     }
 
@@ -230,7 +248,7 @@ fn main() {
 
             if let Some(path) = output {
                 if let Err(e) = fs::write(path, content) {
-                    tracing::error!("Failed to write output: {}", e);
+                    eprintln!("Failed to write output: {}", e);
                 }
             } else {
                 println!("{}", content);

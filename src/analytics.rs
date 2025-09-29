@@ -6,13 +6,11 @@
 //   logs   -> http://localhost:4318/v1/logs
 
 use std::env;
-use tracing::Level;
 use tracing::field::Visit;
-use tracing::{Event, Subscriber};
+use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::Layer;
 use tracing_subscriber::filter::{FilterFn, LevelFilter};
-use tracing_subscriber::layer::Context;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::registry::Registry;
 
 // Layer that forwards ERROR events to PostHog
@@ -41,6 +39,7 @@ where
         if event.metadata().level() == &Level::ERROR {
             let mut visitor = EventVisitor { fields: Vec::new() };
             event.record(&mut visitor);
+            let fields_for_msg = visitor.fields.clone();
 
             // Prefer the `message` field if present
             let mut message = None;
@@ -52,8 +51,7 @@ where
             }
             let msg = message.unwrap_or_else(|| {
                 // Fallback: join k=v pairs
-                let parts: Vec<String> = visitor
-                    .fields
+                let parts: Vec<String> = fields_for_msg
                     .into_iter()
                     .map(|(k, v)| format!("{}={}", k, v))
                     .collect();
@@ -64,15 +62,46 @@ where
                 }
             });
 
+            // Build context from metadata and fields
+            let meta = event.metadata();
+            let mut ctx = serde_json::Map::new();
+            ctx.insert(
+                "level".to_string(),
+                serde_json::Value::String(meta.level().to_string()),
+            );
+            ctx.insert(
+                "target".to_string(),
+                serde_json::Value::String(meta.target().to_string()),
+            );
+            if let Some(m) = meta.module_path() {
+                ctx.insert(
+                    "module".to_string(),
+                    serde_json::Value::String(m.to_string()),
+                );
+            }
+            if let Some(f) = meta.file() {
+                ctx.insert("file".to_string(), serde_json::Value::String(f.to_string()));
+            }
+            if let Some(l) = meta.line() {
+                ctx.insert("line".to_string(), serde_json::Value::from(l as u64));
+            }
+            let fields_obj: serde_json::Map<String, serde_json::Value> = visitor
+                .fields
+                .into_iter()
+                .map(|(k, v)| (k, serde_json::Value::String(v)))
+                .collect();
+            if !fields_obj.is_empty() {
+                ctx.insert("fields".to_string(), serde_json::Value::Object(fields_obj));
+            }
+
             // Send to PostHog (no-op if client disabled)
-            let props = serde_json::Map::new();
-            crate::posthog::capture_error("cli_error", &msg, props);
+            crate::posthog::capture_exception(&msg, "tracing_error", None, ctx);
         }
     }
 }
 
 pub fn init_logging(enable_analytics: bool) {
-    // Always log errors to stderr and forward to PostHog.
+    // Always log to console: stdout for non-errors, stderr for errors
     let stdout_non_error = tracing_subscriber::fmt::layer()
         .with_filter(FilterFn::new(|meta| meta.level() < &Level::ERROR));
 
@@ -101,19 +130,32 @@ pub fn init_logging(enable_analytics: bool) {
     tracing::subscriber::set_global_default(subscriber).expect("setting tracing default failed");
 }
 
-fn compile_time_otlp_logs_endpoint() -> &'static str {
+fn otlp_logs_endpoint() -> String {
+    if let Ok(v) = env::var("JARVY_OTLP_LOGS_ENDPOINT") {
+        if !v.trim().is_empty() {
+            return v;
+        }
+    }
+    if let Ok(v) = env::var("JARVY_OTLP_ENDPOINT") {
+        if !v.trim().is_empty() {
+            return v;
+        }
+    }
+    // Fallback to compile-time overrides or default
     option_env!("JARVY_OTLP_LOGS_ENDPOINT")
         .or(option_env!("JARVY_OTLP_ENDPOINT"))
         .unwrap_or("http://localhost:4318/v1/logs")
+        .to_string()
 }
 
 fn build_otlp_logger_provider() -> opentelemetry_sdk::logs::SdkLoggerProvider {
     use opentelemetry_otlp::{Protocol, WithExportConfig};
 
+    let endpoint = otlp_logs_endpoint();
     let exporter = opentelemetry_otlp::LogExporter::builder()
         .with_http()
         .with_protocol(Protocol::HttpBinary)
-        .with_endpoint(compile_time_otlp_logs_endpoint())
+        .with_endpoint(endpoint.as_str())
         .build()
         .expect("failed to build OTLP log exporter");
 

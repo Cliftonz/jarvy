@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 static CLIENT: OnceLock<PosthogClient> = OnceLock::new();
+static GLOBAL_CONTEXT: OnceLock<Mutex<serde_json::Map<String, serde_json::Value>>> =
+    OnceLock::new();
 
 #[derive(Clone)]
 pub struct PosthogClient {
@@ -39,10 +41,27 @@ pub fn init(enable_analytics: bool, distinct_id: String) {
         distinct_id,
     };
     let _ = CLIENT.set(client);
+    let _ = GLOBAL_CONTEXT.set(Mutex::new(serde_json::Map::new()));
 }
 
 pub fn client() -> Option<&'static PosthogClient> {
     CLIENT.get()
+}
+
+pub fn set_context(key: &str, value: serde_json::Value) {
+    let map = GLOBAL_CONTEXT.get_or_init(|| Mutex::new(serde_json::Map::new()));
+    if let Ok(mut m) = map.lock() {
+        m.insert(key.to_string(), value);
+    }
+}
+
+pub fn set_context_map(ctx: serde_json::Map<String, serde_json::Value>) {
+    let map = GLOBAL_CONTEXT.get_or_init(|| Mutex::new(serde_json::Map::new()));
+    if let Ok(mut m) = map.lock() {
+        for (k, v) in ctx {
+            m.insert(k, v);
+        }
+    }
 }
 
 pub fn detect_os() -> String {
@@ -74,11 +93,23 @@ pub fn ms(d: Duration) -> u128 {
     d.as_millis()
 }
 
+fn merge_global_context(properties: &mut serde_json::Map<String, serde_json::Value>) {
+    if let Some(lock) = GLOBAL_CONTEXT.get() {
+        if let Ok(map) = lock.lock() {
+            for (k, v) in map.iter() {
+                properties.entry(k.clone()).or_insert(v.clone());
+            }
+        }
+    }
+}
+
 pub fn capture(event: &str, mut properties: serde_json::Map<String, serde_json::Value>) {
     if let Some(c) = client() {
         if !c.is_enabled() {
             return;
         }
+        // Merge global context first so automatic context can still override if desired
+        merge_global_context(&mut properties);
         // Always add os and shell context if missing
         properties
             .entry("os".to_string())
@@ -104,6 +135,41 @@ pub fn capture(event: &str, mut properties: serde_json::Map<String, serde_json::
             .header("Content-Type", "application/json")
             .send_json(payload.to_string());
     }
+}
+
+/// Capture an exception according to PostHog manual error tracking
+/// Sends a `$exception` event with recommended properties
+pub fn capture_exception(
+    message: &str,
+    exception_type: &str,
+    stack_trace: Option<String>,
+    mut context: serde_json::Map<String, serde_json::Value>,
+) {
+    // Build exception payload according to docs
+    let mut props = serde_json::Map::new();
+    props.insert(
+        "$exception_message".to_string(),
+        serde_json::Value::String(message.to_string()),
+    );
+    props.insert(
+        "$exception_type".to_string(),
+        serde_json::Value::String(exception_type.to_string()),
+    );
+    if let Some(stack) = stack_trace {
+        if !stack.is_empty() {
+            props.insert(
+                "$exception_stack_trace".to_string(),
+                serde_json::Value::String(stack),
+            );
+        }
+    }
+    if !context.is_empty() {
+        props.insert(
+            "$exception_properties".to_string(),
+            serde_json::Value::Object(context),
+        );
+    }
+    capture("$exception", props);
 }
 
 pub fn capture_error(
