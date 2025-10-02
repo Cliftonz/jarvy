@@ -2,15 +2,18 @@ pub mod brew;
 pub mod common;
 pub mod docker;
 pub mod git;
+pub mod go;
 pub mod htop;
 pub mod jq;
 pub mod k6;
 pub mod make;
 pub mod ngrok;
+pub mod node;
 pub mod nvim;
 pub mod nvm;
 pub mod opentofu;
 pub mod packer;
+pub mod python;
 pub mod registry;
 pub mod rust;
 pub mod talosctl;
@@ -55,4 +58,7 @@ pub fn register_all() {
     let _ = register_tool("nvim", crate::tools::nvim::nvim::add_handler);
     let _ = register_tool("rust", crate::tools::rust::rust::add_handler);
     let _ = register_tool("talosctl", crate::tools::talosctl::talosctl::add_handler);
+    let _ = register_tool("python", crate::tools::python::python::add_handler);
+    let _ = register_tool("node", crate::tools::node::node::add_handler);
+    let _ = register_tool("go", crate::tools::go::go::add_handler);
 }

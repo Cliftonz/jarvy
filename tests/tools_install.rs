@@ -28,6 +28,9 @@ fn tools_add_handlers_are_invocable() {
         ("nvim", ""),
         ("rust", ""),
         ("talosctl", ""),
+        ("python", ""),
+        ("node", ""),
+        ("go", ""),
     ];
 
     for (name, hint) in cases {
