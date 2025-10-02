@@ -13,9 +13,11 @@ fn tools_add_handlers_are_invocable() {
         ("vscode", ""),
         ("docker", ""),
         ("wget", ""),
+        ("jq", ""),
         ("nvm", ""),
         ("tree", ""),
         ("tmux", ""),
+        ("htop", ""),
     ];
 
     for (name, hint) in cases {
