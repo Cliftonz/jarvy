@@ -21,6 +21,10 @@ fn tools_add_handlers_are_invocable() {
         ("opentofu", ""),
         ("terraform", ""),
         ("packer", ""),
+        ("yq", ""),
+        ("make", ""),
+        ("k6", ""),
+        ("ngrok", ""),
     ];
 
     for (name, hint) in cases {

@@ -4,6 +4,9 @@ pub mod docker;
 pub mod git;
 pub mod htop;
 pub mod jq;
+pub mod k6;
+pub mod make;
+pub mod ngrok;
 pub mod nvm;
 pub mod opentofu;
 pub mod packer;
@@ -13,6 +16,7 @@ pub mod tmux;
 pub mod tree;
 pub mod vscode;
 pub mod wget;
+pub mod yq;
 
 #[allow(unused_imports)]
 pub use common::{
@@ -41,4 +45,8 @@ pub fn register_all() {
     let _ = register_tool("opentofu", crate::tools::opentofu::opentofu::add_handler);
     let _ = register_tool("terraform", crate::tools::terraform::terraform::add_handler);
     let _ = register_tool("packer", crate::tools::packer::packer::add_handler);
+    let _ = register_tool("yq", crate::tools::yq::yq::add_handler);
+    let _ = register_tool("make", crate::tools::make::make::add_handler);
+    let _ = register_tool("k6", crate::tools::k6::k6::add_handler);
+    let _ = register_tool("ngrok", crate::tools::ngrok::ngrok::add_handler);
 }
