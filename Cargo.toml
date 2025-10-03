@@ -3,6 +3,11 @@ name = "jarvy"
 version = "0.1.0"
 edition = "2024"
 
+#[build]
+#jobs=16
+#rustc-wrapper="sccache"
+#pipelining=true
+
 [dependencies]
 clap = { version = "4.5.6", features = ["derive"] }
 inquire = "0.9.1"
