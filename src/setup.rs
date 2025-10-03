@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::os::unix::prelude::CommandExt;
 use std::path::Path;
 use std::process::{Command, exit};
@@ -138,7 +139,14 @@ fn refresh_shell(platform: &str) {
 
             if output.status.success() {
                 let shell = env::var("SHELL").expect("SHELL is not set");
-                let _ = Command::new(shell).exec();
+                #[cfg(unix)]
+                {
+                    let _ = Command::new(shell).exec();
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = Command::new(shell).status();
+                }
             } else {
                 eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
                 exit(1);
@@ -154,7 +162,7 @@ fn refresh_shell(platform: &str) {
                 .expect("Failed to execute PowerShell command");
 
             if output.status.success() {
-                Command::new("powershell").exec();
+                let _ = Command::new("powershell").status();
             } else {
                 eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
                 exit(1);
