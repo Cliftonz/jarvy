@@ -6,38 +6,12 @@ fn tools_add_handlers_are_invocable() {
     // Ensure built-in tools are registered
     jarvy::tools::register_all();
 
-    // (name, version_hint) pairs; keep hints minimal/generic
-    let cases: &[(&str, &str)] = &[
-        ("git", ""),
-        ("brew", ""),
-        ("vscode", ""),
-        ("docker", ""),
-        ("wget", ""),
-        ("jq", ""),
-        ("nvm", ""),
-        ("tree", ""),
-        ("tmux", ""),
-        ("htop", ""),
-        ("opentofu", ""),
-        ("terraform", ""),
-        ("packer", ""),
-        ("yq", ""),
-        ("make", ""),
-        ("k6", ""),
-        ("ngrok", ""),
-        ("nvim", ""),
-        ("rust", ""),
-        ("talosctl", ""),
-        ("python", ""),
-        ("node", ""),
-        ("go", ""),
-        ("awscli", ""),
-        ("cue", ""),
-        ("iterm2", ""),
-    ];
+    // Get all registered tool names from the registry
+    let names = jarvy::tools::registered_tool_names();
+    assert!(!names.is_empty(), "expected at least one registered tool");
 
-    for (name, hint) in cases {
-        let res = jarvy::tools::add(name, hint);
+    for name in names {
+        let res = jarvy::tools::add(&name, "");
         // We only care that this path returns a Result (no panic)
         assert!(res.is_ok() || res.is_err(), "{} add handler panicked", name);
     }

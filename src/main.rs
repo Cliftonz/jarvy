@@ -198,6 +198,9 @@ fn main() {
         std::thread::sleep(std::time::Duration::from_millis(800));
     }
 
+    // Register built-in tools so registry lookups are meaningful
+    crate::tools::register_all();
+
     match &cli.command {
         Some(Commands::Setup { file }) => {
             let config = Config::new(file);
@@ -206,6 +209,37 @@ fn main() {
 
             let tools = config.get_tool_configs();
             for (id, tool) in tools {
+                // If the tool is not in the registry, log and guide the user
+                if crate::tools::get_tool(&tool.name).is_none() {
+                    let msg = format!(
+                        "We do not currently have support for {} package but we have logged it and will be adding it soon.",
+                        tool.name
+                    );
+                    if crate::posthog::telemetry_enabled() {
+                        let mut props = serde_json::Map::new();
+                        props.insert(
+                            "tool".to_string(),
+                            serde_json::Value::String(tool.name.clone()),
+                        );
+                        props.insert(
+                            "version_hint".to_string(),
+                            serde_json::Value::String(tool.version.clone()),
+                        );
+                        props.insert(
+                            "source".to_string(),
+                            serde_json::Value::String("config".to_string()),
+                        );
+                        crate::posthog::capture_error("unknown_tool_in_config", &msg, props);
+                        eprintln!("{}", msg);
+                    } else {
+                        eprintln!("{}", msg);
+                        eprintln!(
+                            "Telemetry is disabled. Please consider creating a feature request here: https://github.com/bearbinary/Jarvy/issues/new"
+                        );
+                    }
+                    continue;
+                }
+
                 println!(
                     "Installing {}: {} version {} using package manager: {}",
                     id, tool.name, tool.version, tool.version_manager

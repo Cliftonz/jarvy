@@ -20,6 +20,15 @@ impl PosthogClient {
     }
 }
 
+/// Returns true if telemetry is effectively enabled (user setting + API key present)
+pub fn telemetry_enabled() -> bool {
+    if let Some(c) = client() {
+        c.is_enabled()
+    } else {
+        false
+    }
+}
+
 pub fn init(enable_analytics: bool, distinct_id: String) {
     // Allow disabling analytics via env override
     let env_disable = std::env::var("JARVY_ANALYTICS").ok();

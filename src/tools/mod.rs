@@ -34,7 +34,7 @@ pub use common::{
 };
 
 #[allow(unused_imports)]
-pub use registry::{ToolAdder, add, get_tool, register_tool};
+pub use registry::{ToolAdder, add, get_tool, register_tool, registered_tool_names};
 
 /// Register all built-in tools to the registry. Call this early in the program init if you
 /// want to add("git", ...)/add("docker", ...) to work without manual registration.

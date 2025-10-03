@@ -30,6 +30,14 @@ pub fn get_tool(name: &str) -> Option<ToolAdder> {
     map.get(&key).copied()
 }
 
+/// List all registered tool names (lowercased), sorted for determinism.
+pub fn registered_tool_names() -> Vec<String> {
+    let map = registry().read().expect("registry rwlock poisoned");
+    let mut names: Vec<String> = map.keys().cloned().collect();
+    names.sort();
+    names
+}
+
 /// Dispatch an added request to a registered tool by name and version.
 /// Example: add("git", "latest") or add("docker", "24.01").
 /// Returns InstallError::Parse("unknown tool") if no handler is registered.
