@@ -46,6 +46,22 @@ pub fn current_os() -> Os {
 }
 
 pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
+    // Fast, deterministic tests: allow skipping external command execution.
+    // Integration tests can opt-in via JARVY_FAST_TEST; unit tests default to skip unless explicitly overridden.
+    if std::env::var_os("JARVY_FAST_TEST").is_some() {
+        return Err(InstallError::Prereq(
+            "skipped external command in fast test mode",
+        ));
+    }
+    #[cfg(test)]
+    {
+        if std::env::var_os("JARVY_RUN_EXTERNAL_CMDS_IN_TEST").is_none() {
+            return Err(InstallError::Prereq(
+                "external commands disabled during unit tests",
+            ));
+        }
+    }
+
     let out = Command::new(cmd).args(args).output().map_err(|e| {
         use std::io::ErrorKind::*;
         match e.kind() {

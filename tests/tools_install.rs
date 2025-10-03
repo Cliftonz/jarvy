@@ -3,6 +3,11 @@
 
 #[test]
 fn tools_add_handlers_are_invocable() {
+    // Enable fast, side-effect-free path for integration tests
+    unsafe {
+        std::env::set_var("JARVY_FAST_TEST", "1");
+    }
+
     // Ensure built-in tools are registered
     jarvy::tools::register_all();
 
