@@ -1,10 +1,14 @@
+pub mod air;
 pub mod atlas;
 pub mod awscli;
 pub mod brew;
 pub mod common;
 pub mod cue;
 pub mod docker;
+pub mod dotnet;
+pub mod elixir;
 pub mod git;
+pub mod gleam;
 pub mod go;
 pub mod htop;
 pub mod iterm2;
@@ -79,4 +83,10 @@ pub fn register_all() {
     let _ = register_tool("atlas", crate::tools::atlas::atlas::add_handler);
     let _ = register_tool("ripgrep", crate::tools::ripgrep::ripgrep::add_handler);
     let _ = register_tool("xz", crate::tools::xz::xz::add_handler);
+
+    // Newly added tools
+    let _ = register_tool("air", crate::tools::air::air::add_handler);
+    let _ = register_tool("dotnet", crate::tools::dotnet::dotnet::add_handler);
+    let _ = register_tool("elixir", crate::tools::elixir::elixir::add_handler);
+    let _ = register_tool("gleam", crate::tools::gleam::gleam::add_handler);
 }
