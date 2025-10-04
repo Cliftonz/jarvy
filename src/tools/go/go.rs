@@ -1,4 +1,6 @@
-use crate::tools::common::{InstallError, cmd_satisfies, has, run};
+use crate::tools::common::{InstallError, cmd_satisfies};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::tools::common::{has, run};
 
 /// Ensure Go is installed and roughly matches `min_hint` if provided
 pub fn ensure(min_hint: &str) -> Result<(), InstallError> {

@@ -1,4 +1,6 @@
-use crate::tools::common::{InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallError, has};
 
 /// Ensure `k6` is installed. We ignore the version hint for now and aim to
 /// ensure the command is present on PATH.

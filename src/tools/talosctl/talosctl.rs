@@ -1,4 +1,6 @@
-use crate::tools::common::{InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallError, has};
 
 /// Ensure `talosctl` is installed. Version hints are ignored for now.
 pub fn ensure(_min_hint: &str) -> Result<(), InstallError> {

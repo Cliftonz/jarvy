@@ -1,4 +1,6 @@
-use crate::tools::common::{InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallError, has};
 
 /// Ensure `jq` is installed. The `min_hint` is ignored because
 /// distro/package-manager provided jq versions vary; having the command

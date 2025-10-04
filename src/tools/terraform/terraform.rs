@@ -1,4 +1,6 @@
-use crate::tools::common::{InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallError, has};
 
 /// Ensure `terraform` is installed. We only check presence; version hints are ignored
 /// because package sources vary. Callers can manage versions with tfenv or similar

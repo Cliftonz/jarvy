@@ -1,4 +1,6 @@
-use crate::tools::common::{InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallError, has};
 
 /// Ensure OpenTofu (tofu) is installed. We check for the `tofu` binary.
 pub fn ensure(_min_hint: &str) -> Result<(), InstallError> {
