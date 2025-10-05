@@ -1,4 +1,4 @@
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::tools::common::run;
 use crate::tools::common::{InstallError, has};
 
