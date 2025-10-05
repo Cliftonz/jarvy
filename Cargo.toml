@@ -54,17 +54,17 @@ generate-desktop-entry = false
 
 # AppImage extra files (optional; keep/remove to match your repo)
 [package.metadata.packager.appimage.files]
-"README.md" = "usr/share/doc/jarvy/README.md"
+"Readme.md" = "usr/share/doc/jarvy/README.md"
 "LICENSE" = "usr/share/doc/jarvy/LICENSE"
 
 # Debian package extra files (optional)
 [package.metadata.packager.deb.files]
-"README.md" = "usr/share/doc/jarvy/README.md"
+"Readme.md" = "usr/share/doc/jarvy/README.md"
 "LICENSE" = "usr/share/doc/jarvy/LICENSE"
 
 # Pacman package extra files (optional)
 [package.metadata.packager.pacman.files]
-"README.md" = "usr/share/doc/jarvy/README.md"
+"Readme.md" = "usr/share/doc/jarvy/README.md"
 "LICENSE" = "usr/share/doc/jarvy/LICENSE"
 
 # If you also build RPMs via generate-rpm (optional; remove if unused)
@@ -72,7 +72,7 @@ generate-desktop-entry = false
 assets = [
     { source = "target/release/jarvy", dest = "/usr/bin/jarvy", mode = "0755" },
     { source = "LICENSE", dest = "/usr/share/doc/jarvy/LICENSE", doc = true, mode = "0644" },
-    { source = "README.md", dest = "/usr/share/doc/jarvy/README.md", doc = true, mode = "0644" }
+    { source = "Readme.md", dest = "/usr/share/doc/jarvy/README.md", doc = true, mode = "0644" }
 ]
 
 # Ensure your binary section matches the actual binary name/path
