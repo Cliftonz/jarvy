@@ -52,13 +52,6 @@ formats = ["all"]                  # Or ["all"] if you want every supported form
 # Linux-wide options (optional)
 [package.metadata.packager.linux]
 generate-desktop-entry = false
-# Use PNG icons for Linux packaging (macOS requires .icns, so we do not set icons globally)
-icons = [
-    "assets/CLI_Logo.png",
-    "assets/Horizontial_Logo.png",
-    "assets/Logo.png",
-    "assets/Vertical_Logo.png",
-]
 
 # macOS-wide options (optional)
 [package.metadata.packager.macos]
