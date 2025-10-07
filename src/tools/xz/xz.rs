@@ -54,7 +54,11 @@ fn install_linux() -> Result<(), InstallError> {
         {
             return Ok(());
         }
-        crate::tools::common::PkgOps::install(pm, "xz-utils", true)
+        crate::tools::common::PkgOps::install(
+            pm,
+            "xz-utils",
+            crate::tools::common::default_use_sudo(),
+        )
     } else {
         Err(InstallError::Prereq(
             "No supported Linux package manager on PATH (apt/dnf/yum/zypper/pacman/apk)",

@@ -58,7 +58,7 @@ fn install_linux() -> Result<(), InstallError> {
             crate::tools::common::PackageManager::Apk => "python3",
             _ => "python3",
         };
-        crate::tools::common::PkgOps::install(pm, pkg, true)
+        crate::tools::common::PkgOps::install(pm, pkg, crate::tools::common::default_use_sudo())
     } else {
         Err(InstallError::Prereq(
             "No supported Linux package manager on PATH (apt/dnf/yum/zypper/pacman/apk)",

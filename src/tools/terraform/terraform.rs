@@ -52,7 +52,11 @@ fn install_linux() -> Result<(), InstallError> {
         // Best effort package index update
         let _ = crate::tools::common::PkgOps::update(pm, crate::tools::common::default_use_sudo());
         // Try common package name
-        crate::tools::common::PkgOps::install(pm, "terraform", true)
+        crate::tools::common::PkgOps::install(
+            pm,
+            "terraform",
+            crate::tools::common::default_use_sudo(),
+        )
     } else {
         Err(InstallError::Prereq(
             "No supported Linux package manager on PATH (apt/dnf/yum/zypper/pacman/apk)",
