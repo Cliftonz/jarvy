@@ -46,13 +46,24 @@ product-name = "jarvy"
 identifier = "io.github.bearbinary.jarvy"
 category = "Utility"
 homepage = "https://github.com/bearbinary/jarvy"
-icons = ["assets/CLI_Logo.png"]        # Optional; remove if you don't ship icons
 licenseFile = "LICENSE"
 formats = ["all"]                  # Or ["all"] if you want every supported format
 
 # Linux-wide options (optional)
 [package.metadata.packager.linux]
 generate-desktop-entry = false
+# Use PNG icons for Linux packaging (macOS requires .icns, so we do not set icons globally)
+icons = [
+    "assets/CLI_Logo.png",
+    "assets/Horizontial_Logo.png",
+    "assets/Logo.png",
+    "assets/Vertical_Logo.png",
+]
+
+# macOS-wide options (optional)
+[package.metadata.packager.macos]
+# Use ICNS icon for macOS packaging
+icon = ["assets/icns/CLI_Logo.icns"]
 
 # AppImage extra files (optional; keep/remove to match your repo)
 [package.metadata.packager.appimage.files]
