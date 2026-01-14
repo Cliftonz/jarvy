@@ -444,6 +444,100 @@ Document covers 419 lines of detailed documentation to help contributors add new
 
 ---
 
+## new_tools.json Implementation: 2026-01-14
+
+### Task Summary
+
+Implemented tools from `tasks/new_tools.json` task file. This file contained 73 tools across
+6 categories (qa_testing, kubernetes, cloud_engineering, linux_admin, windows_admin, automation).
+
+### Cross-Reference Analysis
+
+Many tools from new_tools.json were already implemented in T12:
+- kubectl, helm, k9s, kubectx, kustomize, argocd, trivy
+- gh, sops, age, nmap, curl, httpie
+- These did not need reimplementation
+
+### New Tools Implemented (23 total)
+
+**Batch 1 - Cloud/DevOps Tools (8 tools)**:
+- glab - GitLab CLI
+- vault - HashiCorp secrets management
+- pulumi - Infrastructure as code
+- eksctl - AWS EKS cluster management
+- tfsec - Terraform security scanner
+- just - Command runner (make alternative)
+- podman - Daemonless container engine
+- azure_cli - Microsoft Azure CLI
+
+**Batch 2 - System Utilities (8 tools)**:
+- btop - Resource monitor with TUI (no Windows)
+- ncdu - NCurses disk usage analyzer (no Windows)
+- p7zip - 7-Zip file archiver
+- openssh - OpenSSH client
+- procs - Modern replacement for ps
+- bottom - Cross-platform system monitor
+- duf - Disk usage/free utility
+- rclone - Cloud storage sync
+
+**Batch 3 - K8s/Git Tools (7 tools)**:
+- stern - Multi-pod log tailing for Kubernetes
+- flux - GitOps toolkit (uses fluxcd/tap/flux)
+- hugo - Static site generator
+- git_lfs - Git Large File Storage
+- mtr - Network diagnostic (no Windows)
+- lnav - Log file navigator (no Windows)
+- lynis - Security auditing (no Windows)
+
+### Implementation Pattern
+
+All tools use the `define_tool!` macro:
+
+```rust
+use crate::define_tool;
+
+define_tool!(TOOLNAME, {
+    command: "tool-command",
+    macos: { brew: "package" },
+    linux: { uniform: "package" },
+    windows: { winget: "Publisher.Package" },
+});
+```
+
+### Platform Support Notes
+
+1. **No Windows Support**: btop, ncdu, mtr, lnav, lynis - omit windows block entirely
+2. **Taps**: flux uses `tap: fluxcd/tap/flux` on macOS
+3. **Varied Linux Names**: Some tools have different package names per distro
+
+### Statistics
+
+- **Total in new_tools.json**: 73 tools
+- **Already Implemented (from T12)**: 15 tools
+- **Newly Implemented**: 23 tools
+- **Total Implemented from Task**: 38 tools
+- **Remaining**: 35 tools (mostly npm/pip-based or custom installers)
+
+### Test Results
+
+All 188+ tests pass including new tool tests:
+- cargo check: Success
+- cargo test: All pass
+- cargo clippy: Only expected warnings
+
+### Files Created
+
+46 new files (23 tool directories × 2 files each):
+- `src/tools/{name}/mod.rs`
+- `src/tools/{name}/{name}.rs`
+
+### Files Modified
+
+- `src/tools/mod.rs` - Added 23 new module declarations
+- `tasks/new_tools.json` - Updated implemented array and status
+
+---
+
 ## T12 Completed: 2025-01-14
 
 ### New Developer Tools Batch - Implementation Complete

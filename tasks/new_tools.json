@@ -1,0 +1,873 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-01-14",
+  "description": "Tool implementation tasks for Jarvy CLI",
+  "total_tools": 73,
+  "implemented": [
+    "aria2", "kubescape", "kubectl", "helm", "k9s", "kubectx", "stern", "trivy",
+    "kustomize", "argocd", "flux", "eksctl", "azure-cli", "pulumi", "tfsec",
+    "btop", "procs", "bottom", "ncdu", "duf", "nmap", "mtr", "lnav", "lynis",
+    "openssh", "7zip", "rclone", "gh", "glab", "vault", "sops", "age", "podman",
+    "just", "git-lfs", "hugo", "curl", "httpie"
+  ],
+  "implementation_status": {
+    "completed_date": "2026-01-14",
+    "total_from_list": 73,
+    "implemented_count": 38,
+    "notes": "Many tools already implemented from T12 batch. 23 new tools added in this session."
+  },
+  "categories": [
+    {
+      "name": "qa_testing",
+      "description": "Quality Assurance and Testing Tools",
+      "perspective": "QA Engineer",
+      "tools": [
+        {
+          "name": "playwright",
+          "command": "playwright",
+          "description": "End-to-end testing framework for web apps",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": null, "npm": "playwright" },
+            "linux": { "npm": "playwright" },
+            "windows": { "npm": "playwright" }
+          },
+          "notes": "Requires Node.js, install via npm globally"
+        },
+        {
+          "name": "cypress",
+          "command": "cypress",
+          "description": "JavaScript end-to-end testing framework",
+          "priority": "high",
+          "packages": {
+            "macos": { "npm": "cypress" },
+            "linux": { "npm": "cypress" },
+            "windows": { "npm": "cypress" }
+          },
+          "notes": "Requires Node.js"
+        },
+        {
+          "name": "httpie",
+          "command": "http",
+          "description": "User-friendly HTTP client for API testing",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "httpie" },
+            "linux": { "apt": "httpie", "dnf": "httpie", "pacman": "httpie" },
+            "windows": { "winget": "HTTPie.HTTPie" }
+          }
+        },
+        {
+          "name": "locust",
+          "command": "locust",
+          "description": "Scalable load testing framework in Python",
+          "priority": "medium",
+          "packages": {
+            "macos": { "pip": "locust" },
+            "linux": { "pip": "locust" },
+            "windows": { "pip": "locust" }
+          },
+          "notes": "Requires Python"
+        },
+        {
+          "name": "appium",
+          "command": "appium",
+          "description": "Mobile app automation testing framework",
+          "priority": "low",
+          "packages": {
+            "macos": { "npm": "appium" },
+            "linux": { "npm": "appium" },
+            "windows": { "npm": "appium" }
+          }
+        },
+        {
+          "name": "allure",
+          "command": "allure",
+          "description": "Test report framework with rich visualizations",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "allure" },
+            "linux": { "uniform": "allure" },
+            "windows": { "winget": "Allure.Allure" }
+          }
+        },
+        {
+          "name": "mockoon",
+          "command": "mockoon",
+          "description": "API mocking tool for local development",
+          "priority": "low",
+          "packages": {
+            "macos": { "cask": "mockoon" },
+            "linux": { "snap": "mockoon" },
+            "windows": { "winget": "Mockoon.Mockoon" }
+          }
+        },
+        {
+          "name": "prism",
+          "command": "prism",
+          "description": "OpenAPI mock server and validation proxy",
+          "priority": "low",
+          "packages": {
+            "macos": { "npm": "@stoplight/prism-cli" },
+            "linux": { "npm": "@stoplight/prism-cli" },
+            "windows": { "npm": "@stoplight/prism-cli" }
+          }
+        },
+        {
+          "name": "nyc",
+          "command": "nyc",
+          "description": "Istanbul code coverage tool for Node.js",
+          "priority": "medium",
+          "packages": {
+            "macos": { "npm": "nyc" },
+            "linux": { "npm": "nyc" },
+            "windows": { "npm": "nyc" }
+          }
+        },
+        {
+          "name": "testcontainers",
+          "command": null,
+          "description": "Library for disposable Docker containers in tests",
+          "priority": "low",
+          "packages": {
+            "notes": "Library dependency, not CLI tool"
+          },
+          "notes": "Available as library for Java, Node.js, Go, Python"
+        }
+      ]
+    },
+    {
+      "name": "kubernetes",
+      "description": "Kubernetes Administration Tools",
+      "perspective": "Kubernetes Admin",
+      "tools": [
+        {
+          "name": "kubectl",
+          "command": "kubectl",
+          "description": "Kubernetes command-line tool",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "kubernetes-cli" },
+            "linux": { "apt": "kubectl", "dnf": "kubernetes-client", "pacman": "kubectl" },
+            "windows": { "winget": "Kubernetes.kubectl" }
+          }
+        },
+        {
+          "name": "helm",
+          "command": "helm",
+          "description": "Kubernetes package manager",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "helm" },
+            "linux": { "uniform": "helm" },
+            "windows": { "winget": "Helm.Helm" }
+          }
+        },
+        {
+          "name": "k9s",
+          "command": "k9s",
+          "description": "Terminal UI for Kubernetes cluster management",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "k9s" },
+            "linux": { "uniform": "k9s" },
+            "windows": { "winget": "derailed.k9s" }
+          }
+        },
+        {
+          "name": "kubectx",
+          "command": "kubectx",
+          "description": "Switch between Kubernetes contexts quickly",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "kubectx" },
+            "linux": { "uniform": "kubectx" },
+            "windows": { "winget": "ahmetb.kubectx" }
+          }
+        },
+        {
+          "name": "kubens",
+          "command": "kubens",
+          "description": "Switch between Kubernetes namespaces quickly",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "kubectx" },
+            "linux": { "uniform": "kubectx" },
+            "windows": { "winget": "ahmetb.kubectx" }
+          },
+          "notes": "Bundled with kubectx"
+        },
+        {
+          "name": "stern",
+          "command": "stern",
+          "description": "Multi-pod log tailing for Kubernetes",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "stern" },
+            "linux": { "uniform": "stern" },
+            "windows": { "winget": "stern.stern" }
+          }
+        },
+        {
+          "name": "trivy",
+          "command": "trivy",
+          "description": "Container vulnerability scanner",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "trivy" },
+            "linux": { "uniform": "trivy" },
+            "windows": { "winget": "AquaSecurity.Trivy" }
+          }
+        },
+        {
+          "name": "kubescape",
+          "command": "kubescape",
+          "description": "Kubernetes security scanner and compliance checker",
+          "priority": "high",
+          "status": "implemented",
+          "packages": {
+            "macos": { "brew": "kubescape" },
+            "linux": { "uniform": "kubescape" },
+            "windows": { "winget": "kubescape.kubescape" }
+          }
+        },
+        {
+          "name": "krew",
+          "command": "kubectl-krew",
+          "description": "Plugin manager for kubectl",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "krew" },
+            "linux": { "custom": true },
+            "windows": { "custom": true }
+          },
+          "notes": "May need custom installer script"
+        },
+        {
+          "name": "linkerd",
+          "command": "linkerd",
+          "description": "Ultralight service mesh for Kubernetes",
+          "priority": "low",
+          "packages": {
+            "macos": { "brew": "linkerd" },
+            "linux": { "custom": true },
+            "windows": { "custom": true }
+          }
+        },
+        {
+          "name": "argocd",
+          "command": "argocd",
+          "description": "GitOps continuous delivery for Kubernetes",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "argocd" },
+            "linux": { "uniform": "argocd" },
+            "windows": { "custom": true }
+          }
+        },
+        {
+          "name": "flux",
+          "command": "flux",
+          "description": "GitOps toolkit for Kubernetes",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "fluxcd/tap/flux" },
+            "linux": { "custom": true },
+            "windows": { "custom": true }
+          }
+        },
+        {
+          "name": "kustomize",
+          "command": "kustomize",
+          "description": "Kubernetes configuration customization",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "kustomize" },
+            "linux": { "uniform": "kustomize" },
+            "windows": { "winget": "Kubernetes.kustomize" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cloud_engineering",
+      "description": "Cloud Platform Engineering Tools (AWS, Azure, GCP)",
+      "perspective": "Cloud Engineer",
+      "tools": [
+        {
+          "name": "aws-sam-cli",
+          "command": "sam",
+          "description": "AWS Serverless Application Model CLI",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "aws-sam-cli" },
+            "linux": { "pip": "aws-sam-cli" },
+            "windows": { "winget": "Amazon.SAM-CLI" }
+          }
+        },
+        {
+          "name": "eksctl",
+          "command": "eksctl",
+          "description": "AWS EKS cluster management CLI",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "eksctl" },
+            "linux": { "uniform": "eksctl" },
+            "windows": { "winget": "weaveworks.eksctl" }
+          }
+        },
+        {
+          "name": "copilot-cli",
+          "command": "copilot",
+          "description": "AWS Copilot for containerized apps",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "aws/tap/copilot-cli" },
+            "linux": { "custom": true },
+            "windows": { "custom": true }
+          }
+        },
+        {
+          "name": "cfn-lint",
+          "command": "cfn-lint",
+          "description": "CloudFormation template linter",
+          "priority": "medium",
+          "packages": {
+            "macos": { "pip": "cfn-lint" },
+            "linux": { "pip": "cfn-lint" },
+            "windows": { "pip": "cfn-lint" }
+          }
+        },
+        {
+          "name": "localstack",
+          "command": "localstack",
+          "description": "Local AWS cloud stack emulator",
+          "priority": "medium",
+          "packages": {
+            "macos": { "pip": "localstack" },
+            "linux": { "pip": "localstack" },
+            "windows": { "pip": "localstack" }
+          }
+        },
+        {
+          "name": "azure-cli",
+          "command": "az",
+          "description": "Microsoft Azure command-line interface",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "azure-cli" },
+            "linux": { "apt": "azure-cli", "dnf": "azure-cli" },
+            "windows": { "winget": "Microsoft.AzureCLI" }
+          }
+        },
+        {
+          "name": "azure-functions-core-tools",
+          "command": "func",
+          "description": "Azure Functions local development tools",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "azure-functions-core-tools@4" },
+            "linux": { "apt": "azure-functions-core-tools-4" },
+            "windows": { "winget": "Microsoft.Azure.FunctionsCoreTools" }
+          }
+        },
+        {
+          "name": "bicep",
+          "command": "bicep",
+          "description": "Domain-specific language for Azure ARM",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "bicep" },
+            "linux": { "custom": true },
+            "windows": { "winget": "Microsoft.Bicep" }
+          }
+        },
+        {
+          "name": "gcloud",
+          "command": "gcloud",
+          "description": "Google Cloud SDK CLI",
+          "priority": "high",
+          "packages": {
+            "macos": { "cask": "google-cloud-sdk" },
+            "linux": { "custom": true },
+            "windows": { "winget": "Google.CloudSDK" }
+          },
+          "notes": "May need custom installer for Linux"
+        },
+        {
+          "name": "pulumi",
+          "command": "pulumi",
+          "description": "Infrastructure as code in any language",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "pulumi" },
+            "linux": { "uniform": "pulumi" },
+            "windows": { "winget": "Pulumi.Pulumi" }
+          }
+        },
+        {
+          "name": "checkov",
+          "command": "checkov",
+          "description": "Static code analysis for IaC security",
+          "priority": "high",
+          "packages": {
+            "macos": { "pip": "checkov" },
+            "linux": { "pip": "checkov" },
+            "windows": { "pip": "checkov" }
+          }
+        },
+        {
+          "name": "tfsec",
+          "command": "tfsec",
+          "description": "Terraform security scanner",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "tfsec" },
+            "linux": { "uniform": "tfsec" },
+            "windows": { "winget": "aquasecurity.tfsec" }
+          }
+        },
+        {
+          "name": "infracost",
+          "command": "infracost",
+          "description": "Cloud cost estimation for Terraform",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "infracost" },
+            "linux": { "uniform": "infracost" },
+            "windows": { "winget": "Infracost.Infracost" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "linux_admin",
+      "description": "Linux System Administration Tools",
+      "perspective": "Linux Admin",
+      "tools": [
+        {
+          "name": "btop",
+          "command": "btop",
+          "description": "Resource monitor with TUI",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "btop" },
+            "linux": { "apt": "btop", "dnf": "btop", "pacman": "btop" },
+            "windows": null
+          }
+        },
+        {
+          "name": "procs",
+          "command": "procs",
+          "description": "Modern replacement for ps",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "procs" },
+            "linux": { "uniform": "procs" },
+            "windows": { "winget": "dalance.procs" }
+          }
+        },
+        {
+          "name": "bottom",
+          "command": "btm",
+          "description": "Cross-platform graphical process/system monitor",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "bottom" },
+            "linux": { "uniform": "bottom" },
+            "windows": { "winget": "Clement.bottom" }
+          }
+        },
+        {
+          "name": "ncdu",
+          "command": "ncdu",
+          "description": "NCurses disk usage analyzer",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "ncdu" },
+            "linux": { "uniform": "ncdu" },
+            "windows": null
+          }
+        },
+        {
+          "name": "duf",
+          "command": "duf",
+          "description": "Disk usage/free utility with colors",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "duf" },
+            "linux": { "uniform": "duf" },
+            "windows": { "winget": "muesli.duf" }
+          }
+        },
+        {
+          "name": "nmap",
+          "command": "nmap",
+          "description": "Network exploration and security auditing",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "nmap" },
+            "linux": { "uniform": "nmap" },
+            "windows": { "winget": "Insecure.Nmap" }
+          }
+        },
+        {
+          "name": "mtr",
+          "command": "mtr",
+          "description": "Network diagnostic tool (traceroute + ping)",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "mtr" },
+            "linux": { "uniform": "mtr" },
+            "windows": null
+          }
+        },
+        {
+          "name": "netcat",
+          "command": "nc",
+          "description": "TCP/UDP networking utility",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "netcat" },
+            "linux": { "apt": "netcat-openbsd", "dnf": "nmap-ncat", "pacman": "gnu-netcat" },
+            "windows": null
+          }
+        },
+        {
+          "name": "lnav",
+          "command": "lnav",
+          "description": "Log file navigator with syntax highlighting",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "lnav" },
+            "linux": { "uniform": "lnav" },
+            "windows": null
+          }
+        },
+        {
+          "name": "goaccess",
+          "command": "goaccess",
+          "description": "Real-time web log analyzer",
+          "priority": "low",
+          "packages": {
+            "macos": { "brew": "goaccess" },
+            "linux": { "uniform": "goaccess" },
+            "windows": null
+          }
+        },
+        {
+          "name": "lynis",
+          "command": "lynis",
+          "description": "Security auditing tool for Unix systems",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "lynis" },
+            "linux": { "uniform": "lynis" },
+            "windows": null
+          }
+        },
+        {
+          "name": "fail2ban",
+          "command": "fail2ban-client",
+          "description": "Intrusion prevention software",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "fail2ban" },
+            "linux": { "uniform": "fail2ban" },
+            "windows": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "windows_admin",
+      "description": "Windows System Administration Tools",
+      "perspective": "Windows Admin",
+      "tools": [
+        {
+          "name": "putty",
+          "command": "putty",
+          "description": "SSH and telnet client",
+          "priority": "high",
+          "packages": {
+            "macos": null,
+            "linux": { "apt": "putty", "dnf": "putty" },
+            "windows": { "winget": "PuTTY.PuTTY" }
+          }
+        },
+        {
+          "name": "openssh",
+          "command": "ssh",
+          "description": "OpenSSH client and server",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "openssh" },
+            "linux": { "uniform": "openssh" },
+            "windows": { "winget": "Microsoft.OpenSSH.Beta" }
+          }
+        },
+        {
+          "name": "sysinternals",
+          "command": null,
+          "description": "Microsoft Sysinternals Suite",
+          "priority": "high",
+          "packages": {
+            "macos": null,
+            "linux": null,
+            "windows": { "winget": "Microsoft.Sysinternals" }
+          },
+          "notes": "Windows-only suite of admin tools"
+        },
+        {
+          "name": "7zip",
+          "command": "7z",
+          "description": "File archiver with high compression",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "p7zip" },
+            "linux": { "uniform": "p7zip" },
+            "windows": { "winget": "7zip.7zip" }
+          }
+        },
+        {
+          "name": "nssm",
+          "command": "nssm",
+          "description": "Non-Sucking Service Manager for Windows",
+          "priority": "medium",
+          "packages": {
+            "macos": null,
+            "linux": null,
+            "windows": { "winget": "NSSM.NSSM" }
+          },
+          "notes": "Windows-only"
+        },
+        {
+          "name": "aria2",
+          "command": "aria2c",
+          "description": "Lightweight multi-protocol download utility",
+          "priority": "medium",
+          "status": "implemented",
+          "packages": {
+            "macos": { "brew": "aria2" },
+            "linux": { "uniform": "aria2" },
+            "windows": { "winget": "aria2.aria2" }
+          }
+        },
+        {
+          "name": "curl",
+          "command": "curl",
+          "description": "Command-line tool for transferring data",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "curl" },
+            "linux": { "uniform": "curl" },
+            "windows": { "winget": "cURL.cURL" }
+          }
+        },
+        {
+          "name": "rclone",
+          "command": "rclone",
+          "description": "Cloud storage sync and management",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "rclone" },
+            "linux": { "uniform": "rclone" },
+            "windows": { "winget": "Rclone.Rclone" }
+          }
+        },
+        {
+          "name": "winscp",
+          "command": "winscp",
+          "description": "SFTP and SCP client for Windows",
+          "priority": "medium",
+          "packages": {
+            "macos": null,
+            "linux": null,
+            "windows": { "winget": "WinSCP.WinSCP" }
+          },
+          "notes": "Windows-only"
+        },
+        {
+          "name": "everything",
+          "command": "es",
+          "description": "Instant file search for Windows",
+          "priority": "low",
+          "packages": {
+            "macos": null,
+            "linux": null,
+            "windows": { "winget": "voidtools.Everything" }
+          },
+          "notes": "Windows-only"
+        }
+      ]
+    },
+    {
+      "name": "automation",
+      "description": "DevOps and Automation Engineering Tools",
+      "perspective": "Automation Engineer",
+      "tools": [
+        {
+          "name": "gh",
+          "command": "gh",
+          "description": "GitHub CLI",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "gh" },
+            "linux": { "uniform": "gh" },
+            "windows": { "winget": "GitHub.cli" }
+          }
+        },
+        {
+          "name": "glab",
+          "command": "glab",
+          "description": "GitLab CLI",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "glab" },
+            "linux": { "uniform": "glab" },
+            "windows": { "winget": "GLab.GLab" }
+          }
+        },
+        {
+          "name": "vault",
+          "command": "vault",
+          "description": "HashiCorp secrets management",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "vault" },
+            "linux": { "uniform": "vault" },
+            "windows": { "winget": "HashiCorp.Vault" }
+          }
+        },
+        {
+          "name": "sops",
+          "command": "sops",
+          "description": "Secrets OPerationS - encrypted file editor",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "sops" },
+            "linux": { "uniform": "sops" },
+            "windows": { "winget": "Mozilla.sops" }
+          }
+        },
+        {
+          "name": "age",
+          "command": "age",
+          "description": "Simple, modern file encryption",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "age" },
+            "linux": { "uniform": "age" },
+            "windows": { "winget": "FiloSottile.age" }
+          }
+        },
+        {
+          "name": "ansible",
+          "command": "ansible",
+          "description": "IT automation platform",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "ansible" },
+            "linux": { "apt": "ansible", "dnf": "ansible", "pacman": "ansible" },
+            "windows": { "pip": "ansible" }
+          }
+        },
+        {
+          "name": "podman",
+          "command": "podman",
+          "description": "Daemonless container engine",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "podman" },
+            "linux": { "apt": "podman", "dnf": "podman", "pacman": "podman" },
+            "windows": { "winget": "RedHat.Podman" }
+          }
+        },
+        {
+          "name": "just",
+          "command": "just",
+          "description": "Command runner (make alternative)",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "just" },
+            "linux": { "uniform": "just" },
+            "windows": { "winget": "Casey.Just" }
+          }
+        },
+        {
+          "name": "pre-commit",
+          "command": "pre-commit",
+          "description": "Git pre-commit hook framework",
+          "priority": "high",
+          "packages": {
+            "macos": { "brew": "pre-commit" },
+            "linux": { "pip": "pre-commit" },
+            "windows": { "pip": "pre-commit" }
+          }
+        },
+        {
+          "name": "git-lfs",
+          "command": "git-lfs",
+          "description": "Git Large File Storage",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "git-lfs" },
+            "linux": { "uniform": "git-lfs" },
+            "windows": { "winget": "GitHub.GitLFS" }
+          }
+        },
+        {
+          "name": "hugo",
+          "command": "hugo",
+          "description": "Static site generator",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "hugo" },
+            "linux": { "uniform": "hugo" },
+            "windows": { "winget": "Hugo.Hugo.Extended" }
+          }
+        },
+        {
+          "name": "task",
+          "command": "task",
+          "description": "Task runner / simpler Make alternative",
+          "priority": "medium",
+          "packages": {
+            "macos": { "brew": "go-task" },
+            "linux": { "uniform": "go-task" },
+            "windows": { "winget": "Task.Task" }
+          }
+        }
+      ]
+    }
+  ],
+  "implementation_queue": {
+    "high_priority": [
+      "kubectl", "helm", "k9s", "kustomize", "trivy",
+      "azure-cli", "gcloud", "pulumi", "aws-sam-cli", "eksctl",
+      "checkov", "tfsec",
+      "gh", "glab", "vault", "sops", "ansible", "podman", "just", "pre-commit",
+      "btop", "ncdu", "nmap", "curl", "7zip",
+      "playwright", "cypress", "httpie", "openssh"
+    ],
+    "medium_priority": [
+      "kubectx", "stern", "argocd", "flux", "krew",
+      "copilot-cli", "cfn-lint", "localstack", "azure-functions-core-tools", "bicep", "infracost",
+      "age", "git-lfs", "hugo", "task",
+      "procs", "bottom", "duf", "mtr", "netcat", "lnav", "lynis", "fail2ban",
+      "aria2", "rclone", "winscp", "nssm", "putty",
+      "allure", "locust", "nyc"
+    ],
+    "low_priority": [
+      "linkerd", "appium", "mockoon", "prism", "testcontainers",
+      "goaccess", "everything"
+    ]
+  },
+  "notes": {
+    "npm_tools": "Tools like playwright, cypress require Node.js - consider adding npm as a package manager option",
+    "pip_tools": "Tools like locust, checkov require Python - consider adding pip as a package manager option",
+    "custom_installers": "Some tools (gcloud, krew, linkerd, flux) may need custom shell installers",
+    "windows_only": "sysinternals, nssm, winscp, everything are Windows-only",
+    "linux_macos_only": "ncdu, mtr, lnav, lynis, fail2ban, goaccess have limited Windows support"
+  }
+}
