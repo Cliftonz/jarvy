@@ -3,6 +3,10 @@
 //! This module provides the `ToolSpec` struct and `define_tool!` macro that
 //! eliminates ~80% of code duplication across tool implementations.
 //!
+//! Tools defined with `define_tool!` are automatically registered via the
+//! `inventory` crate, eliminating the need for manual registration in
+//! `register_all()`.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -19,6 +23,30 @@
 //! ```
 
 use super::common::{cmd_satisfies, has, run, InstallError, PackageManager};
+
+/// Type alias for tool handler functions registered in the registry.
+pub type ToolHandler = fn(&str) -> Result<(), InstallError>;
+
+/// A wrapper for tool registration data to enable inventory collection.
+/// This allows tools defined with `define_tool!` to be automatically discovered
+/// and registered at runtime without manual registration.
+///
+/// Contains:
+/// - The tool's static specification (`&'static ToolSpec`)
+/// - The handler function pointer for registry registration
+pub struct ToolEntry {
+    pub spec: &'static ToolSpec,
+    pub handler: ToolHandler,
+}
+
+// Enable inventory collection for ToolEntry
+inventory::collect!(ToolEntry);
+
+/// Iterate over all registered tool entries (spec + handler).
+/// Used by `register_all()` to automatically register all ToolSpec-based tools.
+pub fn iter_tools() -> impl Iterator<Item = &'static ToolEntry> {
+    inventory::iter::<ToolEntry>.into_iter()
+}
 
 #[cfg(target_os = "linux")]
 use super::common::{default_use_sudo, PkgOps};
@@ -59,6 +87,8 @@ pub struct LinuxInstall {
     pub zypper: Option<&'static str>,
     pub pacman: Option<&'static str>,
     pub apk: Option<&'static str>,
+    /// Homebrew formula for Linuxbrew (used when native packages unavailable)
+    pub brew: Option<&'static str>,
 }
 
 impl LinuxInstall {
@@ -71,6 +101,20 @@ impl LinuxInstall {
             zypper: Some(name),
             pacman: Some(name),
             apk: Some(name),
+            brew: None,
+        }
+    }
+
+    /// Create a LinuxInstall that uses Linuxbrew (for tools without native packages).
+    pub const fn brew(name: &'static str) -> Self {
+        Self {
+            apt: None,
+            dnf: None,
+            yum: None,
+            zypper: None,
+            pacman: None,
+            apk: None,
+            brew: Some(name),
         }
     }
 
@@ -83,6 +127,7 @@ impl LinuxInstall {
             zypper: None,
             pacman: None,
             apk: None,
+            brew: None,
         }
     }
 
@@ -95,6 +140,7 @@ impl LinuxInstall {
             PackageManager::Zypper => self.zypper,
             PackageManager::Pacman => self.pacman,
             PackageManager::Apk => self.apk,
+            PackageManager::Brew => self.brew,
             _ => None,
         }
     }
@@ -232,16 +278,25 @@ impl ToolSpec {
     fn install_linux(&self) -> Result<(), InstallError> {
         let linux = self.linux.ok_or(InstallError::Unsupported)?;
 
-        let pm = super::common::detect_linux_pm().ok_or(InstallError::Prereq(
-            "No supported Linux package manager on PATH (apt/dnf/yum/zypper/pacman/apk)",
-        ))?;
+        // Try native package manager first
+        if let Some(pm) = super::common::detect_linux_pm() {
+            if let Some(pkg_name) = linux.get(pm) {
+                let _ = PkgOps::update(pm, default_use_sudo());
+                return PkgOps::install(pm, pkg_name, default_use_sudo());
+            }
+        }
 
-        let pkg_name = linux.get(pm).ok_or_else(|| {
-            InstallError::Prereq("Tool not available for detected package manager")
-        })?;
+        // Fallback to Linuxbrew if available
+        if let Some(brew_pkg) = linux.brew {
+            if has("brew") {
+                run("brew", &["install", brew_pkg])?;
+                return Ok(());
+            }
+        }
 
-        let _ = PkgOps::update(pm, default_use_sudo());
-        PkgOps::install(pm, pkg_name, default_use_sudo())
+        Err(InstallError::Prereq(
+            "No supported Linux package manager on PATH (apt/dnf/yum/zypper/pacman/apk/brew)",
+        ))
     }
 
     #[cfg(target_os = "windows")]
@@ -280,6 +335,9 @@ impl ToolSpec {
 
 /// Macro for defining tools with minimal boilerplate.
 ///
+/// Tools defined with this macro are automatically registered via the `inventory`
+/// crate, eliminating the need for manual registration in `register_all()`.
+///
 /// # Example
 ///
 /// ```ignore
@@ -316,6 +374,14 @@ macro_rules! define_tool {
         pub fn add_handler(min_hint: &str) -> Result<(), $crate::tools::common::InstallError> {
             $name.ensure(min_hint)
         }
+
+        // Auto-register this tool with inventory (must be after handler definition)
+        ::inventory::submit! {
+            $crate::tools::spec::ToolEntry {
+                spec: &$name,
+                handler: add_handler,
+            }
+        }
     };
 
     // macOS helpers
@@ -335,6 +401,10 @@ macro_rules! define_tool {
     (@linux uniform: $val:expr) => {
         Some($crate::tools::spec::LinuxInstall::uniform($val))
     };
+    // Linuxbrew support (for tools like upbound/tap/up)
+    (@linux brew: $val:expr) => {
+        Some($crate::tools::spec::LinuxInstall::brew($val))
+    };
     (@linux apt: $apt:expr, dnf: $dnf:expr, pacman: $pacman:expr, apk: $apk:expr) => {
         Some($crate::tools::spec::LinuxInstall {
             apt: Some($apt),
@@ -343,6 +413,7 @@ macro_rules! define_tool {
             zypper: Some($dnf),
             pacman: Some($pacman),
             apk: Some($apk),
+            brew: None,
         })
     };
     (@linux apt: $apt:expr, dnf: $dnf:expr, yum: $yum:expr, zypper: $zypper:expr, pacman: $pacman:expr, apk: $apk:expr) => {
@@ -353,6 +424,7 @@ macro_rules! define_tool {
             zypper: Some($zypper),
             pacman: Some($pacman),
             apk: Some($apk),
+            brew: None,
         })
     };
 
@@ -417,7 +489,15 @@ mod tests {
         let linux = LinuxInstall::uniform("git");
         assert_eq!(linux.get(PackageManager::Apt), Some("git"));
         assert_eq!(linux.get(PackageManager::Dnf), Some("git"));
-        assert_eq!(linux.get(PackageManager::Brew), None); // Brew is not Linux
+        assert_eq!(linux.get(PackageManager::Brew), None); // uniform() doesn't set brew
+    }
+
+    #[test]
+    fn test_linux_install_brew() {
+        let linux = LinuxInstall::brew("upbound/tap/up");
+        assert_eq!(linux.brew, Some("upbound/tap/up"));
+        assert_eq!(linux.apt, None);
+        assert_eq!(linux.get(PackageManager::Brew), Some("upbound/tap/up"));
     }
 
     #[test]

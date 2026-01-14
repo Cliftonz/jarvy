@@ -3,7 +3,7 @@
   "parent_prd": "PRD-002",
   "title": "Implement Auto-Registration",
   "description": "Add automatic tool registration using inventory or linkme crate so tools register themselves at compile time without manual edits to register_all()",
-  "status": "pending",
+  "status": "completed",
   "priority": "medium",
   "dependencies": ["T6"],
   "estimated_complexity": "medium",
@@ -24,7 +24,7 @@
       "id": "T7.1",
       "title": "Evaluate inventory vs linkme crates",
       "description": "Compare the two crates for auto-registration capability, platform support, and ergonomics",
-      "status": "pending",
+      "status": "completed",
       "details": {
         "inventory": {
           "url": "https://crates.io/crates/inventory",
@@ -46,7 +46,7 @@
       "id": "T7.2",
       "title": "Add selected crate dependency",
       "description": "Add inventory or linkme to Cargo.toml with appropriate version",
-      "status": "pending",
+      "status": "completed",
       "files": ["Cargo.toml"],
       "acceptance_criteria": [
         "Crate added to dependencies",
@@ -57,7 +57,7 @@
       "id": "T7.3",
       "title": "Create registration infrastructure",
       "description": "Create the macro or trait that submits ToolSpec instances to global registry",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/spec.rs"],
       "implementation_notes": [
         "If using inventory: inventory::submit!(TOOL_SPEC)",
@@ -74,7 +74,7 @@
       "id": "T7.4",
       "title": "Update register_all() function",
       "description": "Modify register_all() to iterate over collected specs instead of manual registration",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/mod.rs"],
       "before_code": "let _ = register_tool(\"git\", crate::tools::git::git::add_handler);\nlet _ = register_tool(\"jq\", crate::tools::jq::jq::add_handler);\n// ... 40+ more lines",
       "after_code": "for spec in inventory::iter::<ToolSpec> {\n    let _ = register_tool(spec.name, spec.handler());\n}",
@@ -88,7 +88,7 @@
       "id": "T7.5",
       "title": "Update define_tool! macro for auto-registration",
       "description": "Extend define_tool! macro to automatically submit the created ToolSpec to the registry",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/spec.rs"],
       "acceptance_criteria": [
         "define_tool! automatically registers the tool",
@@ -100,7 +100,7 @@
       "id": "T7.6",
       "title": "Test auto-registration",
       "description": "Add tests verifying auto-registration works correctly",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/spec.rs", "tests/tools_registry.rs"],
       "acceptance_criteria": [
         "Test that migrated tools appear in registry",
