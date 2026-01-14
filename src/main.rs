@@ -67,6 +67,18 @@ enum Commands {
         #[clap(short, long)]
         output: Option<String>,
     },
+    /// List all supported tools or output the tool index
+    Tools {
+        /// Output the full tool index as JSON
+        #[clap(long)]
+        index: bool,
+        /// Output format: json, yaml, toml, pretty (for --index)
+        #[clap(short = 'F', long = "format", value_enum, default_value = "pretty")]
+        output_format: OutputFormat,
+        /// Optional file to write output to; prints to stdout if omitted
+        #[clap(short, long)]
+        output: Option<String>,
+    },
     /// Catch-all for unknown subcommands and their args
     #[clap(external_subcommand)]
     External(Vec<String>),
@@ -142,6 +154,7 @@ fn main() {
             Some(Commands::Bootstrap { .. }) => "bootstrap",
             Some(Commands::Configure { .. }) => "configure",
             Some(Commands::Get { .. }) => "get",
+            Some(Commands::Tools { .. }) => "tools",
             Some(Commands::External(..)) => "external",
             None => "interactive",
         };
@@ -319,6 +332,82 @@ fn main() {
 
             if let Some(path) = output {
                 if let Err(e) = fs::write(path, content) {
+                    eprintln!("Failed to write output: {}", e);
+                }
+            } else {
+                println!("{}", content);
+            }
+        }
+        Some(Commands::Tools {
+            index,
+            output_format,
+            output,
+        }) => {
+            let content = if *index {
+                // Output the full tool index
+                let tool_index = tools::spec::generate_tool_index();
+                match output_format {
+                    OutputFormat::Json => serde_json::to_string_pretty(&tool_index)
+                        .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e)),
+                    OutputFormat::Yaml => serde_yaml::to_string(&tool_index)
+                        .unwrap_or_else(|e| format!("error: {}", e)),
+                    OutputFormat::Toml => toml::to_string(&tool_index)
+                        .unwrap_or_else(|e| format!("error = \"{}\"", e)),
+                    OutputFormat::Pretty => {
+                        let mut s = String::new();
+                        s.push_str(&format!(
+                            "Tool Index v{} ({} tools)\n",
+                            tool_index.version, tool_index.count
+                        ));
+                        s.push_str("─".repeat(50).as_str());
+                        s.push('\n');
+                        for tool in &tool_index.tools {
+                            let platforms = [
+                                tool.macos.as_ref().map(|_| "macOS"),
+                                tool.linux.as_ref().map(|_| "Linux"),
+                                tool.windows.as_ref().map(|_| "Windows"),
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                            let custom = if tool.custom_install.has_custom_installer {
+                                " [custom]"
+                            } else {
+                                ""
+                            };
+                            s.push_str(&format!("{:<15} ({}){}  \n", tool.name, platforms, custom));
+                        }
+                        s
+                    }
+                }
+            } else {
+                // Just list tool names
+                let names = tools::spec::list_tool_names();
+                match output_format {
+                    OutputFormat::Json => serde_json::to_string_pretty(&names)
+                        .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e)),
+                    OutputFormat::Yaml => {
+                        serde_yaml::to_string(&names).unwrap_or_else(|e| format!("error: {}", e))
+                    }
+                    OutputFormat::Toml => {
+                        // TOML doesn't support bare arrays at root, wrap it
+                        let wrapper = serde_json::json!({ "tools": names });
+                        toml::to_string(&wrapper).unwrap_or_else(|e| format!("error = \"{}\"", e))
+                    }
+                    OutputFormat::Pretty => {
+                        let mut s = String::new();
+                        s.push_str(&format!("Supported tools ({}):\n", names.len()));
+                        for name in &names {
+                            s.push_str(&format!("  - {}\n", name));
+                        }
+                        s
+                    }
+                }
+            };
+
+            if let Some(path) = output {
+                if let Err(e) = fs::write(path, &content) {
                     eprintln!("Failed to write output: {}", e);
                 }
             } else {
