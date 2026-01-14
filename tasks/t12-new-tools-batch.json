@@ -1,0 +1,402 @@
+{
+  "id": "T12",
+  "parent_prd": "PRD-003",
+  "title": "Add New Developer Tools",
+  "description": "Implement support for 30+ new developer tools discovered through research of popular Homebrew formulas, DevOps tools, database CLIs, code quality tools, security utilities, and modern CLI alternatives",
+  "status": "pending",
+  "priority": "high",
+  "dependencies": [],
+  "estimated_complexity": "medium",
+  "research_sources": [
+    "Homebrew most popular formulas 2024",
+    "Kubernetes/DevOps tool ecosystems",
+    "Database CLI tools",
+    "Code quality and linting tools",
+    "Security and network utilities",
+    "Modern Rust-based CLI alternatives"
+  ],
+  "acceptance_criteria": [
+    "All tools use define_tool! macro where possible",
+    "Each tool has cross-platform support (macOS, Linux, Windows where available)",
+    "All tools compile and pass basic tests",
+    "Tools are auto-registered via inventory crate"
+  ],
+  "batches": [
+    {
+      "id": "T12.1",
+      "title": "Modern CLI Utilities (Tier 1)",
+      "description": "Essential modern CLI tools that every developer should have",
+      "status": "pending",
+      "priority": "high",
+      "tools": [
+        {
+          "name": "fzf",
+          "description": "Command-line fuzzy finder for files, history, processes",
+          "command": "fzf",
+          "macos": {"brew": "fzf"},
+          "linux": {"uniform": "fzf"},
+          "windows": {"winget": "junegunn.fzf"}
+        },
+        {
+          "name": "bat",
+          "description": "Cat clone with syntax highlighting and Git integration",
+          "command": "bat",
+          "macos": {"brew": "bat"},
+          "linux": {"uniform": "bat"},
+          "windows": {"winget": "sharkdp.bat"}
+        },
+        {
+          "name": "fd",
+          "description": "Fast and user-friendly alternative to find",
+          "command": "fd",
+          "macos": {"brew": "fd"},
+          "linux": {"apt": "fd-find", "dnf": "fd-find", "pacman": "fd", "apk": "fd"},
+          "windows": {"winget": "sharkdp.fd"}
+        },
+        {
+          "name": "eza",
+          "description": "Modern ls replacement with colors, icons, and Git awareness",
+          "command": "eza",
+          "macos": {"brew": "eza"},
+          "linux": {"apt": "eza", "pacman": "eza"},
+          "windows": {"winget": "eza-community.eza"}
+        },
+        {
+          "name": "zoxide",
+          "description": "Smarter cd command that learns your navigation patterns",
+          "command": "zoxide",
+          "macos": {"brew": "zoxide"},
+          "linux": {"uniform": "zoxide"},
+          "windows": {"winget": "ajeetdsouza.zoxide"}
+        },
+        {
+          "name": "delta",
+          "description": "Syntax-highlighting pager for git diff output",
+          "command": "delta",
+          "macos": {"brew": "git-delta"},
+          "linux": {"apt": "git-delta", "dnf": "git-delta", "pacman": "git-delta"},
+          "windows": {"winget": "dandavison.delta"}
+        },
+        {
+          "name": "lazygit",
+          "description": "Simple terminal UI for git commands",
+          "command": "lazygit",
+          "macos": {"brew": "lazygit"},
+          "linux": {"uniform": "lazygit"},
+          "windows": {"winget": "JesseDuffield.lazygit"}
+        },
+        {
+          "name": "starship",
+          "description": "Minimal, fast, customizable shell prompt",
+          "command": "starship",
+          "macos": {"brew": "starship"},
+          "linux": {"uniform": "starship"},
+          "windows": {"winget": "Starship.Starship"}
+        }
+      ]
+    },
+    {
+      "id": "T12.2",
+      "title": "GitHub and Git Tools",
+      "description": "Tools for GitHub workflows and Git productivity",
+      "status": "pending",
+      "priority": "high",
+      "tools": [
+        {
+          "name": "gh",
+          "description": "GitHub's official CLI for PRs, issues, and repos",
+          "command": "gh",
+          "macos": {"brew": "gh"},
+          "linux": {"uniform": "gh"},
+          "windows": {"winget": "GitHub.cli"}
+        },
+        {
+          "name": "direnv",
+          "description": "Directory-specific environment variables via .envrc",
+          "command": "direnv",
+          "macos": {"brew": "direnv"},
+          "linux": {"uniform": "direnv"},
+          "windows": {"winget": "direnv.direnv"}
+        }
+      ]
+    },
+    {
+      "id": "T12.3",
+      "title": "Kubernetes and DevOps Tools",
+      "description": "Essential tools for Kubernetes and cloud workflows",
+      "status": "pending",
+      "priority": "high",
+      "tools": [
+        {
+          "name": "kubectl",
+          "description": "Official Kubernetes command-line tool",
+          "command": "kubectl",
+          "macos": {"brew": "kubectl"},
+          "linux": {"uniform": "kubectl"},
+          "windows": {"winget": "Kubernetes.kubectl"}
+        },
+        {
+          "name": "helm",
+          "description": "Package manager for Kubernetes applications",
+          "command": "helm",
+          "macos": {"brew": "helm"},
+          "linux": {"uniform": "helm"},
+          "windows": {"winget": "Helm.Helm"}
+        },
+        {
+          "name": "k9s",
+          "description": "Terminal UI for Kubernetes cluster management",
+          "command": "k9s",
+          "macos": {"brew": "derailed/k9s/k9s"},
+          "linux": {"uniform": "k9s"},
+          "windows": {"winget": "Derailed.k9s"}
+        },
+        {
+          "name": "kind",
+          "description": "Run local Kubernetes clusters using Docker",
+          "command": "kind",
+          "macos": {"brew": "kind"},
+          "linux": {"brew": "kind"},
+          "windows": {"winget": "Kubernetes.kind"}
+        },
+        {
+          "name": "minikube",
+          "description": "Local Kubernetes cluster for development",
+          "command": "minikube",
+          "macos": {"brew": "minikube"},
+          "linux": {"uniform": "minikube"},
+          "windows": {"winget": "Kubernetes.minikube"}
+        },
+        {
+          "name": "kubectx",
+          "description": "Fast Kubernetes context and namespace switching",
+          "command": "kubectx",
+          "macos": {"brew": "kubectx"},
+          "linux": {"brew": "kubectx"},
+          "windows": {"winget": "ahmetb.kubectx"}
+        },
+        {
+          "name": "kustomize",
+          "description": "Kubernetes YAML customization without templates",
+          "command": "kustomize",
+          "macos": {"brew": "kustomize"},
+          "linux": {"uniform": "kustomize"},
+          "windows": {"winget": "Kubernetes.kustomize"}
+        },
+        {
+          "name": "argocd",
+          "description": "GitOps continuous delivery for Kubernetes",
+          "command": "argocd",
+          "macos": {"brew": "argocd"},
+          "linux": {"custom_install": true, "note": "curl binary from GitHub"},
+          "windows": {"custom_install": true, "note": "Download from GitHub"}
+        }
+      ]
+    },
+    {
+      "id": "T12.4",
+      "title": "Database CLI Tools",
+      "description": "Command-line clients for popular databases",
+      "status": "pending",
+      "priority": "medium",
+      "tools": [
+        {
+          "name": "psql",
+          "description": "PostgreSQL command-line client",
+          "command": "psql",
+          "macos": {"brew": "libpq"},
+          "linux": {"apt": "postgresql-client", "dnf": "postgresql", "pacman": "postgresql"},
+          "windows": {"winget": "PostgreSQL.PostgreSQL"}
+        },
+        {
+          "name": "mysql",
+          "description": "MySQL command-line client",
+          "command": "mysql",
+          "macos": {"brew": "mysql-client"},
+          "linux": {"apt": "default-mysql-client", "dnf": "mysql", "pacman": "mysql"},
+          "windows": {"winget": "Oracle.MySQL"}
+        },
+        {
+          "name": "redis",
+          "description": "Redis server and CLI tools",
+          "command": "redis-cli",
+          "macos": {"brew": "redis"},
+          "linux": {"apt": "redis-tools", "dnf": "redis", "pacman": "redis"},
+          "windows": null,
+          "note": "No official Windows support"
+        },
+        {
+          "name": "mongosh",
+          "description": "Modern MongoDB Shell",
+          "command": "mongosh",
+          "macos": {"brew": "mongosh"},
+          "linux": {"custom_install": true, "note": "MongoDB apt repo required"},
+          "windows": {"winget": "MongoDB.Shell"}
+        },
+        {
+          "name": "sqlite",
+          "description": "SQLite database and CLI",
+          "command": "sqlite3",
+          "macos": {"brew": "sqlite"},
+          "linux": {"apt": "sqlite3", "dnf": "sqlite", "pacman": "sqlite"},
+          "windows": {"winget": "SQLite.SQLite"}
+        }
+      ]
+    },
+    {
+      "id": "T12.5",
+      "title": "Code Quality and Linting Tools",
+      "description": "Linters and formatters for code quality",
+      "status": "pending",
+      "priority": "medium",
+      "tools": [
+        {
+          "name": "shellcheck",
+          "description": "Static analysis for shell scripts",
+          "command": "shellcheck",
+          "macos": {"brew": "shellcheck"},
+          "linux": {"uniform": "shellcheck"},
+          "windows": {"winget": "koalaman.shellcheck"}
+        },
+        {
+          "name": "shfmt",
+          "description": "Shell script formatter",
+          "command": "shfmt",
+          "macos": {"brew": "shfmt"},
+          "linux": {"uniform": "shfmt"},
+          "windows": {"winget": "mvdan.shfmt"}
+        },
+        {
+          "name": "hadolint",
+          "description": "Dockerfile linter with best practices",
+          "command": "hadolint",
+          "macos": {"brew": "hadolint"},
+          "linux": {"custom_install": true, "note": "Binary from GitHub releases"},
+          "windows": {"custom_install": true, "note": "Binary from GitHub releases"}
+        },
+        {
+          "name": "ruff",
+          "description": "Extremely fast Python linter and formatter",
+          "command": "ruff",
+          "macos": {"brew": "ruff"},
+          "linux": {"custom_install": true, "note": "install script from astral.sh"},
+          "windows": {"choco": "ruff"}
+        },
+        {
+          "name": "yamllint",
+          "description": "YAML linter for syntax and style",
+          "command": "yamllint",
+          "macos": {"brew": "yamllint"},
+          "linux": {"uniform": "yamllint"},
+          "windows": {"custom_install": true, "note": "pip install yamllint"}
+        },
+        {
+          "name": "actionlint",
+          "description": "Static checker for GitHub Actions workflows",
+          "command": "actionlint",
+          "macos": {"brew": "actionlint"},
+          "linux": {"custom_install": true, "note": "Binary from GitHub"},
+          "windows": {"custom_install": true, "note": "Binary from GitHub"}
+        }
+      ]
+    },
+    {
+      "id": "T12.6",
+      "title": "HTTP and Network Tools",
+      "description": "Tools for API testing and network operations",
+      "status": "pending",
+      "priority": "medium",
+      "tools": [
+        {
+          "name": "curl",
+          "description": "Command-line tool for URL data transfer",
+          "command": "curl",
+          "macos": {"brew": "curl"},
+          "linux": {"uniform": "curl"},
+          "windows": {"winget": "cURL.cURL"}
+        },
+        {
+          "name": "httpie",
+          "description": "User-friendly HTTP client with JSON support",
+          "command": "http",
+          "macos": {"brew": "httpie"},
+          "linux": {"uniform": "httpie"},
+          "windows": {"winget": "HTTPie.HTTPie"}
+        },
+        {
+          "name": "nmap",
+          "description": "Network discovery and security scanner",
+          "command": "nmap",
+          "macos": {"brew": "nmap"},
+          "linux": {"uniform": "nmap"},
+          "windows": {"winget": "Insecure.Nmap"}
+        }
+      ]
+    },
+    {
+      "id": "T12.7",
+      "title": "Security and Secrets Tools",
+      "description": "Tools for security scanning and secrets management",
+      "status": "pending",
+      "priority": "medium",
+      "tools": [
+        {
+          "name": "trivy",
+          "description": "Vulnerability scanner for containers and repos",
+          "command": "trivy",
+          "macos": {"brew": "trivy"},
+          "linux": {"custom_install": true, "note": "Aqua Security apt repo"},
+          "windows": {"winget": "AquaSecurity.Trivy"}
+        },
+        {
+          "name": "age",
+          "description": "Simple, modern file encryption tool",
+          "command": "age",
+          "macos": {"brew": "age"},
+          "linux": {"apt": "age", "dnf": "age", "pacman": "age", "apk": "age"},
+          "windows": {"winget": "FiloSottile.age"}
+        },
+        {
+          "name": "sops",
+          "description": "Encrypted file editor for secrets in Git",
+          "command": "sops",
+          "macos": {"brew": "sops"},
+          "linux": {"custom_install": true, "note": "deb from GitHub releases"},
+          "windows": {"winget": "Mozilla.SOPS"}
+        }
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "simple_tools": "Use define_tool! macro with standard package manager installs",
+    "custom_install_tools": [
+      "argocd - requires curl binary download on Linux",
+      "mongosh - requires MongoDB apt repo setup",
+      "hadolint - binary download from GitHub",
+      "ruff - astral.sh install script on Linux",
+      "trivy - Aqua Security apt repo",
+      "sops - deb download from GitHub"
+    ],
+    "windows_limitations": [
+      "redis - no official Windows support, skip or note WSL",
+      "some tools may need manual binary downloads"
+    ]
+  },
+  "statistics": {
+    "total_tools": 35,
+    "simple_define_tool": 26,
+    "custom_install_required": 9,
+    "full_cross_platform": 30,
+    "limited_platform_support": 5
+  },
+  "risks": [
+    {
+      "description": "Package names may change between distro versions",
+      "mitigation": "Test on multiple distributions in CI"
+    },
+    {
+      "description": "Custom install tools may have breaking changes",
+      "mitigation": "Pin versions in install scripts where possible"
+    }
+  ]
+}
