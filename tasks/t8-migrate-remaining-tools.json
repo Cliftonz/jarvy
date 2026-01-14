@@ -23,7 +23,7 @@
       "id": "T8.1",
       "title": "Categorize tools by complexity",
       "description": "Identify which tools need custom_install vs standard ToolSpec",
-      "status": "pending",
+      "status": "completed",
       "categories": {
         "simple_uniform": {
           "description": "Tools where package name is same across all package managers",
@@ -55,7 +55,7 @@
       "id": "T8.2",
       "title": "Migrate simple tools - Batch 1 (10 tools)",
       "description": "Convert first batch of simple tools to ToolSpec pattern",
-      "status": "pending",
+      "status": "completed",
       "tools": [
         {"name": "htop", "category": "simple_uniform", "linux_pkg": "htop"},
         {"name": "tmux", "category": "simple_uniform", "linux_pkg": "tmux"},
@@ -78,7 +78,7 @@
       "id": "T8.3",
       "title": "Migrate simple tools - Batch 2 (10 tools)",
       "description": "Convert second batch of simple tools to ToolSpec pattern",
-      "status": "pending",
+      "status": "completed",
       "tools": [
         {"name": "docker", "category": "simple_varied", "note": "docker.io on apt"},
         {"name": "terraform", "category": "simple_varied", "note": "hashicorp tap"},
@@ -101,7 +101,7 @@
       "id": "T8.4",
       "title": "Migrate simple tools - Batch 3 (remaining simple)",
       "description": "Convert remaining simple tools to ToolSpec pattern",
-      "status": "pending",
+      "status": "completed",
       "tools": [
         {"name": "brew", "category": "macos_only", "note": "self-installing"},
         {"name": "iterm2", "category": "macos_only", "note": "cask only"},
@@ -121,7 +121,7 @@
       "id": "T8.5",
       "title": "Migrate complex tools with custom_install",
       "description": "Convert tools requiring custom installation logic",
-      "status": "pending",
+      "status": "completed",
       "tools": [
         {
           "name": "nvm",
@@ -170,7 +170,7 @@
       "id": "T8.6",
       "title": "Run full test suite and integration tests",
       "description": "Verify all tools work correctly after migration",
-      "status": "pending",
+      "status": "completed",
       "commands": [
         "cargo test --all",
         "cargo test --test tools_install",

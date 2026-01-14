@@ -29,7 +29,7 @@
       "id": "T11.1",
       "title": "Add comprehensive rustdoc to spec.rs",
       "description": "Document all structs, methods, and the macro with examples",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/spec.rs"],
       "items_to_document": [
         {
@@ -67,7 +67,7 @@
       "id": "T11.2",
       "title": "Create adding-tools.md guide",
       "description": "Write step-by-step guide for adding new tools to Jarvy",
-      "status": "pending",
+      "status": "completed",
       "files": ["docs/adding-tools.md"],
       "outline": [
         "# Adding Tools to Jarvy",
@@ -99,7 +99,7 @@
       "id": "T11.3",
       "title": "Update CLAUDE.md",
       "description": "Update project guidance with new patterns and architecture",
-      "status": "pending",
+      "status": "completed",
       "files": ["CLAUDE.md"],
       "sections_to_update": [
         {
@@ -125,7 +125,7 @@
       "id": "T11.4",
       "title": "Create migration guide",
       "description": "Document how to migrate existing tools to new pattern",
-      "status": "pending",
+      "status": "completed",
       "files": ["docs/adding-tools.md"],
       "content": {
         "title": "Migrating Existing Tools",
@@ -146,7 +146,7 @@
       "id": "T11.5",
       "title": "Add inline code examples",
       "description": "Add example code blocks throughout documentation",
-      "status": "pending",
+      "status": "completed",
       "examples_needed": [
         {
           "name": "Simple uniform tool",
@@ -171,7 +171,7 @@
       "id": "T11.6",
       "title": "Update README.md",
       "description": "Add brief mention of ToolSpec pattern in main README",
-      "status": "pending",
+      "status": "completed",
       "files": ["README.md"],
       "changes": [
         "Add 'Contributing' section if not present",
@@ -187,7 +187,7 @@
       "id": "T11.7",
       "title": "Generate and review cargo doc",
       "description": "Generate documentation and review for completeness",
-      "status": "pending",
+      "status": "completed",
       "commands": [
         "cargo doc --no-deps --open",
         "cargo doc --document-private-items"

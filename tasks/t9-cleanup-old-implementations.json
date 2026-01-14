@@ -26,7 +26,7 @@
       "id": "T9.1",
       "title": "Audit remaining boilerplate",
       "description": "Identify any remaining manual implementations that weren't migrated",
-      "status": "pending",
+      "status": "completed",
       "commands": [
         "grep -r 'fn ensure' src/tools/*/",
         "grep -r 'fn install_macos' src/tools/*/",
@@ -42,7 +42,7 @@
       "id": "T9.2",
       "title": "Remove old function implementations",
       "description": "Delete deprecated ensure/install functions from each tool file",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/*/*.rs"],
       "patterns_to_remove": [
         "fn ensure(_min_hint: &str) -> Result<(), InstallError> { ... }",
@@ -61,7 +61,7 @@
       "id": "T9.3",
       "title": "Simplify tool file structure",
       "description": "Reduce each tool file to minimal define_tool! invocation plus tests",
-      "status": "pending",
+      "status": "completed",
       "target_structure": "//! Tool description\n\nuse crate::define_tool;\n\ndefine_tool!(TOOL_NAME, {\n    command: \"cmd\",\n    macos: { brew: \"pkg\" },\n    linux: { uniform: \"pkg\" },\n    windows: { winget: \"Pkg.Id\" },\n});\n\n#[cfg(test)]\nmod tests { ... }",
       "acceptance_criteria": [
         "Each tool file follows consistent structure",
@@ -73,7 +73,7 @@
       "id": "T9.4",
       "title": "Clean up register_all() in mod.rs",
       "description": "Remove manual registration lines if auto-registration is implemented",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/mod.rs"],
       "acceptance_criteria": [
         "Manual register_tool() calls removed",
@@ -85,7 +85,7 @@
       "id": "T9.5",
       "title": "Remove unused common.rs helpers",
       "description": "Clean up helper functions that are no longer needed after abstraction",
-      "status": "pending",
+      "status": "completed",
       "files": ["src/tools/common.rs"],
       "potential_removals": [
         "Functions only used by old boilerplate",
@@ -102,7 +102,7 @@
       "id": "T9.6",
       "title": "Run clippy and fix all warnings",
       "description": "Ensure no dead code or unused import warnings remain",
-      "status": "pending",
+      "status": "completed",
       "commands": [
         "cargo clippy --all-features -- -D warnings",
         "cargo clippy --all-targets -- -D warnings"
@@ -117,7 +117,7 @@
       "id": "T9.7",
       "title": "Verify test coverage",
       "description": "Ensure code coverage is maintained after cleanup",
-      "status": "pending",
+      "status": "completed",
       "commands": [
         "cargo tarpaulin --out Html"
       ],
