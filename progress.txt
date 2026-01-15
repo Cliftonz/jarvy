@@ -1335,3 +1335,44 @@ Required `unsafe` blocks for environment variable modification in tests due to R
 3. **Case-Insensitive Checks**: Azure DevOps and AppVeyor use `True` with capital T
 
 ---
+
+# PRD Correction: Service Management vs Post-Install Hooks
+
+## Date: 2026-01-15
+
+## Issue
+
+PRD-009 was incorrectly implemented as "Tool-Specific Post-Install Hooks" when it should have
+been "Service Management" - allowing developers to create docker-compose.yml or Tiltfile and
+have jarvy start them.
+
+## Resolution
+
+1. **Renamed PRD-009 to PRD-003.1**
+   - The post-install hooks feature extends PRD-003 (hooks infrastructure)
+   - Renamed file: `prd-009-tool-post-install-hooks.json` → `prd-003.1-tool-post-install-hooks.json`
+   - Updated ID from `PRD-009` to `PRD-003.1`
+   - Updated parent_prd from `PRD-009` to `PRD-003`
+
+2. **Created Correct PRD-009 for Service Management**
+   - File: `tasks/prd-009-service-management.json`
+   - Purpose: Start project services (docker-compose, tilt) from jarvy
+   - Features:
+     - docker-compose.yml detection and startup
+     - Tiltfile detection and startup
+     - `[services]` config section in jarvy.toml
+     - `jarvy services start/stop/status` commands
+     - Optional auto-start during setup
+
+3. **Updated References**
+   - Updated `additional-post-install-hooks.json` to reference PRD-003.1 instead of PRD-009
+
+## Learnings
+
+1. **PRD Numbering**: When a feature extends another PRD, use sub-numbering (e.g., PRD-003.1)
+   instead of assigning a new major number
+
+2. **Scope Validation**: Always verify PRD scope with stakeholders before implementation to
+   avoid renumbering later
+
+---
