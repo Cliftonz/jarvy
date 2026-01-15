@@ -1013,3 +1013,62 @@ dotenv_path = ".env"
    for CLI tools
 
 ---
+
+# TOOLS-HOOKS: Tools That Benefit from Post-Install Hooks - Verification
+
+## Verified: 2026-01-15
+
+## Summary
+
+Verified the tools-needing-hooks.json catalog works correctly with PRD-003 hooks system. This catalog provides ready-to-use hook examples for 15 common developer tools.
+
+### Tools with Hook Examples
+
+| Tool | Hook Type | Example Usage |
+|------|-----------|---------------|
+| git | config | `git config --global init.defaultBranch main` |
+| node | npm install | `npm install -g pnpm typescript` |
+| rust | rustup/cargo | `rustup component add clippy rustfmt` |
+| python3 | pip install | `pip3 install --upgrade pip && pip3 install pipenv` |
+| docker | daemon config | `docker context use default` |
+| go | go install | `go install golang.org/x/tools/gopls@latest` |
+| kubectl | config | `kubectl config set-context --current --namespace=default` |
+| helm | repo add | `helm repo add stable https://charts.helm.sh/stable` |
+| terraform | autocomplete | `terraform -install-autocomplete` |
+| starship | shell init | `eval "$(starship init zsh)"` |
+| gh | auth | Interactive login prompt |
+| zsh | oh-my-zsh | Installation prompt |
+| nvim | plugins | Config directory guidance |
+| awscli | profile | `aws configure set region us-east-1` |
+
+### Testing Results
+
+Dry-run testing of the example config confirms:
+
+1. **pre_setup hook**: Executes before any tool installation
+2. **per-tool post_install hooks**: Execute after each tool with correct env vars
+3. **post_setup hook**: Executes after all tools complete
+
+### Environment Variables Available to Hooks
+
+| Variable | Value |
+|----------|-------|
+| `JARVY_TOOL` | Tool name (e.g., "git", "node") |
+| `JARVY_VERSION` | Version being installed |
+| `JARVY_OS` | Operating system (macos, linux, windows) |
+| `JARVY_ARCH` | CPU architecture (aarch64, x86_64) |
+| `JARVY_HOME` | Jarvy config directory (~/.jarvy) |
+
+### Key Learnings
+
+1. **Hook Config Inheritance**: Tool hooks inherit global config (timeout, shell, continue_on_error)
+2. **Shell Detection**: Uses SHELL env var on Unix, defaults to /bin/sh if not set
+3. **Error Handling**: Hook failures respect continue_on_error setting
+4. **Dry-Run Visibility**: --dry-run shows exact scripts and environment
+
+### Related Tasks
+
+- PRD-003: Post-Install Hooks (implemented hooks infrastructure)
+- PRD-009: Tool-Specific Post-Install Hooks (default hooks built into tools)
+
+---

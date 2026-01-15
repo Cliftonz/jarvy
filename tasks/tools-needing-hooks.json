@@ -2,10 +2,12 @@
   "id": "TOOLS-HOOKS",
   "title": "Tools That Benefit from Post-Install Hooks",
   "description": "Catalog of tools that commonly require post-install configuration and suggested hook scripts for jarvy.toml templates",
-  "status": "pending",
+  "status": "completed",
   "priority": "low",
   "dependencies": ["PRD-003"],
   "created_date": "2026-01-14",
+  "completed_date": "2026-01-15",
+  "completion_notes": "Verified all example hooks work correctly with PRD-003 hooks system. Dry-run testing confirms pre_setup, post_install, and post_setup hooks execute with proper environment variables (JARVY_TOOL, JARVY_VERSION, JARVY_OS, JARVY_ARCH, JARVY_HOME).",
   "purpose": "Provide ready-to-use hook examples for common tools to help users get started with hooks",
   "tools": [
     {
