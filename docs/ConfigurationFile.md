@@ -81,6 +81,69 @@ You can specify a custom path to the configuration file using the `--file` optio
 jarvy setup --file ./path/to/your/config/file.toml
 ```
 
+## Hooks
+
+Jarvy supports hooks that run shell scripts before and after tool installations. Hooks are useful for custom setup tasks, configuration, or validation.
+
+### Hook Types
+
+- **pre_setup**: Runs once before any tools are installed
+- **post_setup**: Runs once after all tools are installed
+- **post_install**: Runs after a specific tool is installed (per-tool)
+
+### Basic Example
+
+```toml
+[provisioner]
+git = "latest"
+node = "20"
+
+[hooks]
+pre_setup = "echo 'Starting setup...'"
+post_setup = "echo 'Setup complete!'"
+
+[hooks.git]
+post_install = "git config --global init.defaultBranch main"
+
+[hooks.node]
+post_install = "npm install -g pnpm"
+```
+
+### Hook Configuration
+
+You can customize hook execution with the `[hooks.config]` section:
+
+```toml
+[hooks.config]
+shell = "bash"           # Shell to use (default: auto-detected)
+timeout = 300            # Timeout in seconds (default: 300)
+continue_on_error = false # Continue if hook fails (default: false)
+```
+
+### Environment Variables
+
+Hooks have access to the following environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `JARVY_TOOL` | Name of the tool (for per-tool hooks) |
+| `JARVY_VERSION` | Version being installed |
+| `JARVY_OS` | Operating system (macos, linux, windows) |
+| `JARVY_ARCH` | CPU architecture (x86_64, aarch64, etc.) |
+| `JARVY_HOME` | Jarvy home directory (~/.jarvy) |
+
+### CLI Flags
+
+- `--no-hooks`: Skip all hook execution
+- `--dry-run`: Show what hooks would run without executing
+
+```sh
+jarvy setup --no-hooks      # Skip hooks
+jarvy setup --dry-run       # Preview hooks
+```
+
+For more details, see [Hooks Documentation](./hooks.md).
+
 ## Error Handling
 
 Jarvy will report an error if the configuration file is not found or if there is an issue with the TOML syntax. Make sure your configuration file is correctly formatted and located at the specified path.

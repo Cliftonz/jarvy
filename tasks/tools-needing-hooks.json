@@ -1,0 +1,159 @@
+{
+  "id": "TOOLS-HOOKS",
+  "title": "Tools That Benefit from Post-Install Hooks",
+  "description": "Catalog of tools that commonly require post-install configuration and suggested hook scripts for jarvy.toml templates",
+  "status": "pending",
+  "priority": "low",
+  "dependencies": ["PRD-003"],
+  "created_date": "2026-01-14",
+  "purpose": "Provide ready-to-use hook examples for common tools to help users get started with hooks",
+  "tools": [
+    {
+      "name": "git",
+      "hook_type": "post_install",
+      "description": "Configure git defaults after installation",
+      "suggested_hooks": [
+        "git config --global init.defaultBranch main",
+        "git config --global core.autocrlf input",
+        "git config --global pull.rebase true"
+      ],
+      "platform_notes": "Works on all platforms"
+    },
+    {
+      "name": "node",
+      "hook_type": "post_install",
+      "description": "Install global npm packages after Node.js installation",
+      "suggested_hooks": [
+        "npm install -g pnpm",
+        "npm install -g yarn",
+        "npm install -g typescript ts-node"
+      ],
+      "platform_notes": "Works on all platforms"
+    },
+    {
+      "name": "rust",
+      "hook_type": "post_install",
+      "description": "Add Rust components and install common cargo tools",
+      "suggested_hooks": [
+        "rustup component add clippy rustfmt",
+        "cargo install cargo-watch cargo-edit cargo-expand"
+      ],
+      "platform_notes": "Works on all platforms"
+    },
+    {
+      "name": "python3",
+      "hook_type": "post_install",
+      "description": "Upgrade pip and install common Python tools",
+      "suggested_hooks": [
+        "pip3 install --upgrade pip",
+        "pip3 install pipenv virtualenv black ruff"
+      ],
+      "platform_notes": "Works on all platforms"
+    },
+    {
+      "name": "docker",
+      "hook_type": "post_install",
+      "description": "Configure Docker daemon and install plugins",
+      "suggested_hooks": [
+        "docker context use default"
+      ],
+      "platform_notes": "May require elevated privileges or Docker Desktop running"
+    },
+    {
+      "name": "go",
+      "hook_type": "post_install",
+      "description": "Install common Go tools",
+      "suggested_hooks": [
+        "go install golang.org/x/tools/gopls@latest",
+        "go install github.com/cosmtrek/air@latest"
+      ],
+      "platform_notes": "Requires GOPATH to be set correctly"
+    },
+    {
+      "name": "kubectl",
+      "hook_type": "post_install",
+      "description": "Configure kubectl and install plugins",
+      "suggested_hooks": [
+        "kubectl config set-context --current --namespace=default"
+      ],
+      "platform_notes": "Requires cluster access to be configured"
+    },
+    {
+      "name": "zsh",
+      "hook_type": "post_install",
+      "description": "Install Oh My Zsh or configure shell",
+      "suggested_hooks": [
+        "echo 'Zsh installed. Run: sh -c \"$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" to install Oh My Zsh'"
+      ],
+      "platform_notes": "Unix only, interactive installation recommended"
+    },
+    {
+      "name": "nvim",
+      "hook_type": "post_install",
+      "description": "Install plugin managers and sync plugins",
+      "suggested_hooks": [
+        "echo 'Neovim installed. Configure plugins in ~/.config/nvim/'"
+      ],
+      "platform_notes": "Plugin installation may require additional setup"
+    },
+    {
+      "name": "awscli",
+      "hook_type": "post_install",
+      "description": "Configure AWS CLI profiles",
+      "suggested_hooks": [
+        "aws configure set region us-east-1 --profile default"
+      ],
+      "platform_notes": "Requires AWS credentials to be configured"
+    },
+    {
+      "name": "terraform",
+      "hook_type": "post_install",
+      "description": "Install Terraform providers and configure cache",
+      "suggested_hooks": [
+        "terraform -install-autocomplete"
+      ],
+      "platform_notes": "Shell-specific autocomplete installation"
+    },
+    {
+      "name": "helm",
+      "hook_type": "post_install",
+      "description": "Add common Helm chart repositories",
+      "suggested_hooks": [
+        "helm repo add stable https://charts.helm.sh/stable",
+        "helm repo add bitnami https://charts.bitnami.com/bitnami",
+        "helm repo update"
+      ],
+      "platform_notes": "Requires internet access"
+    },
+    {
+      "name": "gh",
+      "hook_type": "post_install",
+      "description": "Authenticate GitHub CLI",
+      "suggested_hooks": [
+        "echo 'GitHub CLI installed. Run: gh auth login to authenticate'"
+      ],
+      "platform_notes": "Interactive authentication required"
+    },
+    {
+      "name": "starship",
+      "hook_type": "post_install",
+      "description": "Add starship init to shell config",
+      "suggested_hooks": [
+        "echo 'eval \"$(starship init zsh)\"' >> ~/.zshrc || true",
+        "echo 'eval \"$(starship init bash)\"' >> ~/.bashrc || true"
+      ],
+      "platform_notes": "Shell-specific configuration"
+    }
+  ],
+  "example_config": {
+    "description": "Example jarvy.toml with common hooks",
+    "content": "[provisioner]\ngit = \"latest\"\nnode = \"20\"\nrust = \"stable\"\npython3 = \"3.12\"\n\n[hooks]\npre_setup = \"echo 'Setting up development environment...'\"\npost_setup = \"echo 'Development environment ready!'\"\n\n[hooks.config]\ntimeout = 600\ncontinue_on_error = false\n\n[hooks.git]\npost_install = \"git config --global init.defaultBranch main\"\n\n[hooks.node]\npost_install = \"npm install -g pnpm typescript\"\n\n[hooks.rust]\npost_install = \"rustup component add clippy rustfmt\"\n\n[hooks.python3]\npost_install = \"pip3 install --upgrade pip && pip3 install pipenv\""
+  },
+  "future_enhancements": [
+    "Add pre_install hooks for prerequisite checks",
+    "Support platform-specific hooks (post_install_windows, post_install_macos)",
+    "Add hook templates library in Jarvy",
+    "Support downloading hook scripts from URLs",
+    "Add hook validation/linting"
+  ]
+}

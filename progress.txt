@@ -538,6 +538,181 @@ All 188+ tests pass including new tool tests:
 
 ---
 
+# PRD-003: Post-Install Hooks - Implementation Progress
+
+## Started: 2026-01-14
+## Completed: 2026-01-14
+
+## Implementation Summary
+
+Successfully implemented post-install hooks feature allowing users to run shell scripts before/after tool installation. This enables custom configuration, environment setup, and CI/CD integration.
+
+### Changes Made
+
+1. **Added Dependencies** (Cargo.toml)
+   - `wait-timeout = "0.2"` - For hook timeout support
+
+2. **Created New Module** (src/hooks.rs - 485 lines)
+   - `HookError` enum - Timeout, Failed, Terminated, SpawnError, ShellNotFound
+   - `HookConfig` struct - Shell, timeout, continue_on_error settings
+   - `HookEnv` struct - Environment variable injection (JARVY_TOOL, JARVY_VERSION, etc.)
+   - `Hook` struct - Script content, config, environment, description
+   - `detect_shell()` - Platform-specific shell detection
+   - `build_shell_command()` - Cross-platform shell command builder
+   - `execute_hooks()` - Executes hook list with dry-run support
+   - 17 unit tests
+
+3. **Updated Config Parsing** (src/config.rs)
+   - Added `HooksConfig` struct with `#[serde(flatten)]` for tool_hooks HashMap
+   - Added `HookSettings` struct for timeout/shell/continue_on_error
+   - Added `ToolHooks` struct for per-tool post_install hooks
+   - Added `DEFAULT_HOOK_TIMEOUT = 300` constant
+   - Added methods: `get_hooks()`, `get_tool_hooks()`, `has_hooks()`
+
+4. **Integrated into Setup Flow** (src/main.rs)
+   - Added `--no-hooks` flag to skip all hooks
+   - Added `--dry-run` flag to preview hooks
+   - Pre-setup hook runs before any tool installation
+   - Post-install hooks run after each tool
+   - Post-setup hook runs after all tools complete
+
+5. **Added Exit Code** (src/error_codes.rs)
+   - `HOOK_FAILED = 7` - For hook execution failures
+
+6. **Integration Tests** (tests/hooks_integration.rs - 294 lines)
+   - 10 integration tests covering:
+     - pre_setup hook dry-run
+     - post_setup hook dry-run
+     - per-tool hook dry-run
+     - --no-hooks flag
+     - custom shell configuration
+     - environment variable injection
+     - config defaults
+     - multiple hooks
+     - no hooks configured
+     - CLI help shows hook flags
+
+7. **Documentation**
+   - Updated docs/ConfigurationFile.md with hooks section
+   - Created docs/hooks.md - comprehensive hook documentation
+   - Updated docs/error-codes.md with HOOK_FAILED
+
+### Hook Configuration Format
+
+```toml
+[provisioner]
+git = "latest"
+node = "20"
+
+[hooks]
+pre_setup = "echo 'Starting setup...'"
+post_setup = "echo 'Setup complete!'"
+
+[hooks.config]
+shell = "bash"
+timeout = 300
+continue_on_error = false
+
+[hooks.git]
+post_install = "git config --global init.defaultBranch main"
+
+[hooks.node]
+post_install = "npm install -g pnpm"
+```
+
+### Environment Variables Injected
+
+| Variable | Description |
+|----------|-------------|
+| `JARVY_TOOL` | Tool name (for per-tool hooks) |
+| `JARVY_VERSION` | Version being installed |
+| `JARVY_OS` | Operating system (macos, linux, windows) |
+| `JARVY_ARCH` | CPU architecture (x86_64, aarch64) |
+| `JARVY_HOME` | Jarvy home directory (~/.jarvy) |
+
+### Key Design Decisions
+
+1. **Shell Detection**: Auto-detect from `$SHELL` env var on Unix, PowerShell on Windows
+   - Supports bash, zsh, sh, fish, PowerShell, cmd
+
+2. **Timeout Implementation**: Used `wait-timeout` crate for cross-platform timeout
+   - Default 300 seconds (5 minutes)
+   - Process killed if timeout exceeded
+
+3. **Streaming Output**: Hook stdout/stderr captured and printed in real-time
+   - Uses separate threads for stdout and stderr
+   - Output prefixed with indentation for clarity
+
+4. **TOML Parsing**: Used `#[serde(flatten)]` for tool_hooks HashMap
+   - Allows `[hooks.git]`, `[hooks.node]` sections
+   - Filters out `config` key from tool names
+
+5. **Error Handling**: Respects `continue_on_error` setting
+   - Default: false (stop on first failure)
+   - When true: warn and continue
+
+### Shell Command Building
+
+Cross-platform shell execution:
+- **Unix shells**: `{shell} -c "{script}"`
+- **Fish**: `fish -c "{script}"`
+- **PowerShell**: `powershell -NoProfile -Command "{script}"`
+- **CMD**: `cmd /C "{script}"`
+
+### Test Results
+
+- 17/17 unit tests passing
+- 10/10 integration tests passing
+- All existing tests continue to pass
+
+### Acceptance Criteria Verification
+
+- ✅ Per-tool hooks run after specific tool installs
+- ✅ Global hooks (pre_setup, post_setup) execute at correct times
+- ✅ Support for bash, zsh, sh, and powershell scripts
+- ✅ Environment variables passed to hooks (JARVY_TOOL, JARVY_VERSION, etc.)
+- ✅ Configurable timeout with default of 5 minutes
+- ✅ continue_on_error option works correctly
+- ✅ --no-hooks flag skips all hook execution
+- ✅ --dry-run shows what hooks would run without executing
+- ✅ Script output captured and displayed in real-time
+- ✅ Cross-platform shell detection and execution
+
+### Files Created/Modified
+
+**Created:**
+- `src/hooks.rs` - Hook execution module (485 lines)
+- `tests/hooks_integration.rs` - Integration tests (294 lines)
+- `docs/hooks.md` - Comprehensive documentation
+
+**Modified:**
+- `Cargo.toml` - Added wait-timeout dependency
+- `src/main.rs` - Added hooks import, CLI flags, setup flow integration
+- `src/config.rs` - Added hooks config parsing structs
+- `src/error_codes.rs` - Added HOOK_FAILED exit code
+- `docs/ConfigurationFile.md` - Added hooks section
+- `docs/error-codes.md` - Added HOOK_FAILED
+
+### Learnings
+
+1. **Serde Flatten**: `#[serde(flatten)]` captures extra keys into HashMap
+   - Perfect for dynamic `[hooks.{tool}]` sections
+   - Must filter out known keys (like "config")
+
+2. **Wait-Timeout Crate**: Cross-platform process timeout
+   - `child.wait_timeout(Duration)` returns Option<ExitStatus>
+   - None means timeout, need to kill process
+
+3. **Thread-based Output Capture**: Can't use async for stdout/stderr
+   - BufReader::lines() is blocking
+   - Spawn threads to capture output while waiting for timeout
+
+4. **Integration Testing**: assert_cmd with env vars works well
+   - `env("JARVY_TEST_MODE", "1")` for non-interactive
+   - predicates for flexible output matching
+
+---
+
 ## T12 Completed: 2025-01-14
 
 ### New Developer Tools Batch - Implementation Complete

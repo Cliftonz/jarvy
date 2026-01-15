@@ -40,6 +40,12 @@ pub const PERMISSION_REQUIRED: i32 = 5;
 /// Typical remediation: Adjust the target or use an alternative installer.
 pub const INCOMPATIBLE_OS_ARCH: i32 = 6;
 
+/// 7 — Hook execution failed
+///
+/// Meaning: A pre_setup, post_install, or post_setup hook script failed.
+/// Typical remediation: Check the hook script for errors or use --no-hooks to skip.
+pub const HOOK_FAILED: i32 = 7;
+
 pub struct ErrorCodeInfo {
     pub code: i32,
     pub key: &'static str,
@@ -91,6 +97,13 @@ static ERROR_CODES: &[ErrorCodeInfo] = &[
         remediation: "Adjust the target or use an alternative installer.",
         slug: "incompatible_os_arch",
     },
+    ErrorCodeInfo {
+        code: HOOK_FAILED,
+        key: "HOOK_FAILED",
+        meaning: "A pre_setup, post_install, or post_setup hook script failed.",
+        remediation: "Check the hook script for errors or use --no-hooks to skip.",
+        slug: "hook_failed",
+    },
 ];
 
 pub fn list_error_codes() -> &'static [ErrorCodeInfo] {
@@ -109,6 +122,7 @@ mod tests {
         assert_eq!(NETWORK_TIMEOUT, 4);
         assert_eq!(PERMISSION_REQUIRED, 5);
         assert_eq!(INCOMPATIBLE_OS_ARCH, 6);
+        assert_eq!(HOOK_FAILED, 7);
     }
 
     #[test]
@@ -121,5 +135,6 @@ mod tests {
         assert!(codes.contains(&NETWORK_TIMEOUT));
         assert!(codes.contains(&PERMISSION_REQUIRED));
         assert!(codes.contains(&INCOMPATIBLE_OS_ARCH));
+        assert!(codes.contains(&HOOK_FAILED));
     }
 }

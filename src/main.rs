@@ -1,5 +1,6 @@
 use crate::analytics::init_logging;
 use crate::config::{Config, create_default_config};
+use crate::hooks::{Hook, HookConfig, HookEnv};
 use crate::init::initialize;
 use crate::report::{Status, ToolReport, collect_reports};
 use crate::setup::setup;
@@ -12,6 +13,7 @@ mod analytics;
 mod bootstrap;
 mod config;
 mod error_codes;
+mod hooks;
 mod init;
 mod os_setup;
 mod outputs;
@@ -50,6 +52,12 @@ enum Commands {
         /// Path to the configuration file
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
+        /// Skip all hook execution
+        #[clap(long)]
+        no_hooks: bool,
+        /// Show what would happen without executing (dry run mode)
+        #[clap(long)]
+        dry_run: bool,
     },
     /// Perform a minimal machine bootstrap (base requirements only, no dev tooling)
     Bootstrap {},
@@ -218,13 +226,41 @@ fn main() {
     crate::tools::register_all();
 
     match &cli.command {
-        Some(Commands::Setup { file }) => {
+        Some(Commands::Setup { file, no_hooks, dry_run }) => {
             let config = Config::new(file);
+            let hooks_config = config.get_hooks();
+            let hook_settings = HookConfig::from(&hooks_config.config);
 
             // Set the global default for sudo usage based on config
             crate::tools::set_default_use_sudo(config.use_sudo());
 
-            setup();
+            // Execute pre_setup hook if configured
+            if !no_hooks {
+                if let Some(ref script) = hooks_config.pre_setup {
+                    let hook = Hook::with_config(script, "pre_setup", hook_settings.clone())
+                        .with_env(HookEnv::global());
+                    if *dry_run {
+                        hook.dry_run();
+                    } else {
+                        match hook.execute() {
+                            Ok(_) => {}
+                            Err(e) => {
+                                if !hook_settings.continue_on_error {
+                                    eprintln!("Pre-setup hook failed: {}", e);
+                                    std::process::exit(crate::error_codes::HOOK_FAILED);
+                                }
+                                eprintln!("Warning: Pre-setup hook failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !*dry_run {
+                setup();
+            } else {
+                println!("[DRY-RUN] Would run platform setup");
+            }
 
             let tools = config.get_tool_configs();
 
@@ -260,38 +296,132 @@ fn main() {
                     continue;
                 }
 
-                println!(
-                    "Installing {}: {} version {} using package manager: {}",
-                    id, tool.name, tool.version, tool.version_manager
-                );
+                if *dry_run {
+                    println!(
+                        "[DRY-RUN] Would install {}: {} version {} using package manager: {}",
+                        id, tool.name, tool.version, tool.version_manager
+                    );
+                } else {
+                    println!(
+                        "Installing {}: {} version {} using package manager: {}",
+                        id, tool.name, tool.version, tool.version_manager
+                    );
 
-                match tools::add(&tool.name, &tool.version) {
-                    Ok(()) => {
-                        println!("Successfully installed {} ({})", tool.name, tool.version);
-                    }
-                    Err(e) => {
-                        let msg = format!(
-                            "Failed to install {} ({}): {:?}",
-                            tool.name, tool.version, e
-                        );
-                        eprintln!("{}", msg);
-                        if posthog::telemetry_enabled() {
-                            let mut props = serde_json::Map::new();
-                            props.insert(
-                                "tool".to_string(),
-                                serde_json::Value::String(tool.name.clone()),
+                    match tools::add(&tool.name, &tool.version) {
+                        Ok(()) => {
+                            println!("Successfully installed {} ({})", tool.name, tool.version);
+
+                            // Execute per-tool post_install hook if configured
+                            if !no_hooks {
+                                if let Some(tool_hooks) = config.get_tool_hooks(&tool.name) {
+                                    if let Some(ref script) = tool_hooks.post_install {
+                                        let env = HookEnv::for_tool(&tool.name, &tool.version);
+                                        let hook = Hook::with_config(
+                                            script,
+                                            &format!("{} post_install", tool.name),
+                                            hook_settings.clone(),
+                                        )
+                                        .with_env(env);
+                                        match hook.execute() {
+                                            Ok(_) => {}
+                                            Err(e) => {
+                                                if !hook_settings.continue_on_error {
+                                                    eprintln!(
+                                                        "Post-install hook for {} failed: {}",
+                                                        tool.name, e
+                                                    );
+                                                    std::process::exit(crate::error_codes::HOOK_FAILED);
+                                                }
+                                                eprintln!(
+                                                    "Warning: Post-install hook for {} failed: {}",
+                                                    tool.name, e
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let msg = format!(
+                                "Failed to install {} ({}): {:?}",
+                                tool.name, tool.version, e
                             );
-                            props.insert(
-                                "version_hint".to_string(),
-                                serde_json::Value::String(tool.version.clone()),
-                            );
-                            props.insert(
-                                "error".to_string(),
-                                serde_json::Value::String(format!("{:?}", e)),
-                            );
-                            posthog::capture_error("tool_install_failed", &msg, props);
+                            eprintln!("{}", msg);
+                            if posthog::telemetry_enabled() {
+                                let mut props = serde_json::Map::new();
+                                props.insert(
+                                    "tool".to_string(),
+                                    serde_json::Value::String(tool.name.clone()),
+                                );
+                                props.insert(
+                                    "version_hint".to_string(),
+                                    serde_json::Value::String(tool.version.clone()),
+                                );
+                                props.insert(
+                                    "error".to_string(),
+                                    serde_json::Value::String(format!("{:?}", e)),
+                                );
+                                posthog::capture_error("tool_install_failed", &msg, props);
+                            }
                         }
                     }
+                }
+
+                // Show dry-run for per-tool hooks
+                if *dry_run && !no_hooks {
+                    if let Some(tool_hooks) = config.get_tool_hooks(&tool.name) {
+                        if let Some(ref script) = tool_hooks.post_install {
+                            let env = HookEnv::for_tool(&tool.name, &tool.version);
+                            let hook = Hook::with_config(
+                                script,
+                                &format!("{} post_install", tool.name),
+                                hook_settings.clone(),
+                            )
+                            .with_env(env);
+                            hook.dry_run();
+                        }
+                    }
+                }
+            }
+
+            // Execute post_setup hook if configured
+            if !no_hooks {
+                if let Some(ref script) = hooks_config.post_setup {
+                    let hook = Hook::with_config(script, "post_setup", hook_settings.clone())
+                        .with_env(HookEnv::global());
+                    if *dry_run {
+                        hook.dry_run();
+                    } else {
+                        match hook.execute() {
+                            Ok(_) => {}
+                            Err(e) => {
+                                if !hook_settings.continue_on_error {
+                                    eprintln!("Post-setup hook failed: {}", e);
+                                    std::process::exit(crate::error_codes::HOOK_FAILED);
+                                }
+                                eprintln!("Warning: Post-setup hook failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if config.has_hooks() && !no_hooks {
+                println!("\nHooks execution summary:");
+                if hooks_config.pre_setup.is_some() {
+                    println!("  - pre_setup: executed");
+                }
+                let tool_hooks_count = hooks_config
+                    .tool_hooks
+                    .values()
+                    .filter(|h| h.post_install.is_some())
+                    .count();
+                if tool_hooks_count > 0 {
+                    println!("  - tool post_install hooks: {} executed", tool_hooks_count);
+                }
+                if hooks_config.post_setup.is_some() {
+                    println!("  - post_setup: executed");
                 }
             }
         }

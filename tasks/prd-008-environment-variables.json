@@ -1,0 +1,216 @@
+{
+  "id": "PRD-008",
+  "parent_prd": "PRD-008",
+  "title": "Environment Variables Support",
+  "description": "Add support for defining and managing environment variables in jarvy.toml, enabling automatic shell configuration and .env file generation",
+  "status": "pending",
+  "priority": "high",
+  "dependencies": [],
+  "estimated_complexity": "medium",
+  "acceptance_criteria": [
+    "Declare environment variables in jarvy.toml [env] section",
+    "Generate .env files from configuration",
+    "Optionally update shell rc files (.bashrc, .zshrc, fish config)",
+    "Support per-tool environment variables",
+    "Handle secrets with prompting (hidden input support)",
+    "Template variable expansion ($HOME, $PWD, tool paths)",
+    "Backup shell rc files before modification",
+    "Never overwrite existing .env without confirmation",
+    "Cross-platform path handling"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Add EnvConfig to config parsing",
+      "description": "Extend src/config.rs with EnvConfig, EnvValue, and EnvSettings structs",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/config.rs"],
+      "subtasks": [
+        "Add EnvValue enum for simple and complex values",
+        "Add EnvConfig struct with vars, secrets, config fields",
+        "Add EnvSettings struct with shell, update_rc, generate_dotenv, dotenv_path",
+        "Update Config struct to include env field",
+        "Add serde deserialization for [env] section",
+        "Write unit tests for config parsing"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Create env module structure",
+      "description": "Create src/env/ module with submodules",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/env/mod.rs"],
+      "subtasks": [
+        "Create src/env/mod.rs with module declarations",
+        "Create src/env/expand.rs for variable expansion",
+        "Create src/env/dotenv.rs for .env generation",
+        "Create src/env/shell.rs for rc file modification",
+        "Create src/env/secrets.rs for secret prompting"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Implement variable expansion",
+      "description": "Add template variable expansion with context",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/env/expand.rs"],
+      "subtasks": [
+        "Create EnvContext struct with home_dir, current_dir, username, tool_paths",
+        "Implement $HOME, $PWD, $USER expansion",
+        "Support existing environment variable expansion",
+        "Add JARVY_{TOOL}_PATH expansion for tool paths",
+        "Handle ${VAR} and $VAR syntax",
+        "Write unit tests for expansion"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Implement .env file generation",
+      "description": "Generate .env files from configuration",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/env/dotenv.rs"],
+      "subtasks": [
+        "Create generate_dotenv function",
+        "Add header comment with timestamp",
+        "Quote values containing spaces",
+        "Check for existing non-Jarvy .env files",
+        "Implement backup before overwrite",
+        "Add to .gitignore automatically (optional)"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Implement shell rc file modification",
+      "description": "Update shell configuration files with exports",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/env/shell.rs"],
+      "subtasks": [
+        "Detect shell rc file path (bash, zsh, fish)",
+        "Backup existing rc file before modification",
+        "Remove old Jarvy section if exists (marker comments)",
+        "Add new exports between jarvy_start and jarvy_end markers",
+        "Support fish syntax (set -gx) vs bash/zsh (export)",
+        "Validate syntax after modification"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Implement secret prompting",
+      "description": "Handle secret values with interactive prompting",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["src/env/secrets.rs"],
+      "subtasks": [
+        "Add rpassword and dialoguer dependencies",
+        "Implement hidden password input",
+        "Support from_file secret loading",
+        "Handle required vs optional secrets",
+        "Skip prompting in CI mode"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Add CLI env command",
+      "description": "Add jarvy env command with subcommands",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["src/main.rs", "src/cli.rs"],
+      "subtasks": [
+        "Add jarvy env command",
+        "Add --dotenv flag for .env only",
+        "Add --shell flag for rc file only",
+        "Add --dry-run flag",
+        "Add --export flag for shell eval output"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Integrate into setup flow",
+      "description": "Apply environment configuration during setup",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["src/main.rs", "src/setup.rs"],
+      "subtasks": [
+        "Apply env vars after tool installation",
+        "Generate .env if configured",
+        "Update shell rc if configured",
+        "Report env configuration in summary"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Write tests",
+      "description": "Create comprehensive tests for env module",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["tests/env_integration.rs"],
+      "subtasks": [
+        "Test variable expansion",
+        "Test .env generation",
+        "Test shell rc modification",
+        "Test secret prompting (mock input)",
+        "Test cross-platform paths"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Update documentation",
+      "description": "Document environment variables feature",
+      "status": "pending",
+      "priority": "low",
+      "files": ["docs/environment-variables.md", "docs/ConfigurationFile.md"],
+      "subtasks": [
+        "Add env section to configuration docs",
+        "Create examples for Node.js, Go, AWS projects",
+        "Document secret handling best practices",
+        "Add security warnings about .env files"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "shell_support": "bash, zsh, fish with appropriate syntax per shell",
+    "path_deduplication": "Deduplicate PATH entries before writing",
+    "gitignore": "Optionally add .env to .gitignore to prevent secret commits",
+    "ci_mode": "Skip interactive prompts and use defaults in CI"
+  },
+  "dependencies_to_add": [
+    "rpassword - hidden password input",
+    "dialoguer - interactive prompts",
+    "dirs - cross-platform home directory"
+  ],
+  "files_to_create": [
+    "src/env/mod.rs",
+    "src/env/expand.rs",
+    "src/env/dotenv.rs",
+    "src/env/shell.rs",
+    "src/env/secrets.rs"
+  ],
+  "files_to_modify": [
+    "src/config.rs",
+    "src/main.rs",
+    "Cargo.toml"
+  ],
+  "risks": [
+    {
+      "description": "Shell rc corruption could break user shell",
+      "mitigation": "Always backup, use clear markers, validate syntax"
+    },
+    {
+      "description": "Secrets in .env could be committed to Git",
+      "mitigation": "Auto-add .env to .gitignore, warn user about secret exposure"
+    },
+    {
+      "description": "Duplicate PATH entries",
+      "mitigation": "Deduplicate PATH before writing"
+    },
+    {
+      "description": "Cross-platform path differences",
+      "mitigation": "Use platform-aware path joining"
+    }
+  ]
+}

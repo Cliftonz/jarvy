@@ -1,0 +1,183 @@
+{
+  "id": "PRD-003",
+  "parent_prd": "PRD-003",
+  "title": "Post-Install Hooks",
+  "description": "Add support for custom shell scripts that run after tool installation, enabling shell configuration, environment setup, and project-specific initialization",
+  "status": "completed",
+  "priority": "high",
+  "dependencies": [],
+  "estimated_complexity": "medium",
+  "completed_date": "2026-01-14",
+  "acceptance_criteria": [
+    "Per-tool hooks run after specific tool installs",
+    "Global hooks (pre_setup, post_setup) execute at correct times",
+    "Support for bash, zsh, sh, and powershell scripts",
+    "Environment variables passed to hooks (JARVY_TOOL, JARVY_VERSION, etc.)",
+    "Configurable timeout with default of 5 minutes",
+    "continue_on_error option works correctly",
+    "--no-hooks flag skips all hook execution",
+    "--dry-run shows what hooks would run without executing",
+    "Script output captured and displayed in real-time",
+    "Cross-platform path handling works correctly"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Add HooksConfig to config parsing",
+      "description": "Extend src/config.rs with HooksConfig, ToolHooks, and HookSettings structs",
+      "status": "completed",
+      "priority": "high",
+      "files": ["src/config.rs"],
+      "subtasks": [
+        "Add HooksConfig struct with pre_setup, post_setup, tool_hooks, config fields",
+        "Add ToolHooks struct with post_install field",
+        "Add HookSettings struct with shell, timeout, continue_on_error fields",
+        "Update Config struct to include hooks field",
+        "Add serde deserialization for TOML hooks section",
+        "Write unit tests for config parsing"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Create hooks module",
+      "description": "Create src/hooks.rs with Hook struct and execution logic",
+      "status": "completed",
+      "priority": "high",
+      "files": ["src/hooks.rs"],
+      "subtasks": [
+        "Create Hook struct with script and config fields",
+        "Implement HookConfig with shell, timeout, continue_on_error",
+        "Add HookError enum for error handling",
+        "Implement shell detection and command building",
+        "Add execute() method with timeout support",
+        "Handle stdout/stderr streaming"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Add timeout support",
+      "description": "Add wait_timeout crate and implement script timeouts",
+      "status": "completed",
+      "priority": "medium",
+      "files": ["Cargo.toml", "src/hooks.rs"],
+      "subtasks": [
+        "Add wait_timeout dependency to Cargo.toml",
+        "Implement timeout wrapper for Command execution",
+        "Add timeout error variant to HookError",
+        "Test timeout behavior with long-running scripts"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Integrate hooks into setup flow",
+      "description": "Modify main setup flow to execute hooks at appropriate times",
+      "status": "completed",
+      "priority": "high",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Execute pre_setup hook before any tool installation",
+        "Execute per-tool post_install hooks after each tool installs",
+        "Execute post_setup hook after all tools are installed",
+        "Handle hook failures based on continue_on_error setting",
+        "Report hook execution results in final summary"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Add CLI flags",
+      "description": "Add --no-hooks and --dry-run CLI flags to setup command",
+      "status": "completed",
+      "priority": "medium",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add --no-hooks flag to skip all hook execution",
+        "Add --dry-run flag to show what would happen without executing",
+        "Update setup command to respect these flags",
+        "Add help text for new flags"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Add environment variable injection",
+      "description": "Pass environment variables to hook scripts",
+      "status": "completed",
+      "priority": "medium",
+      "files": ["src/hooks.rs"],
+      "subtasks": [
+        "Set JARVY_TOOL with current tool name",
+        "Set JARVY_VERSION with installed version",
+        "Set JARVY_OS with operating system",
+        "Set JARVY_ARCH with architecture",
+        "Set JARVY_HOME with config directory",
+        "Update PATH to include new tool locations"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Write integration tests",
+      "description": "Create comprehensive tests for hook execution",
+      "status": "completed",
+      "priority": "medium",
+      "files": ["tests/hooks_integration.rs"],
+      "subtasks": [
+        "Test pre_setup hook execution",
+        "Test post_setup hook execution",
+        "Test per-tool hooks",
+        "Test timeout behavior",
+        "Test continue_on_error behavior",
+        "Test --no-hooks flag",
+        "Test --dry-run output"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Update documentation",
+      "description": "Document hooks feature with examples",
+      "status": "completed",
+      "priority": "low",
+      "files": ["docs/hooks.md", "docs/ConfigurationFile.md", "docs/error-codes.md"],
+      "subtasks": [
+        "Add hooks section to configuration documentation",
+        "Create examples for common use cases",
+        "Document environment variables available to hooks",
+        "Document security considerations"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "shell_detection": "Use default shell from SHELL env var, fallback to /bin/sh on Unix",
+    "windows_support": "PowerShell execution requires different command building",
+    "security": "Warn users about running untrusted jarvy.toml files",
+    "platform_hooks": "Future enhancement: separate hooks per platform (post_install_windows)"
+  },
+  "dependencies_added": [
+    "wait-timeout = \"0.2\""
+  ],
+  "files_created": [
+    "src/hooks.rs",
+    "tests/hooks_integration.rs",
+    "docs/hooks.md"
+  ],
+  "files_modified": [
+    "src/config.rs",
+    "src/main.rs",
+    "src/error_codes.rs",
+    "Cargo.toml",
+    "docs/ConfigurationFile.md",
+    "docs/error-codes.md"
+  ],
+  "risks": [
+    {
+      "description": "Arbitrary script execution poses security risks",
+      "mitigation": "Warn users about untrusted jarvy.toml files, add --confirm-hooks for CI"
+    },
+    {
+      "description": "Cross-platform script compatibility",
+      "mitigation": "Support separate post_install_windows key for platform-specific scripts"
+    },
+    {
+      "description": "Long-running scripts could hang setup",
+      "mitigation": "Default 5-minute timeout with configurable override"
+    }
+  ]
+}

@@ -15,6 +15,7 @@ This page lists the standard exit codes used by the Jarvy CLI. Each entry includ
 | 4    | NETWORK_TIMEOUT       | Network issue, timeout, or proxy-related failure occurred.  | Check connectivity and proxy settings; retry.        | [details](#network_timeout) |
 | 5    | PERMISSION_REQUIRED   | Operation requires elevated privileges (admin/sudo).        | Re-run with admin/sudo or adjust permissions.        | [details](#permission_required) |
 | 6    | INCOMPATIBLE_OS_ARCH  | The OS/architecture is unsupported for the requested action.| Adjust the target or use an alternative installer.   | [details](#incompatible_os_arch) |
+| 7    | HOOK_FAILED           | A pre_setup, post_install, or post_setup hook script failed.| Check the hook script for errors or use --no-hooks.  | [details](#hook_failed) |
 
 ---
 
@@ -47,3 +48,8 @@ This page lists the standard exit codes used by the Jarvy CLI. Each entry includ
 ### 6 — INCOMPATIBLE_OS_ARCH
 - Meaning: The current OS/architecture is unsupported for the requested action.
 - Typical remediation: Adjust the target or use an alternative installer.
+
+<a id="hook_failed"></a>
+### 7 — HOOK_FAILED
+- Meaning: A pre_setup, post_install, or post_setup hook script failed.
+- Typical remediation: Check the hook script for errors or use `--no-hooks` to skip hooks.
