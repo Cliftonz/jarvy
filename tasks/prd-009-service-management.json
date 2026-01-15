@@ -1,0 +1,188 @@
+{
+  "id": "PRD-009",
+  "parent_prd": "PRD-009",
+  "title": "Service Management Integration",
+  "description": "Allow jarvy to start project services (docker-compose, tilt) that developers define in their projects, providing a unified way to start local development environments",
+  "status": "pending",
+  "priority": "medium",
+  "dependencies": ["PRD-010"],
+  "estimated_complexity": "medium",
+  "acceptance_criteria": [
+    "Support docker-compose.yml file detection and startup",
+    "Support Tiltfile detection and startup with tilt",
+    "Configurable in jarvy.toml under [services] section",
+    "Optional auto-start during jarvy setup",
+    "Manual start via jarvy services start command",
+    "Manual stop via jarvy services stop command",
+    "Status check via jarvy services status command",
+    "Works in CI mode with appropriate defaults",
+    "Graceful handling when docker/tilt not installed"
+  ],
+  "context": {
+    "user_workflow": "Developer creates docker-compose.yml or Tiltfile in their project. Jarvy configuration can specify to start these services during setup or on-demand.",
+    "supported_backends": [
+      {
+        "name": "docker-compose",
+        "detection": "docker-compose.yml or compose.yml in project root",
+        "start_command": "docker compose up -d",
+        "stop_command": "docker compose down",
+        "status_command": "docker compose ps"
+      },
+      {
+        "name": "tilt",
+        "detection": "Tiltfile in project root",
+        "start_command": "tilt up --stream=false",
+        "stop_command": "tilt down",
+        "status_command": "tilt status"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Create services module",
+      "description": "Create src/services/mod.rs for service management",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/services/mod.rs"],
+      "subtasks": [
+        "Create ServiceBackend enum (DockerCompose, Tilt)",
+        "Create ServiceConfig struct for parsing config",
+        "Implement detect_services() to find compose/tilt files",
+        "Implement start_service(), stop_service(), status_service()"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Add services config parsing",
+      "description": "Parse [services] section in jarvy.toml",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/config.rs"],
+      "subtasks": [
+        "Add Services struct to config",
+        "Support enabled = true/false",
+        "Support auto_start = true/false for setup",
+        "Support compose_file path override",
+        "Support tilt_file path override"
+      ],
+      "config_example": "[services]\nenabled = true\nauto_start = true\ncompose_file = \"docker-compose.yml\"  # optional override\n# or\ntilt_file = \"Tiltfile\"  # optional override"
+    },
+    {
+      "id": "T3",
+      "title": "Add jarvy services command",
+      "description": "Add subcommand for service management",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add 'jarvy services start' command",
+        "Add 'jarvy services stop' command",
+        "Add 'jarvy services status' command",
+        "Add 'jarvy services restart' command",
+        "Support --detach flag for start",
+        "Support --follow flag for logs"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Integrate with setup flow",
+      "description": "Optionally start services after jarvy setup",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Check [services].auto_start config",
+        "Start services after tool installation completes",
+        "Skip in CI mode unless explicitly enabled",
+        "Show service startup in dry-run output"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Docker Compose backend",
+      "description": "Implement docker-compose service backend",
+      "status": "pending",
+      "priority": "high",
+      "files": ["src/services/docker_compose.rs"],
+      "subtasks": [
+        "Check for docker/docker-compose installation",
+        "Support both 'docker compose' and legacy 'docker-compose'",
+        "Implement start with 'docker compose up -d'",
+        "Implement stop with 'docker compose down'",
+        "Implement status with 'docker compose ps'",
+        "Handle compose file path configuration"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Tilt backend",
+      "description": "Implement tilt service backend",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["src/services/tilt.rs"],
+      "subtasks": [
+        "Check for tilt installation",
+        "Implement start with 'tilt up'",
+        "Implement stop with 'tilt down'",
+        "Implement status check",
+        "Handle Tiltfile path configuration"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Write tests",
+      "description": "Create tests for service management",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["tests/services_integration.rs"],
+      "subtasks": [
+        "Test service config parsing",
+        "Test service detection",
+        "Test CLI commands (mock execution)",
+        "Test CI mode behavior",
+        "Test error handling when docker/tilt not installed"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Update documentation",
+      "description": "Document service management feature",
+      "status": "pending",
+      "priority": "low",
+      "files": ["CLAUDE.md"],
+      "subtasks": [
+        "Document [services] config section",
+        "Document jarvy services command",
+        "Add example jarvy.toml with services config"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "detection_priority": "Docker Compose takes priority over Tilt if both are present",
+    "ci_behavior": "Services are NOT auto-started in CI mode by default (CI pipelines have their own service orchestration)",
+    "error_handling": "Missing docker/tilt results in warning, not error - user may not need services",
+    "no_new_deps": "Uses shell commands to interact with docker/tilt, no new Rust dependencies"
+  },
+  "config_example": {
+    "minimal": "[services]\nenabled = true",
+    "full": "[services]\nenabled = true\nauto_start = true\ncompose_file = \"docker/docker-compose.yml\"\n# tilt_file = \"Tiltfile\""
+  },
+  "risks": [
+    {
+      "description": "Docker/tilt not installed on user's system",
+      "mitigation": "Graceful warning, suggest installing via jarvy"
+    },
+    {
+      "description": "Services fail to start",
+      "mitigation": "Show clear error from docker/tilt, suggest checking compose/tilt file"
+    },
+    {
+      "description": "CI mode shouldn't auto-start services",
+      "mitigation": "Disable auto_start in CI mode by default, require explicit opt-in"
+    }
+  ],
+  "related_tasks": [
+    "PRD-010 - CI/CD Detection (for CI mode handling)"
+  ]
+}

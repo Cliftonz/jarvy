@@ -1,11 +1,11 @@
 {
   "id": "HOOKS-002",
-  "parent_prd": "PRD-009",
+  "parent_prd": "PRD-003.1",
   "title": "Additional Tool Post-Install Hooks",
   "description": "Extend default post-install hooks to more tools that commonly need post-installation configuration",
   "status": "pending",
   "priority": "medium",
-  "dependencies": ["PRD-009", "PRD-010"],
+  "dependencies": ["PRD-003.1", "PRD-010"],
   "estimated_complexity": "low",
   "acceptance_criteria": [
     "Tools with common post-install needs have default hooks",
@@ -128,6 +128,6 @@
   },
   "related_tasks": [
     "PRD-003 - Post-Install Hooks Infrastructure",
-    "PRD-009 - Tool-Specific Default Hooks"
+    "PRD-003.1 - Tool-Specific Default Hooks"
   ]
 }

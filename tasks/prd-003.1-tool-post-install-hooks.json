@@ -1,7 +1,7 @@
 {
-  "id": "PRD-009",
-  "parent_prd": "PRD-009",
-  "title": "Tool-Specific Post-Install Hooks",
+  "id": "PRD-003.1",
+  "parent_prd": "PRD-003",
+  "title": "Tool-Specific Post-Install Hooks (Extends PRD-003)",
   "description": "Add default post-install hooks for tools that require additional configuration after installation, such as shell integration, PATH setup, or configuration file generation",
   "status": "completed",
   "priority": "medium",
