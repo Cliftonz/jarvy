@@ -54,8 +54,37 @@ Each tool lives in `src/tools/{name}/` with two files:
 - `linux: { apt: "x", dnf: "y", pacman: "z", apk: "w" }` - Different names per package manager
 - `windows: { winget: "Publisher.Package" }` - Winget package ID
 - `custom_install: Some(fn_name)` - For tools needing shell scripts (nvm, rustup, brew)
+- `default_hook: { description: "...", script: "..." }` - Post-install hook that runs automatically
 
 Tools are registered in `src/tools/mod.rs` via `register_all()`.
+
+### Default Hooks
+
+Tools can define built-in post-install hooks that configure the tool after installation. Default hooks are:
+- **Idempotent** - Safe to run multiple times (scripts check before modifying files)
+- **Advisory** - Failures are warnings, not errors; setup continues
+- **Overridable** - User-defined `[hooks.tool]` takes precedence
+
+Example tool with default hook:
+```rust
+define_tool!(STARSHIP, {
+    command: "starship",
+    macos: { brew: "starship" },
+    linux: { uniform: "starship" },
+    windows: { winget: "Starship.Starship" },
+    default_hook: {
+        description: "Add starship shell initialization to .bashrc and .zshrc",
+        script: r#"
+# Add to .zshrc if not present
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'starship init zsh' "$HOME/.zshrc"; then
+    echo 'eval "$(starship init zsh)"' >> "$HOME/.zshrc"
+fi
+"#
+    },
+});
+```
+
+List tools with default hooks: `jarvy tools --default-hooks`
 
 ### Config Files
 

@@ -9,6 +9,36 @@ define_tool!(GIT, {
     macos: { brew: "git" },
     linux: { uniform: "git" },
     windows: { winget: "Git.Git" },
+    default_hook: {
+        description: "Configure sensible Git defaults (defaultBranch=main, autocrlf, rebase)",
+        script: r#"
+# Git configuration defaults
+# Only set values if they're not already configured
+
+# Set default branch to main (idempotent)
+if ! git config --global --get init.defaultBranch >/dev/null 2>&1; then
+    git config --global init.defaultBranch main
+    echo "Set git init.defaultBranch to 'main'"
+fi
+
+# Set autocrlf based on platform (idempotent)
+if ! git config --global --get core.autocrlf >/dev/null 2>&1; then
+    if [ "$(uname)" = "Darwin" ] || [ "$(uname)" = "Linux" ]; then
+        git config --global core.autocrlf input
+        echo "Set git core.autocrlf to 'input' (Unix)"
+    else
+        git config --global core.autocrlf true
+        echo "Set git core.autocrlf to 'true' (Windows)"
+    fi
+fi
+
+# Set pull.rebase for cleaner history (idempotent)
+if ! git config --global --get pull.rebase >/dev/null 2>&1; then
+    git config --global pull.rebase true
+    echo "Set git pull.rebase to 'true'"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

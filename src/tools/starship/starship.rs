@@ -9,6 +9,26 @@ define_tool!(STARSHIP, {
     macos: { brew: "starship" },
     linux: { uniform: "starship" },
     windows: { winget: "Starship.Starship" },
+    default_hook: {
+        description: "Add starship shell initialization to .bashrc and .zshrc",
+        script: r#"
+# Starship shell integration
+STARSHIP_INIT_BASH='eval "$(starship init bash)"'
+STARSHIP_INIT_ZSH='eval "$(starship init zsh)"'
+
+# Add to .bashrc if not present
+if [ -f "$HOME/.bashrc" ] && ! grep -q 'starship init bash' "$HOME/.bashrc"; then
+    echo "$STARSHIP_INIT_BASH" >> "$HOME/.bashrc"
+    echo "Added starship init to ~/.bashrc"
+fi
+
+# Add to .zshrc if not present
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'starship init zsh' "$HOME/.zshrc"; then
+    echo "$STARSHIP_INIT_ZSH" >> "$HOME/.zshrc"
+    echo "Added starship init to ~/.zshrc"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

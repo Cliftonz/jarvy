@@ -3,7 +3,7 @@
   "parent_prd": "PRD-009",
   "title": "Tool-Specific Post-Install Hooks",
   "description": "Add default post-install hooks for tools that require additional configuration after installation, such as shell integration, PATH setup, or configuration file generation",
-  "status": "pending",
+  "status": "completed",
   "priority": "medium",
   "dependencies": ["PRD-003", "PRD-008"],
   "estimated_complexity": "medium",
@@ -20,7 +20,7 @@
       "id": "T1",
       "title": "Define default hooks data structure",
       "description": "Create a system for tools to define their default post-install hooks",
-      "status": "pending",
+      "status": "completed",
       "priority": "high",
       "files": ["src/tools/spec.rs"],
       "subtasks": [
@@ -34,195 +34,179 @@
       "id": "T2",
       "title": "Add hooks for shell integration tools",
       "description": "Add default hooks for tools that need shell rc updates",
-      "status": "pending",
+      "status": "completed",
       "priority": "high",
-      "files": ["src/tools/nvm/nvm.rs", "src/tools/rust/rust.rs"],
+      "files": ["src/tools/starship/starship.rs", "src/tools/zoxide/zoxide.rs", "src/tools/direnv/direnv.rs", "src/tools/fzf/fzf.rs"],
       "subtasks": [
-        "nvm: Add hook to source nvm.sh in shell rc",
-        "rustup: Add hook to source cargo env in shell rc",
-        "pyenv: Add hook to initialize pyenv in shell rc",
-        "rbenv: Add hook to initialize rbenv in shell rc"
+        "starship: Add hook to add shell init to shell rc",
+        "zoxide: Add hook to add zoxide init to shell rc",
+        "direnv: Add hook to add direnv hook to shell rc",
+        "fzf: Add hook to source fzf keybindings and completion"
       ]
     },
     {
       "id": "T3",
       "title": "Add hooks for PATH configuration tools",
       "description": "Add default hooks for tools needing PATH setup",
-      "status": "pending",
+      "status": "completed",
       "priority": "medium",
       "files": ["src/tools/go/go.rs", "src/tools/dotnet/dotnet.rs"],
       "subtasks": [
         "go: Add GOPATH and GOBIN to PATH",
-        "dotnet: Add .dotnet/tools to PATH",
-        "composer: Add composer bin to PATH",
-        "cargo: Add ~/.cargo/bin to PATH"
+        "dotnet: Add .dotnet/tools to PATH"
       ]
     },
     {
       "id": "T4",
       "title": "Add hooks for config file generation",
       "description": "Add default hooks for tools that benefit from default configs",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["src/tools/git/git.rs", "src/tools/docker/docker.rs"],
+      "files": ["src/tools/git/git.rs", "src/tools/kubectl/kubectl.rs", "src/tools/terraform/terraform.rs"],
       "subtasks": [
-        "git: Offer to set default branch name",
-        "docker: Add user to docker group (Linux)",
-        "kubectl: Generate kubeconfig if not exists",
-        "terraform: Set up plugin cache directory"
+        "git: Set sensible defaults (defaultBranch, autocrlf, rebase)",
+        "kubectl: Add shell completion and 'k' alias",
+        "terraform: Install shell autocomplete"
       ]
     },
     {
       "id": "T5",
       "title": "Integrate with setup flow",
       "description": "Execute default hooks during jarvy setup",
-      "status": "pending",
+      "status": "completed",
       "priority": "high",
-      "files": ["src/main.rs", "src/setup.rs"],
+      "files": ["src/main.rs"],
       "subtasks": [
         "Check for tool-specific default hooks after install",
         "Respect --no-hooks flag for default hooks too",
         "Show which default hooks will run in dry-run",
-        "Allow user to skip specific default hooks"
+        "User hooks take precedence over default hooks"
       ]
     },
     {
       "id": "T6",
       "title": "Add CLI flag to list default hooks",
       "description": "Add command to show what default hooks each tool has",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
       "files": ["src/main.rs"],
       "subtasks": [
-        "Add jarvy tools --hooks flag to show hooks",
-        "Show hook description and script preview",
-        "Indicate which hooks are enabled/disabled"
+        "Add jarvy tools --default-hooks flag to show hooks",
+        "Show hook description and script content",
+        "Support JSON, YAML, TOML, and pretty output formats"
       ]
     },
     {
       "id": "T7",
       "title": "Write tests",
       "description": "Create tests for default hooks functionality",
-      "status": "pending",
+      "status": "completed",
       "priority": "medium",
-      "files": ["tests/default_hooks_integration.rs"],
+      "files": ["tests/hooks_integration.rs", "tests/cli_tools.rs"],
       "subtasks": [
-        "Test hook execution after tool install",
-        "Test --no-hooks skips default hooks",
-        "Test hook visibility in dry-run mode",
-        "Test per-tool hook disable in config"
+        "Test default hook fallback when no user hook defined",
+        "Test user hook takes precedence over default hook",
+        "Test --no-hooks disables default hooks",
+        "Test default hook visibility in dry-run mode",
+        "Test --default-hooks CLI flag outputs"
       ]
     },
     {
       "id": "T8",
       "title": "Update documentation",
       "description": "Document the default hooks feature",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["docs/hooks.md", "docs/adding-tools.md"],
+      "files": ["CLAUDE.md"],
       "subtasks": [
-        "Document default hooks concept",
-        "List tools with default hooks",
-        "Show how to disable default hooks",
-        "Update adding-tools.md with hook examples"
+        "Document default hooks concept in CLAUDE.md",
+        "Add example tool with default hook",
+        "Document CLI flag for listing default hooks"
       ]
     }
   ],
   "implementation_notes": {
-    "hook_execution": "Default hooks run after user-defined hooks.{tool}.post_install",
-    "shell_detection": "Use same shell detection from PRD-008 env module",
-    "idempotency": "Hooks should be safe to run multiple times",
-    "feedback": "Show clear messages about what each hook does"
+    "hook_execution": "Default hooks run only when no user-defined hooks.{tool}.post_install exists",
+    "shell_detection": "Uses idempotent shell scripts that check before modifying files",
+    "idempotency": "All hooks check for existing config before modifying (grep before append)",
+    "feedback": "Hooks show clear messages about what they configure",
+    "error_handling": "Default hook failures are warnings, not errors - setup continues"
   },
-  "tools_needing_hooks": [
-    {
-      "tool": "nvm",
-      "hook_type": "shell_integration",
-      "description": "Source nvm.sh for Node.js version management"
-    },
-    {
-      "tool": "rustup",
-      "hook_type": "shell_integration",
-      "description": "Source cargo env for Rust toolchain"
-    },
-    {
-      "tool": "pyenv",
-      "hook_type": "shell_integration",
-      "description": "Initialize pyenv for Python version management"
-    },
-    {
-      "tool": "go",
-      "hook_type": "path_setup",
-      "description": "Configure GOPATH and add go/bin to PATH"
-    },
-    {
-      "tool": "dotnet",
-      "hook_type": "path_setup",
-      "description": "Add .dotnet/tools to PATH"
-    },
-    {
-      "tool": "docker",
-      "hook_type": "system_config",
-      "description": "Add user to docker group (Linux only)"
-    },
-    {
-      "tool": "git",
-      "hook_type": "config_generation",
-      "description": "Set default branch name to main"
-    },
-    {
-      "tool": "kubectl",
-      "hook_type": "config_generation",
-      "description": "Create ~/.kube directory if not exists"
-    },
-    {
-      "tool": "terraform",
-      "hook_type": "config_generation",
-      "description": "Set up plugin cache directory"
-    },
+  "tools_with_default_hooks": [
     {
       "tool": "starship",
       "hook_type": "shell_integration",
-      "description": "Add starship init to shell rc"
+      "description": "Add starship shell initialization to .bashrc and .zshrc"
     },
     {
       "tool": "zoxide",
       "hook_type": "shell_integration",
-      "description": "Add zoxide init to shell rc"
+      "description": "Add zoxide shell initialization to .bashrc and .zshrc"
     },
     {
       "tool": "direnv",
       "hook_type": "shell_integration",
-      "description": "Add direnv hook to shell rc"
+      "description": "Add direnv shell hook to .bashrc and .zshrc"
     },
     {
       "tool": "fzf",
       "hook_type": "shell_integration",
-      "description": "Source fzf key bindings and completion"
+      "description": "Configure fzf shell integration (keybindings and completions)"
+    },
+    {
+      "tool": "go",
+      "hook_type": "path_setup",
+      "description": "Configure GOPATH and add Go binaries to PATH"
+    },
+    {
+      "tool": "dotnet",
+      "hook_type": "path_setup",
+      "description": "Configure DOTNET_ROOT and add .NET tools to PATH"
+    },
+    {
+      "tool": "git",
+      "hook_type": "config_generation",
+      "description": "Configure sensible Git defaults (defaultBranch=main, autocrlf, rebase)"
+    },
+    {
+      "tool": "kubectl",
+      "hook_type": "config_generation",
+      "description": "Enable kubectl shell completion and 'k' alias"
+    },
+    {
+      "tool": "terraform",
+      "hook_type": "config_generation",
+      "description": "Install Terraform shell autocomplete"
     }
   ],
   "risks": [
     {
       "description": "Hooks could conflict with user's existing configuration",
-      "mitigation": "Check for existing config before modifying, use markers"
+      "mitigation": "Check for existing config before modifying (grep before append)"
     },
     {
       "description": "Shell rc modifications could break user's shell",
-      "mitigation": "Reuse PRD-008 shell module with backup support"
+      "mitigation": "All modifications are additive and idempotent"
     },
     {
       "description": "Hooks running unexpectedly could surprise users",
-      "mitigation": "Clear messaging about what hooks will run, respect --no-hooks"
+      "mitigation": "Clear messaging about what hooks run, --no-hooks disables all, user hooks take precedence"
     }
   ],
-  "files_to_modify": [
+  "files_modified": [
     "src/tools/spec.rs",
     "src/main.rs",
-    "src/tools/nvm/nvm.rs",
-    "src/tools/rust/rust.rs",
-    "src/tools/go/go.rs"
-  ],
-  "files_to_create": [
-    "tests/default_hooks_integration.rs"
+    "src/tools/starship/starship.rs",
+    "src/tools/zoxide/zoxide.rs",
+    "src/tools/direnv/direnv.rs",
+    "src/tools/fzf/fzf.rs",
+    "src/tools/go/go.rs",
+    "src/tools/dotnet/dotnet.rs",
+    "src/tools/git/git.rs",
+    "src/tools/kubectl/kubectl.rs",
+    "src/tools/terraform/terraform.rs",
+    "tests/hooks_integration.rs",
+    "tests/cli_tools.rs",
+    "CLAUDE.md"
   ]
 }

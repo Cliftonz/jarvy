@@ -1014,6 +1014,174 @@ dotenv_path = ".env"
 
 ---
 
+# PRD-009: Tool-Specific Post-Install Hooks - Implementation Progress
+
+## Started: 2026-01-15
+## Completed: 2026-01-15
+
+## Implementation Summary
+
+Successfully implemented tool-specific default post-install hooks that automatically configure tools after installation. Default hooks are idempotent, advisory (failures are warnings), and can be overridden by user-defined hooks.
+
+### Changes Made
+
+1. **Extended ToolSpec Pattern** (src/tools/spec.rs)
+   - Added `DefaultHook` struct with description, script, and optional platform filter
+   - Added `default_hook: Option<DefaultHook>` field to `ToolSpec` struct
+   - Extended `define_tool!` macro to support `default_hook: { ... }` syntax
+   - Added `should_run_on_current_platform()` method for platform filtering
+   - Added helper functions:
+     - `get_tool_spec(name)` - Look up ToolSpec by tool name
+     - `get_tool_default_hook(name)` - Get default hook for a tool
+     - `list_tools_with_default_hooks()` - List all tools with default hooks
+
+2. **Added Default Hooks to 9 Tools**
+   - **Shell Integration Tools**:
+     - starship - Add shell init to .bashrc/.zshrc
+     - zoxide - Add zoxide init to .bashrc/.zshrc
+     - direnv - Add direnv hook to .bashrc/.zshrc
+     - fzf - Configure fzf keybindings and completions
+   - **PATH Configuration Tools**:
+     - go - Configure GOPATH and add go/bin to PATH
+     - dotnet - Configure DOTNET_ROOT and .NET tools to PATH
+   - **Config Generation Tools**:
+     - git - Set sensible defaults (defaultBranch, autocrlf, rebase)
+     - kubectl - Enable shell completion and 'k' alias
+     - terraform - Install shell autocomplete
+
+3. **Integrated into Setup Flow** (src/main.rs)
+   - Default hooks run when no user-defined `[hooks.{tool}]` exists
+   - Respects `--no-hooks` flag (disables both user and default hooks)
+   - Shows default hooks in `--dry-run` mode with description
+   - Default hook failures are warnings (advisory, not blocking)
+
+4. **Added CLI Flag** (src/main.rs)
+   - `jarvy tools --default-hooks` lists all tools with default hooks
+   - Supports JSON, YAML, TOML, and pretty output formats
+
+5. **Integration Tests** (tests/hooks_integration.rs, tests/cli_tools.rs)
+   - test_default_hook_fallback_dry_run
+   - test_user_hook_takes_precedence_over_default
+   - test_no_hooks_flag_disables_default_hooks
+   - test_default_hook_shows_description_in_dry_run
+   - test_multiple_tools_with_default_hooks_dry_run
+   - test_mixed_user_and_default_hooks_dry_run
+   - tools_default_hooks_pretty_format
+   - tools_default_hooks_json_format
+   - tools_default_hooks_yaml_format
+   - tools_default_hooks_contains_expected_tools
+   - tools_default_hooks_help_shows_flag
+
+6. **Updated Documentation** (CLAUDE.md)
+   - Added `default_hook` to macro variants section
+   - Added "Default Hooks" section explaining the feature
+   - Added example tool definition with default hook
+
+### Default Hook Design
+
+All default hooks follow these principles:
+
+1. **Idempotent**: Scripts check before modifying (grep before append)
+   ```bash
+   if [ -f "$HOME/.zshrc" ] && ! grep -q 'starship init zsh' "$HOME/.zshrc"; then
+       echo 'eval "$(starship init zsh)"' >> "$HOME/.zshrc"
+   fi
+   ```
+
+2. **Advisory**: Failures are warnings, not errors - setup continues
+
+3. **Overridable**: User-defined `[hooks.{tool}]` takes complete precedence
+
+### Macro Extension
+
+Extended `define_tool!` macro to support optional default_hook field:
+
+```rust
+define_tool!(STARSHIP, {
+    command: "starship",
+    macos: { brew: "starship" },
+    linux: { uniform: "starship" },
+    windows: { winget: "Starship.Starship" },
+    default_hook: {
+        description: "Add starship shell initialization to .bashrc and .zshrc",
+        script: r#"
+# Add to .zshrc if not present
+if ! grep -q 'starship init zsh' "$HOME/.zshrc"; then
+    echo 'eval "$(starship init zsh)"' >> "$HOME/.zshrc"
+fi
+"#
+    },
+});
+```
+
+### Key Design Decisions
+
+1. **Precedence**: User hooks always take precedence over default hooks
+   - If `[hooks.git]` is defined, default git hook does NOT run
+
+2. **Error Handling**: Default hooks are advisory
+   - Failures logged as warnings
+   - Setup continues regardless of hook success
+
+3. **Platform Support**: Optional `platform` field for platform-specific hooks
+   - Values: "macos", "linux", "windows"
+   - Hook only runs on matching platform
+
+4. **Shell Modification Pattern**: All shell hooks use the same pattern:
+   - Define export/init variable
+   - Check if rc file exists AND doesn't already contain pattern
+   - Append if conditions met
+
+### Test Results
+
+- 430+ tests passing (all suites)
+- 6 new integration tests for default hooks
+- 5 new CLI tests for --default-hooks flag
+
+### Acceptance Criteria Verification
+
+- ✅ Tools with shell integration have hooks to update shell rc
+- ✅ Tools needing PATH updates have hooks to configure PATH
+- ✅ Tools requiring config files have hooks to generate defaults
+- ✅ Hooks are optional (can be disabled with --no-hooks)
+- ✅ Hooks integrate with existing PRD-003 hooks system
+- ✅ Hooks integrate with PRD-008 env vars pattern
+- ✅ User-defined hooks take precedence over defaults
+
+### Files Modified
+
+- `src/tools/spec.rs` - Added DefaultHook, extended ToolSpec and macro
+- `src/main.rs` - Setup flow integration, --default-hooks CLI flag
+- `src/tools/starship/starship.rs` - Added default hook
+- `src/tools/zoxide/zoxide.rs` - Added default hook
+- `src/tools/direnv/direnv.rs` - Added default hook
+- `src/tools/fzf/fzf.rs` - Added default hook
+- `src/tools/go/go.rs` - Added default hook
+- `src/tools/dotnet/dotnet.rs` - Added default hook
+- `src/tools/git/git.rs` - Added default hook
+- `src/tools/kubectl/kubectl.rs` - Added default hook
+- `src/tools/terraform/terraform.rs` - Added default hook
+- `tests/hooks_integration.rs` - Added default hook tests
+- `tests/cli_tools.rs` - Added --default-hooks tests
+- `CLAUDE.md` - Documentation update
+- `tasks/prd-009-tool-post-install-hooks.json` - Status update
+
+### Learnings
+
+1. **Macro Optional Fields**: Use helper patterns like `@optional_default_hook` to handle
+   optional fields cleanly in macro_rules!
+
+2. **Test Fixtures**: When adding new fields to structs used in tests, all inline
+   struct definitions need updating (found two in spec.rs tests)
+
+3. **Idempotent Shell Scripts**: The `grep -q` pattern is reliable for checking
+   existing content before appending to shell rc files
+
+4. **Tool Constant Names**: The macro uses constant names like `KUBECTL` for tool
+   identification, which appear uppercase in CLI output
+
+---
+
 # TOOLS-HOOKS: Tools That Benefit from Post-Install Hooks - Verification
 
 ## Verified: 2026-01-15

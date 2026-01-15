@@ -9,6 +9,26 @@ define_tool!(DIRENV, {
     macos: { brew: "direnv" },
     linux: { uniform: "direnv" },
     windows: { winget: "direnv.direnv" },
+    default_hook: {
+        description: "Add direnv shell hook to .bashrc and .zshrc",
+        script: r#"
+# Direnv shell hook
+DIRENV_HOOK_BASH='eval "$(direnv hook bash)"'
+DIRENV_HOOK_ZSH='eval "$(direnv hook zsh)"'
+
+# Add to .bashrc if not present
+if [ -f "$HOME/.bashrc" ] && ! grep -q 'direnv hook bash' "$HOME/.bashrc"; then
+    echo "$DIRENV_HOOK_BASH" >> "$HOME/.bashrc"
+    echo "Added direnv hook to ~/.bashrc"
+fi
+
+# Add to .zshrc if not present
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'direnv hook zsh' "$HOME/.zshrc"; then
+    echo "$DIRENV_HOOK_ZSH" >> "$HOME/.zshrc"
+    echo "Added direnv hook to ~/.zshrc"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

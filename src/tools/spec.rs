@@ -176,6 +176,60 @@ impl WindowsInstall {
 /// Type alias for custom installation functions.
 pub type CustomInstallFn = fn(&str) -> Result<(), InstallError>;
 
+/// Default post-install hook configuration for a tool.
+///
+/// Tools can define a default hook that runs after installation to configure
+/// the tool (e.g., adding shell integration, setting up PATH, creating configs).
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct DefaultHook {
+    /// Human-readable description of what the hook does.
+    /// Displayed to users in dry-run mode and hook listings.
+    pub description: &'static str,
+
+    /// The shell script to execute.
+    /// This should be idempotent (safe to run multiple times).
+    pub script: &'static str,
+
+    /// Optional platform filter: "macos", "linux", "windows", or None for all platforms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<&'static str>,
+}
+
+impl DefaultHook {
+    /// Create a new default hook for all platforms.
+    pub const fn new(description: &'static str, script: &'static str) -> Self {
+        Self {
+            description,
+            script,
+            platform: None,
+        }
+    }
+
+    /// Create a new default hook for a specific platform.
+    pub const fn for_platform(
+        description: &'static str,
+        script: &'static str,
+        platform: &'static str,
+    ) -> Self {
+        Self {
+            description,
+            script,
+            platform: Some(platform),
+        }
+    }
+
+    /// Check if this hook should run on the current platform.
+    pub fn should_run_on_current_platform(&self) -> bool {
+        match self.platform {
+            None => true,
+            Some("macos") => cfg!(target_os = "macos"),
+            Some("linux") => cfg!(target_os = "linux"),
+            Some("windows") => cfg!(target_os = "windows"),
+            Some(_) => false,
+        }
+    }
+}
+
 /// Declarative tool specification that eliminates boilerplate.
 ///
 /// A `ToolSpec` defines everything needed to check for and install a tool
@@ -202,12 +256,29 @@ pub struct ToolSpec {
     /// If provided, this takes precedence over standard package manager installs.
     #[serde(skip)]
     pub custom_install: Option<CustomInstallFn>,
+
+    /// Optional default post-install hook that runs after tool installation.
+    /// Used for shell integration, PATH setup, config generation, etc.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_hook: Option<DefaultHook>,
 }
 
 impl ToolSpec {
     /// Check if the tool is installed and satisfies the version requirement.
     pub fn is_satisfied(&self, min_hint: &str) -> bool {
         cmd_satisfies(self.command, min_hint)
+    }
+
+    /// Get the default hook if one exists and should run on the current platform.
+    pub fn get_default_hook(&self) -> Option<&DefaultHook> {
+        self.default_hook
+            .as_ref()
+            .filter(|h| h.should_run_on_current_platform())
+    }
+
+    /// Check if this tool has a default hook that would run on the current platform.
+    pub fn has_default_hook(&self) -> bool {
+        self.get_default_hook().is_some()
     }
 
     /// Ensure the tool is installed and satisfies the version requirement.
@@ -358,6 +429,7 @@ macro_rules! define_tool {
         $(linux: { $($linux_key:ident: $linux_val:expr),* $(,)? },)?
         $(windows: { $($windows_key:ident: $windows_val:expr),* $(,)? },)?
         $(custom_install: $custom:expr,)?
+        $(default_hook: { description: $hook_desc:expr, script: $hook_script:expr $(, platform: $hook_platform:expr)? },)?
     }) => {
         pub static $name: $crate::tools::spec::ToolSpec = $crate::tools::spec::ToolSpec {
             name: stringify!($name),
@@ -366,6 +438,7 @@ macro_rules! define_tool {
             linux: define_tool!(@linux $($($linux_key: $linux_val),*)?),
             windows: define_tool!(@windows $($($windows_key: $windows_val),*)?),
             custom_install: define_tool!(@custom $($custom)?),
+            default_hook: define_tool!(@default_hook $($hook_desc, $hook_script $(, $hook_platform)?)?),
         };
 
         pub fn ensure(min_hint: &str) -> Result<(), $crate::tools::common::InstallError> {
@@ -444,6 +517,15 @@ macro_rules! define_tool {
     // Custom install helper
     (@custom) => { None };
     (@custom $fn:expr) => { Some($fn) };
+
+    // Default hook helpers
+    (@default_hook) => { None };
+    (@default_hook $desc:expr, $script:expr) => {
+        Some($crate::tools::spec::DefaultHook::new($desc, $script))
+    };
+    (@default_hook $desc:expr, $script:expr, $platform:expr) => {
+        Some($crate::tools::spec::DefaultHook::for_platform($desc, $script, $platform))
+    };
 }
 
 pub use define_tool;
@@ -580,6 +662,32 @@ pub fn list_tool_names() -> Vec<String> {
     names
 }
 
+/// Look up a ToolSpec by name (case-insensitive).
+/// Returns None if the tool is not found or is a manually registered tool.
+pub fn get_tool_spec(name: &str) -> Option<&'static ToolSpec> {
+    let name_lower = name.to_lowercase();
+    iter_tools()
+        .find(|entry| entry.spec.name.to_lowercase() == name_lower)
+        .map(|entry| entry.spec)
+}
+
+/// Get the default hook for a tool by name, if one exists for the current platform.
+pub fn get_tool_default_hook(name: &str) -> Option<&'static DefaultHook> {
+    get_tool_spec(name).and_then(|spec| spec.get_default_hook())
+}
+
+/// Get a list of all tools that have default hooks (for the current platform).
+pub fn list_tools_with_default_hooks() -> Vec<(&'static str, &'static DefaultHook)> {
+    iter_tools()
+        .filter_map(|entry| {
+            entry
+                .spec
+                .get_default_hook()
+                .map(|hook| (entry.spec.name, hook))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,6 +706,21 @@ mod tests {
             choco: Some("test"),
         }),
         custom_install: None,
+        default_hook: None,
+    };
+
+    // Test ToolSpec with a default hook
+    static TEST_TOOL_WITH_HOOK: ToolSpec = ToolSpec {
+        name: "test_hooked",
+        command: "test_hooked_cmd",
+        macos: Some(MacOsInstall::brew("test")),
+        linux: Some(LinuxInstall::uniform("test")),
+        windows: None,
+        custom_install: None,
+        default_hook: Some(DefaultHook::new(
+            "Configure test tool",
+            "echo 'test hook executed'",
+        )),
     };
 
     #[test]
@@ -665,6 +788,7 @@ mod tests {
             linux: None,
             windows: None,
             custom_install: None,
+            default_hook: None,
         };
         assert!(!tool.is_satisfied("1.0"));
     }
@@ -693,6 +817,7 @@ mod tests {
             linux: None,
             windows: None,
             custom_install: Some(|_| Ok(())),
+            default_hook: None,
         };
         let entry = ToolIndexEntry::from(&custom_tool);
         assert!(entry.custom_install.has_custom_installer);
@@ -789,5 +914,123 @@ mod tests {
         assert!(json_str.contains("\"version\""));
         assert!(json_str.contains("\"count\""));
         assert!(json_str.contains("\"tools\""));
+    }
+
+    // ========================================================================
+    // Default Hook Tests
+    // ========================================================================
+
+    #[test]
+    fn test_default_hook_new() {
+        let hook = DefaultHook::new("Test hook", "echo test");
+        assert_eq!(hook.description, "Test hook");
+        assert_eq!(hook.script, "echo test");
+        assert!(hook.platform.is_none());
+    }
+
+    #[test]
+    fn test_default_hook_for_platform() {
+        let hook = DefaultHook::for_platform("macOS only", "brew info", "macos");
+        assert_eq!(hook.description, "macOS only");
+        assert_eq!(hook.script, "brew info");
+        assert_eq!(hook.platform, Some("macos"));
+    }
+
+    #[test]
+    fn test_default_hook_should_run_no_platform() {
+        let hook = DefaultHook::new("All platforms", "echo hello");
+        // Should always return true when platform is None
+        assert!(hook.should_run_on_current_platform());
+    }
+
+    #[test]
+    fn test_default_hook_should_run_current_platform() {
+        // Test that current platform's hook returns true
+        #[cfg(target_os = "macos")]
+        {
+            let hook = DefaultHook::for_platform("macOS hook", "ls", "macos");
+            assert!(hook.should_run_on_current_platform());
+            let other = DefaultHook::for_platform("Linux hook", "ls", "linux");
+            assert!(!other.should_run_on_current_platform());
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let hook = DefaultHook::for_platform("Linux hook", "ls", "linux");
+            assert!(hook.should_run_on_current_platform());
+            let other = DefaultHook::for_platform("macOS hook", "ls", "macos");
+            assert!(!other.should_run_on_current_platform());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let hook = DefaultHook::for_platform("Windows hook", "dir", "windows");
+            assert!(hook.should_run_on_current_platform());
+            let other = DefaultHook::for_platform("Linux hook", "ls", "linux");
+            assert!(!other.should_run_on_current_platform());
+        }
+    }
+
+    #[test]
+    fn test_default_hook_unknown_platform() {
+        let hook = DefaultHook::for_platform("Unknown", "test", "bsd");
+        // Unknown platforms should return false
+        assert!(!hook.should_run_on_current_platform());
+    }
+
+    #[test]
+    fn test_tool_spec_get_default_hook() {
+        // Tool with no hook
+        assert!(TEST_TOOL.get_default_hook().is_none());
+        assert!(!TEST_TOOL.has_default_hook());
+
+        // Tool with hook
+        let hook = TEST_TOOL_WITH_HOOK.get_default_hook();
+        assert!(hook.is_some());
+        assert!(TEST_TOOL_WITH_HOOK.has_default_hook());
+        let h = hook.unwrap();
+        assert_eq!(h.description, "Configure test tool");
+        assert_eq!(h.script, "echo 'test hook executed'");
+    }
+
+    #[test]
+    fn test_tool_spec_with_platform_hook() {
+        // Create a tool with a platform-specific hook
+        static PLATFORM_TOOL: ToolSpec = ToolSpec {
+            name: "platform_test",
+            command: "platform_cmd",
+            macos: None,
+            linux: None,
+            windows: None,
+            custom_install: None,
+            #[cfg(target_os = "macos")]
+            default_hook: Some(DefaultHook::for_platform("macOS hook", "brew info", "macos")),
+            #[cfg(target_os = "linux")]
+            default_hook: Some(DefaultHook::for_platform("Linux hook", "apt info", "linux")),
+            #[cfg(target_os = "windows")]
+            default_hook: Some(DefaultHook::for_platform("Windows hook", "winget info", "windows")),
+        };
+
+        // Hook should be available on current platform
+        assert!(PLATFORM_TOOL.has_default_hook());
+    }
+
+    #[test]
+    fn test_default_hook_serialization() {
+        let hook = DefaultHook::new("Test", "echo test");
+        let json = serde_json::to_string(&hook);
+        assert!(json.is_ok());
+        let json_str = json.unwrap();
+        assert!(json_str.contains("\"description\":\"Test\""));
+        assert!(json_str.contains("\"script\":\"echo test\""));
+        // platform should be skipped when None
+        assert!(!json_str.contains("platform"));
+    }
+
+    #[test]
+    fn test_default_hook_with_platform_serialization() {
+        let hook = DefaultHook::for_platform("macOS", "ls", "macos");
+        let json = serde_json::to_string(&hook);
+        assert!(json.is_ok());
+        let json_str = json.unwrap();
+        assert!(json_str.contains("\"platform\":\"macos\""));
     }
 }

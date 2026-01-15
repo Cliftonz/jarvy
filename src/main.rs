@@ -87,6 +87,9 @@ enum Commands {
         /// Output the full tool index as JSON
         #[clap(long)]
         index: bool,
+        /// List tools with built-in default hooks
+        #[clap(long)]
+        default_hooks: bool,
         /// Output format: json, yaml, toml, pretty (for --index)
         #[clap(short = 'F', long = "format", value_enum, default_value = "pretty")]
         output_format: OutputFormat,
@@ -345,30 +348,58 @@ fn main() {
 
                             // Execute per-tool post_install hook if configured
                             if !no_hooks {
-                                if let Some(tool_hooks) = config.get_tool_hooks(&tool.name) {
-                                    if let Some(ref script) = tool_hooks.post_install {
-                                        let env = HookEnv::for_tool(&tool.name, &tool.version);
-                                        let hook = Hook::with_config(
-                                            script,
-                                            &format!("{} post_install", tool.name),
-                                            hook_settings.clone(),
-                                        )
-                                        .with_env(env);
-                                        match hook.execute() {
-                                            Ok(_) => {}
-                                            Err(e) => {
-                                                if !hook_settings.continue_on_error {
-                                                    eprintln!(
-                                                        "Post-install hook for {} failed: {}",
-                                                        tool.name, e
-                                                    );
-                                                    std::process::exit(crate::error_codes::HOOK_FAILED);
-                                                }
+                                let user_hook = config
+                                    .get_tool_hooks(&tool.name)
+                                    .and_then(|h| h.post_install.as_ref());
+
+                                if let Some(script) = user_hook {
+                                    // User-provided hook takes precedence
+                                    let env = HookEnv::for_tool(&tool.name, &tool.version);
+                                    let hook = Hook::with_config(
+                                        script,
+                                        &format!("{} post_install", tool.name),
+                                        hook_settings.clone(),
+                                    )
+                                    .with_env(env);
+                                    match hook.execute() {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            if !hook_settings.continue_on_error {
                                                 eprintln!(
-                                                    "Warning: Post-install hook for {} failed: {}",
+                                                    "Post-install hook for {} failed: {}",
                                                     tool.name, e
                                                 );
+                                                std::process::exit(crate::error_codes::HOOK_FAILED);
                                             }
+                                            eprintln!(
+                                                "Warning: Post-install hook for {} failed: {}",
+                                                tool.name, e
+                                            );
+                                        }
+                                    }
+                                } else if let Some(default_hook) =
+                                    tools::spec::get_tool_default_hook(&tool.name)
+                                {
+                                    // Fall back to tool's built-in default hook
+                                    println!(
+                                        "Running default hook for {}: {}",
+                                        tool.name, default_hook.description
+                                    );
+                                    let env = HookEnv::for_tool(&tool.name, &tool.version);
+                                    let hook = Hook::with_config(
+                                        default_hook.script,
+                                        &format!("{} default_hook", tool.name),
+                                        hook_settings.clone(),
+                                    )
+                                    .with_env(env);
+                                    match hook.execute() {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            // Default hooks are advisory; always continue on error
+                                            eprintln!(
+                                                "Warning: Default hook for {} failed: {}",
+                                                tool.name, e
+                                            );
                                         }
                                     }
                                 }
@@ -400,19 +431,37 @@ fn main() {
                     }
                 }
 
-                // Show dry-run for per-tool hooks
+                // Show dry-run for per-tool hooks (user-provided or default)
                 if *dry_run && !no_hooks {
-                    if let Some(tool_hooks) = config.get_tool_hooks(&tool.name) {
-                        if let Some(ref script) = tool_hooks.post_install {
-                            let env = HookEnv::for_tool(&tool.name, &tool.version);
-                            let hook = Hook::with_config(
-                                script,
-                                &format!("{} post_install", tool.name),
-                                hook_settings.clone(),
-                            )
-                            .with_env(env);
-                            hook.dry_run();
-                        }
+                    let user_hook = config
+                        .get_tool_hooks(&tool.name)
+                        .and_then(|h| h.post_install.as_ref());
+
+                    if let Some(script) = user_hook {
+                        let env = HookEnv::for_tool(&tool.name, &tool.version);
+                        let hook = Hook::with_config(
+                            script,
+                            &format!("{} post_install", tool.name),
+                            hook_settings.clone(),
+                        )
+                        .with_env(env);
+                        hook.dry_run();
+                    } else if let Some(default_hook) =
+                        tools::spec::get_tool_default_hook(&tool.name)
+                    {
+                        // Show default hook in dry-run
+                        println!(
+                            "[DRY-RUN] Would run default hook for {}: {}",
+                            tool.name, default_hook.description
+                        );
+                        let env = HookEnv::for_tool(&tool.name, &tool.version);
+                        let hook = Hook::with_config(
+                            default_hook.script,
+                            &format!("{} default_hook", tool.name),
+                            hook_settings.clone(),
+                        )
+                        .with_env(env);
+                        hook.dry_run();
                     }
                 }
             }
@@ -583,10 +632,69 @@ fn main() {
         }
         Some(Commands::Tools {
             index,
+            default_hooks,
             output_format,
             output,
         }) => {
-            let content = if *index {
+            let content = if *default_hooks {
+                // List tools with default hooks
+                let hooks_list = tools::spec::list_tools_with_default_hooks();
+
+                #[derive(serde::Serialize)]
+                struct HookInfo {
+                    tool: String,
+                    description: String,
+                    script: String,
+                    platform: Option<String>,
+                }
+
+                let hook_infos: Vec<HookInfo> = hooks_list
+                    .iter()
+                    .map(|(name, hook)| HookInfo {
+                        tool: name.to_string(),
+                        description: hook.description.to_string(),
+                        script: hook.script.to_string(),
+                        platform: hook.platform.map(|p| p.to_string()),
+                    })
+                    .collect();
+
+                match output_format {
+                    OutputFormat::Json => serde_json::to_string_pretty(&hook_infos)
+                        .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e)),
+                    OutputFormat::Yaml => serde_yaml::to_string(&hook_infos)
+                        .unwrap_or_else(|e| format!("error: {}", e)),
+                    OutputFormat::Toml => {
+                        let wrapper = serde_json::json!({ "hooks": hook_infos });
+                        toml::to_string(&wrapper).unwrap_or_else(|e| format!("error = \"{}\"", e))
+                    }
+                    OutputFormat::Pretty => {
+                        let mut s = String::new();
+                        s.push_str(&format!(
+                            "Tools with default hooks ({} tools):\n",
+                            hooks_list.len()
+                        ));
+                        s.push_str("─".repeat(60).as_str());
+                        s.push('\n');
+                        for (name, hook) in &hooks_list {
+                            s.push_str(&format!("\n{}\n", name));
+                            s.push_str(&format!("  Description: {}\n", hook.description));
+                            if let Some(platform) = hook.platform {
+                                s.push_str(&format!("  Platform: {}\n", platform));
+                            }
+                            s.push_str("  Script:\n");
+                            for line in hook.script.lines().take(5) {
+                                if !line.trim().is_empty() {
+                                    s.push_str(&format!("    {}\n", line));
+                                }
+                            }
+                            if hook.script.lines().count() > 5 {
+                                s.push_str("    ...\n");
+                            }
+                        }
+                        s
+                    }
+                }
+            } else if *index {
                 // Output the full tool index
                 let tool_index = tools::spec::generate_tool_index();
                 match output_format {
