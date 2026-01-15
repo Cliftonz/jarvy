@@ -9,6 +9,22 @@ define_tool!(AWSCLI, {
     macos: { brew: "awscli" },
     linux: { uniform: "awscli" },
     windows: { winget: "Amazon.AWSCLI" },
+    default_hook: {
+        description: "Configure AWS CLI shell completion",
+        script: r#"
+# Add AWS CLI completion to .bashrc
+if [ -f "$HOME/.bashrc" ] && ! grep -q 'aws_completer' "$HOME/.bashrc"; then
+    echo 'complete -C aws_completer aws' >> "$HOME/.bashrc"
+    echo "Added AWS CLI completion to .bashrc"
+fi
+
+# Add AWS CLI completion to .zshrc
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'aws_completer' "$HOME/.zshrc"; then
+    echo 'autoload bashcompinit && bashcompinit && complete -C aws_completer aws' >> "$HOME/.zshrc"
+    echo "Added AWS CLI completion to .zshrc"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

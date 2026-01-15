@@ -9,6 +9,22 @@ define_tool!(K9S, {
     macos: { brew: "derailed/k9s/k9s" },
     linux: { uniform: "k9s" },
     windows: { winget: "Derailed.k9s" },
+    default_hook: {
+        description: "Configure k9s shell completion",
+        script: r#"
+# Add k9s completion to .bashrc
+if [ -f "$HOME/.bashrc" ] && ! grep -q 'k9s completion' "$HOME/.bashrc"; then
+    echo 'source <(k9s completion bash)' >> "$HOME/.bashrc"
+    echo "Added k9s completion to .bashrc"
+fi
+
+# Add k9s completion to .zshrc
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'k9s completion' "$HOME/.zshrc"; then
+    echo 'source <(k9s completion zsh)' >> "$HOME/.zshrc"
+    echo "Added k9s completion to .zshrc"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

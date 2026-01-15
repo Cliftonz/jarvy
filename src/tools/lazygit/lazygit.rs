@@ -9,6 +9,22 @@ define_tool!(LAZYGIT, {
     macos: { brew: "lazygit" },
     linux: { uniform: "lazygit" },
     windows: { winget: "JesseDuffield.lazygit" },
+    default_hook: {
+        description: "Create lg alias for lazygit",
+        script: r#"
+# Add lg alias to .bashrc
+if [ -f "$HOME/.bashrc" ] && ! grep -q 'alias lg=' "$HOME/.bashrc"; then
+    echo 'alias lg=lazygit' >> "$HOME/.bashrc"
+    echo "Added 'lg' alias for lazygit to .bashrc"
+fi
+
+# Add lg alias to .zshrc
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'alias lg=' "$HOME/.zshrc"; then
+    echo 'alias lg=lazygit' >> "$HOME/.zshrc"
+    echo "Added 'lg' alias for lazygit to .zshrc"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

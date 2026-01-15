@@ -9,6 +9,18 @@ define_tool!(DOCKER, {
     macos: { cask: "docker" },
     linux: { apt: "docker.io", dnf: "docker", pacman: "docker", apk: "docker" },
     windows: { winget: "Docker.DockerDesktop" },
+    default_hook: {
+        description: "Add user to docker group (Linux) for rootless access",
+        script: r#"
+# Add current user to docker group (Linux only)
+if [ "$(uname)" = "Linux" ]; then
+    if ! groups 2>/dev/null | grep -q docker; then
+        echo "Note: To run docker without sudo, run: sudo usermod -aG docker $USER"
+        echo "Then log out and back in for the change to take effect."
+    fi
+fi
+"#
+    },
 });
 
 #[cfg(test)]

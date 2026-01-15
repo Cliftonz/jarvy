@@ -3,7 +3,8 @@
   "parent_prd": "PRD-003.1",
   "title": "Additional Tool Post-Install Hooks",
   "description": "Extend default post-install hooks to more tools that commonly need post-installation configuration",
-  "status": "pending",
+  "status": "completed",
+  "completed_date": "2026-01-15",
   "priority": "medium",
   "dependencies": ["PRD-003.1", "PRD-010"],
   "estimated_complexity": "low",
@@ -25,99 +26,102 @@
       "git - sensible defaults (defaultBranch, autocrlf)",
       "kubectl - shell completion and k alias",
       "terraform - shell autocomplete"
-    ]
+    ],
+    "new_hooks_added": [
+      "node - npm global prefix + PATH",
+      "python - pip upgrade + user site PATH",
+      "helm - bitnami repository",
+      "awscli - shell completion",
+      "gh - shell completion",
+      "docker - docker group note (Linux)",
+      "k9s - shell completion",
+      "lazygit - lg alias",
+      "bat - MANPAGER configuration"
+    ],
+    "total_hooks": 18
   },
   "tasks": [
     {
       "id": "H1",
       "title": "Add node default hook",
       "description": "Configure npm global prefix and add to PATH",
-      "status": "pending",
+      "status": "completed",
       "priority": "high",
-      "files": ["src/tools/node/node.rs"],
-      "hook_script": "# Configure npm prefix for global installs\nmkdir -p ~/.npm-global\nnpm config set prefix '~/.npm-global'\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q '.npm-global/bin' \"$HOME/.bashrc\"; then\n    echo 'export PATH=\"$HOME/.npm-global/bin:$PATH\"' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q '.npm-global/bin' \"$HOME/.zshrc\"; then\n    echo 'export PATH=\"$HOME/.npm-global/bin:$PATH\"' >> \"$HOME/.zshrc\"\nfi"
+      "files": ["src/tools/node/node.rs"]
     },
     {
       "id": "H2",
       "title": "Add python default hook",
       "description": "Upgrade pip and configure user site-packages PATH",
-      "status": "pending",
+      "status": "completed",
       "priority": "high",
-      "files": ["src/tools/python/python.rs"],
-      "hook_script": "# Upgrade pip and configure PATH for user packages\npython3 -m pip install --upgrade pip --quiet 2>/dev/null || true\nUSER_SITE=$(python3 -m site --user-base)/bin\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q 'python.*user-base' \"$HOME/.bashrc\"; then\n    echo 'export PATH=\"'\"$USER_SITE\"':$PATH\"' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q 'python.*user-base' \"$HOME/.zshrc\"; then\n    echo 'export PATH=\"'\"$USER_SITE\"':$PATH\"' >> \"$HOME/.zshrc\"\nfi"
+      "files": ["src/tools/python/python.rs"]
     },
     {
       "id": "H3",
       "title": "Add rust default hook",
       "description": "Install common rustup components and configure cargo PATH",
-      "status": "pending",
+      "status": "skipped",
       "priority": "high",
       "files": ["src/tools/rust/rust.rs"],
-      "hook_script": "# Add rustup components if not present\nrustup component add clippy 2>/dev/null || true\nrustup component add rustfmt 2>/dev/null || true\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q '.cargo/bin' \"$HOME/.bashrc\"; then\n    echo 'export PATH=\"$HOME/.cargo/bin:$PATH\"' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q '.cargo/bin' \"$HOME/.zshrc\"; then\n    echo 'export PATH=\"$HOME/.cargo/bin:$PATH\"' >> \"$HOME/.zshrc\"\nfi"
+      "notes": "Rust uses a custom installer (not define_tool! macro), so default hooks are not supported. Requires infrastructure enhancement to add hook support for custom installers."
     },
     {
       "id": "H4",
       "title": "Add helm default hook",
       "description": "Add common Helm repositories",
-      "status": "pending",
+      "status": "completed",
       "priority": "medium",
-      "files": ["src/tools/helm/helm.rs"],
-      "hook_script": "# Add common Helm repositories if not present\nhelm repo list 2>/dev/null | grep -q 'stable' || helm repo add stable https://charts.helm.sh/stable 2>/dev/null || true\nhelm repo list 2>/dev/null | grep -q 'bitnami' || helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true\nhelm repo update 2>/dev/null || true"
+      "files": ["src/tools/helm/helm.rs"]
     },
     {
       "id": "H5",
       "title": "Add awscli default hook",
       "description": "Configure AWS CLI defaults and shell completion",
-      "status": "pending",
+      "status": "completed",
       "priority": "medium",
-      "files": ["src/tools/awscli/awscli.rs"],
-      "hook_script": "# Configure AWS CLI completion\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q 'aws_completer' \"$HOME/.bashrc\"; then\n    echo 'complete -C aws_completer aws' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q 'aws_zsh_completer' \"$HOME/.zshrc\"; then\n    echo 'autoload bashcompinit && bashcompinit && complete -C aws_completer aws' >> \"$HOME/.zshrc\"\nfi"
+      "files": ["src/tools/awscli/awscli.rs"]
     },
     {
       "id": "H6",
       "title": "Add gh (GitHub CLI) default hook",
       "description": "Configure shell completion for GitHub CLI",
-      "status": "pending",
+      "status": "completed",
       "priority": "medium",
-      "files": ["src/tools/gh/gh.rs"],
-      "hook_script": "# Configure gh CLI completion\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q 'gh completion' \"$HOME/.bashrc\"; then\n    echo 'eval \"$(gh completion -s bash)\"' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q 'gh completion' \"$HOME/.zshrc\"; then\n    echo 'eval \"$(gh completion -s zsh)\"' >> \"$HOME/.zshrc\"\nfi"
+      "files": ["src/tools/gh/gh.rs"]
     },
     {
       "id": "H7",
       "title": "Add docker default hook",
       "description": "Add user to docker group on Linux",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
       "files": ["src/tools/docker/docker.rs"],
-      "hook_script": "# Add current user to docker group (Linux only)\nif [ \"$(uname)\" = \"Linux\" ]; then\n    if ! groups | grep -q docker; then\n        echo 'Note: To run docker without sudo, run: sudo usermod -aG docker $USER'\n    fi\nfi",
       "notes": "Platform-specific, Linux only"
     },
     {
       "id": "H8",
       "title": "Add k9s default hook",
       "description": "Configure k9s shell completion",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["src/tools/k9s/k9s.rs"],
-      "hook_script": "# Configure k9s completion\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q 'k9s completion' \"$HOME/.bashrc\"; then\n    echo 'source <(k9s completion bash)' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q 'k9s completion' \"$HOME/.zshrc\"; then\n    echo 'source <(k9s completion zsh)' >> \"$HOME/.zshrc\"\nfi"
+      "files": ["src/tools/k9s/k9s.rs"]
     },
     {
       "id": "H9",
       "title": "Add lazygit default hook",
       "description": "Create lg alias for lazygit",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["src/tools/lazygit/lazygit.rs"],
-      "hook_script": "# Add lg alias for lazygit\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q 'alias lg=' \"$HOME/.bashrc\"; then\n    echo 'alias lg=lazygit' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q 'alias lg=' \"$HOME/.zshrc\"; then\n    echo 'alias lg=lazygit' >> \"$HOME/.zshrc\"\nfi"
+      "files": ["src/tools/lazygit/lazygit.rs"]
     },
     {
       "id": "H10",
       "title": "Add bat default hook",
       "description": "Set bat as MANPAGER for colored man pages",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["src/tools/bat/bat.rs"],
-      "hook_script": "# Configure bat as MANPAGER\nif [ -f \"$HOME/.bashrc\" ] && ! grep -q 'MANPAGER.*bat' \"$HOME/.bashrc\"; then\n    echo 'export MANPAGER=\"sh -c '\\''col -bx | bat -l man -p'\\''\"' >> \"$HOME/.bashrc\"\nfi\nif [ -f \"$HOME/.zshrc\" ] && ! grep -q 'MANPAGER.*bat' \"$HOME/.zshrc\"; then\n    echo 'export MANPAGER=\"sh -c '\\''col -bx | bat -l man -p'\\''\"' >> \"$HOME/.zshrc\"\nfi"
+      "files": ["src/tools/bat/bat.rs"]
     }
   ],
   "implementation_notes": {
@@ -129,5 +133,8 @@
   "related_tasks": [
     "PRD-003 - Post-Install Hooks Infrastructure",
     "PRD-003.1 - Tool-Specific Default Hooks"
+  ],
+  "future_enhancements": [
+    "Add default hook support for custom installer tools (rust, nvm, brew)"
   ]
 }

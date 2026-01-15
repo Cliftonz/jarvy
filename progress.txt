@@ -1,1465 +1,227 @@
-# PRD-004: Semantic Version Checking - Implementation Progress
+# Jarvy Implementation Progress
 
-## Started: 2025-01-13
-## Completed: 2025-01-13
+## Completed PRDs Summary
 
-## Implementation Summary
-
-Successfully implemented proper semantic version checking to replace the buggy substring-based matching.
-
-### Changes Made
-
-1. **Added Dependencies** (Cargo.toml)
-   - `semver = "1.0"` - For semantic version parsing and comparison
-   - `regex = "1.11"` - For extracting versions from tool output
-   - `once_cell = "1.20"` - For lazy static regex compilation
-
-2. **Created New Module** (src/tools/version.rs)
-   - `ExtractedVersion` struct to hold parsed version components
-   - `extract_version()` - Extracts version from various tool output formats
-   - `version_satisfies()` - Main comparison function with semver support
-   - `parse_requirement()` - Converts version strings to semver requirements
-   - 24 comprehensive unit tests
-
-3. **Updated cmd_satisfies()** (src/tools/common.rs)
-   - Now delegates to `version_satisfies()` from the new version module
-   - Supports semver operators: `>=`, `<`, `^`, `~`, `=`
-   - Supports version ranges: `">= 3.10, < 4.0"`
-   - Handles special keywords: `latest`, `*`
-
-### Key Design Decisions
-
-1. **Module Location**: Placed version.rs in `src/tools/` instead of crate root
-   - This allows access via `super::version` from common.rs
-   - Works for both library and binary compilation
-
-2. **Requirement Parsing Strategy**:
-   - Bare versions like "3.10" are NOT passed to semver directly
-   - Reason: semver interprets "3.10.5" as "^3.10.5" which is too permissive
-   - Instead, we manually convert:
-     - "20" → `>=20.0.0, <21.0.0` (major match)
-     - "3.10" → `>=3.10.0, <3.11.0` (major.minor match)
-     - "3.10.5" → `=3.10.5` (exact match)
-
-3. **Fallback Handling**: Smart substring matching for unparseable versions
-   - Uses component-boundary matching to prevent false positives
-   - "3.1" won't match "3.10.0" anymore
-
-### Bugs Fixed
-
-1. **False positive substring match**: "2.4" no longer matches "12.40.0"
-2. **Embedded number match**: "3.1" no longer matches "3.10.0" or "3.11.0"
-3. **Exact version mismatch**: "3.10.5" now correctly rejects "3.10.6"
-
-### Version Formats Supported
-
-| Tool | Output Format | Extracted |
-|------|---------------|-----------|
-| git | `git version 2.44.0` | 2.44.0 |
-| node | `v20.10.0` | 20.10.0 |
-| python | `Python 3.12.1` | 3.12.1 |
-| docker | `Docker version 24.0.7, build afdd53b` | 24.0.7 |
-| rustc | `rustc 1.75.0 (82e1608df 2023-12-21)` | 1.75.0 |
-| go | `go version go1.21.5 darwin/arm64` | 1.21.5 |
-
-### Test Results
-
-- 24/24 version-specific tests passing
-- All existing tests continue to pass
-- Doc tests passing
-
-### Learnings
-
-1. **Rust module system**: Binary and library have separate module trees
-   - `mod tools;` in main.rs creates a binary-local module
-   - `pub mod tools;` in lib.rs exports from library
-   - Use `super::` for relative imports within same tree
-
-2. **Semver crate behavior**: Bare version numbers default to caret (^)
-   - `VersionReq::parse("3.10.5")` returns `^3.10.5`, not exact match
-   - Must explicitly use `=3.10.5` for exact matching
-
-3. **Regex for version extraction**: Single regex handles most formats
-   - Pattern: `v?(\d+)\.(\d+)(?:\.(\d+))?(?:-([a-zA-Z0-9.-]+))?`
-   - Handles optional v prefix, optional patch, optional prerelease
-
-## Files Modified
-
-- `Cargo.toml` - Added 3 new dependencies
-- `src/tools/mod.rs` - Added `pub mod version;`
-- `src/tools/version.rs` - New file (387 lines)
-- `src/tools/common.rs` - Updated `cmd_satisfies()` function
-- `src/lib.rs` - No changes needed (version accessed via tools)
+| PRD | Title | Completed | Key Outcome |
+|-----|-------|-----------|-------------|
+| PRD-004 | Semantic Version Checking | 2025-01-13 | Replaced buggy substring matching with proper semver |
+| PRD-002 | Tool Specification Abstraction | 2025-01-14 | `define_tool!` macro, ~2000 lines reduced |
+| PRD-003 | Post-Install Hooks | 2026-01-14 | User-defined hooks via `[hooks]` config |
+| PRD-003.1 | Tool-Specific Default Hooks | 2026-01-15 | 9 tools with built-in hooks |
+| HOOKS-002 | Additional Default Hooks | 2026-01-15 | 9 more tools (18 total) |
+| PRD-008 | Environment Variables | 2026-01-15 | `[env]` config, .env generation |
+| PRD-010 | CI/CD Detection | 2026-01-15 | 11 CI providers, workflow templates |
+| PRD-009 | Service Management | 2026-01-15 | Docker Compose & Tilt backends |
 
 ---
 
-# PRD-002: Tool Specification Abstraction - Implementation Progress
+## PRD-004: Semantic Version Checking
 
-## Started: 2025-01-14
-## Status: Phase 1 Complete (Proof of Concept)
+**Files**: `src/tools/version.rs` (new), `src/tools/common.rs`
+**Dependencies**: semver, regex, once_cell
+**Tests**: 24 unit tests
 
-## Implementation Summary
+**Key Features**:
+- Semver operators: `>=`, `<`, `^`, `~`, `=` and ranges
+- Smart version extraction from tool output (git, node, python, docker, rustc, go)
+- Component-boundary matching prevents false positives ("3.1" won't match "3.10.0")
 
-Successfully implemented the ToolSpec abstraction pattern to eliminate boilerplate across tool implementations. Migrated 5 proof-of-concept tools from ~400 lines to ~100 lines.
+**Key Learnings**:
+- `VersionReq::parse("3.10.5")` returns `^3.10.5`, not exact match - must use `=3.10.5`
+- Regex pattern: `v?(\d+)\.(\d+)(?:\.(\d+))?(?:-([a-zA-Z0-9.-]+))?`
 
-### Changes Made
+---
 
-1. **Added Dependencies** (Cargo.toml)
-   - `phf = { version = "0.11", features = ["macros"] }` - For compile-time hash maps (future package registry)
+## PRD-002: Tool Specification Abstraction
 
-2. **Created New Module** (src/tools/spec.rs - 376 lines)
-   - `ToolSpec` struct - Declarative tool definition with platform-specific install options
-   - `MacOsInstall` struct - Homebrew formula/cask options
-   - `LinuxInstall` struct - apt/dnf/yum/zypper/pacman/apk package mappings
-   - `WindowsInstall` struct - winget/chocolatey package mappings
-   - `CustomInstallFn` type - Function pointer for complex tools needing custom logic
-   - `define_tool!` macro - Ergonomic syntax for tool definitions
-   - 6 unit tests for struct helpers
+**Files**: `src/tools/spec.rs` (376 lines)
+**Dependencies**: inventory (auto-registration)
+**Tests**: 180+ total
 
-3. **Migrated 5 Tools** (git, jq, wget, tree, ripgrep)
-   - **Before**: Each tool ~80 lines of boilerplate
-   - **After**: Each tool ~25 lines using `define_tool!` macro
+**Key Features**:
+- `define_tool!` macro replaces ~80 lines boilerplate with ~25 lines per tool
+- Auto-registration via `inventory` crate - no manual `register_all()` edits
+- Platform-specific: `macos: { brew/cask }`, `linux: { uniform/apt/dnf/pacman }`, `windows: { winget/choco }`
 
-### Code Reduction Examples
+**Migration Stats**:
+- 36/39 tools migrated (92%), 3 custom installers remain (nvm, rust, brew)
+- ~2000 lines removed
 
-**Before (jq.rs - 83 lines)**:
-```rust
-pub fn ensure(_min_hint: &str) -> Result<(), InstallError> {
-    if has("jq") { return Ok(()); }
-    install()
-}
-pub fn add_handler(min_hint: &str) -> Result<(), InstallError> { ... }
-fn install() -> Result<(), InstallError> {
-    #[cfg(target_os = "macos")] { return install_macos(); }
-    #[cfg(target_os = "linux")] { return install_linux(); }
-    #[cfg(target_os = "windows")] { return install_windows(); }
-}
-fn install_macos() -> Result<(), InstallError> { ... }
-fn install_linux() -> Result<(), InstallError> { ... }
-fn install_windows() -> Result<(), InstallError> { ... }
+**Key Learnings**:
+- `inventory::submit!` uses linker magic for compile-time collection
+- Closures capturing `self` can't coerce to fn pointers - use macro-generated functions
+
+---
+
+## PRD-003: Post-Install Hooks
+
+**Files**: `src/hooks.rs` (485 lines), `tests/hooks_integration.rs`
+**Dependencies**: wait-timeout
+**Tests**: 17 unit + 10 integration
+
+**Key Features**:
+- `[hooks]` config: `pre_setup`, `post_setup`, per-tool `[hooks.{tool}].post_install`
+- Environment injection: `JARVY_TOOL`, `JARVY_VERSION`, `JARVY_OS`, `JARVY_ARCH`, `JARVY_HOME`
+- Flags: `--no-hooks`, `--dry-run`
+- Cross-platform shells: bash, zsh, sh, fish, PowerShell, cmd
+
+**Key Learnings**:
+- `#[serde(flatten)]` captures dynamic `[hooks.{tool}]` keys into HashMap
+- `wait-timeout` crate for cross-platform process timeout
+
+---
+
+## PRD-003.1: Tool-Specific Default Hooks
+
+**Files**: Extended `src/tools/spec.rs`, 9 tool files
+**Tests**: 16 hooks + 14 CLI tests
+
+**Tools with Default Hooks**:
+| Tool | Type | Action |
+|------|------|--------|
+| starship, zoxide, direnv, fzf | shell_integration | Add init to .bashrc/.zshrc |
+| go, dotnet | path_setup | Configure PATH |
+| git, kubectl, terraform | config_generation | Set sensible defaults |
+
+**Key Features**:
+- `default_hook: { description, script }` in `define_tool!` macro
+- Idempotent (grep before append), advisory (failures are warnings)
+- User hooks take precedence; `--no-hooks` disables all
+- `jarvy tools --default-hooks` lists all
+
+**Follow-up**: HOOKS-002 completed (see below)
+
+---
+
+## HOOKS-002: Additional Default Hooks
+
+**Files**: 9 tool files updated
+**Tests**: All existing hook tests pass
+
+**New Tools with Default Hooks**:
+| Tool | Type | Action |
+|------|------|--------|
+| node | path_setup | npm global prefix + PATH |
+| python | path_setup | pip upgrade + user site PATH |
+| helm | config_generation | Add bitnami repository |
+| awscli | shell_completion | AWS CLI completion |
+| gh | shell_completion | GitHub CLI completion |
+| docker | advisory_note | Docker group note (Linux) |
+| k9s | shell_completion | k9s completion |
+| lazygit | shell_alias | lg alias for lazygit |
+| bat | shell_integration | MANPAGER configuration |
+
+**Skipped**: rust (uses custom installer, not `define_tool!` macro)
+
+**Total Default Hooks**: 18 tools (9 original + 9 new)
+
+---
+
+## PRD-008: Environment Variables
+
+**Files**: `src/env/` (4 submodules: expand, dotenv, shell, secrets)
+**Dependencies**: rpassword, dialoguer
+**Tests**: 9 integration tests
+
+**Key Features**:
+- `[env.vars]` and `[env.secrets]` config sections
+- Variable expansion: `$HOME`, `$PWD`, `${VAR}`, `$JARVY_{TOOL}_PATH`
+- .env generation with backup, shell rc modification with Jarvy markers
+- `jarvy env` command with `--dotenv`, `--shell`, `--dry-run`, `--export`
+
+**Key Learnings**:
+- `Path::with_extension()` quirk on dotfiles - use explicit path joining
+- Rust 2024: `std::env::set_var` requires `unsafe` in tests
+
+---
+
+## PRD-010: CI/CD Detection
+
+**Files**: `src/ci/` (mod, output, config)
+**Tests**: 19 integration tests
+
+**Key Features**:
+- 11 CI providers: GitHub Actions, GitLab, CircleCI, Travis, Azure DevOps, Jenkins, Bitbucket, Buildkite, TeamCity, AppVeyor, Generic
+- Provider-specific output: groups, warnings, errors, output variables, secret masking
+- Workflow templates for 5 providers
+- `jarvy ci-info`, `jarvy ci-config <provider>`
+- Flags: `--ci`, `--no-ci`
+
+---
+
+## PRD-009: Service Management
+
+**Files**: `src/services/` (mod.rs, docker_compose.rs, tilt.rs)
+**Tests**: 25 unit tests + 8 integration tests
+
+**Key Features**:
+- `[services]` config section with `enabled`, `auto_start`, `compose_file`, `tilt_file`, `start_in_ci` options
+- Two backends: Docker Compose and Tilt (via `ServiceBackend` enum)
+- `ServiceBackendOps` trait for polymorphic backend operations (start, stop, status)
+- `jarvy services start/stop/status/restart` CLI commands
+- Auto-start integration in setup flow (respects CI mode)
+- Detection priority: Docker Compose over Tilt when both present
+- Graceful handling when docker/tilt not installed
+
+**CLI Structure**:
+```
+jarvy services -f <config> start [--foreground]
+jarvy services -f <config> stop
+jarvy services -f <config> status
+jarvy services -f <config> restart [--foreground]
 ```
 
-**After (jq.rs - 24 lines)**:
-```rust
-use crate::define_tool;
-
-define_tool!(JQ, {
-    command: "jq",
-    macos: { brew: "jq" },
-    linux: { uniform: "jq" },
-    windows: { winget: "jqlang.jq" },
-});
-```
-
-### Key Design Decisions
-
-1. **Macro vs Struct Only**: Chose hybrid approach
-   - Structs provide type safety and IDE autocomplete
-   - Macro provides ergonomic syntax for common cases
-   - Macro expands to full struct + ensure() + add_handler() functions
-
-2. **Platform Install Abstraction**:
-   - `LinuxInstall::uniform(name)` - When all package managers use same name
-   - Individual fields for tools with different names per PM
-   - `Option<...>` for platforms that don't support the tool
-
-3. **Custom Install Hook**: `custom_install: Option<fn(&str) -> Result<(), InstallError>>`
-   - For complex tools like nvm, rustup that need special logic
-   - Takes precedence over standard package manager installs
-
-4. **Closure Limitation**: Can't return closure from `into_handler()`
-   - Closures capturing `self` can't be coerced to `fn` pointers
-   - Solution: Macro generates `ensure()` and `add_handler()` directly
-
-### Macro Syntax Variants Supported
-
-```rust
-// Homebrew formula
-macos: { brew: "git" }
-
-// Homebrew cask (for GUI apps)
-macos: { cask: "visual-studio-code" }
-
-// Uniform Linux package name
-linux: { uniform: "git" }
-
-// Full Linux specification
-linux: { apt: "git", dnf: "git", pacman: "git", apk: "git" }
-
-// Windows winget
-windows: { winget: "Git.Git" }
-
-// No Windows support (built-in like tree.exe)
-// Simply omit the windows: block
-```
-
-### Test Results
-
-- 75/75 library tests passing
-- All 5 migrated tools work correctly
-- 6 new spec module tests passing
-
-### Learnings
-
-1. **Rust Macros**: Declarative macros (`macro_rules!`) work well for this pattern
-   - Use `$($key:ident: $val:expr),*` for optional repeated fields
-   - Helper rules (@macos, @linux, etc.) make complex macros manageable
-   - `stringify!($name)` converts identifier to string literal
-
-2. **Static Lifetime**: `ToolSpec` uses `&'static str` throughout
-   - Allows static definition: `pub static GIT: ToolSpec = ...`
-   - Zero runtime allocation
-   - Works with `const fn` constructors
-
-3. **Conditional Compilation**: `#[cfg(target_os)]` in impl blocks
-   - Can have different methods for different platforms
-   - Use `#[cfg(target_os = "linux")]` on imports too
-
-4. **Function Pointers vs Closures**: Key limitation
-   - `fn(&str) -> Result<(), E>` is a function pointer type
-   - Closures capturing variables have different, non-coercible types
-   - Solution: Generate concrete functions via macro
-
-### Files Created/Modified
-
-- `Cargo.toml` - Added phf dependency
-- `src/tools/mod.rs` - Added `pub mod spec;`
-- `src/tools/spec.rs` - New file (376 lines)
-- `src/tools/git/git.rs` - Migrated to ToolSpec (80 → 79 lines, but simpler)
-- `src/tools/jq/jq.rs` - Migrated to ToolSpec (83 → 24 lines)
-- `src/tools/wget/wget.rs` - Migrated to ToolSpec (83 → 24 lines)
-- `src/tools/tree/tree.rs` - Migrated to ToolSpec (82 → 25 lines)
-- `src/tools/ripgrep/ripgrep.rs` - Migrated to ToolSpec (88 → 25 lines)
-
-### Remaining Work (Future Tasks)
-
-1. **T7**: Implement auto-registration with inventory/linkme crate
-2. **T8**: Migrate remaining 37 tools
-3. **T9**: Clean up old boilerplate after migration
-4. **T10**: Update cargo-jarvy new-tool scaffolding
-5. **T11**: Write documentation
+**Key Learnings**:
+- Clap CLI argument ordering: parent command flags (`-f`) must come before subcommands
+- Test assertions should check both stdout and stderr when backend may not be installed
+- Advisory error handling: service failures warn but don't fail setup
+- `should_auto_start(is_ci)` pattern cleanly handles CI mode logic
 
 ---
 
-## T8 Progress Update: 2025-01-14
+## Tool Additions
 
-### Tools Migrated to ToolSpec Pattern (36 total)
+### T12: New Developer Tools (35 tools)
+**Categories**: CLI utilities, GitHub/Git, Kubernetes/DevOps, Database, Code Quality, HTTP/Network, Security
 
-**Batch 1 (Proof of Concept)**:
-- git, jq, wget, tree, ripgrep (5 tools)
+Notable: fzf, bat, fd, eza, zoxide, delta, lazygit, starship, gh, direnv, kubectl, helm, k9s, kind, minikube, shellcheck, hadolint, ruff, trivy, age, sops
 
-**Batch 2**:
-- htop, tmux, make, yq, xz, zsh (6 tools)
+### new_tools.json (23 additional tools)
+**Cloud/DevOps**: glab, vault, pulumi, eksctl, tfsec, just, podman, azure_cli
+**System Utils**: btop, ncdu, p7zip, openssh, procs, bottom, duf, rclone
+**K8s/Git**: stern, flux, hugo, git_lfs, mtr, lnav, lynis
 
-**Batch 3**:
-- docker, terraform, packer, opentofu, k6, ngrok (6 tools)
-
-**Batch 4**:
-- nvim, vscode, cue, tilt, up, talosctl (6 tools)
-
-**Batch 5**:
-- iterm2, gleam, elixir, air, powershell, atlas (6 tools)
-
-**Batch 6**:
-- ruby, php, dotnet, awscli, go, python, node (7 tools)
-
-### Tools NOT Migrated (3 remaining - require custom installers)
-
-1. **nvm** - Uses curl script on POSIX, winget on Windows
-2. **rust** - Uses rustup shell script installer
-3. **brew** - Uses Homebrew install script
-
-These tools have special installation logic that cannot be represented
-with the standard package manager patterns. They remain using manual
-implementation.
-
-### Key Learnings from Migration
-
-1. **Tap Support**: Homebrew taps work with the macro (e.g., `upbound/tap/up`)
-2. **Different Linux Package Names**: Use expanded form:
-   ```rust
-   linux: { apt: "docker.io", dnf: "docker", pacman: "docker", apk: "docker" }
-   ```
-3. **Cask vs Formula**: The macro handles both via `macos: { cask: "..." }` or `macos: { brew: "..." }`
-4. **Platform Omission**: Simply omit the platform block for unsupported platforms
-
-### Statistics
-
-- **Total Tools**: 39
-- **Migrated**: 36 (92%)
-- **Custom Install**: 3 (8%)
-- **Average Lines Saved**: ~55 lines per tool
-- **Total Lines Reduced**: ~2000 lines
+**Total Tools**: 97+ (74 original + 23 new)
 
 ---
 
-## T9 Completed: 2025-01-14
+## Key Technical Learnings
 
-Cleanup was performed as part of T8 migration. Old boilerplate was replaced entirely
-with the new ToolSpec pattern. Clippy passes with no warnings.
-
----
-
-## T10 Completed: 2025-01-14
-
-Updated cargo-jarvy new-tool scaffolding:
-- Changed template path from `provisioner/` to `src/tools/`
-- Updated _template.rs to use `define_tool!` macro pattern
-- Generator now creates proper subdirectory structure (src/tools/{name}/{name}.rs)
-- Updated output messages to reflect new pattern
+1. **Rust Macros**: Helper patterns (`@macos`, `@linux`) make complex `macro_rules!` manageable
+2. **Inventory Crate**: Compile-time static collection via linker - zero runtime cost
+3. **Serde Flatten**: `#[serde(flatten)]` for capturing dynamic TOML keys
+4. **Idempotent Scripts**: `grep -q` pattern before shell rc modification
+5. **Semver Gotcha**: Bare versions default to caret (^), not exact match
+6. **Rust 2024**: `set_var`/`remove_var` now unsafe due to race condition potential
+7. **Path Quirks**: `with_extension()` behaves unexpectedly on dotfiles
 
 ---
 
-## T11 Completed: 2025-01-14
+## PRD Corrections
 
-Updated CLAUDE.md with:
-- New ToolSpec pattern documentation
-- Added spec.rs to Core Modules section
-- Updated Tool Implementation Pattern with define_tool! examples
-- Documented all macro variants
+**PRD-009 Renumbered to PRD-003.1**: Tool-specific hooks extend PRD-003 (hooks infrastructure), so renamed to PRD-003.1. Created new PRD-009 for Service Management (docker-compose/tilt integration).
 
 ---
 
-## Overall PRD-002 Status: COMPLETE
-
-All tasks T8-T11 have been completed:
-- ✅ T8: Migrated 36/39 tools to ToolSpec pattern (3 remain with custom installers)
-- ✅ T9: Cleanup completed as part of migration
-- ✅ T10: cargo-jarvy new-tool scaffolding updated
-- ✅ T11: Documentation updated in CLAUDE.md
-
----
-
-## T7 Completed: 2025-01-14
-
-### Auto-Registration with Inventory Crate
-
-Successfully implemented automatic tool registration using the `inventory` crate,
-eliminating the need for manual registration in `register_all()`.
-
-### Implementation Details
-
-1. **Added Dependency** (Cargo.toml)
-   - `inventory = "0.3.21"` - For compile-time collection of tool entries
-
-2. **Created Registration Infrastructure** (src/tools/spec.rs)
-   - `ToolEntry` struct - Wrapper containing ToolSpec reference and handler function
-   - `inventory::collect!(ToolEntry)` - Enables compile-time collection
-   - `iter_tools()` function - Iterator over all registered ToolEntry instances
-
-3. **Updated define_tool! Macro** (src/tools/spec.rs)
-   - Added `::inventory::submit!` block inside macro expansion
-   - Each tool automatically submits its ToolEntry when the macro expands
-   - No additional code needed in individual tool files
-
-4. **Updated register_all()** (src/tools/mod.rs)
-   - Replaced 36+ manual registration lines with single loop:
-     ```rust
-     for entry in spec::iter_tools() {
-         let _ = register_tool(entry.spec.name, entry.handler);
-     }
-     ```
-   - Only 3 custom-installer tools (nvm, rust, brew) remain manually registered
-
-### Why Inventory Over Linkme
-
-**Chosen: `inventory` crate**
-- Simpler API: `inventory::submit!` + `inventory::iter::<T>`
-- Works naturally with static structs
-- Well-maintained with 13M+ downloads
-- Clean integration with macro_rules!
-
-**Rejected: `linkme` crate**
-- More complex distributed slice API
-- Requires explicit slice definition
-- More platform-specific linker considerations
-
-### Acceptance Criteria Verification
-
-- ✅ Tools register themselves at compile time (via `inventory::submit!` in macro)
-- ✅ No manual edits to register_all() needed for new tools
-- ✅ register_all() discovers all ToolSpec definitions automatically
-- ✅ Works on all target platforms (macOS, Linux, Windows) - inventory is cross-platform
-- ✅ All existing tests continue to pass (180+ tests passing)
-
-### Key Learnings
-
-1. **Inventory Pattern**: The crate uses linker magic to collect statics at compile time
-   - Works across crate boundaries
-   - Zero runtime cost after initial collection
-
-2. **Macro Integration**: `::inventory::submit!` must use fully-qualified path
-   - Prevents import conflicts in expansion context
-   - `$crate::` prefix needed for internal types
-
-3. **ToolEntry Wrapper**: Needed to bundle spec + handler together
-   - Can't collect raw ToolSpec because handler function is generated per-tool
-   - Handler function pointers stored alongside spec references
-
-### Files Modified
-
-- `Cargo.toml` - Added inventory dependency
-- `src/tools/spec.rs` - Added ToolEntry, inventory::collect!, iter_tools()
-- `src/tools/mod.rs` - Simplified register_all() to use iter_tools()
-- All 36 migrated tools automatically participate via define_tool! macro
-
-### Test Results
-
-- 180+ tests passing
-- `tools_matrix_is_registered_and_sorted` test confirms auto-registration works
-- All integration tests continue to pass
-
----
-
-## Overall PRD-002 Status: COMPLETE
-
-All tasks have been completed:
-- ✅ T7: Auto-registration with inventory crate
-- ✅ T8: Migrated 36/39 tools to ToolSpec pattern (3 remain with custom installers)
-- ✅ T9: Cleanup completed as part of migration
-- ✅ T10: cargo-jarvy new-tool scaffolding updated
-- ✅ T11: Documentation updated in CLAUDE.md
-- ✅ T11.2: Created docs/adding-tools.md - comprehensive guide for adding new tools
-
----
-
-## T11.2 Completed: 2025-01-14
-
-### Created docs/adding-tools.md
-
-Comprehensive guide for adding new tools to Jarvy, including:
-
-1. **Quick Start** - 4-step process for adding simple tools
-2. **Step-by-Step Guide** - Detailed walkthrough with code examples
-3. **define_tool! Macro Reference** - All syntax variants documented
-4. **Platform-Specific Options** - macOS (brew/cask), Linux (uniform/varied), Windows (winget/choco)
-5. **Package Name Reference** - Commands for finding package names on each platform
-6. **Examples** - Simple (jq), varied (docker), tap-based (terraform), macOS-only (iterm2)
-7. **Complex Tools** - Custom installation documentation with nvm example
-8. **Auto-Registration** - How inventory crate enables automatic tool registration
-9. **Testing** - Commands for verifying new tools
-10. **Troubleshooting** - Common issues and solutions
-
-Document covers 419 lines of detailed documentation to help contributors add new tools
-
----
-
-## new_tools.json Implementation: 2026-01-14
-
-### Task Summary
-
-Implemented tools from `tasks/new_tools.json` task file. This file contained 73 tools across
-6 categories (qa_testing, kubernetes, cloud_engineering, linux_admin, windows_admin, automation).
-
-### Cross-Reference Analysis
-
-Many tools from new_tools.json were already implemented in T12:
-- kubectl, helm, k9s, kubectx, kustomize, argocd, trivy
-- gh, sops, age, nmap, curl, httpie
-- These did not need reimplementation
-
-### New Tools Implemented (23 total)
-
-**Batch 1 - Cloud/DevOps Tools (8 tools)**:
-- glab - GitLab CLI
-- vault - HashiCorp secrets management
-- pulumi - Infrastructure as code
-- eksctl - AWS EKS cluster management
-- tfsec - Terraform security scanner
-- just - Command runner (make alternative)
-- podman - Daemonless container engine
-- azure_cli - Microsoft Azure CLI
-
-**Batch 2 - System Utilities (8 tools)**:
-- btop - Resource monitor with TUI (no Windows)
-- ncdu - NCurses disk usage analyzer (no Windows)
-- p7zip - 7-Zip file archiver
-- openssh - OpenSSH client
-- procs - Modern replacement for ps
-- bottom - Cross-platform system monitor
-- duf - Disk usage/free utility
-- rclone - Cloud storage sync
-
-**Batch 3 - K8s/Git Tools (7 tools)**:
-- stern - Multi-pod log tailing for Kubernetes
-- flux - GitOps toolkit (uses fluxcd/tap/flux)
-- hugo - Static site generator
-- git_lfs - Git Large File Storage
-- mtr - Network diagnostic (no Windows)
-- lnav - Log file navigator (no Windows)
-- lynis - Security auditing (no Windows)
-
-### Implementation Pattern
-
-All tools use the `define_tool!` macro:
-
-```rust
-use crate::define_tool;
-
-define_tool!(TOOLNAME, {
-    command: "tool-command",
-    macos: { brew: "package" },
-    linux: { uniform: "package" },
-    windows: { winget: "Publisher.Package" },
-});
-```
-
-### Platform Support Notes
-
-1. **No Windows Support**: btop, ncdu, mtr, lnav, lynis - omit windows block entirely
-2. **Taps**: flux uses `tap: fluxcd/tap/flux` on macOS
-3. **Varied Linux Names**: Some tools have different package names per distro
-
-### Statistics
-
-- **Total in new_tools.json**: 73 tools
-- **Already Implemented (from T12)**: 15 tools
-- **Newly Implemented**: 23 tools
-- **Total Implemented from Task**: 38 tools
-- **Remaining**: 35 tools (mostly npm/pip-based or custom installers)
-
-### Test Results
-
-All 188+ tests pass including new tool tests:
-- cargo check: Success
-- cargo test: All pass
-- cargo clippy: Only expected warnings
-
-### Files Created
-
-46 new files (23 tool directories × 2 files each):
-- `src/tools/{name}/mod.rs`
-- `src/tools/{name}/{name}.rs`
-
-### Files Modified
-
-- `src/tools/mod.rs` - Added 23 new module declarations
-- `tasks/new_tools.json` - Updated implemented array and status
-
----
-
-# PRD-003: Post-Install Hooks - Implementation Progress
-
-## Started: 2026-01-14
-## Completed: 2026-01-14
-
-## Implementation Summary
-
-Successfully implemented post-install hooks feature allowing users to run shell scripts before/after tool installation. This enables custom configuration, environment setup, and CI/CD integration.
-
-### Changes Made
-
-1. **Added Dependencies** (Cargo.toml)
-   - `wait-timeout = "0.2"` - For hook timeout support
-
-2. **Created New Module** (src/hooks.rs - 485 lines)
-   - `HookError` enum - Timeout, Failed, Terminated, SpawnError, ShellNotFound
-   - `HookConfig` struct - Shell, timeout, continue_on_error settings
-   - `HookEnv` struct - Environment variable injection (JARVY_TOOL, JARVY_VERSION, etc.)
-   - `Hook` struct - Script content, config, environment, description
-   - `detect_shell()` - Platform-specific shell detection
-   - `build_shell_command()` - Cross-platform shell command builder
-   - `execute_hooks()` - Executes hook list with dry-run support
-   - 17 unit tests
-
-3. **Updated Config Parsing** (src/config.rs)
-   - Added `HooksConfig` struct with `#[serde(flatten)]` for tool_hooks HashMap
-   - Added `HookSettings` struct for timeout/shell/continue_on_error
-   - Added `ToolHooks` struct for per-tool post_install hooks
-   - Added `DEFAULT_HOOK_TIMEOUT = 300` constant
-   - Added methods: `get_hooks()`, `get_tool_hooks()`, `has_hooks()`
-
-4. **Integrated into Setup Flow** (src/main.rs)
-   - Added `--no-hooks` flag to skip all hooks
-   - Added `--dry-run` flag to preview hooks
-   - Pre-setup hook runs before any tool installation
-   - Post-install hooks run after each tool
-   - Post-setup hook runs after all tools complete
-
-5. **Added Exit Code** (src/error_codes.rs)
-   - `HOOK_FAILED = 7` - For hook execution failures
-
-6. **Integration Tests** (tests/hooks_integration.rs - 294 lines)
-   - 10 integration tests covering:
-     - pre_setup hook dry-run
-     - post_setup hook dry-run
-     - per-tool hook dry-run
-     - --no-hooks flag
-     - custom shell configuration
-     - environment variable injection
-     - config defaults
-     - multiple hooks
-     - no hooks configured
-     - CLI help shows hook flags
-
-7. **Documentation**
-   - Updated docs/ConfigurationFile.md with hooks section
-   - Created docs/hooks.md - comprehensive hook documentation
-   - Updated docs/error-codes.md with HOOK_FAILED
-
-### Hook Configuration Format
-
-```toml
-[provisioner]
-git = "latest"
-node = "20"
-
-[hooks]
-pre_setup = "echo 'Starting setup...'"
-post_setup = "echo 'Setup complete!'"
-
-[hooks.config]
-shell = "bash"
-timeout = 300
-continue_on_error = false
-
-[hooks.git]
-post_install = "git config --global init.defaultBranch main"
-
-[hooks.node]
-post_install = "npm install -g pnpm"
-```
-
-### Environment Variables Injected
-
-| Variable | Description |
-|----------|-------------|
-| `JARVY_TOOL` | Tool name (for per-tool hooks) |
-| `JARVY_VERSION` | Version being installed |
-| `JARVY_OS` | Operating system (macos, linux, windows) |
-| `JARVY_ARCH` | CPU architecture (x86_64, aarch64) |
-| `JARVY_HOME` | Jarvy home directory (~/.jarvy) |
-
-### Key Design Decisions
-
-1. **Shell Detection**: Auto-detect from `$SHELL` env var on Unix, PowerShell on Windows
-   - Supports bash, zsh, sh, fish, PowerShell, cmd
-
-2. **Timeout Implementation**: Used `wait-timeout` crate for cross-platform timeout
-   - Default 300 seconds (5 minutes)
-   - Process killed if timeout exceeded
-
-3. **Streaming Output**: Hook stdout/stderr captured and printed in real-time
-   - Uses separate threads for stdout and stderr
-   - Output prefixed with indentation for clarity
-
-4. **TOML Parsing**: Used `#[serde(flatten)]` for tool_hooks HashMap
-   - Allows `[hooks.git]`, `[hooks.node]` sections
-   - Filters out `config` key from tool names
-
-5. **Error Handling**: Respects `continue_on_error` setting
-   - Default: false (stop on first failure)
-   - When true: warn and continue
-
-### Shell Command Building
-
-Cross-platform shell execution:
-- **Unix shells**: `{shell} -c "{script}"`
-- **Fish**: `fish -c "{script}"`
-- **PowerShell**: `powershell -NoProfile -Command "{script}"`
-- **CMD**: `cmd /C "{script}"`
-
-### Test Results
-
-- 17/17 unit tests passing
-- 10/10 integration tests passing
-- All existing tests continue to pass
-
-### Acceptance Criteria Verification
-
-- ✅ Per-tool hooks run after specific tool installs
-- ✅ Global hooks (pre_setup, post_setup) execute at correct times
-- ✅ Support for bash, zsh, sh, and powershell scripts
-- ✅ Environment variables passed to hooks (JARVY_TOOL, JARVY_VERSION, etc.)
-- ✅ Configurable timeout with default of 5 minutes
-- ✅ continue_on_error option works correctly
-- ✅ --no-hooks flag skips all hook execution
-- ✅ --dry-run shows what hooks would run without executing
-- ✅ Script output captured and displayed in real-time
-- ✅ Cross-platform shell detection and execution
-
-### Files Created/Modified
-
-**Created:**
-- `src/hooks.rs` - Hook execution module (485 lines)
-- `tests/hooks_integration.rs` - Integration tests (294 lines)
-- `docs/hooks.md` - Comprehensive documentation
-
-**Modified:**
-- `Cargo.toml` - Added wait-timeout dependency
-- `src/main.rs` - Added hooks import, CLI flags, setup flow integration
-- `src/config.rs` - Added hooks config parsing structs
-- `src/error_codes.rs` - Added HOOK_FAILED exit code
-- `docs/ConfigurationFile.md` - Added hooks section
-- `docs/error-codes.md` - Added HOOK_FAILED
-
-### Learnings
-
-1. **Serde Flatten**: `#[serde(flatten)]` captures extra keys into HashMap
-   - Perfect for dynamic `[hooks.{tool}]` sections
-   - Must filter out known keys (like "config")
-
-2. **Wait-Timeout Crate**: Cross-platform process timeout
-   - `child.wait_timeout(Duration)` returns Option<ExitStatus>
-   - None means timeout, need to kill process
-
-3. **Thread-based Output Capture**: Can't use async for stdout/stderr
-   - BufReader::lines() is blocking
-   - Spawn threads to capture output while waiting for timeout
-
-4. **Integration Testing**: assert_cmd with env vars works well
-   - `env("JARVY_TEST_MODE", "1")` for non-interactive
-   - predicates for flexible output matching
-
----
-
-## T12 Completed: 2025-01-14
-
-### New Developer Tools Batch - Implementation Complete
-
-Successfully implemented 35 new developer tools across 7 categories, bringing the total
-tool count to 74 (39 original + 35 new).
-
-### Tools Implemented by Batch
-
-**T12.1 Modern CLI Utilities (8 tools)**:
-- fzf - Command-line fuzzy finder
-- bat - Cat clone with syntax highlighting
-- fd - Fast alternative to find
-- eza - Modern ls replacement
-- zoxide - Smarter cd command
-- delta - Git diff pager
-- lazygit - Terminal UI for git
-- starship - Customizable shell prompt
-
-**T12.2 GitHub/Git Tools (2 tools)**:
-- gh - GitHub official CLI
-- direnv - Directory-specific environment variables
-
-**T12.3 Kubernetes/DevOps Tools (8 tools)**:
-- kubectl - Kubernetes CLI
-- helm - Kubernetes package manager
-- k9s - Terminal UI for Kubernetes
-- kind - Local Kubernetes using Docker
-- minikube - Local Kubernetes cluster
-- kubectx - Context switching for Kubernetes
-- kustomize - Kubernetes YAML customization
-- argocd - GitOps continuous delivery
-
-**T12.4 Database CLI Tools (5 tools)**:
-- psql - PostgreSQL client
-- mysql - MySQL client
-- redis - Redis CLI (redis-cli)
-- mongosh - MongoDB Shell
-- sqlite - SQLite CLI
-
-**T12.5 Code Quality Tools (6 tools)**:
-- shellcheck - Shell script linter
-- shfmt - Shell script formatter
-- hadolint - Dockerfile linter
-- ruff - Python linter and formatter
-- yamllint - YAML linter
-- actionlint - GitHub Actions linter
-
-**T12.6 HTTP/Network Tools (3 tools)**:
-- curl - URL data transfer
-- httpie - User-friendly HTTP client
-- nmap - Network scanner
-
-**T12.7 Security Tools (3 tools)**:
-- trivy - Vulnerability scanner
-- age - File encryption
-- sops - Encrypted secrets management
-
-### Implementation Details
-
-All 35 tools were implemented using the `define_tool!` macro pattern:
-
-```rust
-define_tool!(TOOLNAME, {
-    command: "tool-command",
-    macos: { brew: "package" },
-    linux: { uniform: "package" },  // or { apt: "x", dnf: "y", ... }
-    windows: { winget: "Publisher.Package" },
-});
-```
-
-### Package Manager Notes
-
-1. **Varied Linux Package Names**: Several tools needed expanded Linux config:
-   - fd: `apt: "fd-find"`, `dnf: "fd-find"`, `pacman: "fd"`
-   - eza: Different names on apt vs pacman
-   - delta: `git-delta` on most distros
-   - psql/mysql: Different client package names
-
-2. **Homebrew-Only on Linux**: Some tools use Homebrew on Linux when no native package:
-   - kind, kubectx, mongosh, hadolint, ruff, actionlint, trivy, sops
-
-3. **Tap Formulas**: k9s uses `derailed/k9s/k9s` tap path
-
-### Statistics
-
-- **Total New Tools**: 35
-- **Total Tools in Jarvy**: 74
-- **All Using define_tool! Macro**: Yes
-- **Cross-Platform Support**: 35/35 (macOS, Linux, Windows)
-- **Auto-Registered via Inventory**: Yes
-
-### Test Results
-
-All tests pass:
-- `cargo check` - Compiles successfully
-- `cargo test` - All tests pass including new tool tests
-- `cargo clippy` - Only existing warnings (no new ones)
-
-### Files Created (70 new files)
-
-35 tool directories, each with:
-- `mod.rs` - Module re-export
-- `{toolname}.rs` - Tool definition using define_tool! macro
-
-### Files Modified
-
-- `src/tools/mod.rs` - Added 35 new module declarations (now 80 modules)
-- `tasks/t12-new-tools-batch.json` - Status updated to completed
-
-### Learnings
-
-1. **Consistency Pays Off**: The define_tool! macro made adding 35 tools trivial
-2. **Package Research Needed**: Different distros have different package names
-3. **Homebrew as Universal Fallback**: Many modern tools only have Homebrew packages on Linux
-4. **Winget Coverage**: Most developer tools now have Winget packages for Windows
-
----
-
-# PRD-008: Environment Variables Support - Implementation Progress
-
-## Started: 2026-01-15
-## Completed: 2026-01-15
-
-## Implementation Summary
-
-Successfully implemented environment variables feature allowing users to declare environment variables in jarvy.toml, generate .env files, and optionally update shell rc files.
-
-### Changes Made
-
-1. **Added Dependencies** (Cargo.toml)
-   - `rpassword = "7"` - Hidden password input for secrets
-   - `dialoguer = "0.11"` - Interactive prompts
-   - `dirs` - Already present for cross-platform directory detection
-
-2. **Created New Module** (src/env/ - 4 submodules)
-   - `src/env/mod.rs` - Module re-exports and main types
-   - `src/env/expand.rs` - Variable expansion ($HOME, $PWD, ${VAR} syntax)
-   - `src/env/dotenv.rs` - .env file generation with backups
-   - `src/env/shell.rs` - Shell rc file modification (bash/zsh/fish)
-   - `src/env/secrets.rs` - Secret prompting with hidden input
-
-3. **Updated Config Parsing** (src/config.rs)
-   - Added `EnvConfig` struct - Main env configuration
-   - Added `EnvValue` enum - Simple and complex env values
-   - Added `EnvSettings` struct - generate_dotenv, update_rc, shell, dotenv_path
-   - Added `get_env()` method on Config
-
-4. **Added CLI Command** (src/main.rs)
-   - `jarvy env` command for environment management
-   - `--dotenv` flag - Generate only .env file
-   - `--shell` flag - Generate only shell exports
-   - `--dry-run` flag - Preview without writing files
-   - `--export` flag - Output shell-ready export statements
-   - `--shell-type` flag - Specify target shell (bash/zsh/fish)
-
-5. **Integrated into Setup Flow** (src/main.rs)
-   - Env vars applied after tool installation
-   - .env generated if configured
-   - Shell rc updated if configured
-   - Summary shows env configuration status
-
-6. **Integration Tests** (tests/env_integration.rs - 9 tests)
-   - test_env_command_help
-   - test_env_dry_run_dotenv
-   - test_env_variable_expansion
-   - test_env_export_mode
-   - test_env_shell_mode_bash
-   - test_env_shell_mode_fish
-   - test_setup_includes_env
-   - test_env_empty_config
-   - test_env_values_with_spaces_quoted
-
-### Environment Configuration Format
-
-```toml
-[provisioner]
-node = "20"
-
-[env.vars]
-PROJECT_NAME = "my-project"
-NODE_ENV = "development"
-DATABASE_URL = "postgres://localhost/mydb"
-HOME_PATH = "$HOME"
-
-[env.secrets]
-API_KEY = { description = "Your API key" }
-DB_PASSWORD = { description = "Database password", required = true }
-
-[env.config]
-generate_dotenv = true
-update_rc = false
-shell = "bash"
-dotenv_path = ".env"
-```
-
-### Variable Expansion Support
-
-| Syntax | Description |
-|--------|-------------|
-| `$HOME` | User home directory |
-| `$PWD` | Current working directory |
-| `$USER` | Current username |
-| `${VAR}` | Existing environment variable |
-| `$JARVY_{TOOL}_PATH` | Path to installed tool |
-
-### Shell Support
-
-| Shell | Export Syntax | RC File |
-|-------|---------------|---------|
-| bash | `export VAR=value` | `~/.bashrc` |
-| zsh | `export VAR=value` | `~/.zshrc` |
-| fish | `set -gx VAR value` | `~/.config/fish/config.fish` |
-
-### .env Generation Features
-
-- Header comment with Jarvy markers
-- Timestamp for tracking
-- Automatic backup of existing files (`.env.backup`)
-- Values with spaces automatically quoted
-- Optional .gitignore update
-
-### Key Design Decisions
-
-1. **Jarvy Markers**: Shell rc uses `>>> jarvy managed start >>>` and `<<< jarvy managed end <<<`
-   - Allows clean replacement on re-run
-   - Prevents duplicate entries
-
-2. **Backup Strategy**: Existing .env files backed up before overwrite
-   - Uses `.env.backup` naming
-   - Only Jarvy-generated files overwritten without warning
-
-3. **Secret Handling**: Secrets use hidden input
-   - Skip prompting in CI mode (`CI`, `JARVY_CI`, `JARVY_TEST_MODE`)
-   - Support for loading secrets from files
-
-4. **Variable Expansion Context**: `EnvContext` provides expansion data
-   - home_dir, current_dir, username from system
-   - tool_paths populated after installation
-
-### Bug Fixes During Implementation
-
-1. **Backup Path Issue**: `with_extension("env.backup")` on `.env` created `.env.env.backup`
-   - Fixed by using `join(format!("{}.backup", filename))`
-
-2. **Clippy Errors**: module_inception and derivable Default
-   - Fixed in aria2/kubescape mod.rs and build.rs
-
-### Test Results
-
-- 216+ unit tests passing
-- 9 integration tests passing
-- All existing tests continue to pass
-
-### Acceptance Criteria Verification
-
-- ✅ Declare environment variables in jarvy.toml [env] section
-- ✅ Generate .env files from configuration
-- ✅ Optionally update shell rc files (.bashrc, .zshrc, fish config)
-- ✅ Support per-tool environment variables (via JARVY_TOOL_PATH)
-- ✅ Handle secrets with prompting (hidden input support)
-- ✅ Template variable expansion ($HOME, $PWD, tool paths)
-- ✅ Backup shell rc files before modification
-- ✅ Never overwrite existing .env without confirmation
-- ✅ Cross-platform path handling
-
-### Files Created
-
-- `src/env/mod.rs` - Module hub and type re-exports
-- `src/env/expand.rs` - Variable expansion logic
-- `src/env/dotenv.rs` - .env file generation
-- `src/env/shell.rs` - Shell rc modification
-- `src/env/secrets.rs` - Secret prompting
-- `tests/env_integration.rs` - Integration tests
-
-### Files Modified
-
-- `Cargo.toml` - Added rpassword, dialoguer dependencies
-- `src/main.rs` - Added env command and setup integration
-- `src/config.rs` - Added env config structs
-- `src/lib.rs` - Added env module export
-- `build.rs` - Fixed Default impl
-- `src/tools/aria2/mod.rs` - Fixed clippy warning
-- `src/tools/kubescape/mod.rs` - Fixed clippy warning
-
-### Learnings
-
-1. **Path::with_extension() Quirk**: On dotfiles like `.env`, `with_extension("backup")`
-   replaces everything after the first dot, creating unexpected results
-
-2. **Rust 2024 Edition**: `std::env::set_var` and `remove_var` now require `unsafe`
-   blocks in tests due to potential race conditions
-
-3. **Serde for TOML**: `#[serde(flatten)]` works well for capturing dynamic keys
-   into a HashMap while preserving known fields
-
-4. **Integration Testing**: `assert_cmd` with `predicates` provides clean test assertions
-   for CLI tools
-
----
-
-# PRD-009: Tool-Specific Post-Install Hooks - Implementation Progress
-
-## Started: 2026-01-15
-## Completed: 2026-01-15
-
-## Implementation Summary
-
-Successfully implemented tool-specific default post-install hooks that automatically configure tools after installation. Default hooks are idempotent, advisory (failures are warnings), and can be overridden by user-defined hooks.
-
-### Changes Made
-
-1. **Extended ToolSpec Pattern** (src/tools/spec.rs)
-   - Added `DefaultHook` struct with description, script, and optional platform filter
-   - Added `default_hook: Option<DefaultHook>` field to `ToolSpec` struct
-   - Extended `define_tool!` macro to support `default_hook: { ... }` syntax
-   - Added `should_run_on_current_platform()` method for platform filtering
-   - Added helper functions:
-     - `get_tool_spec(name)` - Look up ToolSpec by tool name
-     - `get_tool_default_hook(name)` - Get default hook for a tool
-     - `list_tools_with_default_hooks()` - List all tools with default hooks
-
-2. **Added Default Hooks to 9 Tools**
-   - **Shell Integration Tools**:
-     - starship - Add shell init to .bashrc/.zshrc
-     - zoxide - Add zoxide init to .bashrc/.zshrc
-     - direnv - Add direnv hook to .bashrc/.zshrc
-     - fzf - Configure fzf keybindings and completions
-   - **PATH Configuration Tools**:
-     - go - Configure GOPATH and add go/bin to PATH
-     - dotnet - Configure DOTNET_ROOT and .NET tools to PATH
-   - **Config Generation Tools**:
-     - git - Set sensible defaults (defaultBranch, autocrlf, rebase)
-     - kubectl - Enable shell completion and 'k' alias
-     - terraform - Install shell autocomplete
-
-3. **Integrated into Setup Flow** (src/main.rs)
-   - Default hooks run when no user-defined `[hooks.{tool}]` exists
-   - Respects `--no-hooks` flag (disables both user and default hooks)
-   - Shows default hooks in `--dry-run` mode with description
-   - Default hook failures are warnings (advisory, not blocking)
-
-4. **Added CLI Flag** (src/main.rs)
-   - `jarvy tools --default-hooks` lists all tools with default hooks
-   - Supports JSON, YAML, TOML, and pretty output formats
-
-5. **Integration Tests** (tests/hooks_integration.rs, tests/cli_tools.rs)
-   - test_default_hook_fallback_dry_run
-   - test_user_hook_takes_precedence_over_default
-   - test_no_hooks_flag_disables_default_hooks
-   - test_default_hook_shows_description_in_dry_run
-   - test_multiple_tools_with_default_hooks_dry_run
-   - test_mixed_user_and_default_hooks_dry_run
-   - tools_default_hooks_pretty_format
-   - tools_default_hooks_json_format
-   - tools_default_hooks_yaml_format
-   - tools_default_hooks_contains_expected_tools
-   - tools_default_hooks_help_shows_flag
-
-6. **Updated Documentation** (CLAUDE.md)
-   - Added `default_hook` to macro variants section
-   - Added "Default Hooks" section explaining the feature
-   - Added example tool definition with default hook
-
-### Default Hook Design
-
-All default hooks follow these principles:
-
-1. **Idempotent**: Scripts check before modifying (grep before append)
-   ```bash
-   if [ -f "$HOME/.zshrc" ] && ! grep -q 'starship init zsh' "$HOME/.zshrc"; then
-       echo 'eval "$(starship init zsh)"' >> "$HOME/.zshrc"
-   fi
-   ```
-
-2. **Advisory**: Failures are warnings, not errors - setup continues
-
-3. **Overridable**: User-defined `[hooks.{tool}]` takes complete precedence
-
-### Macro Extension
-
-Extended `define_tool!` macro to support optional default_hook field:
-
-```rust
-define_tool!(STARSHIP, {
-    command: "starship",
-    macos: { brew: "starship" },
-    linux: { uniform: "starship" },
-    windows: { winget: "Starship.Starship" },
-    default_hook: {
-        description: "Add starship shell initialization to .bashrc and .zshrc",
-        script: r#"
-# Add to .zshrc if not present
-if ! grep -q 'starship init zsh' "$HOME/.zshrc"; then
-    echo 'eval "$(starship init zsh)"' >> "$HOME/.zshrc"
-fi
-"#
-    },
-});
-```
-
-### Key Design Decisions
-
-1. **Precedence**: User hooks always take precedence over default hooks
-   - If `[hooks.git]` is defined, default git hook does NOT run
-
-2. **Error Handling**: Default hooks are advisory
-   - Failures logged as warnings
-   - Setup continues regardless of hook success
-
-3. **Platform Support**: Optional `platform` field for platform-specific hooks
-   - Values: "macos", "linux", "windows"
-   - Hook only runs on matching platform
-
-4. **Shell Modification Pattern**: All shell hooks use the same pattern:
-   - Define export/init variable
-   - Check if rc file exists AND doesn't already contain pattern
-   - Append if conditions met
-
-### Test Results
-
-- 430+ tests passing (all suites)
-- 6 new integration tests for default hooks
-- 5 new CLI tests for --default-hooks flag
-
-### Acceptance Criteria Verification
-
-- ✅ Tools with shell integration have hooks to update shell rc
-- ✅ Tools needing PATH updates have hooks to configure PATH
-- ✅ Tools requiring config files have hooks to generate defaults
-- ✅ Hooks are optional (can be disabled with --no-hooks)
-- ✅ Hooks integrate with existing PRD-003 hooks system
-- ✅ Hooks integrate with PRD-008 env vars pattern
-- ✅ User-defined hooks take precedence over defaults
-
-### Files Modified
-
-- `src/tools/spec.rs` - Added DefaultHook, extended ToolSpec and macro
-- `src/main.rs` - Setup flow integration, --default-hooks CLI flag
-- `src/tools/starship/starship.rs` - Added default hook
-- `src/tools/zoxide/zoxide.rs` - Added default hook
-- `src/tools/direnv/direnv.rs` - Added default hook
-- `src/tools/fzf/fzf.rs` - Added default hook
-- `src/tools/go/go.rs` - Added default hook
-- `src/tools/dotnet/dotnet.rs` - Added default hook
-- `src/tools/git/git.rs` - Added default hook
-- `src/tools/kubectl/kubectl.rs` - Added default hook
-- `src/tools/terraform/terraform.rs` - Added default hook
-- `tests/hooks_integration.rs` - Added default hook tests
-- `tests/cli_tools.rs` - Added --default-hooks tests
-- `CLAUDE.md` - Documentation update
-- `tasks/prd-009-tool-post-install-hooks.json` - Status update
-
-### Learnings
-
-1. **Macro Optional Fields**: Use helper patterns like `@optional_default_hook` to handle
-   optional fields cleanly in macro_rules!
-
-2. **Test Fixtures**: When adding new fields to structs used in tests, all inline
-   struct definitions need updating (found two in spec.rs tests)
-
-3. **Idempotent Shell Scripts**: The `grep -q` pattern is reliable for checking
-   existing content before appending to shell rc files
-
-4. **Tool Constant Names**: The macro uses constant names like `KUBECTL` for tool
-   identification, which appear uppercase in CLI output
-
----
-
-# TOOLS-HOOKS: Tools That Benefit from Post-Install Hooks - Verification
-
-## Verified: 2026-01-15
-
-## Summary
-
-Verified the tools-needing-hooks.json catalog works correctly with PRD-003 hooks system. This catalog provides ready-to-use hook examples for 15 common developer tools.
-
-### Tools with Hook Examples
-
-| Tool | Hook Type | Example Usage |
-|------|-----------|---------------|
-| git | config | `git config --global init.defaultBranch main` |
-| node | npm install | `npm install -g pnpm typescript` |
-| rust | rustup/cargo | `rustup component add clippy rustfmt` |
-| python3 | pip install | `pip3 install --upgrade pip && pip3 install pipenv` |
-| docker | daemon config | `docker context use default` |
-| go | go install | `go install golang.org/x/tools/gopls@latest` |
-| kubectl | config | `kubectl config set-context --current --namespace=default` |
-| helm | repo add | `helm repo add stable https://charts.helm.sh/stable` |
-| terraform | autocomplete | `terraform -install-autocomplete` |
-| starship | shell init | `eval "$(starship init zsh)"` |
-| gh | auth | Interactive login prompt |
-| zsh | oh-my-zsh | Installation prompt |
-| nvim | plugins | Config directory guidance |
-| awscli | profile | `aws configure set region us-east-1` |
-
-### Testing Results
-
-Dry-run testing of the example config confirms:
-
-1. **pre_setup hook**: Executes before any tool installation
-2. **per-tool post_install hooks**: Execute after each tool with correct env vars
-3. **post_setup hook**: Executes after all tools complete
-
-### Environment Variables Available to Hooks
-
-| Variable | Value |
-|----------|-------|
-| `JARVY_TOOL` | Tool name (e.g., "git", "node") |
-| `JARVY_VERSION` | Version being installed |
-| `JARVY_OS` | Operating system (macos, linux, windows) |
-| `JARVY_ARCH` | CPU architecture (aarch64, x86_64) |
-| `JARVY_HOME` | Jarvy config directory (~/.jarvy) |
-
-### Key Learnings
-
-1. **Hook Config Inheritance**: Tool hooks inherit global config (timeout, shell, continue_on_error)
-2. **Shell Detection**: Uses SHELL env var on Unix, defaults to /bin/sh if not set
-3. **Error Handling**: Hook failures respect continue_on_error setting
-4. **Dry-Run Visibility**: --dry-run shows exact scripts and environment
-
-### Related Tasks
-
-- PRD-003: Post-Install Hooks (implemented hooks infrastructure)
-- PRD-009: Tool-Specific Post-Install Hooks (default hooks built into tools)
-
----
-
-# PRD-010: CI/CD Detection and Integration - Implementation Progress
-
-## Started: 2026-01-15
-## Completed: 2026-01-15
-
-## Implementation Summary
-
-Successfully implemented comprehensive CI/CD detection and integration feature that automatically detects CI environments, adjusts behavior for non-interactive execution, and provides provider-specific output formatting.
-
-### Changes Made
-
-1. **Created CI Module** (src/ci/ - 3 submodules)
-   - `src/ci/mod.rs` - Main module with CiProvider enum, CiEnvironment struct, detection logic
-   - `src/ci/output.rs` - Provider-specific output formatting (groups, warnings, errors)
-   - `src/ci/config.rs` - CI workflow template generation for 5 providers
-
-2. **CiProvider Enum** (11 providers supported)
-   - GitHubActions, GitLabCi, CircleCi, TravisCi, AzureDevOps
-   - Jenkins, Bitbucket, Buildkite, TeamCity, AppVeyor, Generic
-
-3. **Detection Logic**
-   - `detect()` - Main detection function checking env vars in priority order
-   - `detect_provider()` - Internal provider detection without force flags
-   - `is_ci()` - Simple boolean check
-   - `is_non_interactive()` - CI or test mode check
-
-4. **CiEnvironment Struct**
-   - Captures build metadata: build_id, repository, branch, commit_sha
-   - Supports `forced` flag for CLI override
-   - Provider-specific env var parsing for each CI system
-
-5. **CiOutput Helper**
-   - `group_start()` / `group_end()` - Collapsible log groups
-   - `warning()` / `error()` - Provider-specific error formatting
-   - `warning_with_location()` / `error_with_location()` - File location annotations
-   - `set_output()` - GitHub Actions / Azure DevOps output variables
-   - `mask_value()` - Secret masking
-   - `debug()` / `notice()` - Debug and notice messages
-   - `GroupGuard` - RAII guard for auto-closing groups
-
-6. **CI Config Generation** (5 providers)
-   - GitHub Actions workflow template (.github/workflows/jarvy.yml)
-   - GitLab CI template (.gitlab-ci.yml)
-   - CircleCI template (.circleci/config.yml)
-   - Azure DevOps pipeline template (azure-pipelines.yml)
-   - Bitbucket Pipelines template (bitbucket-pipelines.yml)
-
-7. **CLI Commands** (src/main.rs)
-   - `jarvy ci-info` - Display current CI environment
-   - `jarvy ci-config <provider>` - Generate CI workflow files
-   - `--ci` flag on setup - Force CI mode
-   - `--no-ci` flag on setup - Force interactive mode
-
-8. **Integration Tests** (tests/ci_integration.rs - 19 tests)
-   - All provider detection tests
-   - Config generation tests
-   - CLI flag tests
-   - Environment variable override tests
-
-### Key Design Decisions
-
-1. **Detection Order**: Specific providers checked before generic CI=true
-2. **Force Flags**: CLI flags take precedence over env var detection
-3. **Output Formatting**: Provider-specific syntax for CI features
-4. **Config Templates**: Full workflow files with caching and matrix support
-
-### Rust 2024 Edition Considerations
-
-Required `unsafe` blocks for environment variable modification in tests due to Rust 2024 edition safety requirements for `set_var` and `remove_var`.
-
-### Test Results
-
-- 19/19 CI integration tests passing
-- All existing tests continue to pass
-
-### Acceptance Criteria Verification
-
-- ✅ Auto-detect 11 CI providers
-- ✅ Skip interactive prompts in CI mode
-- ✅ Provider-specific output formatting
-- ✅ --ci and --no-ci flags for override
-- ✅ CI config generation for 5 major providers
-- ✅ Same jarvy.toml works locally and in CI
-
-### Learnings
-
-1. **Rust 2024 Edition Safety**: `std::env::set_var` and `std::env::remove_var` are now
-   unsafe due to potential race conditions in multi-threaded code
-
-2. **Config File Format**: Jarvy uses `[provisioner]` not `[tools]` for tool definitions
-
-3. **Case-Insensitive Checks**: Azure DevOps and AppVeyor use `True` with capital T
-
----
-
-# PRD Correction: Service Management vs Post-Install Hooks
-
-## Date: 2026-01-15
-
-## Issue
-
-PRD-009 was incorrectly implemented as "Tool-Specific Post-Install Hooks" when it should have
-been "Service Management" - allowing developers to create docker-compose.yml or Tiltfile and
-have jarvy start them.
-
-## Resolution
-
-1. **Renamed PRD-009 to PRD-003.1**
-   - The post-install hooks feature extends PRD-003 (hooks infrastructure)
-   - Renamed file: `prd-009-tool-post-install-hooks.json` → `prd-003.1-tool-post-install-hooks.json`
-   - Updated ID from `PRD-009` to `PRD-003.1`
-   - Updated parent_prd from `PRD-009` to `PRD-003`
-
-2. **Created Correct PRD-009 for Service Management**
-   - File: `tasks/prd-009-service-management.json`
-   - Purpose: Start project services (docker-compose, tilt) from jarvy
-   - Features:
-     - docker-compose.yml detection and startup
-     - Tiltfile detection and startup
-     - `[services]` config section in jarvy.toml
-     - `jarvy services start/stop/status` commands
-     - Optional auto-start during setup
-
-3. **Updated References**
-   - Updated `additional-post-install-hooks.json` to reference PRD-003.1 instead of PRD-009
-
-## Learnings
-
-1. **PRD Numbering**: When a feature extends another PRD, use sub-numbering (e.g., PRD-003.1)
-   instead of assigning a new major number
-
-2. **Scope Validation**: Always verify PRD scope with stakeholders before implementation to
-   avoid renumbering later
-
----
-
-# PRD-003.1: Tool-Specific Post-Install Hooks - Verification Summary
-
-## Verified: 2026-01-15
-
-## Verification Summary
-
-Successfully verified that PRD-003.1 (Tool-Specific Post-Install Hooks) is fully implemented
-and all acceptance criteria are satisfied.
-
-### Implementation Verified
-
-1. **ToolSpec Pattern Extended** (src/tools/spec.rs)
-   - `DefaultHook` struct with description, script, and optional platform field
-   - `default_hook` field added to `ToolSpec` struct
-   - `define_tool!` macro extended with `default_hook: { description: "...", script: "..." }`
-   - Helper functions: `get_tool_spec()`, `get_tool_default_hook()`, `list_tools_with_default_hooks()`
-
-2. **9 Tools Have Default Hooks**
-   | Tool | Hook Type | Description |
-   |------|-----------|-------------|
-   | starship | shell_integration | Add shell init to .bashrc/.zshrc |
-   | zoxide | shell_integration | Add zoxide init to .bashrc/.zshrc |
-   | direnv | shell_integration | Add direnv hook to .bashrc/.zshrc |
-   | fzf | shell_integration | Configure keybindings and completions |
-   | go | path_setup | Configure GOPATH and add go/bin to PATH |
-   | dotnet | path_setup | Configure DOTNET_ROOT and PATH |
-   | git | config_generation | Set sensible defaults (defaultBranch, autocrlf, rebase) |
-   | kubectl | config_generation | Enable shell completion and 'k' alias |
-   | terraform | config_generation | Install shell autocomplete |
-
-3. **Setup Flow Integration** (src/main.rs)
-   - Default hooks run when no user-defined `[hooks.{tool}]` exists
-   - Respects `--no-hooks` flag (disables both user and default hooks)
-   - Shows default hooks in `--dry-run` mode with description
-   - Default hook failures are warnings (advisory, not blocking)
-
-4. **CLI Flag** (src/main.rs)
-   - `jarvy tools --default-hooks` lists all tools with default hooks
-   - Supports JSON, YAML, TOML, and pretty output formats
-
-### Test Results
-
-All tests pass:
-- 16/16 hooks_integration.rs tests passed
-- 14/14 cli_tools.rs tests passed
-- Key tests for default hooks:
-  - `test_default_hook_fallback_dry_run`
-  - `test_user_hook_takes_precedence_over_default`
-  - `test_no_hooks_flag_disables_default_hooks`
-  - `test_default_hook_shows_description_in_dry_run`
-  - `test_multiple_tools_with_default_hooks_dry_run`
-  - `test_mixed_user_and_default_hooks_dry_run`
-  - `tools_default_hooks_pretty_format`
-  - `tools_default_hooks_json_format`
-  - `tools_default_hooks_yaml_format`
-  - `tools_default_hooks_contains_expected_tools`
-
-### Acceptance Criteria Verification
-
-- ✅ Tools with shell integration have hooks to update shell rc
-- ✅ Tools needing PATH updates have hooks to configure PATH
-- ✅ Tools requiring config files have hooks to generate defaults
-- ✅ Hooks are optional and can be disabled per-tool (`--no-hooks` flag)
-- ✅ Hooks integrate with existing PRD-003 hooks system (user hooks take precedence)
-- ✅ Hooks integrate with PRD-008 env vars for PATH management (shell rc modifications)
-
-### Follow-up Task File
-
-Existing follow-up task: `tasks/additional-post-install-hooks.json` (HOOKS-002)
-- 10 additional hooks planned for: node, python, rust, helm, awscli, gh, docker, k9s, lazygit, bat
-
-### Learnings
-
-1. **Macro Extension Pattern**: Adding optional fields to `define_tool!` requires careful helper
-   pattern matching (`@default_hook`) to handle both presence and absence cleanly
-
-2. **Idempotent Shell Scripts**: The `grep -q` pattern works reliably for checking existing
-   content before appending - used consistently across all default hooks
-
-3. **User Hook Precedence**: Clear separation between user-defined hooks (from `[hooks.{tool}]`)
-   and default hooks ensures predictable behavior - users always have full control
-
-4. **Test Coverage**: Integration tests using dry-run mode provide comprehensive verification
-   without actually modifying the system
-
----
+## Test Summary
+
+| Module | Tests |
+|--------|-------|
+| Version checking | 24 |
+| ToolSpec/Registry | 20+ |
+| Hooks | 27 |
+| Environment | 9 |
+| CI/CD | 19 |
+| Services | 33 |
+| CLI Tools | 14 |
+| **Total** | **463+** |

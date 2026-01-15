@@ -9,6 +9,26 @@ define_tool!(NODE, {
     macos: { brew: "node" },
     linux: { uniform: "nodejs" },
     windows: { winget: "OpenJS.NodeJS.LTS" },
+    default_hook: {
+        description: "Configure npm global prefix and add to PATH",
+        script: r#"
+# Configure npm prefix for global installs without sudo
+mkdir -p ~/.npm-global
+npm config set prefix '~/.npm-global' 2>/dev/null || true
+
+# Add npm global bin to PATH in .bashrc
+if [ -f "$HOME/.bashrc" ] && ! grep -q '.npm-global/bin' "$HOME/.bashrc"; then
+    echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> "$HOME/.bashrc"
+    echo "Added npm global bin to .bashrc"
+fi
+
+# Add npm global bin to PATH in .zshrc
+if [ -f "$HOME/.zshrc" ] && ! grep -q '.npm-global/bin' "$HOME/.zshrc"; then
+    echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> "$HOME/.zshrc"
+    echo "Added npm global bin to .zshrc"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

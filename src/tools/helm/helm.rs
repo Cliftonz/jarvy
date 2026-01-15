@@ -9,6 +9,19 @@ define_tool!(HELM, {
     macos: { brew: "helm" },
     linux: { uniform: "helm" },
     windows: { winget: "Helm.Helm" },
+    default_hook: {
+        description: "Add common Helm chart repositories",
+        script: r#"
+# Add bitnami repository if not present
+if ! helm repo list 2>/dev/null | grep -q 'bitnami'; then
+    helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null && \
+        echo "Added bitnami Helm repository" || true
+fi
+
+# Update repositories
+helm repo update 2>/dev/null || true
+"#
+    },
 });
 
 #[cfg(test)]
