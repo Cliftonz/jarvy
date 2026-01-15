@@ -1,9 +1,8 @@
 use crate::analytics::init_logging;
-use crate::config::{Config, create_default_config, EnvValue};
+use crate::config::{Config, EnvValue, create_default_config};
 use crate::env::{
-    DotenvConfig, EnvContext, SecretsConfig, ShellConfig, ShellType,
-    collect_secrets, detect_shell, expand_value, generate_dotenv, parse_shell, preview_dotenv,
-    preview_shell_rc, update_shell_rc,
+    DotenvConfig, EnvContext, SecretsConfig, ShellConfig, ShellType, collect_secrets, detect_shell,
+    expand_value, generate_dotenv, parse_shell, preview_dotenv, preview_shell_rc, update_shell_rc,
 };
 use crate::hooks::{Hook, HookConfig, HookEnv};
 use crate::init::initialize;
@@ -333,7 +332,13 @@ fn main() {
     crate::tools::register_all();
 
     match &cli.command {
-        Some(Commands::Setup { file, no_hooks, dry_run, ci, no_ci }) => {
+        Some(Commands::Setup {
+            file,
+            no_hooks,
+            dry_run,
+            ci,
+            no_ci,
+        }) => {
             // Handle CI mode detection with CLI overrides
             // SAFETY: We're setting env vars at startup before any threads are spawned
             let ci_env = if *ci {
@@ -394,26 +399,43 @@ fn main() {
 
             let tools = config.get_tool_configs();
 
-            // Partition tools into known vs unknown
-            let (known_tools, unknown_tools): (Vec<_>, Vec<_>) = tools
-                .into_iter()
-                .partition(|(_, t)| tools::get_tool(&t.name).is_some());
+            // Phase 2: Parallel version checking - determine which tools need installation
+            println!("Checking tool versions...");
+            let version_check = tools::spec::check_tools_parallel(
+                tools.iter().map(|(_, t)| (t.name.as_str(), t.version.as_str())),
+            );
+
+            // Report version check results
+            println!("{}", version_check.summary_string());
+
+            // Log already-satisfied tools (verbose mode)
+            if !version_check.satisfied.is_empty() {
+                println!(
+                    "Already installed: {}",
+                    version_check
+                        .satisfied
+                        .iter()
+                        .map(|(n, _)| n.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
 
             // Log unknown tools
-            for (_, tool) in &unknown_tools {
+            for (name, version) in &version_check.unknown {
                 let msg = format!(
                     "We do not currently have support for {} package but we have logged it and will be adding it soon.",
-                    tool.name
+                    name
                 );
                 if posthog::telemetry_enabled() {
                     let mut props = serde_json::Map::new();
                     props.insert(
                         "tool".to_string(),
-                        serde_json::Value::String(tool.name.clone()),
+                        serde_json::Value::String(name.clone()),
                     );
                     props.insert(
                         "version_hint".to_string(),
-                        serde_json::Value::String(tool.version.clone()),
+                        serde_json::Value::String(version.clone()),
                     );
                     props.insert(
                         "source".to_string(),
@@ -429,9 +451,20 @@ fn main() {
                 }
             }
 
+            // Create list of known tools for hook execution (needed later)
+            let known_tools: Vec<_> = tools
+                .iter()
+                .filter(|(_, t)| tools::get_tool(&t.name).is_some())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+
+            // Only install tools that actually need installation (from parallel check)
             // Group tools by package manager for batch installation
             let tool_groups = tools::spec::group_tools_for_installation(
-                known_tools.iter().map(|(_, t)| (t.name.as_str(), t.version.as_str())),
+                version_check
+                    .needs_install
+                    .iter()
+                    .map(|(n, v)| (n.as_str(), v.as_str())),
             );
 
             // Track successfully installed tools for hook execution
@@ -440,7 +473,8 @@ fn main() {
             if *dry_run {
                 // Dry-run: show what would be installed
                 for (pm, packages) in &tool_groups.by_package_manager {
-                    let package_names: Vec<&str> = packages.iter().map(|(_, pkg, _)| pkg.as_str()).collect();
+                    let package_names: Vec<&str> =
+                        packages.iter().map(|(_, pkg, _)| pkg.as_str()).collect();
                     println!(
                         "[DRY-RUN] Would batch install via {:?}: {}",
                         pm,
@@ -460,7 +494,8 @@ fn main() {
                         continue;
                     }
 
-                    let package_names: Vec<&str> = packages.iter().map(|(_, pkg, _)| pkg.as_str()).collect();
+                    let package_names: Vec<&str> =
+                        packages.iter().map(|(_, pkg, _)| pkg.as_str()).collect();
                     println!(
                         "Batch installing {} packages via {:?}: {}",
                         packages.len(),
@@ -473,19 +508,18 @@ fn main() {
                             // Track successful installs
                             for pkg_name in &result.succeeded {
                                 // Find the tool name for this package
-                                if let Some((tool_name, _, version)) = packages
-                                    .iter()
-                                    .find(|(_, pkg, _)| pkg == pkg_name)
+                                if let Some((tool_name, _, version)) =
+                                    packages.iter().find(|(_, pkg, _)| pkg == pkg_name)
                                 {
                                     println!("Successfully installed {} ({})", tool_name, version);
-                                    successfully_installed.push((tool_name.clone(), version.clone()));
+                                    successfully_installed
+                                        .push((tool_name.clone(), version.clone()));
                                 }
                             }
                             // Log failures
                             for (pkg_name, error) in &result.failed {
-                                if let Some((tool_name, _, version)) = packages
-                                    .iter()
-                                    .find(|(_, pkg, _)| pkg == pkg_name)
+                                if let Some((tool_name, _, version)) =
+                                    packages.iter().find(|(_, pkg, _)| pkg == pkg_name)
                                 {
                                     let msg = format!(
                                         "Failed to install {} ({}): {}",
@@ -553,10 +587,7 @@ fn main() {
                             successfully_installed.push((name.clone(), version.clone()));
                         }
                         Err(e) => {
-                            let msg = format!(
-                                "Failed to install {} ({}): {:?}",
-                                name, version, e
-                            );
+                            let msg = format!("Failed to install {} ({}): {:?}", name, version, e);
                             eprintln!("{}", msg);
                             if posthog::telemetry_enabled() {
                                 let mut props = serde_json::Map::new();
@@ -706,7 +737,9 @@ fn main() {
                 };
 
                 // Merge vars and secrets
-                let mut all_vars: HashMap<String, String> = env_config.vars.iter()
+                let mut all_vars: HashMap<String, String> = env_config
+                    .vars
+                    .iter()
                     .map(|(k, v)| (k.clone(), v.value().to_string()))
                     .collect();
                 all_vars.extend(secrets);
@@ -722,7 +755,10 @@ fn main() {
 
                     if *dry_run {
                         println!("\n=== Environment Setup (dry-run) ===");
-                        println!("[DRY-RUN] Would generate .env file at {}", dotenv_path.display());
+                        println!(
+                            "[DRY-RUN] Would generate .env file at {}",
+                            dotenv_path.display()
+                        );
                         let preview = preview_dotenv(&all_vars, &ctx);
                         println!("{}", preview);
                     } else {
@@ -1090,7 +1126,10 @@ fn main() {
                 let dotenv_path = &env_config.config.dotenv_path;
 
                 if *dry_run {
-                    println!("=== .env file preview (would be written to {}) ===", dotenv_path.display());
+                    println!(
+                        "=== .env file preview (would be written to {}) ===",
+                        dotenv_path.display()
+                    );
                     let content = preview_dotenv(&all_vars, &ctx);
                     println!("{}", content);
                 } else {
@@ -1107,7 +1146,9 @@ fn main() {
                         Err(e) => {
                             eprintln!("Failed to generate .env file: {}", e);
                             if !*force {
-                                eprintln!("Tip: Use --force to overwrite existing non-Jarvy .env files");
+                                eprintln!(
+                                    "Tip: Use --force to overwrite existing non-Jarvy .env files"
+                                );
                             }
                             std::process::exit(crate::error_codes::CONFIG_ERROR);
                         }
@@ -1130,7 +1171,10 @@ fn main() {
                     match update_shell_rc(target_shell, &vars, &ctx, &shell_config) {
                         Ok(path) => {
                             println!("Updated shell rc file: {}", path.display());
-                            println!("Tip: Run 'source {}' or restart your shell to apply changes", path.display());
+                            println!(
+                                "Tip: Run 'source {}' or restart your shell to apply changes",
+                                path.display()
+                            );
                         }
                         Err(e) => {
                             eprintln!("Failed to update shell rc file: {}", e);
@@ -1149,11 +1193,18 @@ fn main() {
                 }
             }
         }
-        Some(Commands::CiConfig { provider, output, dry_run }) => {
+        Some(Commands::CiConfig {
+            provider,
+            output,
+            dry_run,
+        }) => {
             let template = match ci::CiConfigTemplate::for_provider(*provider) {
                 Some(t) => t,
                 None => {
-                    eprintln!("Error: CI config generation is not supported for {}", provider);
+                    eprintln!(
+                        "Error: CI config generation is not supported for {}",
+                        provider
+                    );
                     eprintln!("Supported providers: github, gitlab, circleci, azure, bitbucket");
                     std::process::exit(crate::error_codes::CONFIG_ERROR);
                 }
@@ -1177,56 +1228,54 @@ fn main() {
                 }
             }
         }
-        Some(Commands::CiInfo {}) => {
-            match ci::detect() {
-                Some(env) => {
-                    println!("CI Environment Detected");
-                    println!("=======================");
-                    println!("Provider: {}", env.provider);
-                    println!("Forced: {}", env.forced);
-                    println!();
-                    println!("Features:");
-                    println!("  - Log groups: {}", env.provider.supports_groups());
-                    println!("  - Output vars: {}", env.provider.supports_output_vars());
-                    println!("  - Caching: {}", env.provider.supports_cache());
-                    if let Some(cache_dir) = env.provider.cache_dir() {
-                        println!("  - Cache dir: {}", cache_dir);
-                    }
-                    println!();
-                    println!("Build Information:");
-                    if let Some(ref id) = env.build_id {
-                        println!("  - Build ID: {}", id);
-                    }
-                    if let Some(ref repo) = env.repository {
-                        println!("  - Repository: {}", repo);
-                    }
-                    if let Some(ref branch) = env.branch {
-                        println!("  - Branch: {}", branch);
-                    }
-                    if let Some(ref sha) = env.commit_sha {
-                        println!("  - Commit: {}", sha);
-                    }
+        Some(Commands::CiInfo {}) => match ci::detect() {
+            Some(env) => {
+                println!("CI Environment Detected");
+                println!("=======================");
+                println!("Provider: {}", env.provider);
+                println!("Forced: {}", env.forced);
+                println!();
+                println!("Features:");
+                println!("  - Log groups: {}", env.provider.supports_groups());
+                println!("  - Output vars: {}", env.provider.supports_output_vars());
+                println!("  - Caching: {}", env.provider.supports_cache());
+                if let Some(cache_dir) = env.provider.cache_dir() {
+                    println!("  - Cache dir: {}", cache_dir);
                 }
-                None => {
-                    println!("Not running in a CI environment.");
-                    println!();
-                    println!("Supported CI providers:");
-                    println!("  - GitHub Actions (GITHUB_ACTIONS=true)");
-                    println!("  - GitLab CI (GITLAB_CI=true)");
-                    println!("  - CircleCI (CIRCLECI=true)");
-                    println!("  - Travis CI (TRAVIS=true)");
-                    println!("  - Azure DevOps (TF_BUILD=True)");
-                    println!("  - Jenkins (JENKINS_URL set)");
-                    println!("  - Bitbucket (BITBUCKET_BUILD_NUMBER set)");
-                    println!("  - Buildkite (BUILDKITE=true)");
-                    println!("  - TeamCity (TEAMCITY_VERSION set)");
-                    println!("  - AppVeyor (APPVEYOR=True)");
-                    println!("  - Generic (CI=true)");
-                    println!();
-                    println!("Use --ci flag to force CI mode, or set JARVY_CI=1");
+                println!();
+                println!("Build Information:");
+                if let Some(ref id) = env.build_id {
+                    println!("  - Build ID: {}", id);
+                }
+                if let Some(ref repo) = env.repository {
+                    println!("  - Repository: {}", repo);
+                }
+                if let Some(ref branch) = env.branch {
+                    println!("  - Branch: {}", branch);
+                }
+                if let Some(ref sha) = env.commit_sha {
+                    println!("  - Commit: {}", sha);
                 }
             }
-        }
+            None => {
+                println!("Not running in a CI environment.");
+                println!();
+                println!("Supported CI providers:");
+                println!("  - GitHub Actions (GITHUB_ACTIONS=true)");
+                println!("  - GitLab CI (GITLAB_CI=true)");
+                println!("  - CircleCI (CIRCLECI=true)");
+                println!("  - Travis CI (TRAVIS=true)");
+                println!("  - Azure DevOps (TF_BUILD=True)");
+                println!("  - Jenkins (JENKINS_URL set)");
+                println!("  - Bitbucket (BITBUCKET_BUILD_NUMBER set)");
+                println!("  - Buildkite (BUILDKITE=true)");
+                println!("  - TeamCity (TEAMCITY_VERSION set)");
+                println!("  - AppVeyor (APPVEYOR=True)");
+                println!("  - Generic (CI=true)");
+                println!();
+                println!("Use --ci flag to force CI mode, or set JARVY_CI=1");
+            }
+        },
         Some(Commands::Services { action, file }) => {
             let config = Config::new(file);
             let services_config = config.services.clone();
@@ -1297,22 +1346,20 @@ fn main() {
                         }
                     }
                 }
-                ServicesAction::Status {} => {
-                    match backend_impl.status(&config_path) {
-                        Ok(status) => {
-                            println!("Service Backend: {}", status.backend);
-                            println!("Installed: {}", if status.installed { "Yes" } else { "No" });
-                            println!("Running: {}", if status.running { "Yes" } else { "No" });
-                            if !status.details.is_empty() {
-                                println!("\nDetails:\n{}", status.details);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to get service status: {}", e);
-                            std::process::exit(1);
+                ServicesAction::Status {} => match backend_impl.status(&config_path) {
+                    Ok(status) => {
+                        println!("Service Backend: {}", status.backend);
+                        println!("Installed: {}", if status.installed { "Yes" } else { "No" });
+                        println!("Running: {}", if status.running { "Yes" } else { "No" });
+                        if !status.details.is_empty() {
+                            println!("\nDetails:\n{}", status.details);
                         }
                     }
-                }
+                    Err(e) => {
+                        eprintln!("Failed to get service status: {}", e);
+                        std::process::exit(1);
+                    }
+                },
                 ServicesAction::Restart { foreground } => {
                     println!("Restarting {} services...", backend);
                     let detach = !foreground;

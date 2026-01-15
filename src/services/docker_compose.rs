@@ -1,8 +1,8 @@
 //! Docker Compose service backend
 
 use super::{
-    command_exists, run_command, ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult,
-    ServiceStatus,
+    ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult, ServiceStatus, command_exists,
+    run_command,
 };
 use std::path::{Path, PathBuf};
 
@@ -53,12 +53,12 @@ impl ServiceBackendOps for DockerComposeBackend {
 
     fn start(&self, config_path: &Path, detach: bool) -> Result<ServiceResult, ServiceError> {
         if !self.is_installed() {
-            return Err(ServiceError::BackendNotInstalled(ServiceBackend::DockerCompose));
+            return Err(ServiceError::BackendNotInstalled(
+                ServiceBackend::DockerCompose,
+            ));
         }
 
-        let working_dir = config_path
-            .parent()
-            .unwrap_or(Path::new("."));
+        let working_dir = config_path.parent().unwrap_or(Path::new("."));
         let config_file = config_path
             .file_name()
             .and_then(|f| f.to_str())
@@ -91,12 +91,12 @@ impl ServiceBackendOps for DockerComposeBackend {
 
     fn stop(&self, config_path: &Path) -> Result<ServiceResult, ServiceError> {
         if !self.is_installed() {
-            return Err(ServiceError::BackendNotInstalled(ServiceBackend::DockerCompose));
+            return Err(ServiceError::BackendNotInstalled(
+                ServiceBackend::DockerCompose,
+            ));
         }
 
-        let working_dir = config_path
-            .parent()
-            .unwrap_or(Path::new("."));
+        let working_dir = config_path.parent().unwrap_or(Path::new("."));
         let config_file = config_path
             .file_name()
             .and_then(|f| f.to_str())
@@ -134,9 +134,7 @@ impl ServiceBackendOps for DockerComposeBackend {
             });
         }
 
-        let working_dir = config_path
-            .parent()
-            .unwrap_or(Path::new("."));
+        let working_dir = config_path.parent().unwrap_or(Path::new("."));
         let config_file = config_path
             .file_name()
             .and_then(|f| f.to_str())

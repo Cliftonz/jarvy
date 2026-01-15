@@ -378,7 +378,11 @@ impl Config {
     pub fn has_hooks(&self) -> bool {
         self.hooks.pre_setup.is_some()
             || self.hooks.post_setup.is_some()
-            || self.hooks.tool_hooks.values().any(|h| h.post_install.is_some())
+            || self
+                .hooks
+                .tool_hooks
+                .values()
+                .any(|h| h.post_install.is_some())
     }
 
     /// Get the environment configuration
@@ -480,14 +484,22 @@ post_install = "npm install -g yarn"
 "#;
         let config: Config = toml::from_str(toml_str).expect("Failed to parse config");
 
-        assert_eq!(config.hooks.pre_setup, Some("echo 'Starting setup'".to_string()));
+        assert_eq!(
+            config.hooks.pre_setup,
+            Some("echo 'Starting setup'".to_string())
+        );
         assert_eq!(config.hooks.post_setup, Some("echo 'Done'".to_string()));
         assert_eq!(config.hooks.config.shell, "zsh");
         assert_eq!(config.hooks.config.timeout, 120);
         assert!(config.hooks.config.continue_on_error);
 
-        let node_hooks = config.get_tool_hooks("node").expect("node hooks should exist");
-        assert_eq!(node_hooks.post_install, Some("npm install -g yarn".to_string()));
+        let node_hooks = config
+            .get_tool_hooks("node")
+            .expect("node hooks should exist");
+        assert_eq!(
+            node_hooks.post_install,
+            Some("npm install -g yarn".to_string())
+        );
     }
 
     #[test]
@@ -572,7 +584,11 @@ add_to_gitignore = true
 "#;
         let config: Config = toml::from_str(toml_str).expect("Failed to parse config");
 
-        let node_path = config.env.vars.get("NODE_PATH").expect("NODE_PATH should exist");
+        let node_path = config
+            .env
+            .vars
+            .get("NODE_PATH")
+            .expect("NODE_PATH should exist");
         assert_eq!(node_path.value(), "$HOME/.node/bin");
         assert!(node_path.should_append());
 

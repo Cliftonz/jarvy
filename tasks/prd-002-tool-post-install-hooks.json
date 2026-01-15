@@ -1,7 +1,7 @@
 {
   "title": "PRD-002: Tool Post-Install Hooks",
   "priority": "Medium",
-  "status": "Not Started",
+  "status": "Partially Compliant",
   "source": "Generated from PRD-001 implementation",
   "createdAt": "2026-01-15T21:00:00Z",
   "updatedAt": "2026-01-15T21:00:00Z",
@@ -19,7 +19,7 @@
       "id": "US-001",
       "title": "Shell Completion Hooks",
       "description": "As a developer, I want CLI tools to automatically install shell completions so that tab completion works out of the box.",
-      "passed": false,
+      "passed": true,
       "priority": "P1",
       "impact": "High",
       "candidateTools": [
@@ -35,27 +35,27 @@
       "acceptanceCriteria": [
         {
           "criterion": "Add completion hook for just (just --completions bash/zsh)",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Add completion hook for flux (flux completion bash/zsh)",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Add completion hook for argocd (argocd completion bash/zsh)",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Add completion hook for eksctl (eksctl completion bash/zsh)",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Add completion hook for glab (glab completion -s bash/zsh)",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Verify hooks are idempotent",
-          "passed": false
+          "passed": true
         }
       ]
     },
@@ -90,7 +90,7 @@
       "id": "US-003",
       "title": "Shell Integration Hooks",
       "description": "As a developer, I want tools with shell integration features to automatically configure them so that they work after installation.",
-      "passed": false,
+      "passed": true,
       "priority": "P2",
       "impact": "Medium",
       "candidateTools": [
@@ -104,15 +104,15 @@
       "acceptanceCriteria": [
         {
           "criterion": "Add delta hook to configure as git pager",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Verify bat already has hook (yes - bat-extras setup)",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Document tools that don't need hooks",
-          "passed": false
+          "passed": true
         }
       ]
     }
@@ -172,22 +172,22 @@
     {
       "id": "FR-1",
       "description": "All hooks must be idempotent (safe to run multiple times)",
-      "passed": false
+      "passed": true
     },
     {
       "id": "FR-2",
       "description": "Hooks must check if configuration already exists before modifying files",
-      "passed": false
+      "passed": true
     },
     {
       "id": "FR-3",
       "description": "Hooks are advisory - failures should warn but not fail installation",
-      "passed": false
+      "passed": true
     },
     {
       "id": "FR-4",
       "description": "User-defined hooks in jarvy.toml override default hooks",
-      "passed": false
+      "passed": true
     }
   ],
   "technicalConsiderations": [

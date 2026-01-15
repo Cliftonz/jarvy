@@ -10,6 +10,25 @@ define_tool!(ARGOCD, {
     macos: { brew: "argocd" },
     linux: { brew: "argocd" },
     windows: { winget: "Argoproj.ArgoCD" },
+    default_hook: {
+        description: "Install argocd shell completions for bash and zsh",
+        script: r#"
+# Generate and install argocd completions for bash
+if [ -f "$HOME/.bashrc" ]; then
+    mkdir -p "$HOME/.local/share/bash-completion/completions"
+    argocd completion bash > "$HOME/.local/share/bash-completion/completions/argocd" 2>/dev/null || true
+fi
+
+# Generate and install argocd completions for zsh
+if [ -f "$HOME/.zshrc" ]; then
+    mkdir -p "$HOME/.zsh/completions"
+    argocd completion zsh > "$HOME/.zsh/completions/_argocd" 2>/dev/null || true
+    if ! grep -q 'fpath.*\.zsh/completions' "$HOME/.zshrc"; then
+        echo 'fpath=($HOME/.zsh/completions $fpath)' >> "$HOME/.zshrc"
+    fi
+fi
+"#
+    },
 });
 
 #[cfg(test)]

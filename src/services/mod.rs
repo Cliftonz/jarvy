@@ -36,7 +36,12 @@ impl ServiceBackend {
     /// Returns the default config file name(s)
     pub fn config_files(&self) -> &'static [&'static str] {
         match self {
-            Self::DockerCompose => &["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"],
+            Self::DockerCompose => &[
+                "docker-compose.yml",
+                "docker-compose.yaml",
+                "compose.yml",
+                "compose.yaml",
+            ],
             Self::Tilt => &["Tiltfile"],
         }
     }
@@ -78,12 +83,21 @@ impl fmt::Display for ServiceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BackendNotInstalled(backend) => {
-                write!(f, "{} is not installed. Install it with: jarvy setup", backend)
+                write!(
+                    f,
+                    "{} is not installed. Install it with: jarvy setup",
+                    backend
+                )
             }
             Self::ConfigNotFound(backend) => {
                 write!(f, "No {} config file found in project", backend)
             }
-            Self::CommandFailed { backend, operation, stderr, exit_code } => {
+            Self::CommandFailed {
+                backend,
+                operation,
+                stderr,
+                exit_code,
+            } => {
                 write!(f, "{} {} failed", backend, operation)?;
                 if let Some(code) = exit_code {
                     write!(f, " (exit code {})", code)?;
@@ -244,9 +258,9 @@ fn run_command(cmd: &str, args: &[&str], working_dir: &Path) -> Result<Output, s
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
     #[test]
     fn test_service_backend_name() {
@@ -258,7 +272,10 @@ mod tests {
     fn test_detect_docker_compose() {
         let temp = TempDir::new().unwrap();
         let compose_path = temp.path().join("docker-compose.yml");
-        File::create(&compose_path).unwrap().write_all(b"version: '3'\n").unwrap();
+        File::create(&compose_path)
+            .unwrap()
+            .write_all(b"version: '3'\n")
+            .unwrap();
 
         let result = detect_backend(temp.path());
         assert!(result.is_some());
@@ -271,7 +288,10 @@ mod tests {
     fn test_detect_compose_yml() {
         let temp = TempDir::new().unwrap();
         let compose_path = temp.path().join("compose.yml");
-        File::create(&compose_path).unwrap().write_all(b"version: '3'\n").unwrap();
+        File::create(&compose_path)
+            .unwrap()
+            .write_all(b"version: '3'\n")
+            .unwrap();
 
         let result = detect_backend(temp.path());
         assert!(result.is_some());
@@ -283,7 +303,10 @@ mod tests {
     fn test_detect_tiltfile() {
         let temp = TempDir::new().unwrap();
         let tilt_path = temp.path().join("Tiltfile");
-        File::create(&tilt_path).unwrap().write_all(b"# Tiltfile\n").unwrap();
+        File::create(&tilt_path)
+            .unwrap()
+            .write_all(b"# Tiltfile\n")
+            .unwrap();
 
         let result = detect_backend(temp.path());
         assert!(result.is_some());
@@ -326,11 +349,8 @@ mod tests {
         assert!(detect_backend(temp.path()).is_none());
 
         // With override, file found
-        let result = detect_backend_with_config(
-            temp.path(),
-            Some(Path::new("docker/compose.yml")),
-            None,
-        );
+        let result =
+            detect_backend_with_config(temp.path(), Some(Path::new("docker/compose.yml")), None);
         assert!(result.is_some());
         let (backend, _) = result.unwrap();
         assert_eq!(backend, ServiceBackend::DockerCompose);

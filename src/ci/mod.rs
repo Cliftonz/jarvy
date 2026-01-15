@@ -9,7 +9,7 @@
 mod config;
 mod output;
 
-pub use config::{generate_ci_config, CiConfigError, CiConfigTemplate};
+pub use config::{CiConfigError, CiConfigTemplate, generate_ci_config};
 pub use output::{CiOutput, GroupGuard};
 
 use std::env;
@@ -226,7 +226,9 @@ pub fn detect() -> Option<CiEnvironment> {
 
     // Allow forcing CI mode via env var
     if env::var("JARVY_CI").as_deref() == Ok("1") {
-        return Some(CiEnvironment::forced(detect_provider().unwrap_or(CiProvider::Generic)));
+        return Some(CiEnvironment::forced(
+            detect_provider().unwrap_or(CiProvider::Generic),
+        ));
     }
 
     detect_provider().map(CiEnvironment::new)

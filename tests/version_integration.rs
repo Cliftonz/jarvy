@@ -38,7 +38,11 @@ mod version_extraction {
         println!("Git output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -59,7 +63,11 @@ mod version_extraction {
         println!("Brew output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -79,7 +87,11 @@ mod version_extraction {
         println!("Rustc output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -100,7 +112,11 @@ mod version_extraction {
         println!("Cargo output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -119,7 +135,11 @@ mod version_extraction {
         println!("Node output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -144,7 +164,11 @@ mod version_extraction {
         println!("Python output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -165,7 +189,11 @@ mod version_extraction {
         println!("Docker output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -197,7 +225,11 @@ mod version_extraction {
         println!("Go output: {}", output);
 
         let version = extract_version(&output);
-        assert!(version.is_some(), "Failed to extract version from: {}", output);
+        assert!(
+            version.is_some(),
+            "Failed to extract version from: {}",
+            output
+        );
 
         let v = version.unwrap();
         println!("Extracted: {}.{}.{}", v.major, v.minor, v.patch);
@@ -236,8 +268,14 @@ mod version_satisfies {
         assert!(version_satisfies(&output, "2"), "Git should satisfy '2'");
 
         // But "1" or "3" should not match
-        assert!(!version_satisfies(&output, "1"), "Git should not satisfy '1'");
-        assert!(!version_satisfies(&output, "3"), "Git should not satisfy '3'");
+        assert!(
+            !version_satisfies(&output, "1"),
+            "Git should not satisfy '1'"
+        );
+        assert!(
+            !version_satisfies(&output, "3"),
+            "Git should not satisfy '3'"
+        );
     }
 
     #[test]
@@ -316,10 +354,7 @@ mod version_satisfies {
         let output = get_version_output(cmd).unwrap();
 
         // Python 3.x should satisfy "3"
-        assert!(
-            version_satisfies(&output, "3"),
-            "Python should satisfy '3'"
-        );
+        assert!(version_satisfies(&output, "3"), "Python should satisfy '3'");
 
         // But not "2"
         assert!(
@@ -432,12 +467,19 @@ fn report_parseable_tools() {
                     Some(v) => {
                         println!(
                             "✓ {:<12} -> {}.{}.{} (from: {})",
-                            tool, v.major, v.minor, v.patch,
+                            tool,
+                            v.major,
+                            v.minor,
+                            v.patch,
                             first_line.trim()
                         );
                     }
                     None => {
-                        println!("✗ {:<12} -> PARSE FAILED (output: {})", tool, first_line.trim());
+                        println!(
+                            "✗ {:<12} -> PARSE FAILED (output: {})",
+                            tool,
+                            first_line.trim()
+                        );
                     }
                 }
             }

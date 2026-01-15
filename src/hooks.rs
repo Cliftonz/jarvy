@@ -10,7 +10,7 @@ use std::time::Duration;
 use thiserror::Error;
 use wait_timeout::ChildExt;
 
-use crate::config::{HookSettings, DEFAULT_HOOK_TIMEOUT};
+use crate::config::{DEFAULT_HOOK_TIMEOUT, HookSettings};
 use crate::tools::Os;
 
 /// Errors that can occur during hook execution
@@ -91,8 +91,7 @@ impl HookEnv {
             version: Some(version.to_string()),
             os: Some(crate::tools::current_os()),
             arch: Some(std::env::consts::ARCH.to_string()),
-            jarvy_home: dirs::home_dir()
-                .map(|p| p.join(".jarvy").to_string_lossy().to_string()),
+            jarvy_home: dirs::home_dir().map(|p| p.join(".jarvy").to_string_lossy().to_string()),
             custom: HashMap::new(),
         }
     }
@@ -104,8 +103,7 @@ impl HookEnv {
             version: None,
             os: Some(crate::tools::current_os()),
             arch: Some(std::env::consts::ARCH.to_string()),
-            jarvy_home: dirs::home_dir()
-                .map(|p| p.join(".jarvy").to_string_lossy().to_string()),
+            jarvy_home: dirs::home_dir().map(|p| p.join(".jarvy").to_string_lossy().to_string()),
             custom: HashMap::new(),
         }
     }
@@ -303,10 +301,20 @@ fn build_shell_command(shell: &str, script: &str) -> HookResult<(String, Vec<Str
         } else {
             "pwsh" // PowerShell Core on Unix
         };
-        (bin.to_string(), vec!["-NoProfile".to_string(), "-Command".to_string(), script.to_string()])
+        (
+            bin.to_string(),
+            vec![
+                "-NoProfile".to_string(),
+                "-Command".to_string(),
+                script.to_string(),
+            ],
+        )
     } else if shell_lower.contains("cmd") {
         // Windows CMD
-        ("cmd.exe".to_string(), vec!["/C".to_string(), script.to_string()])
+        (
+            "cmd.exe".to_string(),
+            vec!["/C".to_string(), script.to_string()],
+        )
     } else {
         // Unix shells (bash, zsh, sh, fish, etc.)
         let shell_path = if shell.starts_with('/') {
@@ -400,8 +408,7 @@ mod tests {
 
     #[test]
     fn test_hook_env_custom() {
-        let env = HookEnv::global()
-            .with_var("MY_VAR", "my_value");
+        let env = HookEnv::global().with_var("MY_VAR", "my_value");
         let map = env.to_env_map();
         assert_eq!(map.get("MY_VAR"), Some(&"my_value".to_string()));
     }
@@ -439,8 +446,8 @@ mod tests {
 
     #[test]
     fn test_hook_with_env() {
-        let hook = Hook::new("echo $JARVY_TOOL", "Tool hook")
-            .with_env(HookEnv::for_tool("git", "2.40.0"));
+        let hook =
+            Hook::new("echo $JARVY_TOOL", "Tool hook").with_env(HookEnv::for_tool("git", "2.40.0"));
         let map = hook.env.to_env_map();
         assert_eq!(map.get("JARVY_TOOL"), Some(&"git".to_string()));
     }

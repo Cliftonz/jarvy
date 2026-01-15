@@ -97,11 +97,17 @@ fn new_tool(name: String, bin: Option<String>) -> Result<()> {
     // (Optional) run rustfmt; ignore errors if not available
     let _ = std::process::Command::new("cargo").args(["fmt"]).status();
 
-    println!("✔ Created src/tools/{}/{}.rs using ToolSpec pattern", name, name);
+    println!(
+        "✔ Created src/tools/{}/{}.rs using ToolSpec pattern",
+        name, name
+    );
     println!("✔ Created src/tools/{}/mod.rs", name);
     println!("✔ Updated src/tools/mod.rs");
     println!();
-    println!("→ Edit src/tools/{}/{}.rs to customize package names if needed.", name, name);
+    println!(
+        "→ Edit src/tools/{}/{}.rs to customize package names if needed.",
+        name, name
+    );
     println!("→ Update the tool description in the doc comment.");
     println!("→ Run `cargo test --lib` to verify the new tool.");
     Ok(())

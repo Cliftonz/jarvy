@@ -1,7 +1,7 @@
 {
   "title": "PRD-001: Optimized Tool Installation",
   "priority": "High",
-  "status": "In Progress",
+  "status": "Partially Compliant",
   "source": "prd/001-parallel-tool-installation.md",
   "createdAt": "2026-01-15T18:00:00Z",
   "updatedAt": "2026-01-15T21:00:00Z",
@@ -75,29 +75,29 @@
       "id": "US-002",
       "title": "Phase 2: Parallel Version Checking",
       "description": "As a developer, I want all tool versions checked concurrently before installation so that the installation plan is built faster.",
-      "passed": false,
+      "passed": true,
       "priority": "P1",
       "impact": "Medium",
       "acceptanceCriteria": [
         {
           "criterion": "Add rayon dependency to Cargo.toml",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Refactor version checking to use par_iter()",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Collect all version results before building installation plan",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Update progress reporting to show parallel check status",
-          "passed": false
+          "passed": true
         },
         {
           "criterion": "Version checks complete for 10+ tools in ~2 seconds (vs ~10 seconds sequential)",
-          "passed": false
+          "passed": true
         }
       ]
     },
@@ -234,7 +234,7 @@
     {
       "id": "FR-5",
       "description": "Parallel version checking for all tools before installation",
-      "passed": false
+      "passed": true
     },
     {
       "id": "FR-6",
@@ -303,7 +303,7 @@
     {
       "file": "Cargo.toml",
       "changes": "Add rayon dependency (Phase 2+)",
-      "completed": false
+      "completed": true
     },
     {
       "file": "tests/",

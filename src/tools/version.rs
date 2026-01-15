@@ -15,9 +15,8 @@ use semver::{Version, VersionReq};
 /// - "Docker version 24.0.7, build afdd53b"
 /// - "rustc 1.75.0 (82e1608df 2023-12-21)"
 /// - "go version go1.21.5 darwin/arm64"
-static VERSION_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"v?(\d+)\.(\d+)(?:\.(\d+))?(?:-([a-zA-Z0-9.-]+))?").unwrap()
-});
+static VERSION_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"v?(\d+)\.(\d+)(?:\.(\d+))?(?:-([a-zA-Z0-9.-]+))?").unwrap());
 
 /// Represents an extracted version with optional prerelease tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,13 +51,14 @@ impl ExtractedVersion {
 /// assert_eq!(v.patch, 0);
 /// ```
 pub fn extract_version(output: &str) -> Option<ExtractedVersion> {
-    VERSION_REGEX.captures(output).map(|caps| {
-        ExtractedVersion {
-            major: caps.get(1).unwrap().as_str().parse().unwrap_or(0),
-            minor: caps.get(2).unwrap().as_str().parse().unwrap_or(0),
-            patch: caps.get(3).map(|m| m.as_str().parse().unwrap_or(0)).unwrap_or(0),
-            prerelease: caps.get(4).map(|m| m.as_str().to_string()),
-        }
+    VERSION_REGEX.captures(output).map(|caps| ExtractedVersion {
+        major: caps.get(1).unwrap().as_str().parse().unwrap_or(0),
+        minor: caps.get(2).unwrap().as_str().parse().unwrap_or(0),
+        patch: caps
+            .get(3)
+            .map(|m| m.as_str().parse().unwrap_or(0))
+            .unwrap_or(0),
+        prerelease: caps.get(4).map(|m| m.as_str().to_string()),
     })
 }
 

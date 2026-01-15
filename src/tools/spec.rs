@@ -689,6 +689,145 @@ pub fn list_tools_with_default_hooks() -> Vec<(&'static str, &'static DefaultHoo
 }
 
 // ============================================================================
+// Parallel Version Checking
+// ============================================================================
+
+use rayon::prelude::*;
+
+/// Result of checking a tool's version status.
+#[derive(Debug, Clone)]
+pub struct ToolVersionStatus {
+    /// Tool name
+    pub name: String,
+    /// Version requirement from config
+    pub version: String,
+    /// Whether the tool is already installed with a satisfying version
+    pub satisfied: bool,
+    /// Whether this tool exists in the registry
+    pub known: bool,
+}
+
+/// Summary of parallel version check results.
+#[derive(Debug, Default)]
+pub struct VersionCheckSummary {
+    /// Tools that are already satisfied (no installation needed)
+    pub satisfied: Vec<(String, String)>,
+    /// Tools that need installation
+    pub needs_install: Vec<(String, String)>,
+    /// Tools not found in registry
+    pub unknown: Vec<(String, String)>,
+    /// Duration of the check in milliseconds
+    pub duration_ms: u64,
+}
+
+impl VersionCheckSummary {
+    /// Get a human-readable summary string.
+    pub fn summary_string(&self) -> String {
+        format!(
+            "Version check: {} satisfied, {} need install, {} unknown ({}ms)",
+            self.satisfied.len(),
+            self.needs_install.len(),
+            self.unknown.len(),
+            self.duration_ms
+        )
+    }
+}
+
+/// Check version status for a single tool.
+fn check_tool_version(name: &str, version: &str) -> ToolVersionStatus {
+    let name_lower = name.to_lowercase();
+
+    // Check if tool is known
+    let spec = get_tool_spec(&name_lower);
+    let is_manual = MANUAL_TOOLS.iter().any(|(n, _)| *n == name_lower);
+
+    if spec.is_none() && !is_manual {
+        return ToolVersionStatus {
+            name: name.to_string(),
+            version: version.to_string(),
+            satisfied: false,
+            known: false,
+        };
+    }
+
+    // Check if version is satisfied
+    let satisfied = if let Some(spec) = spec {
+        spec.is_satisfied(version)
+    } else {
+        // Manual tools (nvm, rust, brew) - check if command exists
+        let (_, cmd) = MANUAL_TOOLS.iter().find(|(n, _)| *n == name_lower).unwrap();
+        has(*cmd)
+    };
+
+    ToolVersionStatus {
+        name: name.to_string(),
+        version: version.to_string(),
+        satisfied,
+        known: true,
+    }
+}
+
+/// Check version status for multiple tools in parallel.
+///
+/// This uses rayon's parallel iterator to check all tools concurrently,
+/// significantly speeding up the version checking phase for large tool lists.
+pub fn check_tools_parallel<'a, I>(tools: I) -> VersionCheckSummary
+where
+    I: Iterator<Item = (&'a str, &'a str)>,
+{
+    let start = std::time::Instant::now();
+
+    // Collect tools into a Vec for parallel processing
+    let tool_list: Vec<(&str, &str)> = tools.collect();
+
+    // Check all tools in parallel
+    let results: Vec<ToolVersionStatus> = tool_list
+        .par_iter()
+        .map(|(name, version)| check_tool_version(name, version))
+        .collect();
+
+    // Categorize results
+    let mut summary = VersionCheckSummary::default();
+
+    for status in results {
+        if !status.known {
+            summary.unknown.push((status.name, status.version));
+        } else if status.satisfied {
+            summary.satisfied.push((status.name, status.version));
+        } else {
+            summary.needs_install.push((status.name, status.version));
+        }
+    }
+
+    summary.duration_ms = start.elapsed().as_millis() as u64;
+    summary
+}
+
+/// Check version status for multiple tools sequentially (for comparison/fallback).
+pub fn check_tools_sequential<'a, I>(tools: I) -> VersionCheckSummary
+where
+    I: Iterator<Item = (&'a str, &'a str)>,
+{
+    let start = std::time::Instant::now();
+
+    let mut summary = VersionCheckSummary::default();
+
+    for (name, version) in tools {
+        let status = check_tool_version(name, version);
+        if !status.known {
+            summary.unknown.push((status.name, status.version));
+        } else if status.satisfied {
+            summary.satisfied.push((status.name, status.version));
+        } else {
+            summary.needs_install.push((status.name, status.version));
+        }
+    }
+
+    summary.duration_ms = start.elapsed().as_millis() as u64;
+    summary
+}
+
+// ============================================================================
 // Tool Grouping for Batch Installation
 // ============================================================================
 

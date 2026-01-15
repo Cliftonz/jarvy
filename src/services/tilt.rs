@@ -1,8 +1,8 @@
 //! Tilt service backend
 
 use super::{
-    command_exists, run_command, ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult,
-    ServiceStatus,
+    ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult, ServiceStatus, command_exists,
+    run_command,
 };
 use std::path::{Path, PathBuf};
 
@@ -29,28 +29,22 @@ impl ServiceBackendOps for TiltBackend {
             return Err(ServiceError::BackendNotInstalled(ServiceBackend::Tilt));
         }
 
-        let working_dir = config_path
-            .parent()
-            .unwrap_or(Path::new("."));
+        let working_dir = config_path.parent().unwrap_or(Path::new("."));
         let config_file = config_path
             .file_name()
             .and_then(|f| f.to_str())
             .unwrap_or("Tiltfile");
 
         // tilt up with --stream=false runs in background mode
-        let args = [
-            "up",
-            "-f",
-            config_file,
-            "--stream=false",
-        ];
+        let args = ["up", "-f", config_file, "--stream=false"];
 
         let output = run_command("tilt", &args, working_dir)?;
 
         if output.status.success() {
             Ok(ServiceResult {
                 success: true,
-                message: "Tilt services started. Access dashboard at http://localhost:10350".to_string(),
+                message: "Tilt services started. Access dashboard at http://localhost:10350"
+                    .to_string(),
                 backend: ServiceBackend::Tilt,
             })
         } else {
@@ -68,9 +62,7 @@ impl ServiceBackendOps for TiltBackend {
             return Err(ServiceError::BackendNotInstalled(ServiceBackend::Tilt));
         }
 
-        let working_dir = config_path
-            .parent()
-            .unwrap_or(Path::new("."));
+        let working_dir = config_path.parent().unwrap_or(Path::new("."));
         let config_file = config_path
             .file_name()
             .and_then(|f| f.to_str())
@@ -106,9 +98,7 @@ impl ServiceBackendOps for TiltBackend {
             });
         }
 
-        let working_dir = config_path
-            .parent()
-            .unwrap_or(Path::new("."));
+        let working_dir = config_path.parent().unwrap_or(Path::new("."));
 
         // tilt status shows resource status
         let output = run_command("tilt", &["status"], working_dir)?;

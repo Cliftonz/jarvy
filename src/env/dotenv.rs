@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::Path;
 use thiserror::Error;
 
-use super::expand::{expand_value, EnvContext};
+use super::expand::{EnvContext, expand_value};
 
 /// Errors that can occur during .env file generation
 #[derive(Error, Debug)]
@@ -78,10 +78,10 @@ pub fn generate_dotenv(
         // Backup existing file
         if config.backup {
             // Create backup path by appending .backup to the filename
-            let backup_path = path
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join(format!("{}.backup", path.file_name().unwrap_or_default().to_string_lossy()));
+            let backup_path = path.parent().unwrap_or(Path::new(".")).join(format!(
+                "{}.backup",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ));
             fs::copy(path, &backup_path).map_err(|e| {
                 DotenvError::BackupError(format!(
                     "Could not backup {} to {}: {}",

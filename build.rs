@@ -60,7 +60,6 @@ struct PlatformInstall {
     uniform: Option<String>,
 }
 
-
 /// A tool entry in the build-time index.
 #[derive(Debug, serde::Serialize)]
 struct BuildToolEntry {

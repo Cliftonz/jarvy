@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use thiserror::Error;
 
-use super::expand::{expand_path, EnvContext};
+use super::expand::{EnvContext, expand_path};
 use crate::config::SecretValue;
 
 /// Errors that can occur during secret handling
@@ -231,14 +231,18 @@ mod tests {
 
         // Set CI env to test detection
         // SAFETY: Test environment, single-threaded access
-        unsafe { std::env::set_var("JARVY_TEST_MODE", "1"); }
+        unsafe {
+            std::env::set_var("JARVY_TEST_MODE", "1");
+        }
         let config = SecretsConfig::default();
         assert!(config.ci_mode);
 
         // Clean up if CI wasn't originally set
         if !ci_was_set {
             // SAFETY: Test environment, single-threaded access
-            unsafe { std::env::remove_var("CI"); }
+            unsafe {
+                std::env::remove_var("CI");
+            }
         }
     }
 
@@ -265,7 +269,9 @@ mod tests {
     #[test]
     fn test_resolve_secret_from_env() {
         // SAFETY: Test environment, single-threaded access
-        unsafe { std::env::set_var("TEST_SECRET_ENV", "env_value"); }
+        unsafe {
+            std::env::set_var("TEST_SECRET_ENV", "env_value");
+        }
 
         let ctx = EnvContext::new();
         let config = SecretsConfig {
@@ -283,7 +289,9 @@ mod tests {
         assert_eq!(result, Some("env_value".to_string()));
 
         // SAFETY: Test environment, single-threaded access
-        unsafe { std::env::remove_var("TEST_SECRET_ENV"); }
+        unsafe {
+            std::env::remove_var("TEST_SECRET_ENV");
+        }
     }
 
     #[test]
@@ -355,6 +363,9 @@ mod tests {
         };
 
         let result = collect_secrets(&secrets, &ctx, &config).unwrap();
-        assert_eq!(result.get("FILE_SECRET"), Some(&"collected_secret".to_string()));
+        assert_eq!(
+            result.get("FILE_SECRET"),
+            Some(&"collected_secret".to_string())
+        );
     }
 }

@@ -9,6 +9,36 @@ define_tool!(EZA, {
     macos: { brew: "eza" },
     linux: { apt: "eza", dnf: "eza", pacman: "eza", apk: "eza" },
     windows: { winget: "eza-community.eza" },
+    default_hook: {
+        description: "Add eza aliases for ls replacement",
+        script: r#"
+# Add eza aliases to .bashrc
+if [ -f "$HOME/.bashrc" ] && ! grep -q "alias ls='eza'" "$HOME/.bashrc"; then
+    cat >> "$HOME/.bashrc" << 'ALIASES'
+
+# eza aliases (modern ls replacement)
+alias ls='eza'
+alias ll='eza -l --git'
+alias la='eza -la --git'
+alias lt='eza --tree --level=2'
+ALIASES
+    echo "Added eza aliases to .bashrc"
+fi
+
+# Add eza aliases to .zshrc
+if [ -f "$HOME/.zshrc" ] && ! grep -q "alias ls='eza'" "$HOME/.zshrc"; then
+    cat >> "$HOME/.zshrc" << 'ALIASES'
+
+# eza aliases (modern ls replacement)
+alias ls='eza'
+alias ll='eza -l --git'
+alias la='eza -la --git'
+alias lt='eza --tree --level=2'
+ALIASES
+    echo "Added eza aliases to .zshrc"
+fi
+"#
+    },
 });
 
 #[cfg(test)]

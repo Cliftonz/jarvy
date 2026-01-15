@@ -121,9 +121,9 @@ fn services_detects_docker_compose_yml() {
     c.current_dir(temp_dir.path());
 
     // Will show either Docker Compose status or that it's not installed
-    c.assert()
-        .success()
-        .stdout(predicate::str::contains("Docker Compose").or(predicate::str::contains("not installed")));
+    c.assert().success().stdout(
+        predicate::str::contains("Docker Compose").or(predicate::str::contains("not installed")),
+    );
 }
 
 #[test]
@@ -192,9 +192,9 @@ fn services_prioritizes_docker_compose_over_tilt() {
     c.current_dir(temp_dir.path());
 
     // Docker Compose should be prioritized
-    c.assert()
-        .success()
-        .stdout(predicate::str::contains("Docker Compose").or(predicate::str::contains("not installed")));
+    c.assert().success().stdout(
+        predicate::str::contains("Docker Compose").or(predicate::str::contains("not installed")),
+    );
 }
 
 // =====================================================================
@@ -231,7 +231,7 @@ fn services_uses_compose_file_override() {
     c.current_dir(temp_dir.path());
 
     // Should find the compose file in the subdirectory
-    c.assert()
-        .success()
-        .stdout(predicate::str::contains("Docker Compose").or(predicate::str::contains("not installed")));
+    c.assert().success().stdout(
+        predicate::str::contains("Docker Compose").or(predicate::str::contains("not installed")),
+    );
 }

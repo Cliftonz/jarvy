@@ -9,6 +9,25 @@ define_tool!(MINIKUBE, {
     macos: { brew: "minikube" },
     linux: { uniform: "minikube" },
     windows: { winget: "Kubernetes.minikube" },
+    default_hook: {
+        description: "Install minikube shell completions for bash and zsh",
+        script: r#"
+# Generate and install minikube completions for bash
+if [ -f "$HOME/.bashrc" ]; then
+    mkdir -p "$HOME/.local/share/bash-completion/completions"
+    minikube completion bash > "$HOME/.local/share/bash-completion/completions/minikube" 2>/dev/null || true
+fi
+
+# Generate and install minikube completions for zsh
+if [ -f "$HOME/.zshrc" ]; then
+    mkdir -p "$HOME/.zsh/completions"
+    minikube completion zsh > "$HOME/.zsh/completions/_minikube" 2>/dev/null || true
+    if ! grep -q 'fpath.*\.zsh/completions' "$HOME/.zshrc"; then
+        echo 'fpath=($HOME/.zsh/completions $fpath)' >> "$HOME/.zshrc"
+    fi
+fi
+"#
+    },
 });
 
 #[cfg(test)]

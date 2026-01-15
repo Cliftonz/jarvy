@@ -3,7 +3,7 @@
   "parent_prd": "PRD-009",
   "title": "Additional Tool Default Hooks",
   "description": "Add default post-install hooks for additional tools that would benefit from automatic configuration after installation",
-  "status": "pending",
+  "status": "completed",
   "priority": "low",
   "dependencies": ["PRD-009"],
   "estimated_complexity": "low",
@@ -18,7 +18,7 @@
       "id": "T1",
       "title": "Add hooks for additional shell tools",
       "description": "Add default hooks for tools that need shell initialization",
-      "status": "pending",
+      "status": "completed",
       "priority": "medium",
       "files": ["src/tools/bat/bat.rs", "src/tools/eza/eza.rs", "src/tools/fd/fd.rs"],
       "subtasks": [
@@ -31,7 +31,7 @@
       "id": "T2",
       "title": "Add hooks for development tools",
       "description": "Add default hooks for common development configurations",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
       "files": ["src/tools/gh/gh.rs", "src/tools/delta/delta.rs"],
       "subtasks": [

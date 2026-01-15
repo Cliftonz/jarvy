@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-use super::expand::{expand_value, EnvContext};
+use super::expand::{EnvContext, expand_value};
 
 /// Errors that can occur during shell rc modification
 #[derive(Error, Debug)]
@@ -164,7 +164,10 @@ pub fn update_shell_rc(
     if rc_path.exists() && config.backup {
         let backup_path = rc_path.with_extension(format!(
             "{}.jarvy.backup",
-            rc_path.extension().map(|s| s.to_string_lossy()).unwrap_or_default()
+            rc_path
+                .extension()
+                .map(|s| s.to_string_lossy())
+                .unwrap_or_default()
         ));
         fs::copy(&rc_path, &backup_path).map_err(|e| {
             ShellError::BackupError(format!(
@@ -236,7 +239,10 @@ fn update_rc_content(
             let raw_value = &vars[key];
             let expanded_value = expand_value(raw_value, ctx);
             let quoted_value = shell_quote(&expanded_value, shell);
-            lines.push(format!("{}{}={}{}", export_prefix, key, quoted_value, export_suffix));
+            lines.push(format!(
+                "{}{}={}{}",
+                export_prefix, key, quoted_value, export_suffix
+            ));
         }
 
         lines.push(JARVY_END.to_string());
@@ -289,7 +295,11 @@ fn shell_quote(value: &str, shell: ShellType) -> String {
 }
 
 /// Preview what would be added to the shell rc file (for dry-run)
-pub fn preview_shell_rc(shell: ShellType, vars: &HashMap<String, String>, ctx: &EnvContext) -> String {
+pub fn preview_shell_rc(
+    shell: ShellType,
+    vars: &HashMap<String, String>,
+    ctx: &EnvContext,
+) -> String {
     let mut lines = Vec::new();
     lines.push(JARVY_START.to_string());
 
@@ -302,7 +312,10 @@ pub fn preview_shell_rc(shell: ShellType, vars: &HashMap<String, String>, ctx: &
         let raw_value = &vars[key];
         let expanded_value = expand_value(raw_value, ctx);
         let quoted_value = shell_quote(&expanded_value, shell);
-        lines.push(format!("{}{}={}{}", export_prefix, key, quoted_value, export_suffix));
+        lines.push(format!(
+            "{}{}={}{}",
+            export_prefix, key, quoted_value, export_suffix
+        ));
     }
 
     lines.push(JARVY_END.to_string());
