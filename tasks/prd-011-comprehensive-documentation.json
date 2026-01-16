@@ -1,0 +1,294 @@
+{
+  "title": "PRD-011: Comprehensive Documentation System",
+  "priority": "Medium",
+  "status": "Not Started",
+  "source": "prd/011-comprehensive-documentation.md",
+  "createdAt": "2026-01-15T23:00:00Z",
+  "updatedAt": "2026-01-15T23:00:00Z",
+  "overview": {
+    "description": "Create complete, professional documentation for Jarvy covering all implemented features including parallel installation, post-install hooks, environment variables, CI detection, and service management.",
+    "goals": [
+      "100% feature documentation coverage",
+      "Complete tool catalog (97+ tools)",
+      "Developer contribution guides",
+      "Architecture documentation",
+      "CI validation of docs"
+    ]
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Phase 1: Foundation",
+      "description": "As a new user, I want clear installation and quickstart guides so that I can start using Jarvy within 5 minutes.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Create docs/ directory structure",
+          "passed": false
+        },
+        {
+          "criterion": "Write installation guide (all platforms)",
+          "passed": false
+        },
+        {
+          "criterion": "Write quickstart tutorial",
+          "passed": false
+        },
+        {
+          "criterion": "Create jarvy.toml schema reference",
+          "passed": false
+        },
+        {
+          "criterion": "Delete broken docs/Quckstart.md",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Phase 2: Feature Documentation",
+      "description": "As a user, I want comprehensive guides for each Jarvy feature so that I can use hooks, CI integration, environment variables, and services effectively.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Document all CLI commands with examples",
+          "passed": false
+        },
+        {
+          "criterion": "Create hooks guide with user-defined and default hook examples",
+          "passed": false
+        },
+        {
+          "criterion": "Write CI/CD integration guide for all 11 providers",
+          "passed": false
+        },
+        {
+          "criterion": "Document [env] configuration and .env generation",
+          "passed": false
+        },
+        {
+          "criterion": "Write services guide (Docker Compose, Tilt)",
+          "passed": false
+        },
+        {
+          "criterion": "Document version specification syntax",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Phase 3: Tool Catalog",
+      "description": "As a user, I want a searchable catalog of all supported tools with platform-specific package names and default hooks.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Generate tool list from codebase (97+ tools)",
+          "passed": false
+        },
+        {
+          "criterion": "Document package name mappings per platform",
+          "passed": false
+        },
+        {
+          "criterion": "List all 29 default hooks with descriptions",
+          "passed": false
+        },
+        {
+          "criterion": "Organize tools by category (languages, devops, utilities)",
+          "passed": false
+        },
+        {
+          "criterion": "Add tool version detection notes",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Phase 4: Developer Documentation",
+      "description": "As a contributor, I want architecture and contribution guides so that I can add new tools and features.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Write architecture overview with system diagram",
+          "passed": false
+        },
+        {
+          "criterion": "Document module responsibilities",
+          "passed": false
+        },
+        {
+          "criterion": "Create step-by-step 'adding a tool' guide",
+          "passed": false
+        },
+        {
+          "criterion": "Document default hook creation",
+          "passed": false
+        },
+        {
+          "criterion": "Write testing guide",
+          "passed": false
+        },
+        {
+          "criterion": "Add Architecture Decision Records (ADRs)",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Phase 5: Polish and Automation",
+      "description": "As a maintainer, I want automated doc generation and validation so that documentation stays in sync with code.",
+      "passed": false,
+      "priority": "P2",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Add 6+ example jarvy.toml configurations",
+          "passed": false
+        },
+        {
+          "criterion": "Create troubleshooting FAQ",
+          "passed": false
+        },
+        {
+          "criterion": "Set up doc navigation in README",
+          "passed": false
+        },
+        {
+          "criterion": "Add CI validation that docs match code",
+          "passed": false
+        },
+        {
+          "criterion": "Create script to generate tool catalog from macros",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "functionalRequirements": [
+    {
+      "id": "FR-1",
+      "description": "Installation guide covers macOS, Linux, Windows",
+      "passed": false
+    },
+    {
+      "id": "FR-2",
+      "description": "All CLI commands documented with usage examples",
+      "passed": false
+    },
+    {
+      "id": "FR-3",
+      "description": "Complete jarvy.toml schema reference",
+      "passed": false
+    },
+    {
+      "id": "FR-4",
+      "description": "97+ tools catalogued with package mappings",
+      "passed": false
+    },
+    {
+      "id": "FR-5",
+      "description": "29 default hooks documented",
+      "passed": false
+    },
+    {
+      "id": "FR-6",
+      "description": "All 11 CI providers documented",
+      "passed": false
+    },
+    {
+      "id": "FR-7",
+      "description": "Architecture diagram and module documentation",
+      "passed": false
+    },
+    {
+      "id": "FR-8",
+      "description": "Contributing guide for new tools and hooks",
+      "passed": false
+    }
+  ],
+  "nonGoals": [
+    "External documentation site (GitHub-hosted docs are sufficient)",
+    "Video tutorials",
+    "Internationalization/translation"
+  ],
+  "technicalConsiderations": [
+    {
+      "area": "Automation",
+      "details": "Tool catalog and hook list can be generated from define_tool! macros in codebase"
+    },
+    {
+      "area": "Maintenance",
+      "details": "CI should validate that docs mention all tools/features in code"
+    },
+    {
+      "area": "Format",
+      "details": "Markdown with GitHub-flavored extensions for collapsible sections and tables"
+    }
+  ],
+  "filesToCreate": [
+    "docs/README.md",
+    "docs/getting-started/installation.md",
+    "docs/getting-started/quickstart.md",
+    "docs/getting-started/migration.md",
+    "docs/configuration/jarvy-toml.md",
+    "docs/configuration/version-syntax.md",
+    "docs/configuration/hooks.md",
+    "docs/configuration/environment.md",
+    "docs/configuration/services.md",
+    "docs/cli/commands.md",
+    "docs/cli/flags.md",
+    "docs/tools/index.md",
+    "docs/tools/by-category.md",
+    "docs/tools/default-hooks.md",
+    "docs/guides/hooks.md",
+    "docs/guides/ci-integration.md",
+    "docs/guides/services.md",
+    "docs/guides/environment-setup.md",
+    "docs/guides/troubleshooting.md",
+    "docs/architecture/overview.md",
+    "docs/architecture/modules.md",
+    "docs/contributing/adding-a-tool.md",
+    "docs/contributing/creating-hooks.md",
+    "docs/contributing/testing.md",
+    "docs/examples/node-project.toml",
+    "docs/examples/python-project.toml",
+    "docs/examples/fullstack-project.toml",
+    "docs/examples/devops-toolkit.toml",
+    "docs/examples/rust-development.toml",
+    "docs/examples/kubernetes-setup.toml"
+  ],
+  "successMetrics": [
+    "Documentation pages: 2 → 25+",
+    "Feature coverage: 20% → 100%",
+    "Example configs: 0 → 6+",
+    "Tools documented: 0 → 97+",
+    "Hooks documented: 0 → 29"
+  ],
+  "risks": [
+    {
+      "risk": "Documentation drifts from code",
+      "likelihood": "High",
+      "impact": "High",
+      "mitigation": "Automated generation and CI validation"
+    },
+    {
+      "risk": "Incomplete coverage",
+      "likelihood": "Medium",
+      "impact": "Medium",
+      "mitigation": "Checklist-driven approach with tracking"
+    }
+  ],
+  "dependencies": [],
+  "effortEstimate": "10 days"
+}

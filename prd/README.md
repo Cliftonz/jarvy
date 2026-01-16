@@ -27,6 +27,7 @@ This folder contains PRDs for improving Jarvy based on a comprehensive codebase 
 | 5 | [Error Handling](005-error-handling-improvements.md) | Reliability | 5-6 days | Replace panics, add retry logic |
 | 6 | [Testing Infrastructure](006-testing-infrastructure.md) | +40% coverage | 6-7 days | Mocking, CI matrix, coverage |
 | 7 | [Documentation](007-documentation-improvements.md) | DX | 3-4 days | Fix gaps, add guides |
+| 11 | [Comprehensive Documentation](011-comprehensive-documentation.md) | DX | 10 days | Full docs for all features |
 
 ### Tier 4: Advanced Features
 
@@ -68,7 +69,7 @@ Phase 4: Advanced (4+ weeks)
 | Version matching is broken | [004](004-semver-version-checking.md) |
 | Panics crash the CLI | [005](005-error-handling-improvements.md) |
 | Tests don't catch bugs | [006](006-testing-infrastructure.md) |
-| Documentation is incomplete | [007](007-documentation-improvements.md) |
+| Documentation is incomplete | [007](007-documentation-improvements.md), [011](011-comprehensive-documentation.md) |
 | Can't set environment variables | [008](008-environment-variables-support.md) |
 | Can't start databases/services | [009](009-service-management.md) |
 | Doesn't work in CI/CD | [010](010-ci-detection-integration.md) |
