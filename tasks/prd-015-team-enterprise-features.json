@@ -1,0 +1,390 @@
+{
+  "id": "PRD-015",
+  "parent_prd": "PRD-015",
+  "title": "Team and Enterprise Features",
+  "description": "Enable teams to share and manage development environment configurations through remote config loading, configuration inheritance, profiles, lock files, and audit logging",
+  "status": "pending",
+  "priority": "medium",
+  "dependencies": [],
+  "estimated_complexity": "high",
+  "acceptance_criteria": [
+    "Remote config loading from HTTPS URLs with jarvy setup --from <URL>",
+    "Config inheritance with extends field supporting single or multiple URLs",
+    "Profile definitions with [profiles.<name>] sections",
+    "Lock file generation with jarvy lock command",
+    "Lock file verification with jarvy setup --locked",
+    "Audit logging for compliance when enabled in config",
+    "Config validation with jarvy validate command",
+    "Security: HTTPS only for remote configs",
+    "Clear error messages for all failure scenarios"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Create remote config fetching module",
+      "description": "Create src/remote/mod.rs for fetching configs from HTTPS URLs",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/remote/mod.rs"],
+      "subtasks": [
+        "Add reqwest dependency with minimal features",
+        "Create RemoteConfig struct with URL, headers, timeout",
+        "Implement HTTPS-only validation (HTTP only in debug)",
+        "Implement fetch() with timeout protection",
+        "Add size limit validation (max 1MB)",
+        "Validate TOML syntax before returning",
+        "Add clear error messages for network failures"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Implement config caching",
+      "description": "Create src/remote/cache.rs for caching fetched configs",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/remote/cache.rs"],
+      "subtasks": [
+        "Create cache directory at ~/.jarvy/cache/configs/",
+        "Store cached configs with URL hash as filename",
+        "Implement TTL-based expiry (default 1 hour)",
+        "Store content hash for integrity verification",
+        "Set secure file permissions (0600)",
+        "Add cache_check() and cache_store() methods"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Add extends field to config",
+      "description": "Parse extends field in jarvy.toml for inheritance",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/config.rs"],
+      "subtasks": [
+        "Add Extends enum (Single/Multiple) to config",
+        "Support string for single extends",
+        "Support array for multiple extends",
+        "Parse both URL and local path references"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Implement inheritance resolution",
+      "description": "Create src/extends/mod.rs for resolving config inheritance",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/extends/mod.rs"],
+      "subtasks": [
+        "Implement resolve_extends() with depth tracking",
+        "Set MAX_DEPTH to 10 levels",
+        "Detect and reject circular extends chains",
+        "Implement merge_configs() for combining base and overlay",
+        "Child config values override parent values",
+        "Handle both remote and local extends sources"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Add profiles section to config",
+      "description": "Parse [profiles.<name>] sections in jarvy.toml",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/config.rs", "src/profiles/mod.rs"],
+      "subtasks": [
+        "Add Profile struct with description, tools, extends fields",
+        "Add profiles HashMap to JarvyConfig",
+        "Support profile extends (profile extending another profile)",
+        "Parse tools array as subset of main [tools] section"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Implement profile selection",
+      "description": "Create src/profiles/mod.rs for profile management",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/profiles/mod.rs"],
+      "subtasks": [
+        "Implement get_profile() to retrieve profile by name",
+        "Implement resolve_profile_tools() to get tool list",
+        "Handle profile extends (inherit tools from other profile)",
+        "Implement list_profiles() for CLI command",
+        "Validate profile tool references against [tools] section"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Create lock file module",
+      "description": "Create src/lock/mod.rs for lock file management",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/lock/mod.rs"],
+      "subtasks": [
+        "Define LockFile struct with tools and metadata",
+        "Define LockedTool struct with version, checksum, source",
+        "Define LockMetadata with jarvy_version, timestamp, platform",
+        "Implement generate() to create lock from config",
+        "Implement save() to write jarvy.lock file",
+        "Implement load() to read existing lock file"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Implement lock file verification",
+      "description": "Add verification logic to compare environment with lock",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/lock/mod.rs"],
+      "subtasks": [
+        "Implement verify() to compare installed vs locked versions",
+        "Return Mismatch list with tool, expected, actual",
+        "Implement update() to refresh lock with latest compatible versions",
+        "Add checksum verification where available"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Create audit logging module",
+      "description": "Create src/audit/mod.rs for compliance audit logging",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/audit/mod.rs"],
+      "subtasks": [
+        "Define AuditEntry struct with timestamp, event, tool, version, user, machine",
+        "Define AuditConfig in global config with enabled, log_file, format",
+        "Implement log_event() for append-only writing",
+        "Implement hash chain linking entries for tamper detection",
+        "Create log file with secure permissions (0600)",
+        "Support JSON and text log formats"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Implement audit log reading",
+      "description": "Add reading and export functionality for audit logs",
+      "status": "pending",
+      "passed": false,
+      "priority": "low",
+      "files": ["src/audit/mod.rs"],
+      "subtasks": [
+        "Implement read_entries() to parse log file",
+        "Add filtering by tool name",
+        "Add filtering by date range (--since)",
+        "Implement export() for compliance reports"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Create config validation module",
+      "description": "Create src/validate/mod.rs for config linting",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/validate/mod.rs"],
+      "subtasks": [
+        "Define ValidationResult with errors and warnings",
+        "Check for unknown tool names",
+        "Check for invalid version strings",
+        "Check for missing profile references",
+        "Detect circular extends chains",
+        "Suggest corrections for typos (did you mean...)",
+        "Check for deprecated configuration options"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Add --from flag to setup command",
+      "description": "Add remote config loading to jarvy setup",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add --from <URL> argument to setup command",
+        "Add --header <KEY:VALUE> argument for auth headers",
+        "Fetch and parse remote config before setup",
+        "Fall back to local config if --from not specified"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Add --profile flag to setup command",
+      "description": "Add profile selection to jarvy setup",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add --profile <NAME> argument to setup command",
+        "Resolve profile tools before installation",
+        "Show error if profile not found",
+        "Display which profile is being used"
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Add jarvy profiles command",
+      "description": "Add CLI command for listing profiles",
+      "status": "pending",
+      "passed": false,
+      "priority": "low",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add profiles subcommand",
+        "Implement list action (default)",
+        "Implement show <name> action for profile details",
+        "Display profile description and tools"
+      ]
+    },
+    {
+      "id": "T15",
+      "title": "Add jarvy lock command",
+      "description": "Add CLI command for lock file management",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add lock subcommand",
+        "Implement default action: generate lock file",
+        "Add --update flag to refresh versions",
+        "Add --verify flag to check environment matches lock"
+      ]
+    },
+    {
+      "id": "T16",
+      "title": "Add --locked flag to setup command",
+      "description": "Add lock file enforcement to jarvy setup",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add --locked flag to setup command",
+        "Load jarvy.lock if present when --locked used",
+        "Error if jarvy.lock not found with --locked",
+        "Install exact versions from lock file"
+      ]
+    },
+    {
+      "id": "T17",
+      "title": "Add jarvy audit command",
+      "description": "Add CLI command for viewing audit logs",
+      "status": "pending",
+      "passed": false,
+      "priority": "low",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add audit subcommand",
+        "Display recent entries by default",
+        "Add --tool <name> filter",
+        "Add --since <date> filter",
+        "Add --export <file> for compliance reports"
+      ]
+    },
+    {
+      "id": "T18",
+      "title": "Add jarvy validate command",
+      "description": "Add CLI command for config validation",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add validate subcommand",
+        "Validate local jarvy.toml by default",
+        "Add --from <URL> to validate remote config",
+        "Add --strict flag to treat warnings as errors",
+        "Display formatted errors and warnings"
+      ]
+    },
+    {
+      "id": "T19",
+      "title": "Write integration tests",
+      "description": "Create comprehensive tests for all new features",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["tests/remote_config.rs", "tests/profiles.rs", "tests/lock_file.rs", "tests/audit.rs", "tests/validation.rs"],
+      "subtasks": [
+        "Test remote config fetching with mock server",
+        "Test HTTPS-only validation",
+        "Test config inheritance resolution",
+        "Test circular extends detection",
+        "Test profile selection and tool filtering",
+        "Test lock file generation and verification",
+        "Test audit log creation and reading",
+        "Test config validation rules",
+        "Test all CLI commands"
+      ]
+    },
+    {
+      "id": "T20",
+      "title": "Update documentation",
+      "description": "Document all new features in CLAUDE.md and inline",
+      "status": "pending",
+      "passed": false,
+      "priority": "low",
+      "files": ["CLAUDE.md"],
+      "subtasks": [
+        "Document remote config loading in CLAUDE.md",
+        "Document extends inheritance syntax",
+        "Document profile configuration",
+        "Document lock file usage",
+        "Document audit logging configuration",
+        "Document validation command",
+        "Add example jarvy.toml with team features"
+      ]
+    }
+  ],
+  "security_considerations": [
+    "HTTPS only for remote configs (HTTP allowed only in debug mode)",
+    "Validate TOML syntax before executing commands",
+    "Size limits on config files (1MB max)",
+    "Timeout protection for network requests",
+    "Secure file permissions on cache and audit logs",
+    "Hash chain for tamper-evident audit logs"
+  ],
+  "non_goals": [
+    "User authentication (use HTTP headers)",
+    "Paid features (all open source)",
+    "Config hosting (use GitHub, S3, etc.)",
+    "Secret management (use env vars)",
+    "Role-based access control"
+  ],
+  "implementation_notes": {
+    "total_effort_estimate": "11.5 days",
+    "new_dependencies": ["reqwest (minimal features)", "sha2", "chrono"],
+    "backwards_compatible": "All new features are opt-in, existing configs work unchanged"
+  },
+  "risks": [
+    {
+      "description": "Remote config availability may block setup",
+      "mitigation": "Cache configs, allow offline mode with cached version"
+    },
+    {
+      "description": "Security of remote configs",
+      "mitigation": "HTTPS only, validate before use, no arbitrary code execution"
+    },
+    {
+      "description": "Lock file staleness",
+      "mitigation": "jarvy lock --update command, CI checks for lock freshness"
+    },
+    {
+      "description": "Audit log growth",
+      "mitigation": "Log rotation, configurable retention period"
+    },
+    {
+      "description": "Inheritance complexity",
+      "mitigation": "Depth limit, jarvy config show --resolved command"
+    }
+  ]
+}

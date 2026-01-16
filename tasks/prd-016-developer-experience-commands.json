@@ -1,0 +1,278 @@
+{
+  "id": "PRD-016",
+  "parent_prd": "PRD-016",
+  "title": "Developer Experience Commands",
+  "description": "Add a suite of commands that make Jarvy more useful for daily development workflows, including environment diagnostics, dry-run previews, tool discovery, and shell completions",
+  "status": "pending",
+  "priority": "high",
+  "dependencies": [],
+  "estimated_complexity": "high",
+  "acceptance_criteria": [
+    "jarvy doctor diagnoses environment issues and checks tool health",
+    "jarvy diff shows what would change before running setup",
+    "jarvy export generates jarvy.toml from installed tools",
+    "jarvy upgrade updates all tools to latest versions",
+    "jarvy search finds available tools by name or category",
+    "Shell completions work for bash, zsh, fish, PowerShell",
+    "All commands support --format flag (human, json, quiet)",
+    "Commands are fast (< 1s for non-network operations)",
+    "Works in CI mode with appropriate defaults"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Create output formatting module",
+      "description": "Create src/output/ module for human, json, and quiet output formats",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/output/mod.rs", "src/output/human.rs", "src/output/json.rs", "src/output/quiet.rs"],
+      "subtasks": [
+        "Create OutputFormat enum (Human, Json, Quiet)",
+        "Create Output trait for formatting results",
+        "Implement human-readable formatter with colors",
+        "Implement JSON formatter with serde",
+        "Implement quiet formatter (minimal/exit-code only)"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Implement jarvy doctor command",
+      "description": "Create command to diagnose environment health",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/commands/doctor.rs", "src/main.rs"],
+      "subtasks": [
+        "Collect system information (OS, shell, package managers)",
+        "Check PATH for expected directories",
+        "Verify each tool in jarvy.toml is installed",
+        "Check if installed versions satisfy requirements",
+        "Detect common shell integration issues",
+        "Generate actionable recommendations",
+        "Support filtering to specific tools",
+        "Implement exit codes (0=healthy, 1=warnings, 2=errors)",
+        "Add --format flag support"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Implement jarvy diff command",
+      "description": "Create dry-run preview of what setup would change",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/commands/diff.rs", "src/main.rs"],
+      "subtasks": [
+        "Detect current tool installation state",
+        "Parse desired state from jarvy.toml",
+        "Compute diff between current and desired",
+        "Show tools to install (with method)",
+        "Show tools to update (with version change)",
+        "Show tools already satisfied",
+        "Show hooks that will run",
+        "Show services that will start",
+        "Add --changes-only flag",
+        "Add --format flag support"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Implement jarvy export command",
+      "description": "Generate jarvy.toml from currently installed tools",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/commands/export.rs", "src/main.rs"],
+      "subtasks": [
+        "Detect installed tools that Jarvy supports",
+        "Extract current versions correctly",
+        "Generate valid jarvy.toml syntax",
+        "Handle version managers (nvm, pyenv, rbenv)",
+        "Add --output flag for file output",
+        "Support filtering to specific tools",
+        "Add --all flag to include uncommon tools",
+        "Add --verbose flag for path comments",
+        "Add --format flag support"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Implement jarvy upgrade command",
+      "description": "Upgrade all tools to latest versions",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/commands/upgrade.rs", "src/main.rs"],
+      "subtasks": [
+        "Check for newer versions of installed tools",
+        "Use correct upgrade method per tool",
+        "Handle version managers correctly",
+        "Support --dry-run to preview changes",
+        "Support upgrading specific tools",
+        "Support version specification (tool@version)",
+        "Run post-install hooks after upgrade",
+        "Add --force flag to upgrade even if satisfied",
+        "Add --format flag support"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Implement jarvy search command",
+      "description": "Search available tools by name or category",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/commands/search.rs", "src/main.rs"],
+      "subtasks": [
+        "Search tool names with fuzzy matching",
+        "Display tool descriptions and metadata",
+        "Show platform availability per tool",
+        "Add --category flag for filtering",
+        "Add --all flag to list all tools",
+        "Show installation hints with --show-install",
+        "Add --format flag support"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Add shell completions",
+      "description": "Generate completions for bash, zsh, fish, PowerShell",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/commands/completions.rs", "src/main.rs"],
+      "subtasks": [
+        "Use clap_complete for generation",
+        "Generate valid bash completions",
+        "Generate valid zsh completions",
+        "Generate valid fish completions",
+        "Generate valid PowerShell completions",
+        "Include all commands and subcommands",
+        "Include tool names for relevant commands",
+        "Add --install-instructions flag"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Write unit tests",
+      "description": "Create unit tests for each command module",
+      "passed": false,
+      "priority": "medium",
+      "files": [
+        "src/commands/doctor.rs",
+        "src/commands/diff.rs",
+        "src/commands/export.rs",
+        "src/commands/upgrade.rs",
+        "src/commands/search.rs"
+      ],
+      "subtasks": [
+        "Test doctor system info collection",
+        "Test doctor PATH checking",
+        "Test doctor tool health logic",
+        "Test diff computation logic",
+        "Test export version detection",
+        "Test export TOML generation",
+        "Test upgrade version comparison",
+        "Test search fuzzy matching",
+        "Test output formatters"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Write integration tests",
+      "description": "Create integration tests for CLI commands",
+      "passed": false,
+      "priority": "medium",
+      "files": [
+        "tests/doctor_integration.rs",
+        "tests/diff_integration.rs",
+        "tests/export_integration.rs",
+        "tests/upgrade_integration.rs",
+        "tests/search_integration.rs"
+      ],
+      "subtasks": [
+        "Test jarvy doctor output formats",
+        "Test jarvy doctor exit codes",
+        "Test jarvy diff with sample jarvy.toml",
+        "Test jarvy export generates valid TOML",
+        "Test jarvy upgrade --dry-run",
+        "Test jarvy search finds tools",
+        "Test jarvy completions generates valid scripts",
+        "Test CI mode behavior for all commands"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Update documentation",
+      "description": "Document new commands and update help text",
+      "passed": false,
+      "priority": "low",
+      "files": ["CLAUDE.md"],
+      "subtasks": [
+        "Add command descriptions to CLAUDE.md",
+        "Update CLI help text for new commands",
+        "Add usage examples in help output",
+        "Document output format options"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "clap_complete": "Use clap_complete crate (already available) for shell completions",
+    "version_detection": "Centralize version parsing to handle different tool version formats",
+    "path_handling": "Use platform-specific PATH resolution logic",
+    "ci_mode": "All commands should respect CI mode and avoid interactive prompts",
+    "performance": "Non-network operations should complete in < 1 second"
+  },
+  "non_goals": [
+    "Interactive TUI (terminal user interface)",
+    "GUI or web interface",
+    "Real-time monitoring dashboards",
+    "Automatic background updates"
+  ],
+  "files_to_create": [
+    "src/commands/doctor.rs",
+    "src/commands/diff.rs",
+    "src/commands/export.rs",
+    "src/commands/upgrade.rs",
+    "src/commands/search.rs",
+    "src/commands/completions.rs",
+    "src/output/mod.rs",
+    "src/output/human.rs",
+    "src/output/json.rs",
+    "src/output/quiet.rs",
+    "tests/doctor_integration.rs",
+    "tests/diff_integration.rs",
+    "tests/export_integration.rs",
+    "tests/upgrade_integration.rs",
+    "tests/search_integration.rs"
+  ],
+  "files_to_modify": [
+    "src/main.rs",
+    "src/commands/mod.rs",
+    "CLAUDE.md"
+  ],
+  "risks": [
+    {
+      "description": "Version detection complexity - different tools report versions differently",
+      "mitigation": "Centralize version parsing, handle edge cases per tool"
+    },
+    {
+      "description": "Cross-platform PATH handling - PATH works differently across OS",
+      "mitigation": "Platform-specific PATH resolution logic"
+    },
+    {
+      "description": "Shell integration detection - hard to detect if hooks are active",
+      "mitigation": "Check for common patterns in rc files"
+    },
+    {
+      "description": "Upgrade safety - upgrades could break user environments",
+      "mitigation": "Always show dry-run first, prompt for confirmation"
+    }
+  ],
+  "effort_estimate": {
+    "output_module": "0.5 days",
+    "doctor_command": "2 days",
+    "diff_command": "1.5 days",
+    "export_command": "1.5 days",
+    "upgrade_command": "2 days",
+    "search_command": "1 day",
+    "shell_completions": "0.5 days",
+    "testing": "2 days",
+    "documentation": "1 day",
+    "total": "12 days"
+  }
+}

@@ -1,0 +1,252 @@
+{
+  "id": "PRD-014",
+  "parent_prd": "PRD-014",
+  "title": "Real-World Testing and Example Configurations",
+  "description": "Establish comprehensive real-world testing across all supported platforms and create example jarvy.toml configurations for common developer personas",
+  "status": "pending",
+  "priority": "high",
+  "dependencies": [],
+  "estimated_complexity": "medium",
+  "acceptance_criteria": [
+    "CI matrix covers macOS Intel and ARM",
+    "CI matrix covers Ubuntu LTS (22.04, 24.04)",
+    "CI matrix covers Fedora and Arch Linux",
+    "CI matrix covers Windows 11 with winget",
+    "Example configs exist for 5+ developer personas",
+    "Smoke tests cover critical paths (setup, bootstrap, get, tools)",
+    "CI validates all example configs are parseable",
+    "Tool installation caching reduces CI time"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Create examples directory structure",
+      "description": "Create examples/ directory with README.md",
+      "passed": false,
+      "priority": "high",
+      "files": ["examples/README.md"],
+      "subtasks": [
+        "Create examples/ directory",
+        "Write README.md with usage instructions",
+        "Document each example persona"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Create minimal example config",
+      "description": "Create minimal.toml for quick-start testing",
+      "passed": false,
+      "priority": "high",
+      "files": ["examples/minimal.toml"],
+      "subtasks": [
+        "Define minimal tool set (git, jq, ripgrep)",
+        "Add inline comments explaining config",
+        "Ensure config works on all platforms"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Create frontend developer config",
+      "description": "Example config for web frontend developers",
+      "passed": false,
+      "priority": "medium",
+      "files": ["examples/frontend-developer.toml"],
+      "subtasks": [
+        "Include Node.js, pnpm, TypeScript tooling",
+        "Add browser testing tools",
+        "Include code quality tools (prettier, eslint)"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Create backend developer config",
+      "description": "Example config for backend/API developers",
+      "passed": false,
+      "priority": "medium",
+      "files": ["examples/backend-developer.toml"],
+      "subtasks": [
+        "Include Go, Rust, Docker",
+        "Add database tools (psql, mysql client)",
+        "Include API testing tools"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Create DevOps engineer config",
+      "description": "Example config for DevOps/Platform engineers",
+      "passed": false,
+      "priority": "medium",
+      "files": ["examples/devops-engineer.toml"],
+      "subtasks": [
+        "Include Terraform, kubectl, helm",
+        "Add cloud CLIs (AWS, GCP, Azure)",
+        "Include container and security tools"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Create data scientist config",
+      "description": "Example config for data science workflows",
+      "passed": false,
+      "priority": "medium",
+      "files": ["examples/data-scientist.toml"],
+      "subtasks": [
+        "Include Python, conda/mamba",
+        "Add Jupyter and R",
+        "Include data processing tools"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Create mobile developer config",
+      "description": "Example config for iOS/Android developers",
+      "passed": false,
+      "priority": "medium",
+      "files": ["examples/mobile-developer.toml"],
+      "subtasks": [
+        "Include Flutter, Android SDK tools",
+        "Add Xcode CLI tools for macOS",
+        "Include mobile testing utilities"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Create full-stack developer config",
+      "description": "Combined frontend + backend config",
+      "passed": false,
+      "priority": "low",
+      "files": ["examples/full-stack.toml"],
+      "subtasks": [
+        "Combine frontend and backend tools",
+        "Include Docker for local services",
+        "Add services section for databases"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Create Rust developer config",
+      "description": "Example config for Rust ecosystem",
+      "passed": false,
+      "priority": "low",
+      "files": ["examples/rust-developer.toml"],
+      "subtasks": [
+        "Include rustup, cargo tools",
+        "Add code quality (clippy, rustfmt)",
+        "Include debugging and profiling tools"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Implement smoke tests",
+      "description": "Create smoke test suite for critical paths",
+      "passed": false,
+      "priority": "high",
+      "files": ["tests/smoke_tests.rs"],
+      "subtasks": [
+        "Test jarvy setup --dry-run",
+        "Test jarvy tools command",
+        "Test jarvy get command",
+        "Test jarvy bootstrap --dry-run",
+        "Test invalid config handling",
+        "Add platform-specific tests"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Create CI platform matrix workflow",
+      "description": "GitHub Actions workflow for cross-platform testing",
+      "passed": false,
+      "priority": "high",
+      "files": [".github/workflows/real-world-tests.yml"],
+      "subtasks": [
+        "Add macOS Intel and ARM runners",
+        "Add Ubuntu 22.04 and 24.04",
+        "Add Windows latest",
+        "Add Linux distro containers (Fedora, Arch)",
+        "Configure Rust caching"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Add example validation CI job",
+      "description": "CI job to validate all example configs",
+      "passed": false,
+      "priority": "medium",
+      "files": [".github/workflows/real-world-tests.yml"],
+      "subtasks": [
+        "Loop through all examples/*.toml files",
+        "Run jarvy setup --dry-run on each",
+        "Fail CI if any config is invalid"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Implement tool installation caching",
+      "description": "Cache tool installations in CI for faster runs",
+      "passed": false,
+      "priority": "medium",
+      "files": [".github/workflows/real-world-tests.yml"],
+      "subtasks": [
+        "Define cache paths per platform",
+        "Use jarvy.toml hash in cache key",
+        "Add cache restore and save steps",
+        "Verify cache hit rate"
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Update documentation",
+      "description": "Document testing strategy and examples",
+      "passed": false,
+      "priority": "low",
+      "files": ["CONTRIBUTING.md", "README.md"],
+      "subtasks": [
+        "Add testing section to CONTRIBUTING.md",
+        "Link to examples from README.md",
+        "Document smoke test expectations"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "ci_strategy": "Run full matrix on main branch, subset on PRs to manage CI costs",
+    "cache_keys": "Include OS, jarvy.toml hash, and tool versions in cache keys",
+    "smoke_tests": "Focus on critical user paths, not exhaustive tool coverage",
+    "example_maintenance": "CI validation ensures examples stay parseable as tool registry changes"
+  },
+  "platform_matrix": {
+    "macos": ["macos-13 (Intel)", "macos-14 (ARM)"],
+    "linux": ["ubuntu-22.04", "ubuntu-24.04", "fedora:latest", "archlinux:latest"],
+    "windows": ["windows-latest (Windows 11)"]
+  },
+  "example_personas": [
+    "minimal",
+    "frontend-developer",
+    "backend-developer",
+    "devops-engineer",
+    "data-scientist",
+    "mobile-developer",
+    "full-stack",
+    "rust-developer"
+  ],
+  "risks": [
+    {
+      "description": "CI time and cost increase with matrix testing",
+      "mitigation": "Run full matrix on main, subset on PRs"
+    },
+    {
+      "description": "Platform-specific flaky tests",
+      "mitigation": "Add retries and appropriate timeouts"
+    },
+    {
+      "description": "Cache invalidation issues",
+      "mitigation": "Include comprehensive version info in cache keys"
+    },
+    {
+      "description": "Example configs become outdated",
+      "mitigation": "CI validates all examples on every PR"
+    }
+  ],
+  "related_prds": [
+    "PRD-006 - Testing Infrastructure Improvements"
+  ]
+}

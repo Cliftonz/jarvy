@@ -1,0 +1,554 @@
+{
+  "title": "PRD-017: IDE and CI Integrations",
+  "priority": "High",
+  "status": "Pending",
+  "source": "prd/017-ide-ci-integration.md",
+  "createdAt": "2026-01-15T00:00:00Z",
+  "updatedAt": "2026-01-15T00:00:00Z",
+  "overview": {
+    "description": "Integrate Jarvy with popular development workflows including IDE extensions, CI/CD actions, dev container features, and pre-commit hooks to provide seamless developer experience across the entire development lifecycle.",
+    "goals": [
+      "Zero-friction IDE integration: detect missing tools and offer one-click installation",
+      "Native CI/CD support: GitHub Action for standardized CI setup",
+      "Dev container ready: automatic provisioning in containerized environments",
+      "Pre-commit validation: ensure tool availability before commits",
+      "Consistent experience: same jarvy.toml works across all integrations"
+    ]
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "VS Code Extension",
+      "description": "As a developer using VS Code, I want the editor to detect when tools defined in jarvy.toml are missing so that I can install them without leaving my IDE.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Extension activates when jarvy.toml is present in workspace",
+          "passed": false
+        },
+        {
+          "criterion": "Extension reads and parses jarvy.toml file",
+          "passed": false
+        },
+        {
+          "criterion": "Extension checks which defined tools are missing from the system",
+          "passed": false
+        },
+        {
+          "criterion": "Missing tools displayed in Problems panel with severity Warning",
+          "passed": false
+        },
+        {
+          "criterion": "Quick Fix action 'Install with Jarvy' available for each missing tool",
+          "passed": false
+        },
+        {
+          "criterion": "Quick Fix action 'Install All Missing Tools' available at file level",
+          "passed": false
+        },
+        {
+          "criterion": "Status bar item shows tool status (e.g., 'Jarvy: 5/7 tools ready')",
+          "passed": false
+        },
+        {
+          "criterion": "Command palette includes 'Jarvy: Install All Tools', 'Jarvy: Check Tools'",
+          "passed": false
+        },
+        {
+          "criterion": "Extension watches jarvy.toml for changes and re-validates",
+          "passed": false
+        },
+        {
+          "criterion": "Terminal integration: 'Jarvy: Open Setup Terminal' command",
+          "passed": false
+        },
+        {
+          "criterion": "Extension respects VS Code's proxy settings for downloads",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "GitHub Action",
+      "description": "As a DevOps engineer, I want a GitHub Action that provisions the CI environment from jarvy.toml so that my pipelines use the same tool configuration as local development.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Action available at uses: bearbinary/jarvy-action@v1",
+          "passed": false
+        },
+        {
+          "criterion": "Action installs Jarvy CLI if not present",
+          "passed": false
+        },
+        {
+          "criterion": "Action runs jarvy setup with CI mode enabled",
+          "passed": false
+        },
+        {
+          "criterion": "Action supports input parameter: config-path (default: jarvy.toml)",
+          "passed": false
+        },
+        {
+          "criterion": "Action supports input parameter: tools (override specific tools)",
+          "passed": false
+        },
+        {
+          "criterion": "Action supports input parameter: skip-tools",
+          "passed": false
+        },
+        {
+          "criterion": "Action supports input parameter: cache (default: true)",
+          "passed": false
+        },
+        {
+          "criterion": "Action sets up tool caching using @actions/cache",
+          "passed": false
+        },
+        {
+          "criterion": "Action outputs installed tool versions as step outputs",
+          "passed": false
+        },
+        {
+          "criterion": "Action integrates with GitHub's problem matchers for error reporting",
+          "passed": false
+        },
+        {
+          "criterion": "Action supports matrix builds (different tool versions per job)",
+          "passed": false
+        },
+        {
+          "criterion": "Action provides composite action for minimal overhead",
+          "passed": false
+        },
+        {
+          "criterion": "Detailed logging with GitHub Actions grouping",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Devcontainer Feature",
+      "description": "As a developer using GitHub Codespaces or VS Code Dev Containers, I want Jarvy to automatically install my tools when the container starts so that my development environment is ready immediately.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Feature published to GitHub Container Registry (ghcr.io)",
+          "passed": false
+        },
+        {
+          "criterion": "Feature installable via devcontainer.json features config",
+          "passed": false
+        },
+        {
+          "criterion": "Feature installs Jarvy CLI during container build",
+          "passed": false
+        },
+        {
+          "criterion": "Feature supports option: version (Jarvy version to install)",
+          "passed": false
+        },
+        {
+          "criterion": "Feature supports option: configPath (path to jarvy.toml)",
+          "passed": false
+        },
+        {
+          "criterion": "Feature supports option: installOnCreate (run setup during creation)",
+          "passed": false
+        },
+        {
+          "criterion": "Feature supports option: installOnAttach (run setup when attaching)",
+          "passed": false
+        },
+        {
+          "criterion": "Feature adds lifecycle scripts for onCreate, postCreate, postAttach",
+          "passed": false
+        },
+        {
+          "criterion": "Feature works with both Debian-based and Alpine-based images",
+          "passed": false
+        },
+        {
+          "criterion": "Feature caches tool installations between rebuilds when possible",
+          "passed": false
+        },
+        {
+          "criterion": "Feature logs clearly indicate installation progress",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "JetBrains Plugin (Lower Priority)",
+      "description": "As a developer using IntelliJ IDEA, WebStorm, or other JetBrains IDEs, I want plugin support for jarvy.toml so that I have a consistent experience across IDEs.",
+      "passed": false,
+      "priority": "P2",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Plugin published to JetBrains Marketplace",
+          "passed": false
+        },
+        {
+          "criterion": "Plugin provides jarvy.toml syntax highlighting and schema validation",
+          "passed": false
+        },
+        {
+          "criterion": "Plugin shows missing tools as inspections (warnings)",
+          "passed": false
+        },
+        {
+          "criterion": "Quick-fix actions to install missing tools",
+          "passed": false
+        },
+        {
+          "criterion": "Tool window showing tool status",
+          "passed": false
+        },
+        {
+          "criterion": "Run configuration for jarvy setup",
+          "passed": false
+        },
+        {
+          "criterion": "Plugin works across all IntelliJ-based IDEs",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Pre-commit Hook Integration",
+      "description": "As a developer using pre-commit framework, I want to validate that required tools are installed before committing so that I catch environment issues early.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Pre-commit hook available in pre-commit hooks repository",
+          "passed": false
+        },
+        {
+          "criterion": "Hook validates tools defined in jarvy.toml are installed",
+          "passed": false
+        },
+        {
+          "criterion": "Hook configuration supported in .pre-commit-config.yaml",
+          "passed": false
+        },
+        {
+          "criterion": "Hook supports argument: --config (path to jarvy.toml)",
+          "passed": false
+        },
+        {
+          "criterion": "Hook supports argument: --fail-on-missing (exit with error if tools missing)",
+          "passed": false
+        },
+        {
+          "criterion": "Hook supports argument: --tools (check only specific tools)",
+          "passed": false
+        },
+        {
+          "criterion": "Hook outputs clear message about which tools are missing",
+          "passed": false
+        },
+        {
+          "criterion": "Hook provides actionable guidance (e.g., 'Run jarvy setup to install')",
+          "passed": false
+        },
+        {
+          "criterion": "Hook runs quickly (< 2 seconds for typical configs)",
+          "passed": false
+        },
+        {
+          "criterion": "Hook works on macOS, Linux, and Windows",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "CLI Enhancements for Integrations",
+      "description": "As an integration developer, I want CLI commands that support machine-readable output and validation modes so that integrations can programmatically interact with Jarvy.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "jarvy get --check command exits with error if tools missing",
+          "passed": false
+        },
+        {
+          "criterion": "jarvy get --format json outputs machine-readable tool status",
+          "passed": false
+        },
+        {
+          "criterion": "jarvy get --tools flag filters to specific tools",
+          "passed": false
+        },
+        {
+          "criterion": "CI mode correctly detected and used by all integrations",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "phases": [
+    {
+      "id": "Phase-1",
+      "title": "Core CLI Enhancements",
+      "duration": "1 week",
+      "passed": false,
+      "tasks": [
+        {
+          "task": "Add jarvy get --check command for pre-commit hook",
+          "passed": false
+        },
+        {
+          "task": "Add --format json output for machine parsing",
+          "passed": false
+        },
+        {
+          "task": "Ensure CI mode works correctly for all integrations",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-2",
+      "title": "GitHub Action",
+      "duration": "1 week",
+      "passed": false,
+      "tasks": [
+        {
+          "task": "Create action repository structure",
+          "passed": false
+        },
+        {
+          "task": "Implement core action logic",
+          "passed": false
+        },
+        {
+          "task": "Add caching support with @actions/cache",
+          "passed": false
+        },
+        {
+          "task": "Write comprehensive tests",
+          "passed": false
+        },
+        {
+          "task": "Publish to GitHub Marketplace",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-3",
+      "title": "VS Code Extension",
+      "duration": "2 weeks",
+      "passed": false,
+      "tasks": [
+        {
+          "task": "Set up extension scaffolding",
+          "passed": false
+        },
+        {
+          "task": "Implement jarvy.toml parser",
+          "passed": false
+        },
+        {
+          "task": "Create diagnostic provider for missing tools",
+          "passed": false
+        },
+        {
+          "task": "Implement quick fixes",
+          "passed": false
+        },
+        {
+          "task": "Add status bar and commands",
+          "passed": false
+        },
+        {
+          "task": "Publish to VS Code Marketplace",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-4",
+      "title": "Devcontainer Feature",
+      "duration": "1 week",
+      "passed": false,
+      "tasks": [
+        {
+          "task": "Create feature structure following devcontainer spec",
+          "passed": false
+        },
+        {
+          "task": "Implement install.sh script",
+          "passed": false
+        },
+        {
+          "task": "Add lifecycle hooks",
+          "passed": false
+        },
+        {
+          "task": "Test with GitHub Codespaces",
+          "passed": false
+        },
+        {
+          "task": "Publish to ghcr.io",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-5",
+      "title": "Pre-commit Hook",
+      "duration": "0.5 weeks",
+      "passed": false,
+      "tasks": [
+        {
+          "task": "Add .pre-commit-hooks.yaml to main repo",
+          "passed": false
+        },
+        {
+          "task": "Document usage in docs",
+          "passed": false
+        },
+        {
+          "task": "Test with pre-commit framework",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-6",
+      "title": "JetBrains Plugin (Lower Priority)",
+      "duration": "2 weeks",
+      "passed": false,
+      "tasks": [
+        {
+          "task": "Set up Gradle project with IntelliJ Platform SDK",
+          "passed": false
+        },
+        {
+          "task": "Implement TOML inspection for missing tools",
+          "passed": false
+        },
+        {
+          "task": "Add tool window",
+          "passed": false
+        },
+        {
+          "task": "Implement run configuration",
+          "passed": false
+        },
+        {
+          "task": "Publish to JetBrains Marketplace",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "nonGoals": [
+    "Vim/Neovim plugin (users can shell out to jarvy commands)",
+    "Emacs integration",
+    "Sublime Text plugin",
+    "Eclipse plugin",
+    "Browser-based IDE support (other than Codespaces)"
+  ],
+  "technicalConsiderations": [
+    {
+      "area": "VS Code Extension",
+      "details": "Use @iarna/toml for parsing, vscode API for diagnostics, execa for command execution"
+    },
+    {
+      "area": "GitHub Action",
+      "details": "Use @actions/core, @actions/cache, @actions/exec; support Node 20 runtime"
+    },
+    {
+      "area": "Devcontainer Feature",
+      "details": "Must work with Debian-based and Alpine-based images; follow devcontainer spec"
+    },
+    {
+      "area": "JetBrains Plugin",
+      "details": "Use IntelliJ Platform SDK with Kotlin; depend on TOML plugin"
+    },
+    {
+      "area": "Pre-commit Hook",
+      "details": "Must be fast (< 2 seconds); use jarvy get --check as entry point"
+    }
+  ],
+  "repositoriesToCreate": [
+    "github.com/bearbinary/jarvy-action",
+    "github.com/bearbinary/jarvy-vscode",
+    "github.com/bearbinary/jarvy-devcontainer-feature",
+    "github.com/bearbinary/jarvy-jetbrains"
+  ],
+  "filesToCreate": [
+    "hooks/.pre-commit-hooks.yaml",
+    "hooks/README.md",
+    "docs/integrations/vscode.md",
+    "docs/integrations/github-action.md",
+    "docs/integrations/devcontainer.md",
+    "docs/integrations/jetbrains.md",
+    "docs/integrations/pre-commit.md"
+  ],
+  "successMetrics": [
+    "VS Code extension installs: 1,000 in first month",
+    "GitHub Action usage: 500 workflows in first month",
+    "Devcontainer feature pulls: 200 in first month",
+    "Pre-commit hook adopters: 100 repos in first month",
+    "Issue reports (integration bugs): < 10 critical in first month"
+  ],
+  "risks": [
+    {
+      "risk": "VS Code API changes",
+      "likelihood": "Low",
+      "impact": "Medium",
+      "mitigation": "Pin VS Code version, monitor changelog"
+    },
+    {
+      "risk": "GitHub Action rate limits",
+      "likelihood": "Medium",
+      "impact": "Medium",
+      "mitigation": "Implement caching, use composite action"
+    },
+    {
+      "risk": "Devcontainer feature compatibility",
+      "likelihood": "Medium",
+      "impact": "Medium",
+      "mitigation": "Test across multiple base images"
+    },
+    {
+      "risk": "JetBrains platform fragmentation",
+      "likelihood": "Medium",
+      "impact": "Low",
+      "mitigation": "Use common API across IDEs"
+    },
+    {
+      "risk": "Pre-commit performance issues",
+      "likelihood": "Low",
+      "impact": "Medium",
+      "mitigation": "Optimize check command"
+    }
+  ],
+  "dependencies": [
+    "VS Code Extension API (vscode npm package)",
+    "@actions/core, @actions/cache, @actions/exec",
+    "Devcontainer CLI and GitHub Container Registry",
+    "IntelliJ Platform SDK and Kotlin",
+    "pre-commit framework"
+  ],
+  "effortEstimate": "32 days",
+  "completionNotes": ""
+}

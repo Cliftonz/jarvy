@@ -1,0 +1,558 @@
+{
+  "title": "PRD-018: Quality and Testing Infrastructure",
+  "priority": "High",
+  "status": "Pending",
+  "source": "prd/018-quality-testing-infrastructure.md",
+  "createdAt": "2026-01-15T00:00:00Z",
+  "updatedAt": "2026-01-15T00:00:00Z",
+  "overview": {
+    "description": "Establish comprehensive testing infrastructure that ensures reliability through high code coverage, property-based testing, fuzz testing, mutation testing, benchmarks, and robust CI integration.",
+    "goals": [
+      "80%+ unit test coverage across all modules",
+      "Property-based testing for config parsing and version matching",
+      "Fuzz testing for TOML parser edge cases",
+      "Mutation testing to verify test effectiveness",
+      "Benchmark suite to prevent performance regressions",
+      "Code coverage reporting in CI with PR integration",
+      "Test containers for realistic integration testing"
+    ]
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Unit Test Coverage Target (80%+)",
+      "description": "As a maintainer, I want 80%+ unit test coverage enforced in CI, so that new code is thoroughly tested before merging.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Coverage measured using cargo-llvm-cov or tarpaulin",
+          "passed": false
+        },
+        {
+          "criterion": "Coverage threshold of 80% enforced in CI (PR fails if below)",
+          "passed": false
+        },
+        {
+          "criterion": "Coverage badge displayed in README",
+          "passed": false
+        },
+        {
+          "criterion": "Module-level coverage breakdown available",
+          "passed": false
+        },
+        {
+          "criterion": "Uncovered lines highlighted in PR comments (via codecov/coveralls)",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Integration Tests with Real Tool Installation",
+      "description": "As a maintainer, I want integration tests that actually install tools, so that I can verify the full installation flow works correctly.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Integration test suite exists in tests/integration/",
+          "passed": false
+        },
+        {
+          "criterion": "Tests install real tools (jq, ripgrep, etc.) in isolated environments",
+          "passed": false
+        },
+        {
+          "criterion": "CI caching for installed tools to speed up subsequent runs",
+          "passed": false
+        },
+        {
+          "criterion": "Platform-specific tests (macOS, Ubuntu, Fedora, Windows)",
+          "passed": false
+        },
+        {
+          "criterion": "Tests run in containers/VMs for isolation",
+          "passed": false
+        },
+        {
+          "criterion": "#[ignore] attribute for tests that require real package managers",
+          "passed": false
+        },
+        {
+          "criterion": "CI matrix runs integration tests on all supported platforms",
+          "passed": false
+        },
+        {
+          "criterion": "Test cleanup removes installed tools after test completion",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Property-Based Testing for Config Parsing",
+      "description": "As a maintainer, I want property-based tests for config parsing, so that the parser handles arbitrary valid inputs correctly.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "proptest or quickcheck crate added as dev-dependency",
+          "passed": false
+        },
+        {
+          "criterion": "Generate arbitrary valid TOML configurations",
+          "passed": false
+        },
+        {
+          "criterion": "Verify parsing round-trips correctly (parse -> serialize -> parse)",
+          "passed": false
+        },
+        {
+          "criterion": "Test version string parsing with random semver-like inputs",
+          "passed": false
+        },
+        {
+          "criterion": "Test tool spec parsing with random package manager combinations",
+          "passed": false
+        },
+        {
+          "criterion": "Minimum 1000 test cases per property",
+          "passed": false
+        },
+        {
+          "criterion": "Properties documented in test files",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Fuzz Testing for TOML Parser Edge Cases",
+      "description": "As a maintainer, I want fuzz testing for the config parser, so that malformed inputs don't crash or cause undefined behavior.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "cargo-fuzz with libfuzzer set up",
+          "passed": false
+        },
+        {
+          "criterion": "Fuzz target for jarvy.toml parsing (full config)",
+          "passed": false
+        },
+        {
+          "criterion": "Fuzz target for version string parsing",
+          "passed": false
+        },
+        {
+          "criterion": "Fuzz target for tool spec parsing",
+          "passed": false
+        },
+        {
+          "criterion": "Fuzz target for hook script validation",
+          "passed": false
+        },
+        {
+          "criterion": "Corpus of interesting inputs maintained",
+          "passed": false
+        },
+        {
+          "criterion": "CI runs short fuzz sessions (60 seconds) on every PR",
+          "passed": false
+        },
+        {
+          "criterion": "Weekly scheduled fuzz runs (8+ hours)",
+          "passed": false
+        },
+        {
+          "criterion": "Crashes/panics automatically create GitHub issues",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Mutation Testing to Verify Test Quality",
+      "description": "As a maintainer, I want mutation testing to verify test effectiveness, so that I know tests actually catch real bugs.",
+      "passed": false,
+      "priority": "P2",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "cargo-mutants configured for mutation testing",
+          "passed": false
+        },
+        {
+          "criterion": "Mutation score target of 60%+ (mutations caught / total mutations)",
+          "passed": false
+        },
+        {
+          "criterion": "Weekly scheduled mutation testing runs in CI",
+          "passed": false
+        },
+        {
+          "criterion": "Report identifies tests that don't catch mutations",
+          "passed": false
+        },
+        {
+          "criterion": "Critical modules (config.rs, common.rs) require 70%+ mutation score",
+          "passed": false
+        },
+        {
+          "criterion": "Mutation testing documentation in CONTRIBUTING.md",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Benchmark Suite for Performance Regression",
+      "description": "As a maintainer, I want benchmarks for critical paths, so that I can detect performance regressions before they ship.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "criterion crate added for benchmarks",
+          "passed": false
+        },
+        {
+          "criterion": "Benchmark for config file parsing (small, medium, large files)",
+          "passed": false
+        },
+        {
+          "criterion": "Benchmark for tool registry lookup",
+          "passed": false
+        },
+        {
+          "criterion": "Benchmark for version comparison operations",
+          "passed": false
+        },
+        {
+          "criterion": "Benchmark for parallel installation orchestration",
+          "passed": false
+        },
+        {
+          "criterion": "Baseline stored in repository",
+          "passed": false
+        },
+        {
+          "criterion": "CI compares PR benchmarks against baseline",
+          "passed": false
+        },
+        {
+          "criterion": "Alert on >10% performance regression",
+          "passed": false
+        },
+        {
+          "criterion": "Benchmark results posted as PR comments",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Code Coverage Reporting in CI",
+      "description": "As a maintainer, I want code coverage integrated with GitHub PRs, so that I can see coverage impact of every change.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "Coverage uploaded to Codecov or Coveralls",
+          "passed": false
+        },
+        {
+          "criterion": "PR comments show coverage diff",
+          "passed": false
+        },
+        {
+          "criterion": "Coverage trend graphs in dashboard",
+          "passed": false
+        },
+        {
+          "criterion": "Branch coverage in addition to line coverage",
+          "passed": false
+        },
+        {
+          "criterion": "Configurable coverage thresholds per module",
+          "passed": false
+        },
+        {
+          "criterion": "Coverage report excludes test code and generated code",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "functionalRequirements": [
+    {
+      "id": "FR-1",
+      "description": "80%+ unit test coverage enforced in CI",
+      "passed": false
+    },
+    {
+      "id": "FR-2",
+      "description": "Property-based testing for config and version parsing",
+      "passed": false
+    },
+    {
+      "id": "FR-3",
+      "description": "Fuzz testing for TOML parser with 4+ fuzz targets",
+      "passed": false
+    },
+    {
+      "id": "FR-4",
+      "description": "Mutation testing with 60%+ mutation score",
+      "passed": false
+    },
+    {
+      "id": "FR-5",
+      "description": "Benchmark suite for 4+ critical paths",
+      "passed": false
+    },
+    {
+      "id": "FR-6",
+      "description": "Code coverage reporting integrated with PRs",
+      "passed": false
+    },
+    {
+      "id": "FR-7",
+      "description": "Test containers for Ubuntu, Fedora, Alpine",
+      "passed": false
+    },
+    {
+      "id": "FR-8",
+      "description": "Integration tests on macOS, Linux, Windows",
+      "passed": false
+    },
+    {
+      "id": "FR-9",
+      "description": "Mock package manager layer for unit testing",
+      "passed": false
+    }
+  ],
+  "nonGoals": [
+    "100% code coverage (diminishing returns beyond 80-85%)",
+    "Testing external package managers (apt, brew, winget)",
+    "Exhaustive/infinite fuzz testing",
+    "GUI testing (Jarvy is CLI-only)",
+    "Load testing (single-user CLI tool)",
+    "Testing third-party dependencies"
+  ],
+  "testInfrastructure": {
+    "coverageTool": "cargo-llvm-cov or tarpaulin",
+    "propertyTesting": "proptest crate",
+    "fuzzTesting": "cargo-fuzz with libfuzzer",
+    "mutationTesting": "cargo-mutants",
+    "benchmarking": "criterion crate",
+    "coverageReporting": "Codecov or Coveralls",
+    "testContainers": ["ubuntu.dockerfile", "fedora.dockerfile", "alpine.dockerfile"]
+  },
+  "implementationPhases": [
+    {
+      "phase": 1,
+      "title": "Coverage Infrastructure",
+      "effort": "1 day",
+      "tasks": [
+        "Add cargo-llvm-cov to CI",
+        "Configure Codecov integration",
+        "Set up coverage thresholds",
+        "Add coverage badge to README"
+      ],
+      "passed": false
+    },
+    {
+      "phase": 2,
+      "title": "Property-Based Testing",
+      "effort": "1.5 days",
+      "tasks": [
+        "Add proptest dependency",
+        "Write config parsing properties",
+        "Write version matching properties",
+        "Document property test patterns"
+      ],
+      "passed": false
+    },
+    {
+      "phase": 3,
+      "title": "Fuzz Testing",
+      "effort": "1.5 days",
+      "tasks": [
+        "Set up cargo-fuzz",
+        "Create fuzz targets",
+        "Build initial corpus",
+        "Add fuzz CI workflows"
+      ],
+      "passed": false
+    },
+    {
+      "phase": 4,
+      "title": "Benchmarks",
+      "effort": "1 day",
+      "tasks": [
+        "Add criterion dependency",
+        "Write benchmarks for critical paths",
+        "Set up benchmark CI",
+        "Configure regression detection"
+      ],
+      "passed": false
+    },
+    {
+      "phase": 5,
+      "title": "Mutation Testing",
+      "effort": "1 day",
+      "tasks": [
+        "Add cargo-mutants integration",
+        "Configure mutation testing CI",
+        "Analyze and improve weak tests",
+        "Document mutation testing process"
+      ],
+      "passed": false
+    },
+    {
+      "phase": 6,
+      "title": "Test Containers",
+      "effort": "1 day",
+      "tasks": [
+        "Create Dockerfiles for test environments",
+        "Set up integration test isolation",
+        "Add CI caching for containers",
+        "Write documentation"
+      ],
+      "passed": false
+    },
+    {
+      "phase": 7,
+      "title": "CI Integration",
+      "effort": "1 day",
+      "tasks": [
+        "Create coverage.yml workflow",
+        "Create benchmark.yml workflow",
+        "Create fuzz.yml workflow",
+        "Create mutation.yml workflow"
+      ],
+      "passed": false
+    },
+    {
+      "phase": 8,
+      "title": "Documentation",
+      "effort": "1 day",
+      "tasks": [
+        "Update CONTRIBUTING.md with testing docs",
+        "Add testing section to README",
+        "Document test patterns and conventions",
+        "Create test troubleshooting guide"
+      ],
+      "passed": false
+    }
+  ],
+  "successMetrics": [
+    {
+      "metric": "Line coverage",
+      "current": "~40%",
+      "target": "80%+",
+      "passed": false
+    },
+    {
+      "metric": "Branch coverage",
+      "current": "Unknown",
+      "target": "70%+",
+      "passed": false
+    },
+    {
+      "metric": "Mutation score",
+      "current": "Unknown",
+      "target": "60%+",
+      "passed": false
+    },
+    {
+      "metric": "Property tests",
+      "current": "0",
+      "target": "50+",
+      "passed": false
+    },
+    {
+      "metric": "Fuzz targets",
+      "current": "0",
+      "target": "4+",
+      "passed": false
+    },
+    {
+      "metric": "Benchmark suites",
+      "current": "0",
+      "target": "4+",
+      "passed": false
+    },
+    {
+      "metric": "CI platforms",
+      "current": "1",
+      "target": "4",
+      "passed": false
+    }
+  ],
+  "risks": [
+    {
+      "risk": "Slow CI from extensive testing",
+      "likelihood": "High",
+      "impact": "Medium",
+      "mitigation": "Parallelize, use caching, run long tests on schedule"
+    },
+    {
+      "risk": "Flaky integration tests",
+      "likelihood": "Medium",
+      "impact": "High",
+      "mitigation": "Isolated containers, retry logic, deterministic ordering"
+    },
+    {
+      "risk": "Mutation testing too slow",
+      "likelihood": "Medium",
+      "impact": "Medium",
+      "mitigation": "Run weekly, limit to critical modules"
+    },
+    {
+      "risk": "Fuzz findings overwhelming",
+      "likelihood": "Low",
+      "impact": "Medium",
+      "mitigation": "Triage process, prioritize security issues"
+    }
+  ],
+  "dependencies": [
+    "cargo-llvm-cov (code coverage)",
+    "proptest (property-based testing)",
+    "cargo-fuzz (fuzz testing, requires nightly)",
+    "cargo-mutants (mutation testing)",
+    "criterion (benchmarks)",
+    "Docker (test containers)",
+    "Codecov or Coveralls (coverage reporting)"
+  ],
+  "effortEstimate": "9 days",
+  "filesToCreate": [
+    "tests/property/mod.rs",
+    "tests/property/config_properties.rs",
+    "tests/property/version_properties.rs",
+    "fuzz/Cargo.toml",
+    "fuzz/fuzz_targets/config_parser.rs",
+    "fuzz/fuzz_targets/version_parser.rs",
+    "benches/config_parsing.rs",
+    "benches/registry_lookup.rs",
+    "benches/version_comparison.rs",
+    "tests/docker/ubuntu.dockerfile",
+    "tests/docker/fedora.dockerfile",
+    "tests/docker/alpine.dockerfile",
+    ".github/workflows/coverage.yml",
+    ".github/workflows/benchmark.yml",
+    ".github/workflows/fuzz.yml",
+    ".github/workflows/mutation.yml",
+    "codecov.yml"
+  ],
+  "filesToModify": [
+    "Cargo.toml",
+    "CONTRIBUTING.md",
+    "README.md"
+  ]
+}

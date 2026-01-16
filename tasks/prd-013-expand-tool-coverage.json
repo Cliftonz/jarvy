@@ -1,0 +1,780 @@
+{
+  "title": "PRD-013: Expand Tool Coverage",
+  "priority": "High",
+  "status": "Not Started",
+  "source": "prd/013-expand-tool-coverage.md",
+  "createdAt": "2026-01-15T12:00:00Z",
+  "updatedAt": "2026-01-15T12:00:00Z",
+  "overview": {
+    "description": "Expand Jarvy's tool registry from 102 tools to 150+ tools, establishing comprehensive coverage across all major developer tool categories.",
+    "goals": [
+      "Expand from 102 to 150+ tools",
+      "Every tool uses define_tool! macro with cross-platform support",
+      "Fill gaps in all major categories (CLI, runtimes, DevOps, databases, containers, security, editors)",
+      "Establish process for community tool requests"
+    ]
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "CLI Utilities Expansion",
+      "description": "As a developer, I want modern CLI utilities available in Jarvy so that I can use the latest productivity tools.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "atuin implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "helix implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "nushell implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "yazi implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "mise implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "watchexec implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "dust implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "tokei implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "hyperfine implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "sd implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "broot implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "lsd implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "Default hooks added for tools requiring shell init (atuin, mise)",
+          "passed": false
+        },
+        {
+          "criterion": "Integration tests pass for all CLI utilities",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Language Runtimes & Tooling",
+      "description": "As a polyglot developer, I want all major language runtimes and their tooling available so that I can provision any development environment.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "deno implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "bun implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "zig implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "kotlin implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "scala implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "lua implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "pyenv implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "rbenv implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "Version managers have default hooks for shell init",
+          "passed": false
+        },
+        {
+          "criterion": "Each runtime tested on macOS and Linux",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "DevOps & Infrastructure Tools",
+      "description": "As a DevOps engineer, I want comprehensive infrastructure tooling so that I can provision complete CI/CD and infrastructure management environments.",
+      "passed": false,
+      "priority": "P0",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "ansible implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "vagrant implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "terraform-docs implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "terragrunt implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "checkov implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "act implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "Tools with pip installs use custom_install",
+          "passed": false
+        },
+        {
+          "criterion": "Default hooks for PATH setup where needed",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Database Tools & Clients",
+      "description": "As a developer, I want database clients and tools available so that I can work with various databases from the command line.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "pgcli implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "mycli implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "litecli implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "usql implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "dbmate implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "duckdb implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "pip-installed tools use custom_install",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Container & Kubernetes Ecosystem",
+      "description": "As a platform engineer, I want comprehensive container tooling so that I can work with OCI containers beyond just Docker.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "High",
+      "acceptanceCriteria": [
+        {
+          "criterion": "buildah implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "skopeo implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "nerdctl implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "lazydocker implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "dive implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "krew implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "kubens implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "k3d implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "krew has default hook for PATH setup",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Security & Compliance Tools",
+      "description": "As a security engineer, I want security scanning tools so that I can audit code and infrastructure.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "cosign implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "grype implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "syft implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "gitleaks implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "trufflehog implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "semgrep implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "Tools requiring API keys have documentation notes",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Editor & IDE Support",
+      "description": "As a developer, I want editor/IDE support beyond VS Code so that I can use my preferred development environment.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "cursor implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "zed implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "jetbrains-toolbox implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "emacs implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "vim implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "micro implemented with define_tool! macro",
+          "passed": false
+        },
+        {
+          "criterion": "GUI apps use cask on macOS where appropriate",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Community Tool Request Process",
+      "description": "As a community member, I want a clear process for requesting new tools so that I can contribute to expanding Jarvy's coverage.",
+      "passed": false,
+      "priority": "P1",
+      "impact": "Medium",
+      "acceptanceCriteria": [
+        {
+          "criterion": "GitHub Issue template created for tool requests",
+          "passed": false
+        },
+        {
+          "criterion": "Contributing documentation includes tool request guidelines",
+          "passed": false
+        },
+        {
+          "criterion": "Rejection criteria documented (unmaintained, no package manager, GUI-only)",
+          "passed": false
+        },
+        {
+          "criterion": "Triage process documented for maintainers",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "functionalRequirements": [
+    {
+      "id": "FR-1",
+      "description": "All new tools use define_tool! macro",
+      "passed": false
+    },
+    {
+      "id": "FR-2",
+      "description": "Each tool has package manager mappings for available platforms",
+      "passed": false
+    },
+    {
+      "id": "FR-3",
+      "description": "Each tool has command name for verification",
+      "passed": false
+    },
+    {
+      "id": "FR-4",
+      "description": "Cross-platform support (macOS + Linux minimum) for 70%+ of tools",
+      "passed": false
+    },
+    {
+      "id": "FR-5",
+      "description": "Default hooks for tools requiring shell configuration",
+      "passed": false
+    },
+    {
+      "id": "FR-6",
+      "description": "Integration tests for new tool categories",
+      "passed": false
+    },
+    {
+      "id": "FR-7",
+      "description": "Documentation updated for new tools",
+      "passed": false
+    }
+  ],
+  "nonGoals": [
+    "GUI applications (except developer IDEs)",
+    "Games or entertainment software",
+    "System utilities not development-related",
+    "Deprecated or unmaintained tools",
+    "Tools without clear package manager availability"
+  ],
+  "phases": [
+    {
+      "id": "Phase-1",
+      "title": "High-Impact CLI Tools",
+      "description": "Add 15 most-requested CLI utilities, runtimes, and security tools",
+      "targetTools": 15,
+      "estimatedEffort": "1 week",
+      "passed": false,
+      "tools": [
+        {
+          "name": "atuin",
+          "passed": false
+        },
+        {
+          "name": "helix",
+          "passed": false
+        },
+        {
+          "name": "nushell",
+          "passed": false
+        },
+        {
+          "name": "yazi",
+          "passed": false
+        },
+        {
+          "name": "mise",
+          "passed": false
+        },
+        {
+          "name": "deno",
+          "passed": false
+        },
+        {
+          "name": "bun",
+          "passed": false
+        },
+        {
+          "name": "lazydocker",
+          "passed": false
+        },
+        {
+          "name": "gitleaks",
+          "passed": false
+        },
+        {
+          "name": "cosign",
+          "passed": false
+        },
+        {
+          "name": "grype",
+          "passed": false
+        },
+        {
+          "name": "syft",
+          "passed": false
+        },
+        {
+          "name": "ansible",
+          "passed": false
+        },
+        {
+          "name": "buildah",
+          "passed": false
+        },
+        {
+          "name": "skopeo",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-2",
+      "title": "Language & DevOps Tools",
+      "description": "Add language tooling, DevOps utilities, and database clients",
+      "targetTools": 20,
+      "estimatedEffort": "1.5 weeks",
+      "passed": false,
+      "tools": [
+        {
+          "name": "zig",
+          "passed": false
+        },
+        {
+          "name": "kotlin",
+          "passed": false
+        },
+        {
+          "name": "scala",
+          "passed": false
+        },
+        {
+          "name": "lua",
+          "passed": false
+        },
+        {
+          "name": "pyenv",
+          "passed": false
+        },
+        {
+          "name": "rbenv",
+          "passed": false
+        },
+        {
+          "name": "watchexec",
+          "passed": false
+        },
+        {
+          "name": "dust",
+          "passed": false
+        },
+        {
+          "name": "tokei",
+          "passed": false
+        },
+        {
+          "name": "hyperfine",
+          "passed": false
+        },
+        {
+          "name": "vagrant",
+          "passed": false
+        },
+        {
+          "name": "terraform-docs",
+          "passed": false
+        },
+        {
+          "name": "terragrunt",
+          "passed": false
+        },
+        {
+          "name": "act",
+          "passed": false
+        },
+        {
+          "name": "pgcli",
+          "passed": false
+        },
+        {
+          "name": "mycli",
+          "passed": false
+        },
+        {
+          "name": "litecli",
+          "passed": false
+        },
+        {
+          "name": "usql",
+          "passed": false
+        },
+        {
+          "name": "dbmate",
+          "passed": false
+        },
+        {
+          "name": "duckdb",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-3",
+      "title": "Remaining P1 Tools",
+      "description": "Editor support, remaining container tools, infrastructure tools",
+      "targetTools": 15,
+      "estimatedEffort": "1 week",
+      "passed": false,
+      "tools": [
+        {
+          "name": "cursor",
+          "passed": false
+        },
+        {
+          "name": "zed",
+          "passed": false
+        },
+        {
+          "name": "jetbrains-toolbox",
+          "passed": false
+        },
+        {
+          "name": "emacs",
+          "passed": false
+        },
+        {
+          "name": "vim",
+          "passed": false
+        },
+        {
+          "name": "micro",
+          "passed": false
+        },
+        {
+          "name": "nerdctl",
+          "passed": false
+        },
+        {
+          "name": "dive",
+          "passed": false
+        },
+        {
+          "name": "krew",
+          "passed": false
+        },
+        {
+          "name": "kubens",
+          "passed": false
+        },
+        {
+          "name": "k3d",
+          "passed": false
+        },
+        {
+          "name": "trufflehog",
+          "passed": false
+        },
+        {
+          "name": "semgrep",
+          "passed": false
+        },
+        {
+          "name": "checkov",
+          "passed": false
+        },
+        {
+          "name": "sd",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "id": "Phase-4",
+      "title": "P2 Tools & Polish",
+      "description": "Lower-priority tools, Windows support improvements, documentation",
+      "targetTools": "Ongoing (2-3/week)",
+      "estimatedEffort": "Ongoing",
+      "passed": false,
+      "tools": [
+        {
+          "name": "choose",
+          "passed": false
+        },
+        {
+          "name": "grex",
+          "passed": false
+        },
+        {
+          "name": "broot",
+          "passed": false
+        },
+        {
+          "name": "lsd",
+          "passed": false
+        },
+        {
+          "name": "dog",
+          "passed": false
+        },
+        {
+          "name": "gping",
+          "passed": false
+        },
+        {
+          "name": "julia",
+          "passed": false
+        },
+        {
+          "name": "nim",
+          "passed": false
+        },
+        {
+          "name": "crystal",
+          "passed": false
+        },
+        {
+          "name": "ocaml",
+          "passed": false
+        },
+        {
+          "name": "haskell",
+          "passed": false
+        },
+        {
+          "name": "luarocks",
+          "passed": false
+        },
+        {
+          "name": "sdkman",
+          "passed": false
+        },
+        {
+          "name": "molecule",
+          "passed": false
+        },
+        {
+          "name": "infracost",
+          "passed": false
+        },
+        {
+          "name": "localstack",
+          "passed": false
+        },
+        {
+          "name": "dagger",
+          "passed": false
+        },
+        {
+          "name": "earthly",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "successMetrics": [
+    "Total tools: 102 -> 150+",
+    "Categories covered: 10 -> 12+",
+    "Cross-platform (all 3): ~60% -> 70%+",
+    "Tools with default hooks: 15 -> 30+",
+    "Community contributions: 10+ tools"
+  ],
+  "risks": [
+    {
+      "risk": "Package availability varies by platform",
+      "likelihood": "High",
+      "impact": "Medium",
+      "mitigation": "Document platform limitations clearly"
+    },
+    {
+      "risk": "Maintenance burden increases",
+      "likelihood": "Medium",
+      "impact": "High",
+      "mitigation": "Enforce define_tool! macro usage for consistency"
+    },
+    {
+      "risk": "Tool deprecation",
+      "likelihood": "Low",
+      "impact": "Medium",
+      "mitigation": "Monitor upstream project activity"
+    },
+    {
+      "risk": "Windows package gaps",
+      "likelihood": "High",
+      "impact": "Medium",
+      "mitigation": "Prioritize cross-platform tools"
+    }
+  ],
+  "dependencies": [
+    "Existing define_tool! macro infrastructure",
+    "Package manager detection in src/tools/common.rs",
+    "Default hook support from PRD-003"
+  ],
+  "filesToCreate": [
+    "src/tools/atuin/",
+    "src/tools/helix/",
+    "src/tools/nushell/",
+    "src/tools/yazi/",
+    "src/tools/mise/",
+    "src/tools/deno/",
+    "src/tools/bun/",
+    "src/tools/lazydocker/",
+    "src/tools/gitleaks/",
+    "src/tools/cosign/",
+    "src/tools/grype/",
+    "src/tools/syft/",
+    "src/tools/ansible/",
+    "src/tools/buildah/",
+    "src/tools/skopeo/",
+    "... (50+ additional tool directories)"
+  ],
+  "filesToModify": [
+    "src/tools/mod.rs"
+  ]
+}

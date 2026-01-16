@@ -1,0 +1,265 @@
+{
+  "id": "PRD-019",
+  "parent_prd": "PRD-019",
+  "title": "Corporate Proxy and Network Configuration Support",
+  "description": "Enable Jarvy to work in corporate environments with HTTP/HTTPS/SOCKS proxies, custom CA certificates, and network-specific configurations",
+  "status": "pending",
+  "priority": "high",
+  "dependencies": [],
+  "estimated_complexity": "high",
+  "acceptance_criteria": [
+    "Jarvy respects HTTP_PROXY, HTTPS_PROXY, NO_PROXY environment variables",
+    "Config file [network] section in jarvy.toml is parsed and applied",
+    "SOCKS5 proxies work for all network operations",
+    "Custom CA bundles are propagated to all tools",
+    "Basic auth credentials can be configured securely",
+    "Tool-specific proxy settings work correctly via overrides",
+    "jarvy config proxy command works for interactive configuration",
+    "Proxy settings propagate to curl, wget, git, brew, apt, npm",
+    "jarvy config proxy --test validates proxy connectivity",
+    "Proxy passwords are never logged in plain text"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Create network module structure",
+      "description": "Create src/network/mod.rs with NetworkConfig types and module organization",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/network/mod.rs", "src/network/config.rs"],
+      "subtasks": [
+        "Create NetworkConfig struct with http_proxy, https_proxy, socks_proxy fields",
+        "Create NoProxy enum (String or Array)",
+        "Create ProxyAuth struct with username and password",
+        "Create PasswordSource enum (Plain, Prompt, File, Env)",
+        "Create TlsConfig struct for CA bundle configuration",
+        "Create NetworkOverride struct for per-tool settings"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Add network config parsing",
+      "description": "Parse [network] section in jarvy.toml",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/config.rs"],
+      "subtasks": [
+        "Add NetworkConfig to main Config struct",
+        "Support http_proxy, https_proxy, socks_proxy fields",
+        "Support no_proxy as string or array",
+        "Support [network.auth] section for credentials",
+        "Support [network.tls] section for CA certificates",
+        "Support [network.overrides.<tool>] for per-tool settings"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Implement proxy resolution",
+      "description": "Create ProxyResolver that combines env vars, config, and tool overrides",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/network/resolve.rs"],
+      "subtasks": [
+        "Implement resolve_for_tool() method",
+        "Environment variables take precedence over config",
+        "Tool-specific overrides take precedence over global config",
+        "Handle both uppercase and lowercase env vars",
+        "Resolve PasswordSource to actual credentials"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Implement credential handling",
+      "description": "Securely handle proxy authentication credentials",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/network/auth.rs"],
+      "subtasks": [
+        "Support plain text passwords (with warning)",
+        "Support password prompts with hidden input",
+        "Support reading password from file",
+        "Support reading password from environment variable",
+        "Never log credentials in plain text",
+        "Inject credentials into proxy URLs"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Implement proxy propagation to child processes",
+      "description": "Apply proxy settings as environment variables to spawned commands",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/network/propagate.rs"],
+      "subtasks": [
+        "Implement as_env_vars() method returning HashMap",
+        "Set HTTP_PROXY/http_proxy (both cases)",
+        "Set HTTPS_PROXY/https_proxy (both cases)",
+        "Set NO_PROXY/no_proxy (both cases)",
+        "Set CA bundle vars (CURL_CA_BUNDLE, SSL_CERT_FILE, NODE_EXTRA_CA_CERTS, etc.)",
+        "Implement apply_to_command() for std::process::Command"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Implement package manager helpers",
+      "description": "Create helpers for configuring specific package managers",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/network/package_managers.rs"],
+      "subtasks": [
+        "Implement configure_git_proxy() - sets git config",
+        "Implement configure_npm_proxy() - sets npm config",
+        "Implement homebrew_env_vars() - returns Homebrew-specific vars",
+        "Implement apt_proxy_config() - generates apt.conf.d content",
+        "Document which tools need explicit config vs env vars"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Add jarvy config proxy CLI command",
+      "description": "Add subcommand for interactive proxy configuration",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add 'jarvy config proxy' subcommand",
+        "Support --show flag to display current config",
+        "Support --clear flag to remove proxy config",
+        "Support --test flag to test connectivity",
+        "Support --http, --https, --socks flags for direct setting",
+        "Support --no-proxy flag for bypass hosts",
+        "Support --ca-bundle flag for CA certificate",
+        "Interactive mode prompts for all settings"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Implement proxy connectivity testing",
+      "description": "Add ability to test proxy configuration",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/network/test.rs"],
+      "subtasks": [
+        "Test HTTP proxy connectivity",
+        "Test HTTPS proxy connectivity",
+        "Validate CA bundle file exists and is readable",
+        "Test connectivity to common URLs (github, npmjs, etc.)",
+        "Provide helpful error messages for failures",
+        "Detect proxy authentication failures (407)"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Integrate proxy into tool installation",
+      "description": "Apply proxy settings throughout the tool installation flow",
+      "status": "pending",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/tools/common.rs"],
+      "subtasks": [
+        "Load NetworkConfig at startup",
+        "Apply proxy to run() function commands",
+        "Apply proxy to custom_install script execution",
+        "Apply proxy to package manager commands",
+        "Handle per-tool overrides in tool execution"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Write unit tests",
+      "description": "Create comprehensive unit tests for network module",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/network/mod.rs"],
+      "subtasks": [
+        "Test NetworkConfig parsing",
+        "Test NoProxy string vs array handling",
+        "Test proxy resolution priority",
+        "Test credential injection into URLs",
+        "Test environment variable generation",
+        "Test per-tool override resolution"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Write integration tests",
+      "description": "Create integration tests for proxy functionality",
+      "status": "pending",
+      "passed": false,
+      "priority": "medium",
+      "files": ["tests/proxy_integration.rs"],
+      "subtasks": [
+        "Test config file parsing with [network] section",
+        "Test jarvy config proxy CLI command",
+        "Test proxy env var propagation to child processes",
+        "Test CA bundle propagation",
+        "Test with mock proxy server (if feasible)"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Update documentation",
+      "description": "Document proxy configuration feature",
+      "status": "pending",
+      "passed": false,
+      "priority": "low",
+      "files": ["CLAUDE.md"],
+      "subtasks": [
+        "Document [network] config section",
+        "Document jarvy config proxy command",
+        "Add example jarvy.toml with proxy config",
+        "Document per-tool proxy propagation behavior",
+        "Add troubleshooting guide for common proxy issues"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "priority_order": "Environment variables > Tool overrides > Global config",
+    "security": "Never log proxy passwords in plain text, redact in all output",
+    "platform_notes": "apt/dnf require config files with sudo, most tools use env vars",
+    "credential_storage": "Credentials stored in global ~/.jarvy/config.toml, not project jarvy.toml"
+  },
+  "config_example": {
+    "minimal": "[network]\nhttps_proxy = \"http://proxy.corp.com:8080\"",
+    "with_auth": "[network]\nhttps_proxy = \"http://proxy.corp.com:8080\"\n\n[network.auth]\nusername = \"jdoe\"\npassword = { env = \"PROXY_PASSWORD\" }",
+    "with_ca": "[network]\nhttps_proxy = \"http://proxy.corp.com:8080\"\n\n[network.tls]\nca_bundle = \"/etc/ssl/certs/corporate-ca.crt\"",
+    "with_override": "[network]\nhttps_proxy = \"http://proxy.corp.com:8080\"\n\n[network.overrides.git]\nhttps_proxy = \"http://git-proxy.corp.com:8888\""
+  },
+  "risks": [
+    {
+      "description": "Different package managers require different proxy configuration methods",
+      "mitigation": "Document platform-specific behaviors, test thoroughly on all platforms"
+    },
+    {
+      "description": "Credential exposure in logs or error messages",
+      "mitigation": "Redact credentials in all logging, warn about plain-text passwords"
+    },
+    {
+      "description": "Custom CA certs may not work with all tools",
+      "mitigation": "Document CA propagation for each tool, provide troubleshooting guide"
+    },
+    {
+      "description": "Breaking existing proxy setups",
+      "mitigation": "Environment variables always take precedence, preserve existing behavior"
+    }
+  ],
+  "non_goals": [
+    "VPN configuration",
+    "PAC (Proxy Auto-Configuration) file support",
+    "Proxy server management",
+    "Network diagnostics beyond basic connectivity testing",
+    "System-wide proxy configuration"
+  ],
+  "related_tasks": [
+    "PRD-008 - Environment Variables Support (similar config patterns)"
+  ]
+}
