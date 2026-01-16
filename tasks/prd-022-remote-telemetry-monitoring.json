@@ -1,0 +1,493 @@
+{
+  "id": "PRD-022",
+  "parent_prd": "PRD-022",
+  "title": "Remote Telemetry and Monitoring",
+  "description": "Consolidate telemetry to OTEL-only, removing PostHog dependency, adding proper metrics and traces for operational visibility across all Jarvy modules",
+  "status": "pending",
+  "priority": "medium",
+  "dependencies": [],
+  "estimated_complexity": "high",
+  "acceptance_criteria": [
+    "PostHog dependency removed entirely",
+    "Single telemetry module (src/telemetry.rs) handles all telemetry",
+    "Structured log events emitted for tool operations",
+    "Structured log events emitted for hooks, services, commands, config, CI, and env",
+    "Metrics exported: counters, histograms, gauges",
+    "Optional traces for debugging complex installations",
+    "Configuration via ~/.jarvy/config.toml and environment variables",
+    "jarvy telemetry subcommand for status/enable/disable/test",
+    "Telemetry opt-in by default (disabled until configured)",
+    "CI-aware: auto-disabled when CI=true unless explicit",
+    "tool.not_supported events enable MCP feedback loop",
+    "All DX commands emit telemetry events",
+    "Hook execution tracked with duration and status",
+    "Service operations tracked by backend and action",
+    "Package manager operations tracked with batch metrics"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Create unified telemetry module",
+      "description": "Create src/telemetry.rs as single telemetry API",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/telemetry.rs"],
+      "subtasks": [
+        "Create TelemetryConfig struct",
+        "Implement init() with OTEL SDK setup",
+        "Implement shutdown() for graceful flush",
+        "Add log exporter configuration",
+        "Add metrics exporter configuration",
+        "Add optional traces exporter"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Define structured log events",
+      "description": "Create event functions for tool operations",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/telemetry.rs"],
+      "subtasks": [
+        "Implement tool_requested(tool, version, source)",
+        "Implement tool_installed(tool, version, pm, duration)",
+        "Implement tool_failed(tool, version, error)",
+        "Implement tool_not_supported(tool, version, source)",
+        "Implement setup_completed(summary)",
+        "Add Source enum (Config, Mcp, Cli)"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Add metrics instrumentation",
+      "description": "Create OTEL metrics for monitoring",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/telemetry.rs"],
+      "subtasks": [
+        "Create jarvy.tool.requests counter",
+        "Create jarvy.tool.installs counter by status",
+        "Create jarvy.tool.not_supported counter",
+        "Create jarvy.errors counter",
+        "Create jarvy.install.duration histogram",
+        "Create jarvy.setup.duration histogram",
+        "Create jarvy.tools.available gauge"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Add configuration support",
+      "description": "Extend config for telemetry settings",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/config.rs"],
+      "subtasks": [
+        "Add [telemetry] section to Config struct",
+        "Add enabled, endpoint, protocol fields",
+        "Add logs, metrics, traces toggles",
+        "Add sample_rate for trace sampling",
+        "Add resource attributes support",
+        "Implement environment variable overrides"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Instrument tool operations",
+      "description": "Add telemetry calls to setup and tool operations",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/main.rs", "src/tools/spec.rs"],
+      "subtasks": [
+        "Call tool_requested before each tool install",
+        "Call tool_installed/tool_failed after each install",
+        "Call tool_not_supported for unknown tools",
+        "Call setup_completed at end of setup",
+        "Add timing instrumentation with Instant::now()"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Add jarvy telemetry subcommand",
+      "description": "Create CLI for telemetry management",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Add Telemetry variant to Commands enum",
+        "Implement status subcommand",
+        "Implement enable subcommand",
+        "Implement disable subcommand",
+        "Implement set-endpoint subcommand",
+        "Implement test subcommand (sends test event)",
+        "Implement preview subcommand"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Remove PostHog",
+      "description": "Delete PostHog code and dependencies",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/posthog.rs", "src/main.rs", "Cargo.toml"],
+      "subtasks": [
+        "Delete src/posthog.rs",
+        "Remove posthog::init() calls from main.rs",
+        "Remove ureq dependency if only used by PostHog",
+        "Remove JARVY_POSTHOG_API_KEY references",
+        "Update documentation to remove PostHog mentions"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Add optional traces",
+      "description": "Implement distributed tracing for debugging",
+      "passed": false,
+      "priority": "low",
+      "files": ["src/telemetry.rs", "src/tools/spec.rs"],
+      "subtasks": [
+        "Add tracing span helpers",
+        "Create jarvy.setup root span",
+        "Create child spans for version checks",
+        "Create child spans for installs",
+        "Add trace context propagation"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Write unit tests",
+      "description": "Test telemetry module",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/telemetry.rs"],
+      "subtasks": [
+        "Test config loading",
+        "Test environment variable overrides",
+        "Test event emission (mocked)",
+        "Test metric recording (mocked)",
+        "Test CI detection disables telemetry"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Write integration tests",
+      "description": "Test telemetry end-to-end",
+      "passed": false,
+      "priority": "medium",
+      "files": ["tests/telemetry_integration.rs"],
+      "subtasks": [
+        "Test jarvy telemetry status output",
+        "Test jarvy telemetry enable/disable",
+        "Test jarvy telemetry test with mock collector",
+        "Test setup emits expected events"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Update documentation",
+      "description": "Document telemetry configuration",
+      "passed": false,
+      "priority": "low",
+      "files": ["docs/telemetry.md", "CLAUDE.md"],
+      "subtasks": [
+        "Document config file format",
+        "Document environment variables",
+        "Document privacy considerations",
+        "Add self-hosted stack example",
+        "Document migration from PostHog"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Instrument hooks execution",
+      "description": "Add telemetry to hook execution flow",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/hooks.rs", "src/telemetry.rs"],
+      "subtasks": [
+        "Implement hook_started(hook_name, hook_type, tool) event",
+        "Implement hook_completed(hook_name, duration_ms, exit_code) event",
+        "Implement hook_failed(hook_name, error, error_type) event",
+        "Implement hook_timeout(hook_name, timeout_seconds) event",
+        "Create jarvy.hooks.duration histogram",
+        "Create jarvy.hooks.executions counter by type/status",
+        "Add instrumentation to Hook::execute() method",
+        "Track pre_setup, post_setup, and per-tool hooks separately"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Instrument services management",
+      "description": "Add telemetry to docker-compose and tilt operations",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/services/mod.rs", "src/telemetry.rs"],
+      "subtasks": [
+        "Implement service_operation(backend, action, result) event",
+        "Implement service_error(backend, action, error) event",
+        "Create jarvy.services.operations counter by backend/action/status",
+        "Create jarvy.services.duration histogram by backend",
+        "Add instrumentation to start(), stop(), restart(), status() methods",
+        "Track DockerCompose vs Tilt separately"
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Instrument DX commands",
+      "description": "Add telemetry to developer experience commands",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/commands/doctor.rs", "src/commands/diff.rs", "src/commands/export.rs", "src/commands/upgrade.rs", "src/commands/search.rs", "src/commands/validate.rs", "src/telemetry.rs"],
+      "subtasks": [
+        "Implement command_executed(command_name, args_count, result) event",
+        "Implement doctor_issue_found(category, severity, message) event",
+        "Implement validate_result(errors_count, warnings_count) event",
+        "Implement search_executed(query, results_count) event",
+        "Implement export_completed(tools_count, format) event",
+        "Implement upgrade_executed(tools_count, dry_run, result) event",
+        "Implement diff_executed(changes_count, format) event",
+        "Create jarvy.commands.duration histogram by command",
+        "Create jarvy.commands counter by command/status",
+        "Create jarvy.doctor.issues gauge by category"
+      ]
+    },
+    {
+      "id": "T15",
+      "title": "Instrument config loading",
+      "description": "Add telemetry to configuration parsing",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/config.rs", "src/main.rs", "src/telemetry.rs"],
+      "subtasks": [
+        "Implement config_loaded(source, tools_count, has_hooks, has_env, has_services) event",
+        "Implement config_parse_error(file, error) event",
+        "Implement config_remote_fetched(url, cache_hit, duration_ms) event",
+        "Create jarvy.config.tools_configured gauge",
+        "Create jarvy.config.load_duration histogram by source",
+        "Track local vs remote config loading separately",
+        "Add instrumentation to Config::new() and fetch_remote_config()"
+      ]
+    },
+    {
+      "id": "T16",
+      "title": "Instrument CI environment",
+      "description": "Add telemetry for CI detection and context",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/ci/mod.rs", "src/telemetry.rs"],
+      "subtasks": [
+        "Implement ci_detected(provider, build_id, branch) event",
+        "Implement ci_forced(via) event for --ci flag or JARVY_CI env",
+        "Add CI context attributes to all events when in CI",
+        "Create jarvy.ci.detected counter by provider",
+        "Track forced vs auto-detected CI mode",
+        "Add ci.provider, ci.build_id, ci.branch resource attributes"
+      ]
+    },
+    {
+      "id": "T17",
+      "title": "Instrument environment management",
+      "description": "Add telemetry to env var and secrets handling",
+      "passed": false,
+      "priority": "medium",
+      "files": ["src/env/mod.rs", "src/env/dotenv.rs", "src/env/shell.rs", "src/env/secrets.rs", "src/telemetry.rs"],
+      "subtasks": [
+        "Implement env_dotenv_generated(path, vars_count, secrets_count) event",
+        "Implement env_shell_rc_updated(shell, path, vars_count) event",
+        "Implement env_secret_collected(name, source) event - source: file/env/prompt",
+        "Create jarvy.env.vars_configured gauge",
+        "Create jarvy.env.secrets_configured gauge",
+        "Add instrumentation to generate_dotenv(), update_shell_rc(), collect_secrets()",
+        "Track bash vs zsh vs fish shell rc updates"
+      ]
+    },
+    {
+      "id": "T18",
+      "title": "Instrument package manager operations",
+      "description": "Add telemetry to package manager batch operations",
+      "passed": false,
+      "priority": "high",
+      "files": ["src/tools/common.rs", "src/telemetry.rs"],
+      "subtasks": [
+        "Implement package_manager_update(pm, duration_ms) event",
+        "Implement package_manager_install(pm, package, duration_ms, success) event",
+        "Implement package_manager_batch_install(pm, packages_count, succeeded, failed, duration_ms) event",
+        "Create jarvy.package_manager.duration histogram by pm",
+        "Create jarvy.package_manager.batch_size histogram",
+        "Create jarvy.package_manager.operations counter by pm/operation/status",
+        "Add instrumentation to PkgOps::batch_install(), install()",
+        "Track brew vs apt vs dnf vs pacman vs winget separately"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "otel_crates": "Use opentelemetry 0.22, opentelemetry-otlp 0.15, opentelemetry_sdk 0.22",
+    "semantic_conventions": "Add opentelemetry-semantic-conventions 0.14 for standard attribute names",
+    "opt_in": "Telemetry disabled by default until explicitly configured",
+    "ci_aware": "Auto-disable when CI=true env var is set, unless JARVY_TELEMETRY=1",
+    "privacy": "Redact file paths, env values, usernames from error messages",
+    "batching": "Use OTEL SDK default batching settings",
+    "module_instrumentation": "Each module gets dedicated event functions in telemetry.rs",
+    "metric_labels": "Use consistent label names: tool, pm, command, status, backend, action",
+    "cardinality": "Cap label values to known enums, hash unknown tool names"
+  },
+  "non_goals": [
+    "Running our own telemetry backend",
+    "Collecting personally identifiable information",
+    "Automatic crash reporting",
+    "Usage analytics beyond tool operations"
+  ],
+  "files_to_create": [
+    "src/telemetry.rs",
+    "tests/telemetry_integration.rs",
+    "docs/telemetry.md"
+  ],
+  "files_to_modify": [
+    "src/main.rs",
+    "src/config.rs",
+    "src/tools/spec.rs",
+    "src/tools/common.rs",
+    "src/hooks.rs",
+    "src/services/mod.rs",
+    "src/commands/doctor.rs",
+    "src/commands/diff.rs",
+    "src/commands/export.rs",
+    "src/commands/upgrade.rs",
+    "src/commands/search.rs",
+    "src/commands/validate.rs",
+    "src/ci/mod.rs",
+    "src/env/mod.rs",
+    "src/env/dotenv.rs",
+    "src/env/shell.rs",
+    "src/env/secrets.rs",
+    "Cargo.toml",
+    "CLAUDE.md"
+  ],
+  "files_to_delete": [
+    "src/posthog.rs"
+  ],
+  "metrics_summary": {
+    "counters": [
+      "jarvy.tool.requests{tool, source, platform}",
+      "jarvy.tool.installs{tool, pm, platform, status}",
+      "jarvy.tool.not_supported{tool, source, platform}",
+      "jarvy.errors{error_type, command}",
+      "jarvy.hooks.executions{hook_type, status}",
+      "jarvy.services.operations{backend, action, status}",
+      "jarvy.commands{command, status}",
+      "jarvy.package_manager.operations{pm, operation, status}",
+      "jarvy.ci.detected{provider}"
+    ],
+    "histograms": [
+      "jarvy.install.duration{tool, pm}",
+      "jarvy.setup.duration{tools_count}",
+      "jarvy.version_check.duration{}",
+      "jarvy.hooks.duration{hook_type}",
+      "jarvy.commands.duration{command}",
+      "jarvy.config.load_duration{source}",
+      "jarvy.package_manager.duration{pm}",
+      "jarvy.package_manager.batch_size{pm}",
+      "jarvy.services.duration{backend}"
+    ],
+    "gauges": [
+      "jarvy.tools.available{platform}",
+      "jarvy.config.tools_configured{}",
+      "jarvy.doctor.issues{category}",
+      "jarvy.env.vars_configured{}",
+      "jarvy.env.secrets_configured{}"
+    ]
+  },
+  "events_summary": {
+    "tool_operations": [
+      "tool.requested",
+      "tool.installed",
+      "tool.failed",
+      "tool.not_supported",
+      "version_check.completed"
+    ],
+    "setup_flow": [
+      "setup.started",
+      "setup.completed",
+      "setup.phase_changed"
+    ],
+    "hooks": [
+      "hook.started",
+      "hook.completed",
+      "hook.failed",
+      "hook.timeout"
+    ],
+    "services": [
+      "service.operation",
+      "service.error"
+    ],
+    "commands": [
+      "command.executed",
+      "doctor.issue_found",
+      "validate.result",
+      "search.executed",
+      "export.completed",
+      "upgrade.executed",
+      "diff.executed"
+    ],
+    "config": [
+      "config.loaded",
+      "config.parse_error",
+      "config.remote_fetched"
+    ],
+    "ci": [
+      "ci.detected",
+      "ci.forced"
+    ],
+    "environment": [
+      "env.dotenv_generated",
+      "env.shell_rc_updated",
+      "env.secret_collected"
+    ],
+    "package_manager": [
+      "package_manager.update",
+      "package_manager.install",
+      "package_manager.batch_install"
+    ]
+  },
+  "risks": [
+    {
+      "description": "OTEL SDK complexity",
+      "mitigation": "Follow existing analytics.rs patterns, use standard SDK setup"
+    },
+    {
+      "description": "Breaking change for PostHog users",
+      "mitigation": "Provide migration guide, deprecation warning in v1.x"
+    },
+    {
+      "description": "Metric cardinality explosion",
+      "mitigation": "Cap tool name labels to known tools, hash unknowns"
+    },
+    {
+      "description": "Performance overhead from instrumentation",
+      "mitigation": "Use async exporters, batch by default, sample traces"
+    },
+    {
+      "description": "Code complexity from pervasive instrumentation",
+      "mitigation": "Use macros or helper functions for common patterns"
+    }
+  ],
+  "effort_estimate": {
+    "telemetry_module": "1.5 days",
+    "structured_events": "0.5 days",
+    "metrics": "1 day",
+    "config_support": "0.5 days",
+    "tool_instrumentation": "0.5 days",
+    "cli_subcommand": "0.5 days",
+    "remove_posthog": "0.5 days",
+    "traces": "1 day",
+    "hooks_instrumentation": "0.5 days",
+    "services_instrumentation": "0.25 days",
+    "commands_instrumentation": "1 day",
+    "config_instrumentation": "0.25 days",
+    "ci_instrumentation": "0.25 days",
+    "env_instrumentation": "0.25 days",
+    "package_manager_instrumentation": "0.5 days",
+    "testing": "1.5 days",
+    "documentation": "0.5 days",
+    "total": "10 days"
+  }
+}
