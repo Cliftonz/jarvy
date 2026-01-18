@@ -1,0 +1,120 @@
+{
+  "prd": "032",
+  "title": "Support & Community Infrastructure",
+  "status": "in_progress",
+  "started": "2026-01-17",
+  "completed": null,
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "GitHub Issue Templates",
+      "status": "complete",
+      "files": [
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+        ".github/ISSUE_TEMPLATE/tool_request.yml",
+        ".github/ISSUE_TEMPLATE/config.yml"
+      ],
+      "notes": "All issue templates already implemented and complete"
+    },
+    {
+      "id": "T2",
+      "title": "CONTRIBUTING.md",
+      "status": "complete",
+      "files": [".github/CONTRIBUTING.md"],
+      "notes": "Contributing guide already exists with tool contribution section"
+    },
+    {
+      "id": "T3",
+      "title": "SUPPORT.md",
+      "status": "complete",
+      "files": [".github/SUPPORT.md"],
+      "notes": "Support documentation with diagnostic steps, help channels, and response time expectations"
+    },
+    {
+      "id": "T4",
+      "title": "CODE_OF_CONDUCT.md",
+      "status": "pending",
+      "files": [".github/CODE_OF_CONDUCT.md"],
+      "notes": "Create code of conduct using Contributor Covenant"
+    },
+    {
+      "id": "T5",
+      "title": "FAQ Data Structure",
+      "status": "pending",
+      "files": ["data/faq.json", "docs/faq/"],
+      "notes": "Create FAQ database and markdown source files"
+    },
+    {
+      "id": "T6",
+      "title": "Community Module",
+      "status": "pending",
+      "files": [
+        "src/community/mod.rs",
+        "src/community/faq.rs",
+        "src/community/contributors.rs"
+      ],
+      "notes": "Create core community module with FAQ and contributors types"
+    },
+    {
+      "id": "T7",
+      "title": "FAQ CLI Command",
+      "status": "pending",
+      "files": ["src/commands/faq.rs", "src/main.rs"],
+      "notes": "Implement jarvy faq command with search, show, category"
+    },
+    {
+      "id": "T8",
+      "title": "Contributors CLI Command",
+      "status": "pending",
+      "files": ["src/commands/contributors.rs", "src/main.rs"],
+      "notes": "Implement jarvy contributors command"
+    },
+    {
+      "id": "T9",
+      "title": "Contributors Data",
+      "status": "pending",
+      "files": ["data/contributors.json", "CONTRIBUTORS.md"],
+      "notes": "Create contributors database and markdown file"
+    },
+    {
+      "id": "T10",
+      "title": "GitHub Workflow for Contributors",
+      "status": "pending",
+      "files": [".github/workflows/contributors.yml"],
+      "notes": "Automate CONTRIBUTORS.md updates"
+    },
+    {
+      "id": "T11",
+      "title": "Discussion Template",
+      "status": "pending",
+      "files": [".github/DISCUSSION_TEMPLATE/q-and-a.yml"],
+      "notes": "Create Q&A discussion template"
+    },
+    {
+      "id": "T12",
+      "title": "Integration and Testing",
+      "status": "pending",
+      "files": ["tests/community_integration.rs"],
+      "notes": "Write integration tests for FAQ and contributors commands"
+    }
+  ],
+  "acceptance_criteria": {
+    "AC-1": {
+      "description": "Issue templates capture diagnostic info",
+      "status": "complete"
+    },
+    "AC-2": {
+      "description": "jarvy faq command provides searchable FAQ",
+      "status": "pending"
+    },
+    "AC-3": {
+      "description": "CONTRIBUTORS.md maintained via GitHub Actions",
+      "status": "pending"
+    },
+    "AC-4": {
+      "description": "CLI shows contributor credits for tools",
+      "status": "pending"
+    }
+  }
+}
