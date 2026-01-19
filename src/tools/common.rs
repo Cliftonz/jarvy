@@ -1,6 +1,9 @@
 use std::process::{Command, Output};
 use std::sync::OnceLock;
 
+use crate::network::config::NetworkConfig;
+use crate::network::propagate::apply_network_config;
+
 #[derive(thiserror::Error, Debug)]
 pub enum InstallError {
     #[error("unsupported platform")]
@@ -107,6 +110,60 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
     Ok(out)
 }
 
+/// Run a command with network/proxy configuration applied.
+///
+/// This variant applies HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and CA bundle
+/// environment variables to the spawned process based on the NetworkConfig.
+pub fn run_with_network(
+    cmd: &str,
+    args: &[&str],
+    network: Option<&NetworkConfig>,
+    tool_name: &str,
+) -> Result<Output, InstallError> {
+    // Fast, deterministic tests: allow skipping external command execution.
+    if std::env::var_os("JARVY_FAST_TEST").is_some() {
+        return Err(InstallError::Prereq(
+            "skipped external command in fast test mode",
+        ));
+    }
+    #[cfg(test)]
+    {
+        if std::env::var_os("JARVY_RUN_EXTERNAL_CMDS_IN_TEST").is_none() {
+            return Err(InstallError::Prereq(
+                "external commands disabled during unit tests",
+            ));
+        }
+    }
+
+    let mut command = Command::new(cmd);
+    command.args(args);
+
+    // Apply network/proxy configuration if provided
+    if let Some(net_config) = network {
+        apply_network_config(&mut command, net_config, tool_name);
+    }
+
+    let out = command.output().map_err(|e| {
+        use std::io::ErrorKind::*;
+        match e.kind() {
+            NotFound => InstallError::Prereq("required command not found on PATH"),
+            PermissionDenied => {
+                InstallError::InvalidPermissions("operation requires elevated privileges")
+            }
+            _ => InstallError::Io(e),
+        }
+    })?;
+
+    if !out.status.success() {
+        return Err(InstallError::CommandFailed {
+            cmd: cmd.to_string(),
+            code: out.status.code(),
+            stderr: String::from_utf8_lossy(&out.stderr).into(),
+        });
+    }
+    Ok(out)
+}
+
 // Run a command, prefixing with sudo if configured and applicable (non-Windows)
 pub fn run_maybe_sudo(use_sudo: bool, cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
     match current_os() {
@@ -120,6 +177,34 @@ pub fn run_maybe_sudo(use_sudo: bool, cmd: &str, args: &[&str]) -> Result<Output
                 run("sudo", &all)
             } else {
                 run(cmd, args)
+            }
+        }
+    }
+}
+
+/// Run a command with sudo and network/proxy configuration.
+///
+/// Combines sudo elevation with proxy settings propagation.
+pub fn run_maybe_sudo_with_network(
+    use_sudo: bool,
+    cmd: &str,
+    args: &[&str],
+    network: Option<&NetworkConfig>,
+    tool_name: &str,
+) -> Result<Output, InstallError> {
+    match current_os() {
+        Os::Windows => run_with_network(cmd, args, network, tool_name),
+        Os::Linux | Os::Macos | Os::Bsd => {
+            if use_sudo {
+                // sudo -E preserves environment (including proxy vars)
+                // sudo <cmd> <args...>
+                let mut all = Vec::with_capacity(2 + args.len());
+                all.push("-E"); // Preserve environment
+                all.push(cmd);
+                all.extend_from_slice(args);
+                run_with_network("sudo", &all, network, tool_name)
+            } else {
+                run_with_network(cmd, args, network, tool_name)
             }
         }
     }

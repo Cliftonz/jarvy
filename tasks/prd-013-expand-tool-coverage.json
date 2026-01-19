@@ -1,7 +1,7 @@
 {
   "title": "PRD-013: Expand Tool Coverage",
   "priority": "High",
-  "status": "Not Started",
+  "status": "In Progress",
   "source": "prd/013-expand-tool-coverage.md",
   "createdAt": "2026-01-15T12:00:00Z",
   "updatedAt": "2026-01-15T12:00:00Z",
@@ -641,79 +641,79 @@
       "description": "Lower-priority tools, Windows support improvements, documentation",
       "targetTools": "Ongoing (2-3/week)",
       "estimatedEffort": "Ongoing",
-      "passed": false,
+      "passed": true,
       "tools": [
         {
           "name": "choose",
-          "passed": false
+          "passed": true
         },
         {
           "name": "grex",
-          "passed": false
+          "passed": true
         },
         {
           "name": "broot",
-          "passed": false
+          "passed": true
         },
         {
           "name": "lsd",
-          "passed": false
+          "passed": true
         },
         {
           "name": "dog",
-          "passed": false
+          "passed": true
         },
         {
           "name": "gping",
-          "passed": false
+          "passed": true
         },
         {
           "name": "julia",
-          "passed": false
+          "passed": true
         },
         {
           "name": "nim",
-          "passed": false
+          "passed": true
         },
         {
           "name": "crystal",
-          "passed": false
+          "passed": true
         },
         {
           "name": "ocaml",
-          "passed": false
+          "passed": true
         },
         {
           "name": "haskell",
-          "passed": false
+          "passed": true
         },
         {
           "name": "luarocks",
-          "passed": false
+          "passed": true
         },
         {
           "name": "sdkman",
-          "passed": false
+          "passed": true
         },
         {
           "name": "molecule",
-          "passed": false
+          "passed": true
         },
         {
           "name": "infracost",
-          "passed": false
+          "passed": true
         },
         {
           "name": "localstack",
-          "passed": false
+          "passed": true
         },
         {
           "name": "dagger",
-          "passed": false
+          "passed": true
         },
         {
           "name": "earthly",
-          "passed": false
+          "passed": true
         }
       ]
     }
