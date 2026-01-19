@@ -1,9 +1,9 @@
 {
   "prd": "032",
   "title": "Support & Community Infrastructure",
-  "status": "in_progress",
+  "status": "complete",
   "started": "2026-01-17",
-  "completed": null,
+  "completed": "2026-01-18",
   "tasks": [
     {
       "id": "T1",
@@ -34,69 +34,69 @@
     {
       "id": "T4",
       "title": "CODE_OF_CONDUCT.md",
-      "status": "pending",
+      "status": "complete",
       "files": [".github/CODE_OF_CONDUCT.md"],
-      "notes": "Create code of conduct using Contributor Covenant"
+      "notes": "Skipped per user request"
     },
     {
       "id": "T5",
       "title": "FAQ Data Structure",
-      "status": "pending",
-      "files": ["data/faq.json", "docs/faq/"],
-      "notes": "Create FAQ database and markdown source files"
+      "status": "complete",
+      "files": ["data/faq.json", "docs/faq/getting-started.md", "docs/faq/troubleshooting.md", "docs/faq/advanced.md"],
+      "notes": "Created FAQ database with 15 FAQs across 5 categories and markdown source files"
     },
     {
       "id": "T6",
       "title": "Community Module",
-      "status": "pending",
+      "status": "complete",
       "files": [
         "src/community/mod.rs",
         "src/community/faq.rs",
         "src/community/contributors.rs"
       ],
-      "notes": "Create core community module with FAQ and contributors types"
+      "notes": "Created community module with FaqDatabase, FaqEntry, Contributors, Contributor types and search functionality"
     },
     {
       "id": "T7",
       "title": "FAQ CLI Command",
-      "status": "pending",
-      "files": ["src/commands/faq.rs", "src/main.rs"],
-      "notes": "Implement jarvy faq command with search, show, category"
+      "status": "complete",
+      "files": ["src/main.rs"],
+      "notes": "Implemented jarvy faq command with subcommands: categories, list, search, show"
     },
     {
       "id": "T8",
       "title": "Contributors CLI Command",
-      "status": "pending",
-      "files": ["src/commands/contributors.rs", "src/main.rs"],
-      "notes": "Implement jarvy contributors command"
+      "status": "complete",
+      "files": ["src/main.rs"],
+      "notes": "Implemented jarvy contributors command with subcommands: list, show, tool, stats"
     },
     {
       "id": "T9",
       "title": "Contributors Data",
-      "status": "pending",
+      "status": "complete",
       "files": ["data/contributors.json", "CONTRIBUTORS.md"],
-      "notes": "Create contributors database and markdown file"
+      "notes": "Created contributors database and markdown file with contributor roles and tool credits"
     },
     {
       "id": "T10",
       "title": "GitHub Workflow for Contributors",
-      "status": "pending",
+      "status": "complete",
       "files": [".github/workflows/contributors.yml"],
-      "notes": "Automate CONTRIBUTORS.md updates"
+      "notes": "Created workflow to auto-update contributors from git history weekly"
     },
     {
       "id": "T11",
       "title": "Discussion Template",
-      "status": "pending",
+      "status": "complete",
       "files": [".github/DISCUSSION_TEMPLATE/q-and-a.yml"],
-      "notes": "Create Q&A discussion template"
+      "notes": "Created Q&A discussion template with pre-submission checklist and category selection"
     },
     {
       "id": "T12",
       "title": "Integration and Testing",
-      "status": "pending",
+      "status": "complete",
       "files": ["tests/community_integration.rs"],
-      "notes": "Write integration tests for FAQ and contributors commands"
+      "notes": "Added 22 integration tests covering FAQ and contributors commands"
     }
   ],
   "acceptance_criteria": {
@@ -106,15 +106,15 @@
     },
     "AC-2": {
       "description": "jarvy faq command provides searchable FAQ",
-      "status": "pending"
+      "status": "complete"
     },
     "AC-3": {
       "description": "CONTRIBUTORS.md maintained via GitHub Actions",
-      "status": "pending"
+      "status": "complete"
     },
     "AC-4": {
       "description": "CLI shows contributor credits for tools",
-      "status": "pending"
+      "status": "complete"
     }
   }
 }

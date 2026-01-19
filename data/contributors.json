@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-01-18",
+  "contributors": [
+    {
+      "username": "zacclifton",
+      "name": "Zac Clifton",
+      "url": "https://github.com/zacclifton",
+      "avatar": "https://avatars.githubusercontent.com/u/zacclifton",
+      "roles": ["maintainer", "contributor"],
+      "tools": [],
+      "commits": 200,
+      "first_contribution": "2024-01-01",
+      "active": true
+    }
+  ]
+}

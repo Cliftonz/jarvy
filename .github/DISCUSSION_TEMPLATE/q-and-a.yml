@@ -1,0 +1,89 @@
+title: "[Q&A] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before asking a question
+
+        1. **Check the FAQ**: Run `jarvy faq search <your-topic>` or visit the [FAQ docs](/docs/faq/)
+        2. **Search existing discussions**: Your question may have already been answered
+        3. **Check the documentation**: https://jarvy.dev/docs
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing discussions and issues
+          required: true
+        - label: I have checked the FAQ (`jarvy faq list`)
+          required: true
+        - label: I have read the relevant documentation
+          required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Question Category
+      description: What area does your question relate to?
+      options:
+        - Installation / Getting Started
+        - Configuration (jarvy.toml)
+        - Tool Installation
+        - Hooks & Customization
+        - CI/CD Integration
+        - Roles & Teams
+        - Troubleshooting
+        - Feature Request / Suggestion
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: Ask your question clearly and provide context
+      placeholder: |
+        What I'm trying to do:
+        ...
+
+        What I've tried:
+        ...
+
+        My question:
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (if relevant)
+      description: Include environment details if your question is about a specific issue
+      placeholder: |
+        - OS: macOS 14.0 / Ubuntu 22.04 / Windows 11
+        - Jarvy version: (run `jarvy --version`)
+        - Shell: zsh / bash / fish
+      render: markdown
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration (if relevant)
+      description: Share your jarvy.toml if it's relevant to your question
+      placeholder: |
+        ```toml
+        [provisioner]
+        node = "20"
+        docker = "latest"
+        ```
+      render: toml
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information that might help answer your question

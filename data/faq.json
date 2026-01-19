@@ -1,0 +1,153 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-01-18",
+  "categories": [
+    {
+      "id": "getting-started",
+      "name": "Getting Started",
+      "description": "Basic setup and installation questions"
+    },
+    {
+      "id": "configuration",
+      "name": "Configuration",
+      "description": "Questions about jarvy.toml and config options"
+    },
+    {
+      "id": "tools",
+      "name": "Tools",
+      "description": "Questions about tool installation and management"
+    },
+    {
+      "id": "troubleshooting",
+      "name": "Troubleshooting",
+      "description": "Common issues and how to resolve them"
+    },
+    {
+      "id": "advanced",
+      "name": "Advanced Usage",
+      "description": "Power user features and customization"
+    }
+  ],
+  "faqs": [
+    {
+      "id": "what-is-jarvy",
+      "category": "getting-started",
+      "question": "What is Jarvy?",
+      "answer": "Jarvy is a cross-platform CLI tool that provisions development environments from a `jarvy.toml` config file. It uses native package managers (Homebrew on macOS, apt/dnf on Linux, winget/Chocolatey on Windows) to install tools consistently across your team.",
+      "tags": ["overview", "introduction"],
+      "related": ["how-to-install", "supported-platforms"]
+    },
+    {
+      "id": "how-to-install",
+      "category": "getting-started",
+      "question": "How do I install Jarvy?",
+      "answer": "You can install Jarvy via:\n\n**macOS (Homebrew):**\n```bash\nbrew install jarvy\n```\n\n**Linux (curl):**\n```bash\ncurl -fsSL https://jarvy.dev/install.sh | bash\n```\n\n**Windows (winget):**\n```powershell\nwinget install Jarvy.Jarvy\n```\n\n**From source:**\n```bash\ncargo install jarvy\n```",
+      "tags": ["install", "setup"],
+      "related": ["what-is-jarvy", "supported-platforms"]
+    },
+    {
+      "id": "supported-platforms",
+      "category": "getting-started",
+      "question": "What platforms does Jarvy support?",
+      "answer": "Jarvy supports:\n- **macOS**: 10.15+ (Intel and Apple Silicon)\n- **Linux**: Ubuntu 20.04+, Debian 11+, Fedora 35+, Arch Linux, Alpine 3.14+\n- **Windows**: Windows 10 1809+ and Windows 11\n\nNot all tools are available on all platforms. Use `jarvy tools --platform <os>` to see platform-specific availability.",
+      "tags": ["platforms", "os", "compatibility"],
+      "related": ["how-to-install"]
+    },
+    {
+      "id": "create-config",
+      "category": "configuration",
+      "question": "How do I create a jarvy.toml file?",
+      "answer": "Create a `jarvy.toml` file in your project root:\n\n```toml\n[provisioner]\ngit = \"latest\"\nnode = \"20\"\nrust = \"stable\"\ndocker = \"latest\"\n```\n\nThen run `jarvy setup` to install all tools. Use `jarvy validate` to check your config for errors.",
+      "tags": ["config", "toml", "setup"],
+      "related": ["version-syntax", "tool-options"]
+    },
+    {
+      "id": "version-syntax",
+      "category": "configuration",
+      "question": "What version syntax does Jarvy support?",
+      "answer": "Jarvy supports semantic versioning with these operators:\n\n- `latest` - Latest available version\n- `1.2.3` - Exact version (interpreted as ^1.2.3)\n- `=1.2.3` - Exact version match\n- `>=1.2.0` - Minimum version\n- `<2.0.0` - Maximum version\n- `^1.2.3` - Compatible with 1.2.3 (allows minor/patch updates)\n- `~1.2.3` - Approximately 1.2.3 (allows patch updates)\n- `>=1.0.0,<2.0.0` - Range combinations",
+      "tags": ["version", "semver", "syntax"],
+      "related": ["create-config"]
+    },
+    {
+      "id": "tool-options",
+      "category": "configuration",
+      "question": "What options can I specify for each tool?",
+      "answer": "Tools support both simple and detailed syntax:\n\n**Simple:**\n```toml\ngit = \"latest\"\n```\n\n**Detailed:**\n```toml\n[provisioner.node]\nversion = \"20\"\nversion_manager = true  # Use nvm instead of direct install\n```\n\nAvailable options vary by tool. Use `jarvy tools show <name>` for tool-specific options.",
+      "tags": ["config", "options", "version-manager"],
+      "related": ["version-syntax", "create-config"]
+    },
+    {
+      "id": "list-tools",
+      "category": "tools",
+      "question": "How do I see available tools?",
+      "answer": "Use the `jarvy tools` command:\n\n```bash\njarvy tools                    # List all tools\njarvy tools --category dev     # Filter by category\njarvy tools --platform linux   # Show Linux-compatible tools\njarvy tools show docker        # Show details for a specific tool\njarvy search kubectl           # Search tools by name\n```",
+      "tags": ["tools", "list", "search"],
+      "related": ["request-tool"]
+    },
+    {
+      "id": "request-tool",
+      "category": "tools",
+      "question": "How do I request a new tool?",
+      "answer": "To request a new tool:\n\n1. Check if it already exists: `jarvy search <name>`\n2. Open a GitHub issue using the \"Tool Request\" template\n3. Include: tool name, homepage, package manager availability\n\nOr contribute directly! See CONTRIBUTING.md for the `define_tool!` macro pattern.",
+      "tags": ["tools", "request", "contribute"],
+      "related": ["list-tools"]
+    },
+    {
+      "id": "hooks",
+      "category": "advanced",
+      "question": "How do hooks work?",
+      "answer": "Hooks run shell commands after tool installation:\n\n```toml\n[hooks]\nnode = \"npm install -g yarn\"\nrust = \"rustup component add clippy rustfmt\"\n\n[hooks.docker]\nscript = '''\ndocker network create dev-network || true\ndocker volume create dev-data || true\n'''\ntimeout = 120\n```\n\nMany tools have built-in default hooks (shell initialization, completions). Use `jarvy tools --default-hooks` to see them.",
+      "tags": ["hooks", "post-install", "customization"],
+      "related": ["tool-options"]
+    },
+    {
+      "id": "roles",
+      "category": "advanced",
+      "question": "What are roles and how do I use them?",
+      "answer": "Roles let you define tool sets for different developer profiles:\n\n```toml\nrole = \"frontend\"\n\n[roles.base]\ntools = [\"git\", \"docker\"]\n\n[roles.frontend]\nextends = \"base\"\ntools = [\"node\", \"bun\"]\n\n[roles.frontend.tools]\nnode = \"20\"\n```\n\nCommands:\n- `jarvy roles list` - Show available roles\n- `jarvy roles show frontend --resolved` - Show inherited tools\n- `jarvy setup --role backend` - Override role for single run",
+      "tags": ["roles", "teams", "profiles"],
+      "related": ["create-config"]
+    },
+    {
+      "id": "permission-error",
+      "category": "troubleshooting",
+      "question": "I'm getting permission errors during installation",
+      "answer": "Permission errors usually mean:\n\n1. **Missing sudo**: Some package managers need elevated privileges\n   ```bash\n   sudo jarvy setup\n   ```\n\n2. **Homebrew ownership**: Fix with:\n   ```bash\n   sudo chown -R $(whoami) $(brew --prefix)/*\n   ```\n\n3. **npm global packages**: Configure npm to use a local directory:\n   ```bash\n   mkdir ~/.npm-global\n   npm config set prefix '~/.npm-global'\n   ```\n\nRun `jarvy doctor` for diagnostic information.",
+      "tags": ["permissions", "sudo", "errors"],
+      "related": ["doctor-command"]
+    },
+    {
+      "id": "doctor-command",
+      "category": "troubleshooting",
+      "question": "How do I diagnose installation issues?",
+      "answer": "Use `jarvy doctor` to check your system:\n\n```bash\njarvy doctor              # Full diagnostic\njarvy doctor --fix        # Attempt automatic fixes\njarvy diagnose            # Detailed system analysis\n```\n\nThe doctor checks:\n- Package manager availability\n- Tool installations and versions\n- Dependency satisfaction\n- Configuration validity",
+      "tags": ["doctor", "diagnose", "debug"],
+      "related": ["permission-error"]
+    },
+    {
+      "id": "offline-install",
+      "category": "troubleshooting",
+      "question": "Can I use Jarvy offline?",
+      "answer": "Jarvy currently requires network connectivity to download packages. However, if your organization has internal package mirrors, you can configure package managers to use them:\n\n- Homebrew: Set `HOMEBREW_BOTTLE_DOMAIN`\n- apt: Configure `/etc/apt/sources.list`\n- npm: Set registry in `.npmrc`\n\nFully offline/air-gapped installations are not supported at this time.",
+      "tags": ["offline", "network", "mirrors"],
+      "related": []
+    },
+    {
+      "id": "ci-integration",
+      "category": "advanced",
+      "question": "How do I use Jarvy in CI/CD?",
+      "answer": "Jarvy auto-detects CI environments and adjusts behavior:\n\n```yaml\n# GitHub Actions\nsteps:\n  - uses: actions/checkout@v4\n  - name: Install Jarvy\n    run: curl -fsSL https://jarvy.dev/install.sh | bash\n  - name: Setup tools\n    run: jarvy setup --ci\n```\n\nThe `--ci` flag:\n- Disables interactive prompts\n- Enables non-interactive package manager flags\n- Skips telemetry\n\nUse `jarvy ci-info` to see detected CI environment.",
+      "tags": ["ci", "cd", "github-actions", "automation"],
+      "related": ["create-config"]
+    },
+    {
+      "id": "telemetry",
+      "category": "advanced",
+      "question": "What telemetry does Jarvy collect?",
+      "answer": "Telemetry is **opt-in** and disabled by default. When enabled, Jarvy collects:\n- Command usage (which commands are run)\n- Tool installation success/failure rates\n- Platform and version information\n- Anonymous machine fingerprint (no PII)\n\nManage telemetry:\n```bash\njarvy telemetry status    # Check current settings\njarvy telemetry enable    # Opt in\njarvy telemetry disable   # Opt out\njarvy telemetry preview   # See what would be sent\n```\n\nTelemetry is automatically disabled in CI environments.",
+      "tags": ["telemetry", "privacy", "analytics"],
+      "related": []
+    }
+  ]
+}
