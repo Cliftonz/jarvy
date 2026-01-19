@@ -3,10 +3,11 @@
   "parent_prd": "PRD-020",
   "title": "Security Scanning Infrastructure",
   "description": "Implement comprehensive security scanning beyond GitHub Dependabot to ensure supply chain security, detect vulnerabilities early, enforce license compliance, and establish security best practices for the Jarvy project",
-  "status": "pending",
+  "status": "complete",
   "priority": "high",
   "dependencies": ["PRD-012"],
   "estimated_complexity": "high",
+  "completed": "2026-01-19",
   "acceptance_criteria": [
     "cargo-audit runs on every PR and fails on known CVEs",
     "cargo-deny enforces license compliance (MIT/Apache/BSD allowed only)",
@@ -23,7 +24,7 @@
       "id": "T1",
       "title": "Configure cargo-deny",
       "description": "Create deny.toml with license, advisory, and ban policies",
-      "passed": false,
+      "passed": true,
       "priority": "high",
       "files": ["deny.toml"],
       "subtasks": [
@@ -33,13 +34,14 @@
         "Set unmaintained and yanked crate policies",
         "Configure source restrictions (crates.io only)",
         "Add any necessary exceptions with justification"
-      ]
+      ],
+      "notes": "Complete configuration in deny.toml with license allowlist, advisory scanning, ring license clarification, and crates.io-only source restriction"
     },
     {
       "id": "T2",
       "title": "Create security CI workflow",
       "description": "Create .github/workflows/security.yml for PR and scheduled scans",
-      "passed": false,
+      "passed": true,
       "priority": "high",
       "files": [".github/workflows/security.yml"],
       "subtasks": [
@@ -50,13 +52,14 @@
         "Add CodeQL job for semantic analysis",
         "Configure SARIF upload for GitHub Security tab",
         "Set up daily scheduled scans"
-      ]
+      ],
+      "notes": "Comprehensive workflow with 7 jobs: audit, deny, secrets, semgrep, codeql, geiger, freshness. Daily schedule at 6 AM UTC"
     },
     {
       "id": "T3",
       "title": "Configure Gitleaks",
       "description": "Create .gitleaks.toml with custom rules and allowlist",
-      "passed": false,
+      "passed": true,
       "priority": "high",
       "files": [".gitleaks.toml"],
       "subtasks": [
@@ -64,13 +67,14 @@
         "Add custom rule for API keys",
         "Configure allowlist for docs and config examples",
         "Test with existing codebase"
-      ]
+      ],
+      "notes": "Custom rules for jarvy-api-key, telemetry-key, otlp-endpoint, homebrew-tap-key, crates-io-token, aur-ssh-key, chocolatey-api-key, winget-token. Path and regex allowlists"
     },
     {
       "id": "T4",
       "title": "Create SECURITY.md",
       "description": "Document security policy and vulnerability reporting",
-      "passed": false,
+      "passed": true,
       "priority": "high",
       "files": ["SECURITY.md"],
       "subtasks": [
@@ -78,13 +82,14 @@
         "Explain vulnerability reporting process",
         "List security measures implemented",
         "Add security acknowledgments section"
-      ]
+      ],
+      "notes": "Complete security policy with version support table, GitHub private advisory + email reporting, 48hr response SLA, SAST/secret scanning/supply chain sections, signature verification instructions"
     },
     {
       "id": "T5",
       "title": "Add release signing with Sigstore",
       "description": "Sign release artifacts with cosign keyless signing",
-      "passed": false,
+      "passed": true,
       "priority": "high",
       "files": [".github/workflows/release.yml", "scripts/security/verify-signatures.sh"],
       "subtasks": [
@@ -93,13 +98,14 @@
         "Upload .sig and .pem files to release",
         "Create verification script for users",
         "Document signature verification in release notes"
-      ]
+      ],
+      "notes": "sign_artifacts job in release.yml uses sigstore/cosign-installer@v3. verify-signatures.sh is 316-line script supporting automatic latest version, artifact listing, checksum verification"
     },
     {
       "id": "T6",
       "title": "Add SBOM generation",
       "description": "Generate SPDX and CycloneDX SBOMs for releases",
-      "passed": false,
+      "passed": true,
       "priority": "high",
       "files": [".github/workflows/release.yml", "scripts/security/generate-sbom.sh"],
       "subtasks": [
@@ -108,13 +114,14 @@
         "Install cargo-cyclonedx for CycloneDX format",
         "Attach SBOMs to GitHub Release",
         "Create helper script for local SBOM generation"
-      ]
+      ],
+      "notes": "generate_sbom job in release.yml creates both formats. generate-sbom.sh is 292-line script with cargo-sbom and cargo-cyclonedx support plus jq fallback"
     },
     {
       "id": "T7",
       "title": "Create OpenSSF Scorecard workflow",
       "description": "Set up weekly Scorecard analysis and badge",
-      "passed": false,
+      "passed": true,
       "priority": "medium",
       "files": [".github/workflows/scorecard.yml"],
       "subtasks": [
@@ -123,13 +130,14 @@
         "Enable publish_results for public badge",
         "Add Scorecard badge to README",
         "Document score improvement areas"
-      ]
+      ],
+      "notes": "Weekly Monday schedule, SARIF upload to GitHub Security tab, publish_results: true for badge, step summary with all 14 checks documented"
     },
     {
       "id": "T8",
       "title": "Add cargo-geiger unsafe audit",
       "description": "Run unsafe code detection as advisory check",
-      "passed": false,
+      "passed": true,
       "priority": "low",
       "files": [".github/workflows/security.yml"],
       "subtasks": [
@@ -137,13 +145,14 @@
         "Configure threshold warning (not blocking)",
         "Generate and upload geiger report",
         "Document any justified unsafe usage"
-      ]
+      ],
+      "notes": "geiger job in security.yml with continue-on-error: true, uploads report artifact and writes to job summary"
     },
     {
       "id": "T9",
       "title": "Create pre-commit configuration",
       "description": "Set up pre-commit hooks for local security checks",
-      "passed": false,
+      "passed": true,
       "priority": "medium",
       "files": [".pre-commit-config.yaml"],
       "subtasks": [
@@ -152,13 +161,14 @@
         "Add cargo check hook",
         "Add YAML/TOML/JSON validators",
         "Document pre-commit setup in CONTRIBUTING.md"
-      ]
+      ],
+      "notes": "Comprehensive config with gitleaks, pre-commit-hooks (12 checks), local Rust hooks (fmt, clippy, check, deny), yamllint, markdownlint, shellcheck. CI section with autoupdate"
     },
     {
       "id": "T10",
       "title": "Configure branch protection",
       "description": "Document and recommend branch protection rules",
-      "passed": false,
+      "passed": true,
       "priority": "medium",
       "files": ["docs/MAINTAINER_SECURITY_SETUP.md"],
       "subtasks": [
@@ -166,7 +176,8 @@
         "Document review requirements",
         "Document force push restrictions",
         "Add GitHub Secret Scanning enablement guide"
-      ]
+      ],
+      "notes": "319-line comprehensive guide covering GitHub Security features, branch protection (12 settings), Dependabot config, OpenSSF badge setup, CODEOWNERS, local dev setup, troubleshooting, CVE response timeline"
     }
   ],
   "implementation_notes": {

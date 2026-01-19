@@ -1,12 +1,10 @@
 {
   "id": "PRD-024",
-  "parent_prd": "PRD-024",
   "title": "Team & Enterprise Collaboration",
-  "description": "Add features that enable teams to standardize developer environments across organizations, including shared configuration templates, configuration inheritance with recursive extending, and version lock files for reproducibility",
+  "description": "Add features that enable teams to standardize developer environments across organizations, including shared configuration templates, configuration inheritance with recursive extending, and automatic tool updates",
   "status": "pending",
   "priority": "high",
   "dependencies": ["PRD-016"],
-  "estimated_complexity": "high",
   "acceptance_criteria": [
     "extends field accepts URL or local path",
     "Multiple inheritance with array syntax works",
@@ -23,17 +21,18 @@
     "jarvy team add registers config source",
     "jarvy team list shows registered sources",
     "jarvy team browse discovers available configs via index.toml",
-    "jarvy lock generates jarvy.lock from current environment",
-    "jarvy setup --locked uses lock file versions",
-    "jarvy lock status shows drift between lock and installed",
-    "Platform-specific lock sections supported"
+    "jarvy update checks for newer versions of installed tools",
+    "jarvy update --all updates all outdated tools",
+    "jarvy update <tool> updates specific tool",
+    "Auto-update configuration in jarvy.toml or global config",
+    "Update notifications on setup when newer versions available"
   ],
   "tasks": [
     {
       "id": "T1",
       "title": "Create team module structure",
       "description": "Set up the module structure for team collaboration features",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/team/mod.rs"],
       "subtasks": [
@@ -47,7 +46,7 @@
       "id": "T2",
       "title": "Add extends field to Config",
       "description": "Extend the Config struct to support the extends field",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/config.rs"],
       "subtasks": [
@@ -61,7 +60,7 @@
       "id": "T3",
       "title": "Implement ConfigCache",
       "description": "Create caching layer for remote configs",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/team/cache.rs"],
       "subtasks": [
@@ -78,7 +77,7 @@
       "id": "T4",
       "title": "Implement InheritanceResolver",
       "description": "Core recursive config resolution with depth-first traversal",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/team/inheritance.rs"],
       "subtasks": [
@@ -95,7 +94,7 @@
       "id": "T5",
       "title": "Implement config merging",
       "description": "Deep merge logic for all config sections",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/team/inheritance.rs"],
       "subtasks": [
@@ -110,9 +109,9 @@
     },
     {
       "id": "T6",
-      "title": "Implement error handling",
+      "title": "Implement inheritance error handling",
       "description": "Comprehensive error types and messages for inheritance",
-      "passed": false,
+      "status": "pending",
       "priority": "medium",
       "files": ["src/team/inheritance.rs"],
       "subtasks": [
@@ -130,7 +129,7 @@
       "id": "T7",
       "title": "Implement remote config loading",
       "description": "Fetch configs from URLs with caching",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/team/inheritance.rs"],
       "subtasks": [
@@ -147,7 +146,7 @@
       "id": "T8",
       "title": "Integrate inheritance into setup flow",
       "description": "Use InheritanceResolver during jarvy setup",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/main.rs"],
       "subtasks": [
@@ -162,7 +161,7 @@
       "id": "T9",
       "title": "Implement jarvy config show --resolved",
       "description": "Display fully merged configuration",
-      "passed": false,
+      "status": "pending",
       "priority": "medium",
       "files": ["src/commands/config.rs", "src/main.rs"],
       "subtasks": [
@@ -177,7 +176,7 @@
       "id": "T10",
       "title": "Implement jarvy config show --extends-chain",
       "description": "Display inheritance tree visualization",
-      "passed": false,
+      "status": "pending",
       "priority": "medium",
       "files": ["src/commands/config.rs"],
       "subtasks": [
@@ -192,7 +191,7 @@
       "id": "T11",
       "title": "Implement jarvy config validate --check-extends",
       "description": "Validate extends chain without running setup",
-      "passed": false,
+      "status": "pending",
       "priority": "medium",
       "files": ["src/commands/config.rs", "src/commands/validate.rs"],
       "subtasks": [
@@ -206,7 +205,7 @@
       "id": "T12",
       "title": "Implement jarvy config refresh",
       "description": "Force refresh cached parent configs",
-      "passed": false,
+      "status": "pending",
       "priority": "low",
       "files": ["src/commands/config.rs"],
       "subtasks": [
@@ -220,7 +219,7 @@
       "id": "T13",
       "title": "Create team config registry module",
       "description": "Module for managing team config sources",
-      "passed": false,
+      "status": "pending",
       "priority": "medium",
       "files": ["src/team/registry.rs"],
       "subtasks": [
@@ -237,7 +236,7 @@
       "id": "T14",
       "title": "Implement jarvy team commands",
       "description": "CLI commands for team config management",
-      "passed": false,
+      "status": "pending",
       "priority": "medium",
       "files": ["src/commands/team.rs", "src/main.rs"],
       "subtasks": [
@@ -254,9 +253,9 @@
       "id": "T15",
       "title": "Implement jarvy init --from",
       "description": "Initialize project from team config",
-      "passed": false,
+      "status": "pending",
       "priority": "medium",
-      "files": ["src/main.rs"],
+      "files": ["src/commands/init.rs"],
       "subtasks": [
         "Add --from flag to init command",
         "Support source/config syntax (e.g., company/frontend)",
@@ -266,86 +265,87 @@
     },
     {
       "id": "T16",
-      "title": "Create lock module structure",
-      "description": "Set up module for version lock files",
-      "passed": false,
+      "title": "Create update module structure",
+      "description": "Set up module for automatic tool updates",
+      "status": "pending",
       "priority": "medium",
-      "files": ["src/lock/mod.rs"],
+      "files": ["src/update/mod.rs"],
       "subtasks": [
-        "Create src/lock/ directory",
+        "Create src/update/ directory",
         "Create mod.rs with exports",
-        "Define LockFile struct",
-        "Define LockMeta struct (generated, jarvy_version, platform)",
-        "Define LockedTool struct (version, source, checksum)"
+        "Define UpdateInfo struct (tool, current, available, source)",
+        "Define UpdateConfig struct (auto_check, auto_update, check_interval)",
+        "Define UpdateResult enum (Updated, AlreadyLatest, Failed)"
       ]
     },
     {
       "id": "T17",
-      "title": "Implement lock file generation",
-      "description": "Generate jarvy.lock from current environment",
-      "passed": false,
+      "title": "Implement update checking",
+      "description": "Check for newer versions of installed tools",
+      "status": "pending",
       "priority": "medium",
-      "files": ["src/lock/generate.rs"],
+      "files": ["src/update/check.rs"],
       "subtasks": [
-        "Implement generate_lock() function",
-        "Get installed version for each tool in config",
-        "Determine install source (brew, apt, nvm, etc.)",
-        "Compute SHA256 checksum of binary",
-        "Serialize to TOML format",
-        "Write to jarvy.lock"
+        "Implement check_updates() for all tools",
+        "Implement check_tool_update() for single tool",
+        "Query package managers for latest versions (brew, apt, etc.)",
+        "Compare installed vs available using semver",
+        "Cache update check results with TTL",
+        "Respect rate limits for external APIs"
       ]
     },
     {
       "id": "T18",
-      "title": "Implement lock verification",
-      "description": "Verify installed tools match lock file",
-      "passed": false,
+      "title": "Implement jarvy update command",
+      "description": "CLI commands for updating tools",
+      "status": "pending",
       "priority": "medium",
-      "files": ["src/lock/verify.rs"],
+      "files": ["src/commands/update.rs", "src/main.rs"],
       "subtasks": [
-        "Implement verify_lock() function",
-        "Compare installed versions to locked versions",
-        "Verify checksums match",
-        "Return verification status per tool",
-        "Detect: matches, mismatch, missing, newer available"
-      ]
-    },
-    {
-      "id": "T19",
-      "title": "Implement jarvy lock commands",
-      "description": "CLI commands for lock file management",
-      "passed": false,
-      "priority": "medium",
-      "files": ["src/commands/lock.rs", "src/main.rs"],
-      "subtasks": [
-        "Create lock subcommand module",
-        "Implement jarvy lock (generate)",
-        "Implement jarvy lock --update [tool]",
-        "Implement jarvy lock status",
-        "Implement jarvy lock verify",
+        "Create update subcommand module",
+        "Implement jarvy update (check for updates)",
+        "Implement jarvy update --all (update all outdated)",
+        "Implement jarvy update <tool> (update specific tool)",
+        "Implement jarvy update --dry-run (show what would update)",
         "Add to Commands enum in main.rs"
       ]
     },
     {
+      "id": "T19",
+      "title": "Add auto-update configuration",
+      "description": "Support configuring automatic update behavior",
+      "status": "pending",
+      "priority": "medium",
+      "files": ["src/config.rs", "src/update/config.rs"],
+      "subtasks": [
+        "Add [update] section to jarvy.toml schema",
+        "Support auto_check = true/false (default: true)",
+        "Support auto_update = true/false (default: false)",
+        "Support check_interval = '24h' (duration string)",
+        "Support exclude = ['tool1', 'tool2'] for skipping tools",
+        "Global config fallback in ~/.jarvy/config.toml"
+      ]
+    },
+    {
       "id": "T20",
-      "title": "Implement --locked flag for setup",
-      "description": "Use lock file versions during setup",
-      "passed": false,
+      "title": "Add update notifications on setup",
+      "description": "Notify users of available updates during setup",
+      "status": "pending",
       "priority": "medium",
       "files": ["src/main.rs"],
       "subtasks": [
-        "Add --locked flag to setup command",
-        "Load jarvy.lock if present",
-        "Use locked versions instead of config versions",
-        "Error if lock file missing with --locked",
-        "Warn on version mismatch between config and lock"
+        "Check for updates after successful setup",
+        "Display summary of available updates",
+        "Respect auto_check config setting",
+        "Skip notifications in CI environments",
+        "Suggest jarvy update command"
       ]
     },
     {
       "id": "T21",
       "title": "Write unit tests for inheritance",
       "description": "Comprehensive tests for inheritance resolution",
-      "passed": false,
+      "status": "pending",
       "priority": "high",
       "files": ["src/team/inheritance.rs"],
       "subtasks": [
@@ -362,54 +362,42 @@
     },
     {
       "id": "T22",
-      "title": "Write unit tests for lock",
-      "description": "Tests for lock file generation and verification",
-      "passed": false,
+      "title": "Write unit tests for update",
+      "description": "Tests for update checking and execution",
+      "status": "pending",
       "priority": "medium",
-      "files": ["src/lock/generate.rs", "src/lock/verify.rs"],
+      "files": ["src/update/check.rs", "src/update/mod.rs"],
       "subtasks": [
-        "Test lock generation with mock tools",
-        "Test lock serialization format",
-        "Test verification: all match",
-        "Test verification: version mismatch",
-        "Test verification: missing tool",
-        "Test checksum verification"
+        "Test update checking with mock package managers",
+        "Test version comparison logic",
+        "Test update caching behavior",
+        "Test auto-update config parsing",
+        "Test update exclusion list",
+        "Test CI environment detection"
       ]
     },
     {
       "id": "T23",
       "title": "Write integration tests",
-      "description": "End-to-end tests for team features",
-      "passed": false,
+      "description": "End-to-end tests for team and update features",
+      "status": "pending",
       "priority": "medium",
-      "files": ["tests/inheritance_integration.rs", "tests/lock_integration.rs"],
+      "files": ["tests/inheritance_integration.rs", "tests/update_integration.rs"],
       "subtasks": [
         "Test jarvy setup with extends (local file)",
         "Test jarvy config show --resolved",
         "Test jarvy config show --extends-chain",
         "Test jarvy config validate --check-extends",
-        "Test jarvy lock generation",
-        "Test jarvy setup --locked",
-        "Test jarvy lock status"
+        "Test jarvy update command",
+        "Test jarvy update --all",
+        "Test update notifications after setup"
       ]
     },
     {
       "id": "T24",
-      "title": "Add sha2 dependency",
-      "description": "Add sha2 crate for checksum computation",
-      "passed": false,
-      "priority": "low",
-      "files": ["Cargo.toml"],
-      "subtasks": [
-        "Add sha2 = \"0.10\" to dependencies",
-        "Verify build succeeds"
-      ]
-    },
-    {
-      "id": "T25",
       "title": "Update documentation",
-      "description": "Document team collaboration features",
-      "passed": false,
+      "description": "Document team collaboration and update features",
+      "status": "pending",
       "priority": "low",
       "files": ["CLAUDE.md", "docs/team-collaboration.md"],
       "subtasks": [
@@ -417,40 +405,25 @@
         "Document recursive extending behavior",
         "Document merge rules for each section",
         "Add team command examples",
-        "Add lock command examples",
+        "Add update command examples",
+        "Document auto-update configuration",
         "Create docs/team-collaboration.md guide"
       ]
     }
-  ],
-  "implementation_notes": {
-    "resolution_order": "Depth-first, left-to-right traversal with last-write-wins merging",
-    "diamond_handling": "Use resolved_cache HashMap to load configs only once",
-    "cycle_detection": "Use in_progress HashSet for configs currently being resolved",
-    "hook_order": "Ancestor hooks run first, then descendant hooks (parent before child)",
-    "cache_key": "SHA256 hash of normalized URL",
-    "cache_ttl": "1 hour default, configurable via config",
-    "offline_mode": "Use stale cache with warning if network unavailable"
-  },
-  "non_goals": [
-    "Multi-tenancy or SaaS platform",
-    "User management UI",
-    "Real-time config synchronization",
-    "Authentication/SSO for config servers",
-    "Policy enforcement or compliance checking"
   ],
   "files_to_create": [
     "src/team/mod.rs",
     "src/team/inheritance.rs",
     "src/team/registry.rs",
     "src/team/cache.rs",
-    "src/lock/mod.rs",
-    "src/lock/generate.rs",
-    "src/lock/verify.rs",
+    "src/update/mod.rs",
+    "src/update/check.rs",
+    "src/update/config.rs",
     "src/commands/config.rs",
     "src/commands/team.rs",
-    "src/commands/lock.rs",
+    "src/commands/update.rs",
     "tests/inheritance_integration.rs",
-    "tests/lock_integration.rs",
+    "tests/update_integration.rs",
     "docs/team-collaboration.md"
   ],
   "files_to_modify": [
@@ -458,45 +431,14 @@
     "src/config.rs",
     "src/commands/mod.rs",
     "src/commands/validate.rs",
-    "Cargo.toml",
+    "src/commands/init.rs",
     "CLAUDE.md"
   ],
-  "risks": [
-    {
-      "description": "Inheritance conflicts - deep merge can have unexpected results",
-      "mitigation": "Clear precedence rules, --resolved flag to inspect merged config"
-    },
-    {
-      "description": "Offline remote configs - network issues block setup",
-      "mitigation": "Aggressive caching, offline fallback to stale cache"
-    },
-    {
-      "description": "Lock file drift - easy to forget to update lock",
-      "mitigation": "CI integration guidance, warnings on mismatch"
-    },
-    {
-      "description": "Cache invalidation - stale configs cause issues",
-      "mitigation": "Configurable TTL, manual sync command, refresh --recursive"
-    },
-    {
-      "description": "Circular dependencies - could cause infinite loops",
-      "mitigation": "in_progress set detection, clear error messages with cycle path"
-    }
-  ],
-  "effort_estimate": {
-    "team_module_structure": "0.5 days",
-    "config_inheritance": "2 days",
-    "remote_config_caching": "1 day",
-    "config_merging": "1.5 days",
-    "team_registry": "2 days",
-    "team_commands": "1 day",
-    "lock_module": "1 day",
-    "lock_generation": "1.5 days",
-    "lock_verification": "1 day",
-    "lock_commands": "1 day",
-    "setup_integration": "1 day",
-    "testing": "2 days",
-    "documentation": "1 day",
-    "total": "16.5 days"
-  }
+  "non_goals": [
+    "Multi-tenancy or SaaS platform",
+    "User management UI",
+    "Real-time config synchronization",
+    "Authentication/SSO for config servers",
+    "Policy enforcement or compliance checking"
+  ]
 }

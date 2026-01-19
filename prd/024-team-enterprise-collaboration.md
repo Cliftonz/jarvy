@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add features that enable teams to standardize developer environments across organizations, including shared configuration templates, configuration inheritance, and version lock files for reproducibility.
+Add features that enable teams to standardize developer environments across organizations, including shared configuration templates, configuration inheritance, and automatic tool updates.
 
 ## Problem Statement
 
@@ -10,7 +10,7 @@ Jarvy currently works well for individual developers, but lacks features for tea
 - No way to share team-standard configurations
 - No configuration inheritance (DRY principle violations)
 - Teams manually copy configs, leading to drift and inconsistency
-- No way to lock versions for reproducible environments
+- No easy way to keep tools updated across teams
 
 Teams need standardization without creating rigidity that blocks individual productivity.
 
@@ -19,7 +19,7 @@ Teams need standardization without creating rigidity that blocks individual prod
 - Enterprise customers ask: "How do I ensure all devs have the same tools?"
 - Teams duplicate configs manually → config drift
 - Different projects need consistent base configurations
-- CI/CD pipelines need reproducible tool versions
+- Developers need simple way to keep tools current
 
 ## Requirements
 
@@ -27,7 +27,7 @@ Teams need standardization without creating rigidity that blocks individual prod
 
 1. **Config inheritance**: `extends` field to compose configurations
 2. **Team config registry**: Centralized config discovery and sharing
-3. **Version pinning**: Lock down tool versions with lock files
+3. **Automatic tool updates**: Check and update tools to latest versions
 4. **Remote config support**: Fetch configs from URLs
 
 ### Non-Functional Requirements
@@ -335,90 +335,62 @@ tags = ["api", "server"]
 - Caching with TTL
 - Offline fallback to cached configs
 
-### 3. Version Pinning & Lock Files
+### 3. Automatic Tool Updates
 
-Lock tool versions for reproducibility.
+Keep tools up to date with automatic update checking and one-command updates.
 
 ```bash
-# Generate lock file from current state
-jarvy lock
+# Check for available updates
+jarvy update
 
 # Output:
-# Generated jarvy.lock from current environment
+# Checking for updates...
 #
-# Locked versions:
-#   git = "2.43.0"
-#   node = "20.11.0"
-#   docker = "24.0.7"
-#   jq = "1.7.1"
+# Updates available:
+#   git      2.43.0 → 2.44.0
+#   node     20.11.0 → 20.12.0
+#   docker   24.0.7 → 25.0.0
 #
-# This lock file ensures reproducible environments.
-# Commit jarvy.lock to version control.
+# Run `jarvy update --all` to update all tools
+# Or `jarvy update <tool>` to update a specific tool
 
-# Setup with locked versions
-jarvy setup --locked
+# Update all outdated tools
+jarvy update --all
 
-# Update lock file
-jarvy lock --update
-jarvy lock --update node  # Update specific tool
+# Update specific tool
+jarvy update node
 
-# Show lock status
-jarvy lock status
+# Preview what would be updated
+jarvy update --dry-run
 
 # Output:
-# Lock File Status
-# ================
+# Dry run - no changes will be made
 #
-# git
-#   Locked: 2.43.0
-#   Installed: 2.43.0
-#   Status: ✓ Matches
-#
-# node
-#   Locked: 20.11.0
-#   Installed: 20.10.0
-#   Status: ✗ Mismatch (installed is older)
-#
-# docker
-#   Locked: 24.0.7
-#   Available: 25.0.0
-#   Status: ⚠ Update available
-
-# Verify lock integrity
-jarvy lock verify
+# Would update:
+#   git      2.43.0 → 2.44.0 (via homebrew)
+#   node     20.11.0 → 20.12.0 (via nvm)
+#   docker   24.0.7 → 25.0.0 (via homebrew-cask)
 ```
 
-**Lock file format:**
+**Configuration:**
 
 ```toml
-# jarvy.lock
-[meta]
-generated = "2024-01-15T10:30:00Z"
-jarvy_version = "0.1.0"
-platform = "darwin-arm64"
-
-[tools.git]
-version = "2.43.0"
-source = "homebrew"
-checksum = "sha256:abc123..."
-
-[tools.node]
-version = "20.11.0"
-source = "nvm"
-checksum = "sha256:def456..."
-
-[tools.docker]
-version = "24.0.7"
-source = "homebrew-cask"
-checksum = "sha256:ghi789..."
+# jarvy.toml or ~/.jarvy/config.toml
+[update]
+auto_check = true       # Check for updates after setup (default: true)
+auto_update = false     # Automatically update tools (default: false)
+check_interval = "24h"  # How often to check (default: 24h)
+exclude = ["java"]      # Tools to skip when updating
 ```
 
-**Lock features:**
-- Exact version pinning
-- Platform-specific locks
-- Source/method tracking
-- Checksum verification
-- Selective updates
+**Update features:**
+- Check for updates across all package managers
+- Update all or specific tools
+- Dry-run mode to preview changes
+- Configurable auto-check on setup
+- Exclude specific tools from updates
+- Cached update checks to avoid rate limits
+- CI-aware (skips notifications in CI)
 
 ## Acceptance Criteria
 
@@ -442,14 +414,14 @@ checksum = "sha256:ghi789..."
 - [ ] Index.toml format for config discovery
 - [ ] Offline fallback to cached configs
 
-### Version Lock Files
-- [ ] `jarvy lock` generates jarvy.lock
-- [ ] `jarvy setup --locked` uses lock file
-- [ ] `jarvy lock --update` refreshes lock
-- [ ] `jarvy lock status` shows drift
-- [ ] `jarvy lock verify` checks integrity
-- [ ] Platform-specific lock sections
-- [ ] Checksum verification for security
+### Automatic Tool Updates
+- [ ] `jarvy update` checks for available updates
+- [ ] `jarvy update --all` updates all outdated tools
+- [ ] `jarvy update <tool>` updates specific tool
+- [ ] `jarvy update --dry-run` previews changes
+- [ ] Auto-check on setup with configurable interval
+- [ ] Exclude list for tools to skip
+- [ ] Update notifications shown after setup
 
 ## Technical Approach
 
@@ -462,13 +434,13 @@ src/
     inheritance.rs    # Config inheritance resolution
     registry.rs       # Team config registry
     cache.rs          # Config caching
-  lock/
-    mod.rs            # Lock file management
-    generate.rs       # Lock file generation
-    verify.rs         # Lock verification
+  update/
+    mod.rs            # Update management
+    check.rs          # Update checking logic
+    config.rs         # Auto-update configuration
   commands/
     team.rs           # jarvy team command
-    lock.rs           # jarvy lock command
+    update.rs         # jarvy update command
 ```
 
 ### Inheritance Resolution
@@ -750,42 +722,65 @@ impl ConfigCache {
 }
 ```
 
-### Lock File Generation
+### Update Checking
 
 ```rust
-// src/lock/generate.rs
-use sha2::{Sha256, Digest};
+// src/update/check.rs
+use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 
-pub fn generate_lock(config: &Config) -> Result<LockFile, Error> {
-    let mut lock = LockFile {
-        meta: LockMeta {
-            generated: chrono::Utc::now(),
-            jarvy_version: env!("CARGO_PKG_VERSION").to_string(),
-            platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
-        },
-        tools: HashMap::new(),
-    };
+const UPDATE_CACHE_TTL: Duration = Duration::from_secs(3600); // 1 hour
 
-    for (name, _spec) in &config.tools {
-        let installed = get_installed_version(name)?;
-        let source = get_install_source(name)?;
-
-        lock.tools.insert(name.clone(), LockedTool {
-            version: installed,
-            source,
-            checksum: compute_checksum(name)?,
-        });
-    }
-
-    Ok(lock)
+pub struct UpdateChecker {
+    cache: UpdateCache,
 }
 
-fn compute_checksum(tool: &str) -> Result<String, Error> {
-    let binary_path = which::which(tool)?;
-    let content = fs::read(&binary_path)?;
-    let mut hasher = Sha256::new();
-    hasher.update(&content);
-    Ok(format!("sha256:{:x}", hasher.finalize()))
+#[derive(Debug, Clone)]
+pub struct UpdateInfo {
+    pub tool: String,
+    pub current: String,
+    pub available: String,
+    pub source: String,
+}
+
+impl UpdateChecker {
+    /// Check for updates for all tools in config
+    pub fn check_updates(&self, config: &Config) -> Result<Vec<UpdateInfo>, Error> {
+        let mut updates = Vec::new();
+
+        for (name, _spec) in &config.tools {
+            if let Some(update) = self.check_tool_update(name)? {
+                updates.push(update);
+            }
+        }
+
+        Ok(updates)
+    }
+
+    /// Check if a specific tool has an update available
+    pub fn check_tool_update(&self, tool: &str) -> Result<Option<UpdateInfo>, Error> {
+        // Check cache first
+        if let Some(cached) = self.cache.get(tool) {
+            return Ok(cached);
+        }
+
+        let current = get_installed_version(tool)?;
+        let available = get_latest_version(tool)?;
+
+        let result = if semver_newer(&available, &current) {
+            Some(UpdateInfo {
+                tool: tool.to_string(),
+                current,
+                available,
+                source: get_install_source(tool)?,
+            })
+        } else {
+            None
+        };
+
+        self.cache.set(tool, &result)?;
+        Ok(result)
+    }
 }
 ```
 
@@ -797,18 +792,19 @@ fn compute_checksum(tool: &str) -> Result<String, Error> {
 4. Implement config cache with TTL
 5. Build team config registry with index.toml
 6. Implement `jarvy team` commands
-7. Implement lock file generation
-8. Add lock verification and status
-9. Implement `jarvy lock` commands
-10. Add `--locked` flag to setup
-11. Write unit tests for inheritance
-12. Write integration tests
-13. Update documentation
+7. Create update module structure
+8. Implement update checking logic
+9. Implement `jarvy update` commands
+10. Add auto-update configuration
+11. Add update notifications to setup
+12. Write unit tests for inheritance and updates
+13. Write integration tests
+14. Update documentation
 
 ## Dependencies
 
-- `sha2` - Checksum verification
-- `reqwest` - HTTP client for remote configs (already present)
+- `ureq` - HTTP client for remote configs (already present)
+- `semver` - Version comparison (already present)
 
 ## Effort Estimate
 
@@ -819,9 +815,10 @@ fn compute_checksum(tool: &str) -> Result<String, Error> {
 | Remote config caching | 1 day |
 | Team config registry | 2 days |
 | Team commands | 1 day |
-| Lock file generation | 1.5 days |
-| Lock verification | 1 day |
-| Lock commands | 1 day |
+| Update module | 0.5 days |
+| Update checking | 1.5 days |
+| Update commands | 1 day |
+| Auto-update config | 0.5 days |
 | Testing | 2 days |
 | Documentation | 1 day |
 | **Total** | **13 days** |
@@ -833,19 +830,18 @@ fn compute_checksum(tool: &str) -> Result<String, Error> {
 - `src/team/inheritance.rs`
 - `src/team/registry.rs`
 - `src/team/cache.rs`
-- `src/lock/mod.rs`
-- `src/lock/generate.rs`
-- `src/lock/verify.rs`
+- `src/update/mod.rs`
+- `src/update/check.rs`
+- `src/update/config.rs`
 - `src/commands/team.rs`
-- `src/commands/lock.rs`
+- `src/commands/update.rs`
 - `tests/inheritance_integration.rs`
-- `tests/lock_integration.rs`
+- `tests/update_integration.rs`
 
 ### Modified Files
-- `src/main.rs` - Add team, lock commands
-- `src/config.rs` - Add extends field
-- `Cargo.toml` - Add sha2 dependency
-- `CLAUDE.md` - Document team features
+- `src/main.rs` - Add team, update commands
+- `src/config.rs` - Add extends and update fields
+- `CLAUDE.md` - Document team and update features
 
 ## Success Metrics
 
@@ -853,7 +849,7 @@ fn compute_checksum(tool: &str) -> Result<String, Error> {
 |--------|---------|--------|
 | Config sharing | Manual copy | Inheritance |
 | Team config discovery | None | Registry |
-| Version reproducibility | None | Lock files |
+| Tool update visibility | None | Update checks |
 | Remote config support | None | URL extends |
 
 ## Risks
@@ -864,12 +860,15 @@ fn compute_checksum(tool: &str) -> Result<String, Error> {
 2. **Offline remote configs**: Network issues block setup
    - Mitigation: Aggressive caching, offline fallback
 
-3. **Lock file drift**: Easy to forget to update lock
-   - Mitigation: CI integration, warnings on mismatch
+3. **Update check performance**: Querying package managers can be slow
+   - Mitigation: Cache update check results, background checking
 
 4. **Cache invalidation**: Stale configs cause issues
    - Mitigation: Configurable TTL, manual sync command
 
+5. **Auto-update breaking changes**: Tool updates may break workflows
+   - Mitigation: Auto-update disabled by default, notifications instead
+
 ---
 
-*PRD-024 v1.1 | Team & Enterprise Collaboration | Priority: High*
+*PRD-024 v1.2 | Team & Enterprise Collaboration | Priority: High*

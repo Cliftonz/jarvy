@@ -1,5 +1,7 @@
 # PRD-028: Rollback & Version Management
 
+WILL NOT IMPLEMENT
+
 ## Overview
 
 Add comprehensive version management features including rollback to previous versions, lock files for reproducibility, environment snapshots, version history tracking, and migration path detection.
