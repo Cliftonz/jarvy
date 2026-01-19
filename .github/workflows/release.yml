@@ -17,6 +17,9 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: read
+
 env:
   VERSION: ${{ github.event.inputs.version || github.ref_name }}
   CARGO_TERM_COLOR: always
@@ -25,7 +28,8 @@ jobs:
   build_and_package:
     name: Build & Package
     runs-on: ${{ matrix.platform }}
-    permissions: write-all
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
