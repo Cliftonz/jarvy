@@ -509,8 +509,14 @@ mod tests {
 
     #[test]
     fn test_install_method_from_str() {
-        assert_eq!(InstallMethod::from_str("homebrew"), Some(InstallMethod::Homebrew));
-        assert_eq!(InstallMethod::from_str("brew"), Some(InstallMethod::Homebrew));
+        assert_eq!(
+            InstallMethod::from_str("homebrew"),
+            Some(InstallMethod::Homebrew)
+        );
+        assert_eq!(
+            InstallMethod::from_str("brew"),
+            Some(InstallMethod::Homebrew)
+        );
         assert_eq!(InstallMethod::from_str("CARGO"), Some(InstallMethod::Cargo));
         assert_eq!(InstallMethod::from_str("apt"), Some(InstallMethod::Apt));
         assert_eq!(InstallMethod::from_str("invalid"), None);

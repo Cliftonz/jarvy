@@ -21,7 +21,17 @@ Jarvy is a cross-platform CLI tool that provisions development environments from
 
 ### Core Modules
 
-- **`src/main.rs`** - CLI entry point using clap with derive macros. Commands: `setup`, `bootstrap`, `configure`, `get`, `roles`
+- **`src/main.rs`** - Minimal entry point (~540 lines). Parses CLI args, initializes telemetry, dispatches to command handlers
+- **`src/cli/`** - CLI argument parsing (PRD-037 refactor):
+  - `args.rs` - `Cli` struct, `Commands` enum, `OutputFormat`, parse functions
+  - `subcommands.rs` - Nested enums: `TemplatesSubcommand`, `TelemetryAction`, `ServicesAction`, `TeamAction`, `LockAction`, `ConfigAction`, `UpdateSubcommand`
+- **`src/commands/`** - Command handlers extracted from main.rs:
+  - `setup_cmd.rs` - Setup command (~500 lines, parallel install, hooks, services)
+  - `get.rs`, `tools_cmd.rs`, `env_cmd.rs`, `ci_cmd.rs`, `services_cmd.rs`
+  - `mcp_cmd.rs`, `telemetry_cmd.rs`, `team_cmd.rs`, `lock_cmd.rs`, `config_cmd.rs`
+  - `roles_cmd.rs`, `bootstrap_cmd.rs`, `configure_cmd.rs`
+- **`src/remote.rs`** - Remote config fetching with caching (`fetch_remote_config`, `transform_github_url`)
+- **`src/interactive.rs`** - Interactive menu for users who run `jarvy` without subcommand
 - **`src/config.rs`** - Parses `jarvy.toml` using serde. Supports simple (`git = "2.40"`) and detailed (`git = { version = "2.40", version_manager = true }`) formats
 - **`src/roles/`** - Role-based configurations with inheritance (PRD-033). Key files: `definition.rs` (types), `resolver.rs` (inheritance), `commands.rs` (CLI)
 - **`src/tools/registry.rs`** - Global `OnceLock<RwLock<HashMap>>` registry mapping tool names to handler functions

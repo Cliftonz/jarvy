@@ -35,7 +35,10 @@ pub fn is_first_run() -> bool {
 /// Creates the marker file in the config directory.
 pub fn mark_initialized() -> Result<(), std::io::Error> {
     let marker_path = get_marker_path().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "Could not determine config directory")
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Could not determine config directory",
+        )
     })?;
 
     // Ensure parent directory exists
@@ -244,7 +247,10 @@ pub fn detect_project_type<P: AsRef<Path>>(dir: P) -> DetectedProject {
     }
 
     // Docker detection
-    if dir.join("Dockerfile").exists() || dir.join("docker-compose.yml").exists() || dir.join("docker-compose.yaml").exists() {
+    if dir.join("Dockerfile").exists()
+        || dir.join("docker-compose.yml").exists()
+        || dir.join("docker-compose.yaml").exists()
+    {
         detected.push(ProjectType::Docker);
         if dir.join("Dockerfile").exists() {
             detection_files.push("Dockerfile".to_string());
@@ -255,7 +261,8 @@ pub fn detect_project_type<P: AsRef<Path>>(dir: P) -> DetectedProject {
     }
 
     // Kubernetes detection (look for k8s directory or common manifest patterns)
-    if dir.join("k8s").is_dir() || dir.join("kubernetes").is_dir() || dir.join("manifests").is_dir() {
+    if dir.join("k8s").is_dir() || dir.join("kubernetes").is_dir() || dir.join("manifests").is_dir()
+    {
         detected.push(ProjectType::Kubernetes);
         detection_files.push("k8s/".to_string());
     }
@@ -265,7 +272,11 @@ pub fn detect_project_type<P: AsRef<Path>>(dir: P) -> DetectedProject {
 
     DetectedProject {
         primary,
-        all: if detected.is_empty() { vec![ProjectType::Unknown] } else { detected },
+        all: if detected.is_empty() {
+            vec![ProjectType::Unknown]
+        } else {
+            detected
+        },
         detection_files,
     }
 }
@@ -297,7 +308,11 @@ mod tests {
 
         let detected = detect_project_type(dir.path());
         assert_eq!(detected.primary, ProjectType::NodeJs);
-        assert!(detected.detection_files.contains(&"package.json".to_string()));
+        assert!(
+            detected
+                .detection_files
+                .contains(&"package.json".to_string())
+        );
     }
 
     #[test]

@@ -15,8 +15,8 @@ pub mod release;
 pub mod rollback;
 pub mod signature;
 
-pub use checker::{CheckResult, UpdateChecker, UpdateState, CURRENT_VERSION};
-pub use commands::{run_update_command, show_update_notification_if_available, UpdateAction};
+pub use checker::{CURRENT_VERSION, CheckResult, UpdateChecker, UpdateState};
+pub use commands::{UpdateAction, run_update_command, show_update_notification_if_available};
 pub use config::{Channel, UpdateConfig};
 pub use installer::BinaryInstaller;
 pub use method::{InstallMethod, UpdateError};

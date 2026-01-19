@@ -8,5 +8,5 @@
 pub mod builtin;
 pub mod schema;
 
-pub use builtin::{get_builtin_template, list_builtin_templates, BuiltinTemplate};
+pub use builtin::{BuiltinTemplate, get_builtin_template, list_builtin_templates};
 pub use schema::{Template, TemplateMeta, TemplateTools};

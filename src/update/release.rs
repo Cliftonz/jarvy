@@ -148,7 +148,10 @@ impl ReleaseClient {
         let agent = ureq::Agent::new_with_defaults();
         let response = agent
             .get(&url)
-            .header("User-Agent", &format!("jarvy/{}", env!("CARGO_PKG_VERSION")))
+            .header(
+                "User-Agent",
+                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
+            )
             .header("Accept", "application/vnd.github.v3+json")
             .call()
             .map_err(|e| ReleaseError::NetworkError(e.to_string()))?;
@@ -190,7 +193,10 @@ impl ReleaseClient {
         let agent = ureq::Agent::new_with_defaults();
         let response = agent
             .get(&url)
-            .header("User-Agent", &format!("jarvy/{}", env!("CARGO_PKG_VERSION")))
+            .header(
+                "User-Agent",
+                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
+            )
             .header("Accept", "application/vnd.github.v3+json")
             .call()
             .map_err(|e| ReleaseError::NetworkError(e.to_string()))?;

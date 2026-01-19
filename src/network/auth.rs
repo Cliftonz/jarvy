@@ -25,7 +25,10 @@ pub fn inject_credentials(proxy_url: &str, auth: &ProxyAuth) -> Result<String, S
         let encoded_user = urlencoding::encode(&auth.username);
         let encoded_pass = urlencoding::encode(&password);
 
-        Ok(format!("{}{}:{}@{}", protocol, encoded_user, encoded_pass, rest))
+        Ok(format!(
+            "{}{}:{}@{}",
+            protocol, encoded_user, encoded_pass, rest
+        ))
     } else {
         Err(format!("Invalid proxy URL format: {}", proxy_url))
     }
@@ -75,10 +78,7 @@ impl AuthenticatedProxies {
     /// Create authenticated proxies from NetworkConfig
     pub fn from_config(config: &NetworkConfig) -> Result<Self, String> {
         Ok(Self {
-            http_proxy: get_authenticated_proxy(
-                config.http_proxy.as_ref(),
-                config.auth.as_ref(),
-            )?,
+            http_proxy: get_authenticated_proxy(config.http_proxy.as_ref(), config.auth.as_ref())?,
             https_proxy: get_authenticated_proxy(
                 config.https_proxy.as_ref(),
                 config.auth.as_ref(),

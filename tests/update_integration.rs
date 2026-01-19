@@ -19,16 +19,18 @@ fn test_update_check_command() {
 
     // Should succeed (either up-to-date or update available)
     // Don't check exit code since network might fail
-    result.stderr(predicates::str::is_empty().not().or(predicates::str::is_empty()));
+    result.stderr(
+        predicates::str::is_empty()
+            .not()
+            .or(predicates::str::is_empty()),
+    );
 }
 
 /// Test update config command
 #[test]
 fn test_update_config_command() {
     let mut cmd = Command::cargo_bin("jarvy").unwrap();
-    let result = cmd
-        .args(["update", "config"])
-        .assert();
+    let result = cmd.args(["update", "config"]).assert();
 
     result.success();
     result.stdout(predicates::str::contains("Update Configuration:"));
@@ -40,9 +42,7 @@ fn test_update_config_command() {
 #[test]
 fn test_update_history_command() {
     let mut cmd = Command::cargo_bin("jarvy").unwrap();
-    let result = cmd
-        .args(["update", "history"])
-        .assert();
+    let result = cmd.args(["update", "history"]).assert();
 
     result.success();
     // Should show either history or "No update history available"
@@ -52,9 +52,7 @@ fn test_update_history_command() {
 #[test]
 fn test_update_rollback_no_backup() {
     let mut cmd = Command::cargo_bin("jarvy").unwrap();
-    let result = cmd
-        .args(["update", "--rollback"])
-        .assert();
+    let result = cmd.args(["update", "--rollback"]).assert();
 
     result.success();
     result.stdout(predicates::str::contains("No rollback available"));
@@ -67,8 +65,7 @@ fn test_update_disable_command() {
     let config_path = temp_dir.path().join("config.toml");
 
     let mut cmd = Command::cargo_bin("jarvy").unwrap();
-    cmd
-        .args(["update", "disable"])
+    cmd.args(["update", "disable"])
         .env("HOME", temp_dir.path())
         .assert()
         .success();
@@ -80,8 +77,7 @@ fn test_update_enable_command() {
     let temp_dir = tempfile::TempDir::new().unwrap();
 
     let mut cmd = Command::cargo_bin("jarvy").unwrap();
-    cmd
-        .args(["update", "enable"])
+    cmd.args(["update", "enable"])
         .env("HOME", temp_dir.path())
         .assert()
         .success();

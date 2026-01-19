@@ -3,7 +3,7 @@
 //! Creates a jarvy.toml configuration file through an interactive process
 //! or from a template.
 
-use crate::onboarding::detection::{detect_project_type, ProjectType};
+use crate::onboarding::detection::{ProjectType, detect_project_type};
 use crate::output::{ExitCode, Outputable};
 use crate::tools::spec::iter_tools;
 use inquire::{MultiSelect, Select, Text};
@@ -44,10 +44,14 @@ impl StackCategory {
         match self {
             StackCategory::WebFrontend => vec!["git", "node", "docker", "jq", "ripgrep", "fzf"],
             StackCategory::BackendApi => vec!["git", "docker", "jq", "ripgrep", "httpie", "curl"],
-            StackCategory::FullStack => vec!["git", "node", "docker", "jq", "ripgrep", "httpie", "redis"],
+            StackCategory::FullStack => {
+                vec!["git", "node", "docker", "jq", "ripgrep", "httpie", "redis"]
+            }
             StackCategory::Mobile => vec!["git", "node", "docker", "jq", "ripgrep"],
             StackCategory::DataScience => vec!["git", "python", "docker", "jq", "duckdb"],
-            StackCategory::DevOps => vec!["git", "docker", "kubectl", "terraform", "aws", "jq", "yq"],
+            StackCategory::DevOps => {
+                vec!["git", "docker", "kubectl", "terraform", "aws", "jq", "yq"]
+            }
             StackCategory::Custom => vec!["git"],
         }
     }
@@ -122,7 +126,10 @@ impl Outputable for InitResult {
         let mut output = String::new();
         if self.created {
             if let Some(ref path) = self.output_path {
-                output.push_str(&format!("\n\x1b[32m✓\x1b[0m Created {} with {} tools\n\n", path, self.tool_count));
+                output.push_str(&format!(
+                    "\n\x1b[32m✓\x1b[0m Created {} with {} tools\n\n",
+                    path, self.tool_count
+                ));
             }
             output.push_str("Next steps:\n");
             output.push_str("  1. Review your config: \x1b[36mcat jarvy.toml\x1b[0m\n");
@@ -350,8 +357,14 @@ mod tests {
 
     #[test]
     fn test_stack_category_display() {
-        assert_eq!(StackCategory::WebFrontend.display_name(), "Web Frontend (React, Vue, Angular)");
-        assert_eq!(StackCategory::Custom.display_name(), "Custom (start from scratch)");
+        assert_eq!(
+            StackCategory::WebFrontend.display_name(),
+            "Web Frontend (React, Vue, Angular)"
+        );
+        assert_eq!(
+            StackCategory::Custom.display_name(),
+            "Custom (start from scratch)"
+        );
     }
 
     #[test]

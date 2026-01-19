@@ -115,7 +115,11 @@ mod tests {
         .unwrap();
         assert!(valid);
 
-        let invalid = verify_checksum(&file_path, "0000000000000000000000000000000000000000000000000000000000000000").unwrap();
+        let invalid = verify_checksum(
+            &file_path,
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .unwrap();
         assert!(!invalid);
     }
 

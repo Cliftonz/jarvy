@@ -41,15 +41,20 @@ impl BinaryInstaller {
     /// Install a release via direct binary download
     pub fn install(&self, release: &GitHubRelease) -> Result<InstallResult, UpdateError> {
         // Get current binary path
-        let current_exe = std::env::current_exe()
-            .map_err(|e| UpdateError::InstallationFailed(format!("Cannot find current exe: {}", e)))?;
+        let current_exe = std::env::current_exe().map_err(|e| {
+            UpdateError::InstallationFailed(format!("Cannot find current exe: {}", e))
+        })?;
 
         // Find the appropriate asset for this platform
-        let asset = release
-            .asset_for_platform()
-            .ok_or_else(|| UpdateError::DownloadFailed("No binary for this platform".to_string()))?;
+        let asset = release.asset_for_platform().ok_or_else(|| {
+            UpdateError::DownloadFailed("No binary for this platform".to_string())
+        })?;
 
-        println!("Downloading jarvy v{} for {}...", release.version(), crate::update::release::get_current_target());
+        println!(
+            "Downloading jarvy v{} for {}...",
+            release.version(),
+            crate::update::release::get_current_target()
+        );
 
         // Download the binary archive
         let archive_path = self.download_asset(asset)?;
@@ -104,7 +109,10 @@ impl BinaryInstaller {
         let agent = ureq::Agent::new_with_defaults();
         let response = agent
             .get(&asset.browser_download_url)
-            .header("User-Agent", &format!("jarvy/{}", env!("CARGO_PKG_VERSION")))
+            .header(
+                "User-Agent",
+                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
+            )
             .call()
             .map_err(|e| UpdateError::DownloadFailed(e.to_string()))?;
 
@@ -124,7 +132,10 @@ impl BinaryInstaller {
         let agent = ureq::Agent::new_with_defaults();
         let response = agent
             .get(&asset.browser_download_url)
-            .header("User-Agent", &format!("jarvy/{}", env!("CARGO_PKG_VERSION")))
+            .header(
+                "User-Agent",
+                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
+            )
             .call()
             .map_err(|e| UpdateError::DownloadFailed(e.to_string()))?;
 
@@ -192,9 +203,16 @@ impl BinaryInstaller {
         use std::process::Command;
 
         let status = Command::new("tar")
-            .args(["-xzf", archive.to_string_lossy().as_ref(), "-C", dest.to_string_lossy().as_ref()])
+            .args([
+                "-xzf",
+                archive.to_string_lossy().as_ref(),
+                "-C",
+                dest.to_string_lossy().as_ref(),
+            ])
             .status()
-            .map_err(|e| UpdateError::InstallationFailed(format!("tar extraction failed: {}", e)))?;
+            .map_err(|e| {
+                UpdateError::InstallationFailed(format!("tar extraction failed: {}", e))
+            })?;
 
         if !status.success() {
             return Err(UpdateError::InstallationFailed(
@@ -207,12 +225,13 @@ impl BinaryInstaller {
 
     /// Extract zip archive
     fn extract_zip(&self, archive: &Path, dest: &Path) -> Result<(), UpdateError> {
-        let file = File::open(archive)
-            .map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
+        let file =
+            File::open(archive).map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
 
-        archive.extract(dest)
+        archive
+            .extract(dest)
             .map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
 
         Ok(())
@@ -328,8 +347,7 @@ pub struct InstallResult {
 
 /// Calculate SHA256 checksum of a file
 fn calculate_file_checksum(path: &Path) -> Result<String, UpdateError> {
-    let mut file = File::open(path)
-        .map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
+    let mut file = File::open(path).map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
 
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 8192];

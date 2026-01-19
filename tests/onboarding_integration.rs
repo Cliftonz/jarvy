@@ -175,9 +175,10 @@ fn quickstart_non_interactive_without_tty_cancels() {
 
     // In non-interactive mode without a TTY, quickstart gets cancelled
     // when it tries to prompt for user input
-    cmd.assert()
-        .stdout(predicate::str::contains("Quickstart cancelled")
-            .or(predicate::str::contains("Welcome to Jarvy")));
+    cmd.assert().stdout(
+        predicate::str::contains("Quickstart cancelled")
+            .or(predicate::str::contains("Welcome to Jarvy")),
+    );
 }
 
 #[test]

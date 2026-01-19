@@ -2,7 +2,7 @@
 //!
 //! Provides commands for checking, installing, and managing updates.
 
-use crate::update::checker::{CheckResult, UpdateChecker, CURRENT_VERSION};
+use crate::update::checker::{CURRENT_VERSION, CheckResult, UpdateChecker};
 use crate::update::config::{Channel, UpdateConfig, is_interactive};
 use crate::update::installer::BinaryInstaller;
 use crate::update::method::{InstallMethod, UpdateError};
@@ -42,7 +42,12 @@ pub enum UpdateAction {
 pub fn run_update_command(action: UpdateAction) -> i32 {
     let result = match action {
         UpdateAction::Check { channel } => run_check(channel),
-        UpdateAction::Install { version, channel, method, rollback } => {
+        UpdateAction::Install {
+            version,
+            channel,
+            method,
+            rollback,
+        } => {
             if rollback {
                 run_rollback()
             } else {
@@ -85,7 +90,12 @@ fn run_check(channel_override: Option<Channel>) -> Result<(), UpdateError> {
             println!("\nJarvy is up to date!");
             Ok(())
         }
-        Ok(CheckResult::UpdateAvailable { current, latest, changelog, release_url }) => {
+        Ok(CheckResult::UpdateAvailable {
+            current,
+            latest,
+            changelog,
+            release_url,
+        }) => {
             println!("\nUpdate available!");
             println!("  Current: {}", current);
             println!("  Latest:  {}", latest);
@@ -172,8 +182,8 @@ fn run_install(
             .fetch_by_tag(&format!("v{}", target_version))
             .map_err(|e| UpdateError::DownloadFailed(e.to_string()))?;
 
-        let installer = BinaryInstaller::new()
-            .map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
+        let installer =
+            BinaryInstaller::new().map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
 
         installer.install(&release)?;
     }
@@ -193,7 +203,10 @@ fn run_rollback() -> Result<(), UpdateError> {
     }
 
     let info = RollbackManager::info().unwrap();
-    println!("Rolling back from {} to {}...", info.new_version, info.previous_version);
+    println!(
+        "Rolling back from {} to {}...",
+        info.new_version, info.previous_version
+    );
 
     let result = RollbackManager::rollback()?;
 

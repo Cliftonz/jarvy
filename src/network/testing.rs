@@ -62,9 +62,9 @@ fn test_single_proxy(proxy_url: &str, proxy_type: &str) -> ProxyTestResult {
             // Try to connect to the proxy host
             let start = std::time::Instant::now();
             match std::net::TcpStream::connect_timeout(
-                &format!("{}:{}", host, port).parse().unwrap_or_else(|_| {
-                    std::net::SocketAddr::from(([127, 0, 0, 1], port))
-                }),
+                &format!("{}:{}", host, port)
+                    .parse()
+                    .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], port))),
                 Duration::from_secs(5),
             ) {
                 Ok(_) => ProxyTestResult {

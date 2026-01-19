@@ -53,11 +53,7 @@ pub fn generate_env_vars(
 }
 
 /// Apply proxy environment variables to a Command
-pub fn apply_to_command(
-    cmd: &mut Command,
-    proxy: &ResolvedProxy,
-    tls: Option<&TlsConfig>,
-) {
+pub fn apply_to_command(cmd: &mut Command, proxy: &ResolvedProxy, tls: Option<&TlsConfig>) {
     let vars = generate_env_vars(proxy, tls);
     for (key, value) in vars {
         cmd.env(key, value);
@@ -65,11 +61,7 @@ pub fn apply_to_command(
 }
 
 /// Apply network config to a Command for a specific tool
-pub fn apply_network_config(
-    cmd: &mut Command,
-    config: &NetworkConfig,
-    tool_name: &str,
-) {
+pub fn apply_network_config(cmd: &mut Command, config: &NetworkConfig, tool_name: &str) {
     use super::resolve::ProxyResolver;
 
     let resolver = ProxyResolver::new(Some(config));
@@ -79,10 +71,7 @@ pub fn apply_network_config(
 }
 
 /// Generate a shell script snippet that exports proxy variables
-pub fn generate_shell_exports(
-    proxy: &ResolvedProxy,
-    tls: Option<&TlsConfig>,
-) -> String {
+pub fn generate_shell_exports(proxy: &ResolvedProxy, tls: Option<&TlsConfig>) -> String {
     let vars = generate_env_vars(proxy, tls);
     let mut lines = Vec::new();
 
@@ -110,8 +99,8 @@ pub fn clear_proxy_env(cmd: &mut Command) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::resolve::ProxySource;
+    use super::*;
 
     #[test]
     fn test_generate_env_vars_basic() {
@@ -125,9 +114,18 @@ mod tests {
 
         let vars = generate_env_vars(&proxy, None);
 
-        assert_eq!(vars.get("HTTP_PROXY"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(vars.get("http_proxy"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(vars.get("HTTPS_PROXY"), Some(&"https://proxy:8443".to_string()));
+        assert_eq!(
+            vars.get("HTTP_PROXY"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            vars.get("http_proxy"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            vars.get("HTTPS_PROXY"),
+            Some(&"https://proxy:8443".to_string())
+        );
         assert_eq!(vars.get("NO_PROXY"), Some(&"localhost".to_string()));
     }
 
@@ -141,10 +139,22 @@ mod tests {
 
         let vars = generate_env_vars(&proxy, Some(&tls));
 
-        assert_eq!(vars.get("CURL_CA_BUNDLE"), Some(&"/etc/ssl/certs/ca.crt".to_string()));
-        assert_eq!(vars.get("SSL_CERT_FILE"), Some(&"/etc/ssl/certs/ca.crt".to_string()));
-        assert_eq!(vars.get("NODE_EXTRA_CA_CERTS"), Some(&"/etc/ssl/certs/ca.crt".to_string()));
-        assert_eq!(vars.get("GIT_SSL_CAINFO"), Some(&"/etc/ssl/certs/ca.crt".to_string()));
+        assert_eq!(
+            vars.get("CURL_CA_BUNDLE"),
+            Some(&"/etc/ssl/certs/ca.crt".to_string())
+        );
+        assert_eq!(
+            vars.get("SSL_CERT_FILE"),
+            Some(&"/etc/ssl/certs/ca.crt".to_string())
+        );
+        assert_eq!(
+            vars.get("NODE_EXTRA_CA_CERTS"),
+            Some(&"/etc/ssl/certs/ca.crt".to_string())
+        );
+        assert_eq!(
+            vars.get("GIT_SSL_CAINFO"),
+            Some(&"/etc/ssl/certs/ca.crt".to_string())
+        );
     }
 
     #[test]

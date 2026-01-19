@@ -157,8 +157,8 @@ pub fn needs_explicit_config(tool: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::resolve::ProxySource;
+    use super::*;
 
     fn make_proxy() -> ResolvedProxy {
         ResolvedProxy {
@@ -185,7 +185,11 @@ mod tests {
         let commands = configure_npm_proxy(&proxy);
 
         assert!(commands.iter().any(|c| c.contains("npm config set proxy")));
-        assert!(commands.iter().any(|c| c.contains("npm config set https-proxy")));
+        assert!(
+            commands
+                .iter()
+                .any(|c| c.contains("npm config set https-proxy"))
+        );
     }
 
     #[test]

@@ -72,10 +72,7 @@ mod tests {
 
     #[test]
     fn test_no_proxy_array() {
-        let no_proxy = NoProxy::Array(vec![
-            "localhost".to_string(),
-            "127.0.0.1".to_string(),
-        ]);
+        let no_proxy = NoProxy::Array(vec!["localhost".to_string(), "127.0.0.1".to_string()]);
         let hosts = no_proxy.to_hosts();
         assert_eq!(hosts.len(), 2);
     }

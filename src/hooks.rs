@@ -263,7 +263,12 @@ impl Hook {
         } else {
             let code = status.code().unwrap_or(-1);
             if code == -1 {
-                telemetry::hook_failed(&self.description, &hook_type, "terminated by signal", "terminated");
+                telemetry::hook_failed(
+                    &self.description,
+                    &hook_type,
+                    "terminated by signal",
+                    "terminated",
+                );
                 Err(HookError::Terminated)
             } else {
                 telemetry::hook_failed(&self.description, &hook_type, &stderr_output, "exit_code");

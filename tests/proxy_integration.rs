@@ -95,9 +95,7 @@ password = "PROXY_PASSWORD"
 
     let config: toml::Value = toml::from_str(toml_content).expect("Failed to parse TOML");
 
-    let auth = config
-        .get("network")
-        .and_then(|n| n.get("auth"));
+    let auth = config.get("network").and_then(|n| n.get("auth"));
     assert!(auth.is_some());
     assert_eq!(
         auth.unwrap().get("username").and_then(|v| v.as_str()),
@@ -139,9 +137,7 @@ no_proxy_all = true
 
     let config: toml::Value = toml::from_str(toml_content).expect("Failed to parse TOML");
 
-    let overrides = config
-        .get("network")
-        .and_then(|n| n.get("overrides"));
+    let overrides = config.get("network").and_then(|n| n.get("overrides"));
     assert!(overrides.is_some());
 
     let git_override = overrides.unwrap().get("git");

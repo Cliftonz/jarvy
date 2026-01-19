@@ -52,7 +52,9 @@ impl Channel {
                     && !version.contains("-nightly")
             }
             Channel::Beta => {
-                version.contains("-beta") || version.contains("-rc") || self.matches_version_stable(version)
+                version.contains("-beta")
+                    || version.contains("-rc")
+                    || self.matches_version_stable(version)
             }
             Channel::Nightly => true, // Nightly accepts all versions
         }
@@ -89,11 +91,7 @@ pub enum AutoInstallPolicy {
 
 impl AutoInstallPolicy {
     /// Check if auto-install should proceed for given version change
-    pub fn should_auto_install(
-        &self,
-        current: &semver::Version,
-        new: &semver::Version,
-    ) -> bool {
+    pub fn should_auto_install(&self, current: &semver::Version, new: &semver::Version) -> bool {
         match self {
             AutoInstallPolicy::Never => false,
             AutoInstallPolicy::PatchOnly => {
@@ -235,7 +233,10 @@ impl UpdateConfig {
 
     /// Check if a forced check is requested via environment
     pub fn force_check_requested() -> bool {
-        matches!(env::var("JARVY_UPDATE_CHECK").as_deref(), Ok("1" | "true" | "yes"))
+        matches!(
+            env::var("JARVY_UPDATE_CHECK").as_deref(),
+            Ok("1" | "true" | "yes")
+        )
     }
 
     /// Save configuration to ~/.jarvy/config.toml

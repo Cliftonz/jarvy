@@ -82,9 +82,7 @@ impl<'a> ProxyResolver<'a> {
             .or_else(|_| env::var("ALL_PROXY"))
             .or_else(|_| env::var("all_proxy"))
             .ok();
-        let no_proxy = env::var("NO_PROXY")
-            .or_else(|_| env::var("no_proxy"))
-            .ok();
+        let no_proxy = env::var("NO_PROXY").or_else(|_| env::var("no_proxy")).ok();
 
         if http.is_some() || https.is_some() || socks.is_some() {
             Some(ResolvedProxy {
@@ -213,8 +211,14 @@ mod tests {
         let resolver = ProxyResolver::new(Some(&config));
         let resolved = resolver.resolve_for_tool("git");
 
-        assert_eq!(resolved.https_proxy, Some("http://git-proxy:8888".to_string()));
-        assert_eq!(resolved.source, ProxySource::ToolOverride("git".to_string()));
+        assert_eq!(
+            resolved.https_proxy,
+            Some("http://git-proxy:8888".to_string())
+        );
+        assert_eq!(
+            resolved.source,
+            ProxySource::ToolOverride("git".to_string())
+        );
     }
 
     #[test]
@@ -230,7 +234,10 @@ mod tests {
         let resolved = resolver.resolve_for_tool("git");
 
         assert!(!resolved.has_proxy());
-        assert_eq!(resolved.source, ProxySource::ToolOverride("git".to_string()));
+        assert_eq!(
+            resolved.source,
+            ProxySource::ToolOverride("git".to_string())
+        );
     }
 
     #[test]
@@ -244,9 +251,21 @@ mod tests {
         };
 
         let vars = proxy.to_env_vars();
-        assert_eq!(vars.get("HTTP_PROXY"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(vars.get("http_proxy"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(vars.get("HTTPS_PROXY"), Some(&"https://proxy:8443".to_string()));
-        assert_eq!(vars.get("NO_PROXY"), Some(&"localhost,127.0.0.1".to_string()));
+        assert_eq!(
+            vars.get("HTTP_PROXY"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            vars.get("http_proxy"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            vars.get("HTTPS_PROXY"),
+            Some(&"https://proxy:8443".to_string())
+        );
+        assert_eq!(
+            vars.get("NO_PROXY"),
+            Some(&"localhost,127.0.0.1".to_string())
+        );
     }
 }

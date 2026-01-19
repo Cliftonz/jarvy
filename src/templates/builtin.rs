@@ -383,10 +383,7 @@ pub fn templates_by_category(category: &str) -> Vec<&'static BuiltinTemplate> {
 
 /// Get all unique categories
 pub fn all_categories() -> Vec<&'static str> {
-    let mut categories: Vec<&str> = BUILTIN_TEMPLATES
-        .iter()
-        .map(|t| t.category)
-        .collect();
+    let mut categories: Vec<&str> = BUILTIN_TEMPLATES.iter().map(|t| t.category).collect();
     categories.sort();
     categories.dedup();
     categories

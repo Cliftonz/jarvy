@@ -3,7 +3,10 @@
 //! Browse and use pre-built configuration templates.
 
 use crate::output::{ExitCode, Outputable};
-use crate::templates::builtin::{all_categories, get_builtin_template, list_builtin_templates, templates_by_category, BuiltinTemplate};
+use crate::templates::builtin::{
+    BuiltinTemplate, all_categories, get_builtin_template, list_builtin_templates,
+    templates_by_category,
+};
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
@@ -57,7 +60,8 @@ impl Outputable for TemplatesListResult {
         // Group by category
         let categories = all_categories();
         for category in categories {
-            let templates: Vec<_> = self.templates
+            let templates: Vec<_> = self
+                .templates
                 .iter()
                 .filter(|t| t.category == category)
                 .collect();
@@ -112,7 +116,10 @@ pub struct ToolEntry {
 impl Outputable for TemplateShowResult {
     fn to_human(&self) -> String {
         if !self.found {
-            return format!("\n\x1b[31mError:\x1b[0m Template '{}' not found.\n\nRun \x1b[36mjarvy templates\x1b[0m to see available templates.\n", self.name);
+            return format!(
+                "\n\x1b[31mError:\x1b[0m Template '{}' not found.\n\nRun \x1b[36mjarvy templates\x1b[0m to see available templates.\n",
+                self.name
+            );
         }
 
         let mut output = String::new();
@@ -121,7 +128,10 @@ impl Outputable for TemplateShowResult {
         output.push_str(&"=".repeat(self.name.len() + 11));
         output.push_str("\n\n");
 
-        output.push_str(&format!("\x1b[33mDescription:\x1b[0m {}\n\n", self.description));
+        output.push_str(&format!(
+            "\x1b[33mDescription:\x1b[0m {}\n\n",
+            self.description
+        ));
         output.push_str(&format!("\x1b[33mCategory:\x1b[0m {}\n\n", self.category));
 
         output.push_str("\x1b[33mTools included:\x1b[0m\n");
@@ -132,8 +142,14 @@ impl Outputable for TemplateShowResult {
             ));
         }
 
-        output.push_str(&format!("\n\x1b[33mTotal:\x1b[0m {} tools\n\n", self.tool_count));
-        output.push_str(&format!("Use this template:\n  \x1b[36mjarvy templates use {}\x1b[0m\n", self.name));
+        output.push_str(&format!(
+            "\n\x1b[33mTotal:\x1b[0m {} tools\n\n",
+            self.tool_count
+        ));
+        output.push_str(&format!(
+            "Use this template:\n  \x1b[36mjarvy templates use {}\x1b[0m\n",
+            self.name
+        ));
 
         output
     }
@@ -173,10 +189,16 @@ impl Outputable for TemplateUseResult {
 
         let mut output = String::new();
 
-        output.push_str(&format!("\nUsing template: \x1b[36m{}\x1b[0m\n\n", self.template_name));
+        output.push_str(&format!(
+            "\nUsing template: \x1b[36m{}\x1b[0m\n\n",
+            self.template_name
+        ));
 
         if let Some(ref path) = self.output_path {
-            output.push_str(&format!("\x1b[32m✓\x1b[0m Created {} from '{}' template ({} tools)\n\n", path, self.template_name, self.tool_count));
+            output.push_str(&format!(
+                "\x1b[32m✓\x1b[0m Created {} from '{}' template ({} tools)\n\n",
+                path, self.template_name, self.tool_count
+            ));
         }
 
         output.push_str("Review and customize:\n");
@@ -221,7 +243,8 @@ pub fn list_templates() -> TemplatesListResult {
 pub fn show_template(name: &str) -> TemplateShowResult {
     match get_builtin_template(name) {
         Some(template) => {
-            let tools: Vec<ToolEntry> = template.tools
+            let tools: Vec<ToolEntry> = template
+                .tools
                 .iter()
                 .map(|(name, version)| ToolEntry {
                     name: name.to_string(),

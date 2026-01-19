@@ -69,37 +69,117 @@ fn print_colored_banner<W: Write>(w: &mut W) {
     let reset = "\x1b[0m";
 
     writeln!(w).ok();
-    writeln!(w, "{cyan}╭──────────────────────────────────────────────────────────╮{reset}").ok();
+    writeln!(
+        w,
+        "{cyan}╭──────────────────────────────────────────────────────────╮{reset}"
+    )
+    .ok();
     writeln!(w, "{cyan}│{reset} {bold}Welcome to Jarvy!{reset}                                        {cyan}│{reset}").ok();
-    writeln!(w, "{cyan}│{reset}                                                          {cyan}│{reset}").ok();
-    writeln!(w, "{cyan}│{reset} Looks like this is your first time using Jarvy.         {cyan}│{reset}").ok();
-    writeln!(w, "{cyan}│{reset}                                                          {cyan}│{reset}").ok();
+    writeln!(
+        w,
+        "{cyan}│{reset}                                                          {cyan}│{reset}"
+    )
+    .ok();
+    writeln!(
+        w,
+        "{cyan}│{reset} Looks like this is your first time using Jarvy.         {cyan}│{reset}"
+    )
+    .ok();
+    writeln!(
+        w,
+        "{cyan}│{reset}                                                          {cyan}│{reset}"
+    )
+    .ok();
     writeln!(w, "{cyan}│{reset} {yellow}Quick options:{reset}                                           {cyan}│{reset}").ok();
     writeln!(w, "{cyan}│{reset}   {green}jarvy quickstart{reset}  - Guided setup (recommended)        {cyan}│{reset}").ok();
     writeln!(w, "{cyan}│{reset}   {green}jarvy init{reset}        - Create a config file              {cyan}│{reset}").ok();
     writeln!(w, "{cyan}│{reset}   {green}jarvy templates{reset}   - Browse starter templates          {cyan}│{reset}").ok();
-    writeln!(w, "{cyan}│{reset}                                                          {cyan}│{reset}").ok();
-    writeln!(w, "{cyan}│{reset} To skip this message:                                    {cyan}│{reset}").ok();
+    writeln!(
+        w,
+        "{cyan}│{reset}                                                          {cyan}│{reset}"
+    )
+    .ok();
+    writeln!(
+        w,
+        "{cyan}│{reset} To skip this message:                                    {cyan}│{reset}"
+    )
+    .ok();
     writeln!(w, "{cyan}│{reset}   {green}jarvy config set show_welcome false{reset}                   {cyan}│{reset}").ok();
-    writeln!(w, "{cyan}╰──────────────────────────────────────────────────────────╯{reset}").ok();
+    writeln!(
+        w,
+        "{cyan}╰──────────────────────────────────────────────────────────╯{reset}"
+    )
+    .ok();
     writeln!(w).ok();
 }
 
 fn print_plain_banner<W: Write>(w: &mut W) {
     writeln!(w).ok();
-    writeln!(w, "╭──────────────────────────────────────────────────────────╮").ok();
-    writeln!(w, "│ Welcome to Jarvy!                                        │").ok();
-    writeln!(w, "│                                                          │").ok();
-    writeln!(w, "│ Looks like this is your first time using Jarvy.         │").ok();
-    writeln!(w, "│                                                          │").ok();
-    writeln!(w, "│ Quick options:                                           │").ok();
-    writeln!(w, "│   jarvy quickstart  - Guided setup (recommended)        │").ok();
-    writeln!(w, "│   jarvy init        - Create a config file              │").ok();
-    writeln!(w, "│   jarvy templates   - Browse starter templates          │").ok();
-    writeln!(w, "│                                                          │").ok();
-    writeln!(w, "│ To skip this message:                                    │").ok();
-    writeln!(w, "│   jarvy config set show_welcome false                   │").ok();
-    writeln!(w, "╰──────────────────────────────────────────────────────────╯").ok();
+    writeln!(
+        w,
+        "╭──────────────────────────────────────────────────────────╮"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│ Welcome to Jarvy!                                        │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│                                                          │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│ Looks like this is your first time using Jarvy.         │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│                                                          │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│ Quick options:                                           │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│   jarvy quickstart  - Guided setup (recommended)        │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│   jarvy init        - Create a config file              │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│   jarvy templates   - Browse starter templates          │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│                                                          │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│ To skip this message:                                    │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "│   jarvy config set show_welcome false                   │"
+    )
+    .ok();
+    writeln!(
+        w,
+        "╰──────────────────────────────────────────────────────────╯"
+    )
+    .ok();
     writeln!(w).ok();
 }
 

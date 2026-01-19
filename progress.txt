@@ -41,6 +41,7 @@
 | PRD-019 | Corporate Proxy Support | 2026-01-18 | `[network]` config section, HTTP/HTTPS/SOCKS proxies, CA bundles, per-tool overrides |
 | PRD-023 | User Onboarding & Education | 2026-01-18 | `jarvy init`, `jarvy quickstart`, `jarvy templates`, first-run detection, 20 built-in templates |
 | PRD-035 | Self-Updating Functionality | 2026-01-19 | `jarvy update`, multi-method detection (Homebrew/Cargo/apt/etc), rollback support, CI auto-disable |
+| PRD-037 | Main.rs Code Maintainability Refactor | 2026-01-19 | main.rs reduced 83% (3175→542 lines), CLI extracted to `src/cli/`, commands to `src/commands/` |
 
 ---
 
@@ -412,6 +413,58 @@ show_notifications = true
 - Body reading: Use `response.into_body().as_reader()` not `.into_reader()`
 - JSON parsing: Use `body.read_json()` for parsing response bodies
 - Binary replacement: `self_update` crate for atomic binary updates
+
+### PRD-037 Main.rs Code Maintainability Refactor (Completed 2026-01-19)
+**Goal**: Reduce main.rs from 3175 lines to maintainable modules
+
+**Files Created:**
+- `src/cli/mod.rs` - CLI module structure
+- `src/cli/args.rs` - Cli struct, Commands enum, OutputFormat, parse functions
+- `src/cli/subcommands.rs` - TemplatesSubcommand, TelemetryAction, ServicesAction, TeamAction, LockAction, ConfigAction, UpdateSubcommand
+- `src/remote.rs` - Remote config fetching with caching (fetch_remote_config, transform_github_url)
+- `src/interactive.rs` - Interactive menu (user_select, print_logo)
+- `src/commands/get.rs` - Get command handler
+- `src/commands/tools_cmd.rs` - Tools command handler
+- `src/commands/env_cmd.rs` - Env command handler
+- `src/commands/ci_cmd.rs` - CI commands (run_ci_config, run_ci_info)
+- `src/commands/services_cmd.rs` - Services command
+- `src/commands/mcp_cmd.rs` - MCP server command
+- `src/commands/telemetry_cmd.rs` - Telemetry commands
+- `src/commands/team_cmd.rs` - Team commands
+- `src/commands/lock_cmd.rs` - Lock commands
+- `src/commands/config_cmd.rs` - Config commands
+- `src/commands/roles_cmd.rs` - Roles commands
+- `src/commands/bootstrap_cmd.rs` - Bootstrap command
+- `src/commands/configure_cmd.rs` - Configure command
+- `src/commands/setup_cmd.rs` - Setup command (~500 lines, largest handler)
+
+**Results:**
+- main.rs reduced from 3175 to 542 lines (83% reduction)
+- CLI definitions cleanly separated in `src/cli/`
+- All command handlers extracted to `src/commands/`
+- Utility modules (remote.rs, interactive.rs) standalone
+- Code compiles and passes cargo check
+
+**Module Structure:**
+```
+src/
+├── main.rs (542 lines - entry point, dispatch only)
+├── cli/
+│   ├── mod.rs (re-exports)
+│   ├── args.rs (Cli struct, Commands enum)
+│   └── subcommands.rs (nested enums)
+├── commands/
+│   ├── mod.rs (re-exports all handlers)
+│   ├── setup_cmd.rs (largest - ~500 lines)
+│   ├── get.rs, tools_cmd.rs, env_cmd.rs
+│   ├── ci_cmd.rs, services_cmd.rs, mcp_cmd.rs
+│   ├── telemetry_cmd.rs, team_cmd.rs
+│   ├── lock_cmd.rs, config_cmd.rs
+│   ├── roles_cmd.rs, bootstrap_cmd.rs
+│   └── configure_cmd.rs
+├── remote.rs (remote config fetching)
+└── interactive.rs (interactive menu)
+```
 
 ### Future Enhancements
 - `jarvy search --category` (category filtering)

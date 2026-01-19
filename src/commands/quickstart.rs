@@ -5,7 +5,7 @@
 use crate::onboarding::detection::detect_project_type;
 use crate::output::{ExitCode, Outputable};
 use crate::templates::builtin::list_builtin_templates;
-use crate::tools::common::{current_os, Os};
+use crate::tools::common::{Os, current_os};
 use inquire::{Confirm, Select};
 use serde::Serialize;
 use std::io::{self, IsTerminal};
@@ -235,8 +235,12 @@ fn print_welcome_banner() {
 
     println!();
     println!("{cyan}╔═══════════════════════════════════════════════════════════╗{reset}");
-    println!("{cyan}║{reset}                    {bold}Welcome to Jarvy!{reset}                       {cyan}║{reset}");
-    println!("{cyan}║{reset}         Fast, cross-platform developer tool setup          {cyan}║{reset}");
+    println!(
+        "{cyan}║{reset}                    {bold}Welcome to Jarvy!{reset}                       {cyan}║{reset}"
+    );
+    println!(
+        "{cyan}║{reset}         Fast, cross-platform developer tool setup          {cyan}║{reset}"
+    );
     println!("{cyan}╚═══════════════════════════════════════════════════════════╝{reset}");
     println!();
     println!("Jarvy helps you install and manage developer tools consistently");
@@ -354,7 +358,10 @@ fn print_system_check(check: &SystemCheck) {
     if check.os_supported {
         println!("{green}✓{reset} Operating System: {} (supported)", check.os);
     } else {
-        println!("{yellow}!{reset} Operating System: {} (not supported)", check.os);
+        println!(
+            "{yellow}!{reset} Operating System: {} (not supported)",
+            check.os
+        );
     }
 
     // Package Manager

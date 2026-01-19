@@ -35,8 +35,9 @@ impl RollbackInfo {
 
     /// Save rollback info to disk
     pub fn save(&self) -> std::io::Result<()> {
-        let path = Self::path()
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "No home directory"))?;
+        let path = Self::path().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No home directory")
+        })?;
 
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -77,8 +78,9 @@ impl RollbackManager {
                 .as_secs(),
         };
 
-        info.save()
-            .map_err(|e| UpdateError::RollbackFailed(format!("Cannot save rollback info: {}", e)))?;
+        info.save().map_err(|e| {
+            UpdateError::RollbackFailed(format!("Cannot save rollback info: {}", e))
+        })?;
 
         Ok(())
     }

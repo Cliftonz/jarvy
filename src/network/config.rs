@@ -90,17 +90,17 @@ impl PasswordSource {
     pub fn resolve(&self) -> Result<String, String> {
         match self {
             PasswordSource::Plain(p) => {
-                eprintln!("Warning: Using plain text proxy password. Consider using env or file source.");
+                eprintln!(
+                    "Warning: Using plain text proxy password. Consider using env or file source."
+                );
                 Ok(p.clone())
             }
             PasswordSource::Env(var) => {
                 std::env::var(var).map_err(|_| format!("Environment variable {} not set", var))
             }
-            PasswordSource::File(path) => {
-                std::fs::read_to_string(path)
-                    .map(|s| s.trim().to_string())
-                    .map_err(|e| format!("Failed to read password file {}: {}", path, e))
-            }
+            PasswordSource::File(path) => std::fs::read_to_string(path)
+                .map(|s| s.trim().to_string())
+                .map_err(|e| format!("Failed to read password file {}: {}", path, e)),
             PasswordSource::Prompt => {
                 Err("Interactive password prompt not available in this context".to_string())
             }
@@ -143,9 +143,7 @@ pub struct NetworkOverride {
 impl NetworkConfig {
     /// Check if any proxy is configured
     pub fn has_proxy(&self) -> bool {
-        self.http_proxy.is_some()
-            || self.https_proxy.is_some()
-            || self.socks_proxy.is_some()
+        self.http_proxy.is_some() || self.https_proxy.is_some() || self.socks_proxy.is_some()
     }
 
     /// Get the effective proxy URL for HTTP requests
@@ -217,7 +215,13 @@ mod tests {
         config.https_proxy = Some("https://proxy:8080".to_string());
 
         // HTTP falls back to HTTPS proxy
-        assert_eq!(config.effective_http_proxy(), Some(&"https://proxy:8080".to_string()));
-        assert_eq!(config.effective_https_proxy(), Some(&"https://proxy:8080".to_string()));
+        assert_eq!(
+            config.effective_http_proxy(),
+            Some(&"https://proxy:8080".to_string())
+        );
+        assert_eq!(
+            config.effective_https_proxy(),
+            Some(&"https://proxy:8080".to_string())
+        );
     }
 }

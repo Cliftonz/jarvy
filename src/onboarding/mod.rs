@@ -9,6 +9,6 @@ pub mod detection;
 pub mod welcome;
 
 pub use detection::{
-    is_first_run, mark_initialized, detect_project_type, ProjectType, DetectedProject,
+    DetectedProject, ProjectType, detect_project_type, is_first_run, mark_initialized,
 };
-pub use welcome::{show_welcome_banner, WelcomeBannerConfig};
+pub use welcome::{WelcomeBannerConfig, show_welcome_banner};
