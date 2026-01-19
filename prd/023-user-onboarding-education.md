@@ -29,9 +29,8 @@ Users who discover Jarvy need a smooth path from "what is this?" to "I'm using t
 
 1. **`jarvy init`**: Interactive project initialization wizard
 2. **`jarvy quickstart`**: Guided first-run experience
-3. **`jarvy explain <concept>`**: Inline help for concepts
-4. **`jarvy templates`**: Browse and use stack templates
-5. **First-run detection**: Automatic guidance for new users
+3. **`jarvy templates`**: Browse and use stack templates
+4. **First-run detection**: Automatic guidance for new users
 
 ### Non-Functional Requirements
 
@@ -166,7 +165,6 @@ jarvy quickstart
 #   jarvy --help    - See all commands
 #
 # Documentation: https://jarvy.dev/docs
-# Get help: jarvy explain <topic>
 ```
 
 **Quickstart features:**
@@ -176,75 +174,7 @@ jarvy quickstart
 - Optional immediate setup
 - Next steps and resources
 
-### 3. `jarvy explain <concept>`
-
-Inline help system for Jarvy concepts and features.
-
-```bash
-# Explain a concept
-jarvy explain hooks
-
-# Output:
-# Hooks in Jarvy
-# ==============
-#
-# Hooks are shell commands that run after a tool is installed.
-# They're useful for:
-#   • Configuring shell integrations (nvm, starship)
-#   • Setting up aliases or environment variables
-#   • Running initial configuration
-#
-# Example in jarvy.toml:
-#
-#   [hooks.nvm]
-#   script = '''
-#   export NVM_DIR="$HOME/.nvm"
-#   [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-#   '''
-#
-# Default hooks:
-#   Some tools have built-in hooks that run automatically.
-#   List them with: jarvy tools --default-hooks
-#
-# Learn more: https://jarvy.dev/docs/hooks
-
-# List all topics
-jarvy explain --list
-
-# Output:
-# Available Topics
-# ================
-#
-# Configuration:
-#   jarvy.toml    - Config file format and options
-#   versions      - Version specification syntax
-#   hooks         - Post-install hook scripts
-#   services      - Background service management
-#
-# Commands:
-#   setup         - Installing tools
-#   diff          - Preview changes
-#
-# Concepts:
-#   tools         - How tools are defined
-#   platforms     - Cross-platform support
-#   caching       - How Jarvy caches data
-
-# Explain with examples
-jarvy explain versions --examples
-
-# Quick reference
-jarvy explain jarvy.toml --quick
-```
-
-**Explain features:**
-- Concept definitions with examples
-- Links to full documentation
-- Code snippets for common patterns
-- Cross-references to related topics
-- Search within explain topics
-
-### 4. `jarvy templates`
+### 3. `jarvy templates`
 
 Browse and use pre-built configuration templates.
 
@@ -353,7 +283,7 @@ jarvy templates use react --setup
 - Version-pinned for stability
 - Community-contributed templates (future)
 
-### 5. First-Run Detection
+### 4. First-Run Detection
 
 Automatic guidance for new users.
 
@@ -762,14 +692,6 @@ jarvy setup
 - [ ] Completes in under 3 minutes
 - [ ] Works without network (except for setup)
 
-### `jarvy explain`
-- [ ] Covers all major concepts (hooks, versions, config, etc.)
-- [ ] Provides clear examples in each explanation
-- [ ] Links to full documentation
-- [ ] Lists all available topics with `--list`
-- [ ] Provides quick reference with `--quick`
-- [ ] Works completely offline
-
 ### `jarvy templates`
 - [ ] Lists all available templates with descriptions
 - [ ] Shows detailed tool list for each template
@@ -796,7 +718,6 @@ src/
   commands/
     init.rs           # jarvy init wizard
     quickstart.rs     # First-run experience
-    explain.rs        # Inline help system
     templates.rs      # Template management
   onboarding/
     mod.rs            # First-run detection
@@ -811,10 +732,6 @@ data/
     react.toml
     vue.toml
     go-api.toml
-    ...
-  explain/            # Explanation content
-    hooks.md
-    versions.md
     ...
 ```
 
@@ -933,13 +850,11 @@ pub fn mark_initialized() -> Result<(), Error> {
 4. Create template schema and loader
 5. Add built-in templates (20 stacks)
 6. Implement `jarvy templates` command
-7. Implement `jarvy explain` with content
-8. Write explanation content for all topics
-9. Implement `jarvy quickstart` flow
-10. Add first-run detection and welcome
-11. Write unit tests for each component
-12. Write integration tests
-13. Update documentation and help text
+7. Implement `jarvy quickstart` flow
+8. Add first-run detection and welcome
+9. Write unit tests for each component
+10. Write integration tests
+11. Update documentation and help text
 
 ## Dependencies
 
@@ -956,20 +871,17 @@ pub fn mark_initialized() -> Result<(), Error> {
 | Template schema & loader | 1 day |
 | Built-in templates (20) | 2 days |
 | `jarvy templates` command | 1 day |
-| `jarvy explain` command | 1 day |
-| Explanation content | 1.5 days |
 | `jarvy quickstart` flow | 1 day |
 | First-run detection | 0.5 days |
 | Testing | 2 days |
 | Documentation | 1 day |
-| **Total** | **14.5 days** |
+| **Total** | **12 days** |
 
 ## Files to Create/Modify
 
 ### New Files
 - `src/commands/init.rs`
 - `src/commands/quickstart.rs`
-- `src/commands/explain.rs`
 - `src/commands/templates.rs`
 - `src/onboarding/mod.rs`
 - `src/onboarding/welcome.rs`
@@ -978,7 +890,6 @@ pub fn mark_initialized() -> Result<(), Error> {
 - `src/templates/builtin.rs`
 - `src/templates/schema.rs`
 - `data/templates/*.toml` (20 files)
-- `data/explain/*.md` (15+ files)
 - `tests/init_integration.rs`
 - `tests/templates_integration.rs`
 
@@ -996,7 +907,6 @@ pub fn mark_initialized() -> Result<(), Error> {
 | Config creation | Manual | Guided wizard |
 | Learning method | Read docs | Interactive |
 | Template availability | None | 20 stacks |
-| Concept help | External docs | In-CLI |
 | First-run guidance | None | Automatic |
 
 ## Risks
@@ -1015,4 +925,4 @@ pub fn mark_initialized() -> Result<(), Error> {
 
 ---
 
-*PRD-023 v1.1 | User Onboarding & Education | Priority: High*
+*PRD-023 v1.2 | User Onboarding & Education | Priority: High*

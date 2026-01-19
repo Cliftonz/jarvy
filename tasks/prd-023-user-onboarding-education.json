@@ -1,0 +1,256 @@
+{
+  "id": "PRD-023",
+  "parent_prd": "PRD-023",
+  "title": "User Onboarding & Education",
+  "description": "Add interactive onboarding experiences and educational features that help new users learn Jarvy quickly and effectively, reducing time-to-productivity and support burden",
+  "status": "complete",
+  "priority": "high",
+  "dependencies": [],
+  "estimated_complexity": "high",
+  "completed_date": "2026-01-18",
+  "acceptance_criteria": [
+    "jarvy init detects existing project files and suggests appropriate stacks",
+    "jarvy init provides selection UI for tools and generates valid jarvy.toml",
+    "jarvy init supports --template for non-interactive use",
+    "jarvy quickstart runs system compatibility check",
+    "jarvy quickstart guides through config creation or import",
+    "jarvy quickstart completes in under 3 minutes",
+    "jarvy templates lists all available templates with descriptions",
+    "jarvy templates show displays detailed tool list for each template",
+    "jarvy templates use creates valid jarvy.toml from template",
+    "First-run detection shows welcome banner once for new users",
+    "First-run detection does not show in CI environments",
+    "All interactive prompts work in all terminals with fallback for non-TTY"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Create onboarding module structure",
+      "description": "Create src/onboarding/ module with first-run detection and welcome banner",
+      "status": "complete",
+      "priority": "high",
+      "files": ["src/onboarding/mod.rs", "src/onboarding/welcome.rs", "src/onboarding/detection.rs"],
+      "subtasks": [
+        "Create src/onboarding/mod.rs with module exports",
+        "Implement is_first_run() detection using marker file",
+        "Implement mark_initialized() to set marker after first run",
+        "Create welcome banner with clear action suggestions",
+        "Respect --quiet flag and CI environments",
+        "Add dismissible permanently via config setting"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Implement project type detection",
+      "description": "Detect existing project files to suggest appropriate development stack",
+      "status": "complete",
+      "priority": "high",
+      "files": ["src/onboarding/detection.rs"],
+      "subtasks": [
+        "Detect package.json for Node.js projects",
+        "Detect Cargo.toml for Rust projects",
+        "Detect go.mod for Go projects",
+        "Detect requirements.txt/pyproject.toml for Python projects",
+        "Detect pom.xml/build.gradle for Java projects",
+        "Detect Gemfile for Ruby projects",
+        "Return suggested stack based on detection"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Implement jarvy init wizard",
+      "description": "Interactive wizard to create jarvy.toml for the current project",
+      "status": "complete",
+      "priority": "high",
+      "files": ["src/commands/init.rs"],
+      "subtasks": [
+        "Add init subcommand to CLI",
+        "Implement stack selection using inquire::Select",
+        "Implement tool selection using inquire::MultiSelect",
+        "Generate jarvy.toml with helpful comments",
+        "Support --template flag for non-interactive use",
+        "Support --stdout to output to terminal",
+        "Support --output path/to/jarvy.toml",
+        "Support --non-interactive for CI environments",
+        "Show clear next steps after creation"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Create template schema and loader",
+      "description": "Define template TOML schema and implement template loading",
+      "status": "complete",
+      "priority": "high",
+      "files": ["src/templates/mod.rs", "src/templates/schema.rs", "src/templates/builtin.rs"],
+      "subtasks": [
+        "Define Template struct with name, description, category, tags",
+        "Define tool list with versions and purposes",
+        "Define optional hooks section",
+        "Define meta section with author, version, min_jarvy_version",
+        "Implement template loading from data/templates/",
+        "Implement template validation"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Create built-in templates",
+      "description": "Add 20 curated templates for common development stacks",
+      "status": "complete",
+      "priority": "medium",
+      "files": ["src/templates/builtin.rs"],
+      "subtasks": [
+        "Create react template (12 tools)",
+        "Create vue template (10 tools)",
+        "Create nextjs template (14 tools)",
+        "Create angular template (11 tools)",
+        "Create svelte template (10 tools)",
+        "Create node-api template (8 tools)",
+        "Create go-api template (9 tools)",
+        "Create rust-cli template (7 tools)",
+        "Create python-api template (11 tools)",
+        "Create java-spring template (10 tools)",
+        "Create python-ml template (15 tools)",
+        "Create jupyter template (8 tools)",
+        "Create k8s-admin template (12 tools)",
+        "Create terraform template (9 tools)",
+        "Create docker-dev template (6 tools)",
+        "Create cicd template (8 tools)",
+        "Create flutter template (9 tools)",
+        "Create react-native template (11 tools)",
+        "Create essential template (5 tools)",
+        "Create shell-power template (8 tools)"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "Implement jarvy templates command",
+      "description": "Browse and use pre-built configuration templates",
+      "status": "complete",
+      "priority": "high",
+      "files": ["src/commands/templates.rs"],
+      "subtasks": [
+        "Add templates subcommand to CLI",
+        "Implement templates list with categories and descriptions",
+        "Implement templates show <name> with detailed tool list",
+        "Implement templates use <name> to create jarvy.toml",
+        "Support --output path for custom output location",
+        "Support --non-interactive for scripting",
+        "Support --setup to create and install immediately"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "Implement jarvy quickstart flow",
+      "description": "Guided first-run experience for new Jarvy users",
+      "status": "complete",
+      "priority": "high",
+      "files": ["src/commands/quickstart.rs"],
+      "subtasks": [
+        "Add quickstart subcommand to CLI",
+        "Implement system compatibility check (OS, package manager, shell)",
+        "Offer options: create new config, import from existing, use template, skip",
+        "Integrate with jarvy init wizard",
+        "Offer immediate setup option after config creation",
+        "Show useful commands and documentation links",
+        "Ensure quickstart completes in under 3 minutes"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Integrate first-run detection",
+      "description": "Add first-run welcome banner to CLI commands",
+      "status": "complete",
+      "priority": "medium",
+      "files": ["src/main.rs"],
+      "subtasks": [
+        "Check is_first_run() before command execution",
+        "Show welcome banner with quick action suggestions",
+        "Respect --quiet and --format json flags",
+        "Do not show in CI environments (CI=true)",
+        "Allow dismissing permanently via jarvy config set show_welcome false"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Write unit tests",
+      "description": "Create comprehensive unit tests for onboarding modules",
+      "status": "complete",
+      "priority": "medium",
+      "files": ["src/onboarding/detection.rs", "src/onboarding/welcome.rs", "src/commands/init.rs", "src/commands/quickstart.rs", "src/commands/templates.rs", "src/templates/builtin.rs"],
+      "subtasks": [
+        "Test project type detection for each supported language",
+        "Test template schema parsing and validation",
+        "Test template loading from files",
+        "Test first-run detection logic",
+        "Test config generation from templates"
+      ],
+      "test_count": 28
+    },
+    {
+      "id": "T10",
+      "title": "Write integration tests",
+      "description": "Create integration tests for onboarding commands",
+      "status": "complete",
+      "priority": "medium",
+      "files": ["tests/onboarding_integration.rs"],
+      "subtasks": [
+        "Test jarvy init --template --non-interactive",
+        "Test jarvy templates list output",
+        "Test jarvy templates show <name> output",
+        "Test jarvy templates use creates valid jarvy.toml",
+        "Test jarvy quickstart in non-interactive mode"
+      ],
+      "test_count": 18
+    },
+    {
+      "id": "T11",
+      "title": "Update documentation",
+      "description": "Document onboarding commands and templates",
+      "status": "complete",
+      "priority": "low",
+      "files": ["progress.txt"],
+      "subtasks": [
+        "Document jarvy init command and options",
+        "Document jarvy quickstart command",
+        "Document jarvy templates command",
+        "Document template format for contributors",
+        "Add onboarding section to progress.txt"
+      ]
+    }
+  ],
+  "implementation_notes": {
+    "interactive_prompts": "Use inquire crate for Select and MultiSelect prompts",
+    "non_tty_fallback": "Require --non-interactive flag when stdin is not TTY",
+    "template_storage": "Templates stored as static data in src/templates/builtin.rs",
+    "first_run_marker": "Store marker file in ~/.jarvy/.jarvy_initialized"
+  },
+  "config_example": {
+    "template_format": "[template]\nname = \"react\"\ndescription = \"Complete React development environment\"\ncategory = \"Web Development\"\n\n[tools]\nnode = \"20\"\ngit = \"latest\"",
+    "detection_markers": "package.json -> Node.js, Cargo.toml -> Rust, go.mod -> Go"
+  },
+  "risks": [
+    {
+      "description": "Interactive prompt compatibility across terminals",
+      "mitigation": "Fallback to simple prompts, require --non-interactive flag for non-TTY"
+    },
+    {
+      "description": "Template maintenance as tools evolve",
+      "mitigation": "Version templates, automated testing, use 'latest' for most tools"
+    },
+    {
+      "description": "Project detection accuracy",
+      "mitigation": "Always allow user override, show what was detected"
+    },
+    {
+      "description": "Overwhelming for experienced users",
+      "mitigation": "One-time welcome, --quiet flag, direct command access"
+    }
+  ],
+  "non_goals": [
+    "Video tutorials or external media",
+    "Web-based learning platform",
+    "Certification or progress tracking",
+    "Multi-language (i18n) support",
+    "IDE/editor integrations"
+  ]
+}
