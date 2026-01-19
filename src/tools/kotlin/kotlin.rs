@@ -11,6 +11,7 @@ define_tool!(KOTLIN, {
     macos: { brew: "kotlin" },
     linux: { apt: "kotlin", dnf: "kotlin", pacman: "kotlin", apk: "kotlin" },
     windows: { winget: "JetBrains.Kotlin.Compiler", choco: "kotlinc" },
+    bsd: { pkg: "kotlin" },
     depends_on: &["java"],
 });
 

@@ -10,6 +10,7 @@ define_tool!(TMUX, {
     macos: { brew: "tmux" },
     linux: { uniform: "tmux" },
     // No Windows support - tmux is Unix-only
+    bsd: { pkg: "tmux" },
 });
 
 #[cfg(test)]

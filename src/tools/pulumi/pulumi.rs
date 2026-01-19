@@ -9,6 +9,7 @@ define_tool!(PULUMI, {
     macos: { brew: "pulumi" },
     linux: { uniform: "pulumi" },
     windows: { winget: "Pulumi.Pulumi" },
+    bsd: { pkg: "pulumi" },
 });
 
 #[cfg(test)]

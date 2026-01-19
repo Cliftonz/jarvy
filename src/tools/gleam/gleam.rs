@@ -9,6 +9,7 @@ define_tool!(GLEAM, {
     macos: { brew: "gleam" },
     linux: { uniform: "gleam" },
     windows: { winget: "Gleam.Gleam" },
+    bsd: { pkg: "gleam" },
 });
 
 #[cfg(test)]

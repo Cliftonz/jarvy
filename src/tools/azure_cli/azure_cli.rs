@@ -9,6 +9,7 @@ define_tool!(AZURE_CLI, {
     macos: { brew: "azure-cli" },
     linux: { apt: "azure-cli", dnf: "azure-cli", pacman: "azure-cli", apk: "azure-cli" },
     windows: { winget: "Microsoft.AzureCLI" },
+    bsd: { pkg: "py39-azure-cli" },
 });
 
 #[cfg(test)]

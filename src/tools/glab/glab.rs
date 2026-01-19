@@ -9,6 +9,7 @@ define_tool!(GLAB, {
     macos: { brew: "glab" },
     linux: { uniform: "glab" },
     windows: { winget: "GLab.GLab" },
+    bsd: { pkg: "glab" },
     default_hook: {
         description: "Install glab shell completions for bash and zsh",
         script: r#"

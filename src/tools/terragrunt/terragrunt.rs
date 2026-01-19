@@ -12,6 +12,7 @@ define_tool!(TERRAGRUNT, {
     macos: { brew: "terragrunt" },
     linux: { brew: "terragrunt" },
     windows: { winget: "Gruntwork.Terragrunt", choco: "terragrunt" },
+    bsd: { pkg: "terragrunt" },
 });
 
 #[cfg(test)]

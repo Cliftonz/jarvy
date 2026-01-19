@@ -12,6 +12,7 @@ define_tool!(ERLANG, {
     macos: { brew: "erlang" },
     linux: { apt: "erlang", dnf: "erlang", pacman: "erlang", apk: "erlang" },
     windows: { winget: "Erlang.ErlangOTP", choco: "erlang" },
+    bsd: { pkg: "erlang" },
 });
 
 #[cfg(test)]

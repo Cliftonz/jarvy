@@ -11,6 +11,7 @@ define_tool!(HELIX, {
     macos: { brew: "helix" },
     linux: { apt: "helix-editor", dnf: "helix", pacman: "helix", apk: "helix" },
     windows: { winget: "Helix.Helix" },
+    bsd: { pkg: "helix" },
 });
 
 #[cfg(test)]

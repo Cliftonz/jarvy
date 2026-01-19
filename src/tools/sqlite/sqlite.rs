@@ -9,6 +9,7 @@ define_tool!(SQLITE, {
     macos: { brew: "sqlite" },
     linux: { uniform: "sqlite3" },
     windows: { winget: "SQLite.SQLite" },
+    bsd: { pkg: "sqlite3" },
 });
 
 #[cfg(test)]

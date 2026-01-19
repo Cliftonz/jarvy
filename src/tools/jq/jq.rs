@@ -9,6 +9,7 @@ define_tool!(JQ, {
     macos: { brew: "jq" },
     linux: { uniform: "jq" },
     windows: { winget: "jqlang.jq" },
+    bsd: { pkg: "jq" },
 });
 
 #[cfg(test)]

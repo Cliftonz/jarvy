@@ -9,6 +9,7 @@ define_tool!(MONGOSH, {
     macos: { brew: "mongosh" },
     linux: { brew: "mongosh" },
     windows: { winget: "MongoDB.Shell" },
+    bsd: { pkg: "mongosh" },
 });
 
 #[cfg(test)]

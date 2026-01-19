@@ -9,6 +9,7 @@ define_tool!(NGROK, {
     macos: { brew: "ngrok" },
     linux: { uniform: "ngrok" },
     windows: { winget: "Ngrok.Ngrok" },
+    bsd: { pkg: "ngrok" },
 });
 
 #[cfg(test)]

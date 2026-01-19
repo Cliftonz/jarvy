@@ -9,6 +9,7 @@ define_tool!(OPENSSH, {
     macos: { brew: "openssh" },
     linux: { uniform: "openssh" },
     windows: { winget: "Microsoft.OpenSSH.Beta" },
+    bsd: { pkg: "openssh-portable" },
 });
 
 #[cfg(test)]

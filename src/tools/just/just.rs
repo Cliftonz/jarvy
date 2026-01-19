@@ -9,6 +9,7 @@ define_tool!(JUST, {
     macos: { brew: "just" },
     linux: { uniform: "just" },
     windows: { winget: "Casey.Just" },
+    bsd: { pkg: "just" },
     default_hook: {
         description: "Install just shell completions for bash and zsh",
         script: r#"

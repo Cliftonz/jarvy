@@ -9,6 +9,7 @@ define_tool!(PHP, {
     macos: { brew: "php" },
     linux: { uniform: "php" },
     windows: { winget: "PHP.PHP" },
+    bsd: { pkg: "php83" },
 });
 
 #[cfg(test)]

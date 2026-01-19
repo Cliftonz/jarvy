@@ -7,8 +7,9 @@ use crate::define_tool;
 define_tool!(HTTPIE, {
     command: "http",
     macos: { brew: "httpie" },
-    linux: { uniform: "httpie" },
+    linux: { apt: "httpie", dnf: "httpie", pacman: "httpie", apk: "py3-httpie" },
     windows: { winget: "HTTPie.HTTPie" },
+    bsd: { pkg: "py39-httpie" },
 });
 
 #[cfg(test)]

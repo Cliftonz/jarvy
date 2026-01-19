@@ -9,6 +9,7 @@ define_tool!(NMAP, {
     macos: { brew: "nmap" },
     linux: { uniform: "nmap" },
     windows: { winget: "Insecure.Nmap" },
+    bsd: { pkg: "nmap" },
 });
 
 #[cfg(test)]

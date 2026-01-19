@@ -9,6 +9,7 @@ define_tool!(P7ZIP, {
     macos: { brew: "p7zip" },
     linux: { uniform: "p7zip" },
     windows: { winget: "7zip.7zip" },
+    bsd: { pkg: "p7zip" },
 });
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ define_tool!(TILT, {
     command: "tilt",
     macos: { brew: "tilt" },
     linux: { uniform: "tilt" },
+    bsd: { pkg: "tilt" },
     // No Windows support
 });
 

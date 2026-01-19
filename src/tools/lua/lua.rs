@@ -11,6 +11,7 @@ define_tool!(LUA, {
     macos: { brew: "lua" },
     linux: { apt: "lua5.4", dnf: "lua", pacman: "lua", apk: "lua" },
     windows: { winget: "DEVCOM.Lua", choco: "lua" },
+    bsd: { pkg: "lua54" },
 });
 
 #[cfg(test)]

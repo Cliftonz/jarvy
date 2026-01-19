@@ -10,6 +10,7 @@ define_tool!(RIPGREP, {
     macos: { brew: "ripgrep" },
     linux: { uniform: "ripgrep" },
     windows: { winget: "BurntSushi.ripgrep.MSVC" },
+    bsd: { pkg: "ripgrep" },
     default_hook: {
         description: "Configure ripgrep shell completion",
         script: r#"

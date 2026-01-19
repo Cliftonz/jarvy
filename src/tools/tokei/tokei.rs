@@ -11,6 +11,7 @@ define_tool!(TOKEI, {
     macos: { brew: "tokei" },
     linux: { apt: "tokei", dnf: "tokei", pacman: "tokei", apk: "tokei" },
     windows: { winget: "XAMPPRocky.tokei", choco: "tokei" },
+    bsd: { pkg: "tokei" },
 });
 
 #[cfg(test)]

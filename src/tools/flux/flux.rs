@@ -10,6 +10,7 @@ define_tool!(FLUX, {
     macos: { brew: "fluxcd/tap/flux" },
     linux: { brew: "fluxcd/tap/flux" },
     windows: { winget: "Fluxcd.Flux" },
+    bsd: { pkg: "flux" },
     default_hook: {
         description: "Install flux shell completions for bash and zsh",
         script: r#"

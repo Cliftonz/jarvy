@@ -12,6 +12,7 @@ define_tool!(LITECLI, {
     macos: { brew: "litecli" },
     linux: { apt: "litecli", dnf: "litecli", pacman: "litecli", apk: "litecli" },
     windows: { choco: "litecli" },
+    bsd: { pkg: "py39-litecli" },
 });
 
 #[cfg(test)]

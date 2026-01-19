@@ -9,6 +9,7 @@ define_tool!(EZA, {
     macos: { brew: "eza" },
     linux: { apt: "eza", dnf: "eza", pacman: "eza", apk: "eza" },
     windows: { winget: "eza-community.eza" },
+    bsd: { pkg: "eza" },
     default_hook: {
         description: "Add eza aliases for ls replacement",
         script: r#"

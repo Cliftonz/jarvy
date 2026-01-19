@@ -12,6 +12,7 @@ define_tool!(ATUIN, {
     macos: { brew: "atuin" },
     linux: { uniform: "atuin" },
     windows: { winget: "atuinsh.atuin" },
+    bsd: { pkg: "atuin" },
     default_hook: {
         description: "Add atuin shell initialization to .bashrc and .zshrc",
         script: r#"

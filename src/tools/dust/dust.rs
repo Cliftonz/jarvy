@@ -11,6 +11,7 @@ define_tool!(DUST, {
     macos: { brew: "dust" },
     linux: { apt: "du-dust", dnf: "dust", pacman: "dust", apk: "dust" },
     windows: { winget: "bootandy.dust", choco: "dust" },
+    bsd: { pkg: "dust" },
 });
 
 #[cfg(test)]

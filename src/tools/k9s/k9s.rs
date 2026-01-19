@@ -9,6 +9,7 @@ define_tool!(K9S, {
     macos: { brew: "derailed/k9s/k9s" },
     linux: { uniform: "k9s" },
     windows: { winget: "Derailed.k9s" },
+    bsd: { pkg: "k9s" },
     default_hook: {
         description: "Configure k9s shell completion",
         script: r#"

@@ -9,6 +9,7 @@ define_tool!(GIT_LFS, {
     macos: { brew: "git-lfs" },
     linux: { uniform: "git-lfs" },
     windows: { winget: "GitHub.GitLFS" },
+    bsd: { pkg: "git-lfs" },
 });
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ define_tool!(ARIA2, {
     macos: { brew: "aria2" },
     linux: { uniform: "aria2" },
     windows: { winget: "aria2.aria2" },
+    bsd: { pkg: "aria2" },
 });
 
 #[cfg(test)]

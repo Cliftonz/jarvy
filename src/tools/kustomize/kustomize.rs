@@ -9,6 +9,7 @@ define_tool!(KUSTOMIZE, {
     macos: { brew: "kustomize" },
     linux: { uniform: "kustomize" },
     windows: { winget: "Kubernetes.kustomize" },
+    bsd: { pkg: "kustomize" },
 });
 
 #[cfg(test)]

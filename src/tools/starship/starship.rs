@@ -9,6 +9,7 @@ define_tool!(STARSHIP, {
     macos: { brew: "starship" },
     linux: { uniform: "starship" },
     windows: { winget: "Starship.Starship" },
+    bsd: { pkg: "starship" },
     default_hook: {
         description: "Add starship shell initialization to .bashrc and .zshrc",
         script: r#"

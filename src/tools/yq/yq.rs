@@ -9,6 +9,7 @@ define_tool!(YQ, {
     macos: { brew: "yq" },
     linux: { uniform: "yq" },
     windows: { winget: "mikefarah.yq" },
+    bsd: { pkg: "yq" },
 });
 
 #[cfg(test)]

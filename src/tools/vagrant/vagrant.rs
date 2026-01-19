@@ -11,6 +11,7 @@ define_tool!(VAGRANT, {
     macos: { cask: "vagrant" },
     linux: { apt: "vagrant", dnf: "vagrant", pacman: "vagrant", apk: "vagrant" },
     windows: { winget: "Hashicorp.Vagrant", choco: "vagrant" },
+    bsd: { pkg: "vagrant" },
 });
 
 #[cfg(test)]

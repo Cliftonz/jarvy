@@ -9,6 +9,7 @@ define_tool!(PROCS, {
     macos: { brew: "procs" },
     linux: { uniform: "procs" },
     windows: { winget: "dalance.procs" },
+    bsd: { pkg: "procs" },
 });
 
 #[cfg(test)]

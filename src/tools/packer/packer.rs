@@ -9,6 +9,7 @@ define_tool!(PACKER, {
     macos: { brew: "packer" },
     linux: { uniform: "packer" },
     windows: { winget: "HashiCorp.Packer" },
+    bsd: { pkg: "packer" },
 });
 
 #[cfg(test)]

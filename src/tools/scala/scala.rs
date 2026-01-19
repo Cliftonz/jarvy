@@ -11,6 +11,7 @@ define_tool!(SCALA, {
     macos: { brew: "scala" },
     linux: { apt: "scala", dnf: "scala", pacman: "scala", apk: "scala" },
     windows: { winget: "Scala.Scala.3", choco: "scala" },
+    bsd: { pkg: "scala" },
     depends_on: &["java"],
 });
 

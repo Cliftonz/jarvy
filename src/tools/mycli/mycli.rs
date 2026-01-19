@@ -12,6 +12,7 @@ define_tool!(MYCLI, {
     macos: { brew: "mycli" },
     linux: { apt: "mycli", dnf: "mycli", pacman: "mycli", apk: "mycli" },
     windows: { choco: "mycli" },
+    bsd: { pkg: "py39-mycli" },
 });
 
 #[cfg(test)]

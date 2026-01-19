@@ -9,6 +9,7 @@ define_tool!(DIRENV, {
     macos: { brew: "direnv" },
     linux: { uniform: "direnv" },
     windows: { winget: "direnv.direnv" },
+    bsd: { pkg: "direnv" },
     default_hook: {
         description: "Add direnv shell hook to .bashrc and .zshrc",
         script: r#"

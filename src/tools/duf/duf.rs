@@ -9,6 +9,7 @@ define_tool!(DUF, {
     macos: { brew: "duf" },
     linux: { uniform: "duf" },
     windows: { winget: "muesli.duf" },
+    bsd: { pkg: "duf" },
 });
 
 #[cfg(test)]

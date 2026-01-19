@@ -9,6 +9,7 @@ define_tool!(LNAV, {
     command: "lnav",
     macos: { brew: "lnav" },
     linux: { uniform: "lnav" },
+    bsd: { pkg: "lnav" },
 });
 
 #[cfg(test)]

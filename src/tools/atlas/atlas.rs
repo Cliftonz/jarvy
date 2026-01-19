@@ -9,6 +9,7 @@ define_tool!(ATLAS, {
     macos: { brew: "ariga/tap/atlas" },
     linux: { uniform: "atlas" },
     windows: { winget: "Ariga.Atlas" },
+    bsd: { pkg: "atlas" },
 });
 
 #[cfg(test)]

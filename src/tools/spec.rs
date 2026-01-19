@@ -173,6 +173,20 @@ impl WindowsInstall {
     }
 }
 
+/// BSD installation options (initially FreeBSD with pkg).
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct BsdInstall {
+    /// FreeBSD pkg package name (e.g., "git", "jq")
+    pub pkg: Option<&'static str>,
+}
+
+impl BsdInstall {
+    /// Create a BsdInstall with a pkg package name.
+    pub const fn pkg(name: &'static str) -> Self {
+        Self { pkg: Some(name) }
+    }
+}
+
 /// Type alias for custom installation functions.
 pub type CustomInstallFn = fn(&str) -> Result<(), InstallError>;
 
@@ -225,6 +239,7 @@ impl DefaultHook {
             Some("macos") => cfg!(target_os = "macos"),
             Some("linux") => cfg!(target_os = "linux"),
             Some("windows") => cfg!(target_os = "windows"),
+            Some("bsd") | Some("freebsd") => cfg!(target_os = "freebsd"),
             Some(_) => false,
         }
     }
@@ -251,6 +266,9 @@ pub struct ToolSpec {
 
     /// Windows installation options (None if not supported on Windows)
     pub windows: Option<WindowsInstall>,
+
+    /// BSD installation options (None if not supported on BSD/FreeBSD)
+    pub bsd: Option<BsdInstall>,
 
     /// Optional custom install function for complex tools (nvm, rustup, etc.)
     /// If provided, this takes precedence over standard package manager installs.
@@ -327,6 +345,10 @@ impl ToolSpec {
         #[cfg(target_os = "windows")]
         {
             return self.install_windows();
+        }
+        #[cfg(target_os = "freebsd")]
+        {
+            return self.install_bsd();
         }
         #[allow(unreachable_code)]
         Err(InstallError::Unsupported)
@@ -417,6 +439,24 @@ impl ToolSpec {
             ))
         }
     }
+
+    #[cfg(target_os = "freebsd")]
+    fn install_bsd(&self) -> Result<(), InstallError> {
+        use super::common::{PkgOps, default_use_sudo};
+
+        let bsd = self.bsd.ok_or(InstallError::Unsupported)?;
+
+        if let Some(pkg_name) = bsd.pkg {
+            if let Some(pm) = super::common::detect_bsd_pm() {
+                let _ = PkgOps::update(pm, default_use_sudo());
+                return PkgOps::install(pm, pkg_name, default_use_sudo());
+            }
+        }
+
+        Err(InstallError::Prereq(
+            "No supported BSD package manager on PATH (pkg)",
+        ))
+    }
 }
 
 /// Macro for defining tools with minimal boilerplate.
@@ -460,6 +500,7 @@ macro_rules! define_tool {
         $(macos: { $($macos_key:ident: $macos_val:expr),* $(,)? },)?
         $(linux: { $($linux_key:ident: $linux_val:expr),* $(,)? },)?
         $(windows: { $($windows_key:ident: $windows_val:expr),* $(,)? },)?
+        $(bsd: { $($bsd_key:ident: $bsd_val:expr),* $(,)? },)?
         $(custom_install: $custom:expr,)?
         $(default_hook: { description: $hook_desc:expr, script: $hook_script:expr $(, platform: $hook_platform:expr)? },)?
         $(depends_on: $deps:expr,)?
@@ -471,6 +512,7 @@ macro_rules! define_tool {
             macos: define_tool!(@macos $($($macos_key: $macos_val),*)?),
             linux: define_tool!(@linux $($($linux_key: $linux_val),*)?),
             windows: define_tool!(@windows $($($windows_key: $windows_val),*)?),
+            bsd: define_tool!(@bsd $($($bsd_key: $bsd_val),*)?),
             custom_install: define_tool!(@custom $($custom)?),
             default_hook: define_tool!(@default_hook $($hook_desc, $hook_script $(, $hook_platform)?)?),
             depends_on: define_tool!(@depends_on $($deps)?),
@@ -515,6 +557,18 @@ macro_rules! define_tool {
     (@linux brew: $val:expr) => {
         Some($crate::tools::spec::LinuxInstall::brew($val))
     };
+    // Linuxbrew with Alpine apk support (for tools available in Alpine but not other distros)
+    (@linux brew: $brew:expr, apk: $apk:expr) => {
+        Some($crate::tools::spec::LinuxInstall {
+            apt: None,
+            dnf: None,
+            yum: None,
+            zypper: None,
+            pacman: None,
+            apk: Some($apk),
+            brew: Some($brew),
+        })
+    };
     (@linux apt: $apt:expr, dnf: $dnf:expr, pacman: $pacman:expr, apk: $apk:expr) => {
         Some($crate::tools::spec::LinuxInstall {
             apt: Some($apt),
@@ -548,6 +602,12 @@ macro_rules! define_tool {
     };
     (@windows winget: $winget:expr, choco: $choco:expr) => {
         Some($crate::tools::spec::WindowsInstall { winget: Some($winget), choco: Some($choco) })
+    };
+
+    // BSD helpers
+    (@bsd) => { None };
+    (@bsd pkg: $val:expr) => {
+        Some($crate::tools::spec::BsdInstall::pkg($val))
     };
 
     // Custom install helper
@@ -602,6 +662,9 @@ pub struct ToolIndexEntry {
     /// Windows installation options
     #[serde(skip_serializing_if = "Option::is_none")]
     pub windows: Option<WindowsInstall>,
+    /// BSD installation options
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bsd: Option<BsdInstall>,
     /// Custom installation info
     pub custom_install: CustomInstallInfo,
 }
@@ -615,6 +678,7 @@ impl From<&ToolSpec> for ToolIndexEntry {
             macos: spec.macos,
             linux: spec.linux,
             windows: spec.windows,
+            bsd: spec.bsd,
             custom_install: CustomInstallInfo {
                 has_custom_installer: spec.custom_install.is_some(),
             },
@@ -663,6 +727,7 @@ pub fn generate_tool_index() -> ToolIndex {
             macos: None,
             linux: None,
             windows: None,
+            bsd: None,
             custom_install: CustomInstallInfo {
                 has_custom_installer: true,
             },
@@ -792,7 +857,7 @@ fn check_tool_version(name: &str, version: &str) -> ToolVersionStatus {
     } else {
         // Manual tools (nvm, rust, brew) - check if command exists
         let (_, cmd) = MANUAL_TOOLS.iter().find(|(n, _)| *n == name_lower).unwrap();
-        has(*cmd)
+        has(cmd)
     };
 
     ToolVersionStatus {
@@ -998,6 +1063,22 @@ pub fn get_tool_install_info(tool_name: &str, version: &str) -> Option<ToolInsta
         }
     }
 
+    #[cfg(target_os = "freebsd")]
+    {
+        if let Some(bsd) = spec.bsd {
+            if let Some(pkg_name) = bsd.pkg {
+                if super::common::has("pkg") {
+                    return Some(ToolInstallInfo {
+                        name: tool_name.to_string(),
+                        version: version.to_string(),
+                        package_manager: PackageManager::Pkg,
+                        package_name: pkg_name.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -1133,6 +1214,14 @@ impl DependencyCheckResult {
 ///
 /// # Returns
 /// A `DependencyCheckResult` indicating the dependency status.
+/// Check if dependency warnings should be suppressed.
+/// Returns true if JARVY_IGNORE_MISSING_DEPS is set to "1" or "true".
+pub fn should_ignore_missing_deps() -> bool {
+    std::env::var("JARVY_IGNORE_MISSING_DEPS")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false)
+}
+
 pub fn check_tool_dependencies(
     tool_name: &str,
     config_tools: &std::collections::HashSet<String>,
@@ -1337,6 +1426,7 @@ mod tests {
             winget: Some("Test.Test"),
             choco: Some("test"),
         }),
+        bsd: None,
         custom_install: None,
         default_hook: None,
         depends_on: None,
@@ -1350,6 +1440,7 @@ mod tests {
         macos: Some(MacOsInstall::brew("test")),
         linux: Some(LinuxInstall::uniform("test")),
         windows: None,
+        bsd: None,
         custom_install: None,
         default_hook: Some(DefaultHook::new(
             "Configure test tool",
@@ -1423,6 +1514,7 @@ mod tests {
             macos: None,
             linux: None,
             windows: None,
+            bsd: None,
             custom_install: None,
             default_hook: None,
             depends_on: None,
@@ -1454,6 +1546,7 @@ mod tests {
             macos: None,
             linux: None,
             windows: None,
+            bsd: None,
             custom_install: Some(|_| Ok(())),
             default_hook: None,
             depends_on: None,
@@ -1644,6 +1737,7 @@ mod tests {
             macos: None,
             linux: None,
             windows: None,
+            bsd: None,
             custom_install: None,
             #[cfg(target_os = "macos")]
             default_hook: Some(DefaultHook::for_platform(

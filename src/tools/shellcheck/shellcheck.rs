@@ -9,6 +9,7 @@ define_tool!(SHELLCHECK, {
     macos: { brew: "shellcheck" },
     linux: { uniform: "shellcheck" },
     windows: { winget: "koalaman.shellcheck" },
+    bsd: { pkg: "hs-ShellCheck" },
 });
 
 #[cfg(test)]

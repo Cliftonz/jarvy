@@ -9,6 +9,7 @@ define_tool!(BTOP, {
     command: "btop",
     macos: { brew: "btop" },
     linux: { apt: "btop", dnf: "btop", pacman: "btop", apk: "btop" },
+    bsd: { pkg: "btop" },
 });
 
 #[cfg(test)]

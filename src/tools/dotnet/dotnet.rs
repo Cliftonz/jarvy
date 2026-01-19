@@ -9,6 +9,7 @@ define_tool!(DOTNET, {
     macos: { cask: "dotnet-sdk" },
     linux: { apt: "dotnet-sdk-8.0", dnf: "dotnet-sdk", pacman: "dotnet-sdk", apk: "dotnet-sdk" },
     windows: { winget: "Microsoft.DotNet.SDK.8" },
+    bsd: { pkg: "dotnet" },
     default_hook: {
         description: "Configure DOTNET_ROOT and add .NET tools to PATH",
         script: r#"

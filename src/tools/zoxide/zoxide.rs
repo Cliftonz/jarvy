@@ -9,6 +9,7 @@ define_tool!(ZOXIDE, {
     macos: { brew: "zoxide" },
     linux: { uniform: "zoxide" },
     windows: { winget: "ajeetdsouza.zoxide" },
+    bsd: { pkg: "zoxide" },
     default_hook: {
         description: "Add zoxide shell initialization to .bashrc and .zshrc",
         script: r#"

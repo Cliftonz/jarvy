@@ -11,6 +11,7 @@ define_tool!(USQL, {
     macos: { brew: "usql" },
     linux: { brew: "usql" },
     windows: { choco: "usql" },
+    bsd: { pkg: "usql" },
 });
 
 #[cfg(test)]

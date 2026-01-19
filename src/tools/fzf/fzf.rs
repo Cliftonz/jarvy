@@ -9,6 +9,7 @@ define_tool!(FZF, {
     macos: { brew: "fzf" },
     linux: { uniform: "fzf" },
     windows: { winget: "junegunn.fzf" },
+    bsd: { pkg: "fzf" },
     default_hook: {
         description: "Configure fzf shell integration (keybindings and completions)",
         script: r#"

@@ -11,6 +11,7 @@ define_tool!(BUN, {
     macos: { brew: "oven-sh/bun/bun" },
     linux: { brew: "oven-sh/bun/bun" },
     windows: { winget: "Oven-sh.Bun" },
+    bsd: { pkg: "bun" },
 });
 
 #[cfg(test)]

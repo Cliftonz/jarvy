@@ -9,6 +9,7 @@ define_tool!(MTR, {
     command: "mtr",
     macos: { brew: "mtr" },
     linux: { uniform: "mtr" },
+    bsd: { pkg: "mtr" },
 });
 
 #[cfg(test)]

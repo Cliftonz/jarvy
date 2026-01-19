@@ -11,6 +11,7 @@ define_tool!(SKOPEO, {
     command: "skopeo",
     macos: { brew: "skopeo" },
     linux: { apt: "skopeo", dnf: "skopeo", pacman: "skopeo", apk: "skopeo" },
+    bsd: { pkg: "skopeo" },
 });
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ define_tool!(MYSQL, {
     macos: { brew: "mysql-client" },
     linux: { apt: "mysql-client", dnf: "mysql", pacman: "mysql", apk: "mysql-client" },
     windows: { winget: "Oracle.MySQL" },
+    bsd: { pkg: "mysql80-client" },
 });
 
 #[cfg(test)]

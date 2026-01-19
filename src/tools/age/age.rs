@@ -9,6 +9,7 @@ define_tool!(AGE, {
     macos: { brew: "age" },
     linux: { uniform: "age" },
     windows: { winget: "FiloSottile.age" },
+    bsd: { pkg: "age" },
 });
 
 #[cfg(test)]

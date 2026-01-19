@@ -9,6 +9,7 @@ define_tool!(VAULT, {
     macos: { brew: "vault" },
     linux: { uniform: "vault" },
     windows: { winget: "HashiCorp.Vault" },
+    bsd: { pkg: "vault" },
 });
 
 #[cfg(test)]

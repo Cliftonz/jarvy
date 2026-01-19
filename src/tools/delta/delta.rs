@@ -9,6 +9,7 @@ define_tool!(DELTA, {
     macos: { brew: "git-delta" },
     linux: { apt: "git-delta", dnf: "git-delta", pacman: "git-delta", apk: "git-delta" },
     windows: { winget: "dandavison.delta" },
+    bsd: { pkg: "git-delta" },
     default_hook: {
         description: "Configure delta as git pager for beautiful diffs",
         script: r#"

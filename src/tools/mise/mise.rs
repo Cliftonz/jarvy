@@ -12,6 +12,7 @@ define_tool!(MISE, {
     macos: { brew: "mise" },
     linux: { brew: "mise" },
     windows: { winget: "jdx.mise" },
+    bsd: { pkg: "mise" },
     default_hook: {
         description: "Add mise shell initialization to .bashrc and .zshrc",
         script: r#"

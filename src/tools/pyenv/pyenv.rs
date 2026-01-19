@@ -10,6 +10,7 @@ define_tool!(PYENV, {
     command: "pyenv",
     macos: { brew: "pyenv" },
     linux: { brew: "pyenv" },
+    bsd: { pkg: "pyenv" },
     default_hook: {
         description: "Add pyenv shell initialization to .bashrc and .zshrc",
         script: r#"

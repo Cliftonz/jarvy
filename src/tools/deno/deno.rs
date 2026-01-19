@@ -11,6 +11,7 @@ define_tool!(DENO, {
     macos: { brew: "deno" },
     linux: { brew: "deno" },
     windows: { winget: "DenoLand.Deno" },
+    bsd: { pkg: "deno" },
 });
 
 #[cfg(test)]

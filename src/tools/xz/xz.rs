@@ -9,6 +9,7 @@ define_tool!(XZ, {
     macos: { brew: "xz" },
     linux: { uniform: "xz" },
     windows: { winget: "XZUtils.XZ" },
+    bsd: { pkg: "xz" },
 });
 
 #[cfg(test)]

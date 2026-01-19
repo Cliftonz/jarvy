@@ -9,6 +9,7 @@ define_tool!(POWERSHELL, {
     macos: { cask: "powershell" },
     linux: { uniform: "powershell" },
     windows: { winget: "Microsoft.PowerShell" },
+    bsd: { pkg: "powershell" },
 });
 
 #[cfg(test)]

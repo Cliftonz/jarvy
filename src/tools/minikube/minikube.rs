@@ -9,6 +9,7 @@ define_tool!(MINIKUBE, {
     macos: { brew: "minikube" },
     linux: { uniform: "minikube" },
     windows: { winget: "Kubernetes.minikube" },
+    bsd: { pkg: "minikube" },
     default_hook: {
         description: "Install minikube shell completions for bash and zsh",
         script: r#"

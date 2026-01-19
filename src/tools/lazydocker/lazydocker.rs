@@ -9,8 +9,9 @@ use crate::define_tool;
 define_tool!(LAZYDOCKER, {
     command: "lazydocker",
     macos: { brew: "lazydocker" },
-    linux: { brew: "lazydocker" },
+    linux: { brew: "lazydocker", apk: "lazydocker" },
     windows: { choco: "lazydocker" },
+    bsd: { pkg: "lazydocker" },
     // Docker TUI requires Docker daemon to be installed
     depends_on: &["docker"],
 });

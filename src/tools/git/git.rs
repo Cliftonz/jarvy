@@ -9,6 +9,7 @@ define_tool!(GIT, {
     macos: { brew: "git" },
     linux: { uniform: "git" },
     windows: { winget: "Git.Git" },
+    bsd: { pkg: "git" },
     default_hook: {
         description: "Configure sensible Git defaults (defaultBranch=main, autocrlf, rebase)",
         script: r#"

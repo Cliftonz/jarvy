@@ -12,6 +12,7 @@ define_tool!(WATCHEXEC, {
     macos: { brew: "watchexec" },
     linux: { apt: "watchexec", dnf: "watchexec", pacman: "watchexec", apk: "watchexec" },
     windows: { winget: "watchexec.watchexec", choco: "watchexec" },
+    bsd: { pkg: "watchexec" },
 });
 
 #[cfg(test)]

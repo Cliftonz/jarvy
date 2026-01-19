@@ -11,6 +11,7 @@ define_tool!(SD, {
     macos: { brew: "sd" },
     linux: { brew: "sd" },
     windows: { choco: "sd-cli" },
+    bsd: { pkg: "sd" },
 });
 
 #[cfg(test)]

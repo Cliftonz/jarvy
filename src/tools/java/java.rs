@@ -12,6 +12,7 @@ define_tool!(JAVA, {
     macos: { brew: "openjdk" },
     linux: { apt: "default-jdk", dnf: "java-latest-openjdk", pacman: "jdk-openjdk", apk: "openjdk21" },
     windows: { winget: "Microsoft.OpenJDK.21", choco: "openjdk" },
+    bsd: { pkg: "openjdk21" },
     default_hook: {
         description: "Configure JAVA_HOME environment variable",
         script: r#"

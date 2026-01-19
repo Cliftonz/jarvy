@@ -11,6 +11,7 @@ define_tool!(TERRAFORM_DOCS, {
     macos: { brew: "terraform-docs" },
     linux: { brew: "terraform-docs" },
     windows: { choco: "terraform-docs" },
+    bsd: { pkg: "terraform-docs" },
 });
 
 #[cfg(test)]

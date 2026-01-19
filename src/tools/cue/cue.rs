@@ -9,6 +9,7 @@ define_tool!(CUE, {
     command: "cue",
     macos: { brew: "cue" },
     linux: { uniform: "cue" },
+    bsd: { pkg: "cue" },
     // No Windows support
 });
 

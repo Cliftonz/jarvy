@@ -9,6 +9,7 @@ define_tool!(HUGO, {
     macos: { brew: "hugo" },
     linux: { uniform: "hugo" },
     windows: { winget: "Hugo.Hugo.Extended" },
+    bsd: { pkg: "hugo" },
 });
 
 #[cfg(test)]

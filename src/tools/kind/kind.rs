@@ -9,6 +9,7 @@ define_tool!(KIND, {
     macos: { brew: "kind" },
     linux: { brew: "kind" },
     windows: { winget: "Kubernetes.kind" },
+    bsd: { pkg: "kind" },
     default_hook: {
         description: "Install kind shell completions for bash and zsh",
         script: r#"

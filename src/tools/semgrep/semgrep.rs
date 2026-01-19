@@ -11,6 +11,7 @@ define_tool!(SEMGREP, {
     command: "semgrep",
     macos: { brew: "semgrep" },
     linux: { brew: "semgrep" },
+    bsd: { pkg: "semgrep" },
 });
 
 #[cfg(test)]

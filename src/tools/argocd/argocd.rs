@@ -8,8 +8,9 @@ use crate::define_tool;
 define_tool!(ARGOCD, {
     command: "argocd",
     macos: { brew: "argocd" },
-    linux: { brew: "argocd" },
+    linux: { brew: "argocd", apk: "argocd" },
     windows: { winget: "Argoproj.ArgoCD" },
+    bsd: { pkg: "argocd" },
     default_hook: {
         description: "Install argocd shell completions for bash and zsh",
         script: r#"

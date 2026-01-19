@@ -7,8 +7,9 @@ use crate::define_tool;
 define_tool!(RUFF, {
     command: "ruff",
     macos: { brew: "ruff" },
-    linux: { brew: "ruff" },
+    linux: { brew: "ruff", apk: "ruff" },
     windows: { winget: "astral-sh.ruff" },
+    bsd: { pkg: "ruff" },
 });
 
 #[cfg(test)]

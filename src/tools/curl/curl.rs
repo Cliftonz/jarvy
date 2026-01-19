@@ -9,6 +9,7 @@ define_tool!(CURL, {
     macos: { brew: "curl" },
     linux: { uniform: "curl" },
     windows: { winget: "cURL.cURL" },
+    bsd: { pkg: "curl" },
 });
 
 #[cfg(test)]

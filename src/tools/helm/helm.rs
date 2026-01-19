@@ -9,6 +9,7 @@ define_tool!(HELM, {
     macos: { brew: "helm" },
     linux: { uniform: "helm" },
     windows: { winget: "Helm.Helm" },
+    bsd: { pkg: "helm" },
     default_hook: {
         description: "Add common Helm chart repositories",
         script: r#"

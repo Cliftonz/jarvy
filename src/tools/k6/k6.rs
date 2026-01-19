@@ -9,6 +9,7 @@ define_tool!(K6, {
     macos: { brew: "k6" },
     linux: { uniform: "k6" },
     windows: { winget: "Grafana.k6" },
+    bsd: { pkg: "k6" },
 });
 
 #[cfg(test)]

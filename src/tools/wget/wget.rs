@@ -9,6 +9,7 @@ define_tool!(WGET, {
     macos: { brew: "wget" },
     linux: { uniform: "wget" },
     windows: { winget: "GnuWin32.Wget" },
+    bsd: { pkg: "wget" },
 });
 
 #[cfg(test)]

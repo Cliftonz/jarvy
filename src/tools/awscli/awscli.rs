@@ -7,8 +7,9 @@ use crate::define_tool;
 define_tool!(AWSCLI, {
     command: "aws",
     macos: { brew: "awscli" },
-    linux: { uniform: "awscli" },
+    linux: { apt: "awscli", dnf: "awscli", pacman: "aws-cli-v2", apk: "aws-cli" },
     windows: { winget: "Amazon.AWSCLI" },
+    bsd: { pkg: "awscli" },
     default_hook: {
         description: "Configure AWS CLI shell completion",
         script: r#"

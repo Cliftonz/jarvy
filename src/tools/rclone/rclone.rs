@@ -9,6 +9,7 @@ define_tool!(RCLONE, {
     macos: { brew: "rclone" },
     linux: { uniform: "rclone" },
     windows: { winget: "Rclone.Rclone" },
+    bsd: { pkg: "rclone" },
 });
 
 #[cfg(test)]

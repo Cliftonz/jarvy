@@ -11,6 +11,7 @@ define_tool!(YAZI, {
     macos: { brew: "yazi" },
     linux: { apt: "yazi", dnf: "yazi", pacman: "yazi", apk: "yazi" },
     windows: { winget: "sxyazi.yazi" },
+    bsd: { pkg: "yazi" },
 });
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ define_tool!(DUCKDB, {
     macos: { brew: "duckdb" },
     linux: { apt: "duckdb", dnf: "duckdb", pacman: "duckdb", apk: "duckdb" },
     windows: { winget: "DuckDB.cli", choco: "duckdb" },
+    bsd: { pkg: "duckdb" },
 });
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ define_tool!(ANSIBLE, {
     macos: { brew: "ansible" },
     linux: { apt: "ansible", dnf: "ansible", pacman: "ansible", apk: "ansible" },
     windows: { choco: "ansible" },
+    bsd: { pkg: "py39-ansible" },
 });
 
 #[cfg(test)]

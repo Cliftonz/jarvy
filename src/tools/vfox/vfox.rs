@@ -12,6 +12,7 @@ define_tool!(VFOX, {
     macos: { brew: "vfox" },
     linux: { brew: "vfox" },
     windows: { winget: "vfox" },
+    bsd: { pkg: "vfox" },
     default_hook: {
         description: "Add vfox shell activation to .bashrc and .zshrc",
         script: r#"

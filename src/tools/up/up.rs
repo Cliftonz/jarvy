@@ -9,6 +9,7 @@ define_tool!(UP, {
     command: "up",
     macos: { brew: "upbound/tap/up" },
     linux: { brew: "upbound/tap/up" },
+    bsd: { pkg: "up" },
     // No Windows support
 });
 

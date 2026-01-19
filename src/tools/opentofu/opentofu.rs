@@ -10,6 +10,7 @@ define_tool!(OPENTOFU, {
     macos: { brew: "opentofu" },
     linux: { uniform: "opentofu" },
     windows: { winget: "OpenTofu.OpenTofu" },
+    bsd: { pkg: "opentofu" },
 });
 
 #[cfg(test)]

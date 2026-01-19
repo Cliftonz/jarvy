@@ -9,6 +9,7 @@ define_tool!(SOPS, {
     macos: { brew: "sops" },
     linux: { brew: "sops" },
     windows: { winget: "Mozilla.sops" },
+    bsd: { pkg: "sops" },
 });
 
 #[cfg(test)]

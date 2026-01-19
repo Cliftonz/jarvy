@@ -9,6 +9,7 @@ define_tool!(SHFMT, {
     macos: { brew: "shfmt" },
     linux: { uniform: "shfmt" },
     windows: { winget: "mvdan.shfmt" },
+    bsd: { pkg: "shfmt" },
 });
 
 #[cfg(test)]

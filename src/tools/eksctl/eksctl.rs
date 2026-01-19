@@ -9,6 +9,7 @@ define_tool!(EKSCTL, {
     macos: { brew: "eksctl" },
     linux: { uniform: "eksctl" },
     windows: { winget: "weaveworks.eksctl" },
+    bsd: { pkg: "eksctl" },
     default_hook: {
         description: "Install eksctl shell completions for bash and zsh",
         script: r#"

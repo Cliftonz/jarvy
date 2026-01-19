@@ -9,6 +9,7 @@ define_tool!(GO, {
     macos: { brew: "go" },
     linux: { apt: "golang", dnf: "golang", pacman: "go", apk: "go" },
     windows: { winget: "GoLang.Go" },
+    bsd: { pkg: "go" },
     default_hook: {
         description: "Configure GOPATH and add Go binaries to PATH",
         script: r#"

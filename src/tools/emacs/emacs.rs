@@ -11,6 +11,7 @@ define_tool!(EMACS, {
     macos: { cask: "emacs" },
     linux: { apt: "emacs", dnf: "emacs", pacman: "emacs", apk: "emacs" },
     windows: { winget: "GNU.Emacs" },
+    bsd: { pkg: "emacs" },
 });
 
 #[cfg(test)]

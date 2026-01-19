@@ -9,6 +9,7 @@ define_tool!(NODE, {
     macos: { brew: "node" },
     linux: { uniform: "nodejs" },
     windows: { winget: "OpenJS.NodeJS.LTS" },
+    bsd: { pkg: "node" },
     default_hook: {
         description: "Configure npm global prefix and add to PATH",
         script: r#"

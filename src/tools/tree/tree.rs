@@ -10,6 +10,7 @@ define_tool!(TREE, {
     macos: { brew: "tree" },
     linux: { uniform: "tree" },
     // Windows has built-in tree.exe, no package needed
+    bsd: { pkg: "tree" },
 });
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ define_tool!(ACTIONLINT, {
     macos: { brew: "actionlint" },
     linux: { brew: "actionlint" },
     windows: { winget: "rhysd.actionlint" },
+    bsd: { pkg: "actionlint" },
 });
 
 #[cfg(test)]

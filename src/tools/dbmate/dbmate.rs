@@ -11,6 +11,7 @@ define_tool!(DBMATE, {
     macos: { brew: "dbmate" },
     linux: { brew: "dbmate" },
     windows: { choco: "dbmate" },
+    bsd: { pkg: "dbmate" },
 });
 
 #[cfg(test)]

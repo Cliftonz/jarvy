@@ -9,6 +9,7 @@ define_tool!(NCDU, {
     command: "ncdu",
     macos: { brew: "ncdu" },
     linux: { uniform: "ncdu" },
+    bsd: { pkg: "ncdu" },
 });
 
 #[cfg(test)]

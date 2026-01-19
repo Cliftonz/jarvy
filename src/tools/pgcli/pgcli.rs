@@ -12,6 +12,7 @@ define_tool!(PGCLI, {
     macos: { brew: "pgcli" },
     linux: { apt: "pgcli", dnf: "pgcli", pacman: "pgcli", apk: "pgcli" },
     windows: { choco: "pgcli" },
+    bsd: { pkg: "py39-pgcli" },
 });
 
 #[cfg(test)]

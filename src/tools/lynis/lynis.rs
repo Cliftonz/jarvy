@@ -9,6 +9,7 @@ define_tool!(LYNIS, {
     command: "lynis",
     macos: { brew: "lynis" },
     linux: { uniform: "lynis" },
+    bsd: { pkg: "lynis" },
 });
 
 #[cfg(test)]

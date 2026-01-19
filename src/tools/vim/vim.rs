@@ -11,6 +11,7 @@ define_tool!(VIM, {
     macos: { brew: "vim" },
     linux: { apt: "vim", dnf: "vim-enhanced", pacman: "vim", apk: "vim" },
     windows: { winget: "vim.vim" },
+    bsd: { pkg: "vim" },
 });
 
 #[cfg(test)]

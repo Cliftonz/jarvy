@@ -11,6 +11,7 @@ define_tool!(ZIG, {
     macos: { brew: "zig" },
     linux: { apt: "zig", dnf: "zig", pacman: "zig", apk: "zig" },
     windows: { winget: "zig.zig", choco: "zig" },
+    bsd: { pkg: "zig" },
 });
 
 #[cfg(test)]

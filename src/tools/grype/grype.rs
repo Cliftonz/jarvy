@@ -9,8 +9,9 @@ use crate::define_tool;
 define_tool!(GRYPE, {
     command: "grype",
     macos: { brew: "grype" },
-    linux: { brew: "grype" },
+    linux: { brew: "grype", apk: "grype" },
     windows: { choco: "grype" },
+    bsd: { pkg: "grype" },
 });
 
 #[cfg(test)]

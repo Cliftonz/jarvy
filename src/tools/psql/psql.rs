@@ -9,6 +9,7 @@ define_tool!(PSQL, {
     macos: { brew: "postgresql" },
     linux: { apt: "postgresql-client", dnf: "postgresql", pacman: "postgresql", apk: "postgresql-client" },
     windows: { winget: "PostgreSQL.PostgreSQL" },
+    bsd: { pkg: "postgresql16-client" },
 });
 
 #[cfg(test)]

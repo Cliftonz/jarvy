@@ -9,6 +9,7 @@ define_tool!(HADOLINT, {
     macos: { brew: "hadolint" },
     linux: { brew: "hadolint" },
     windows: { winget: "hadolint.hadolint" },
+    bsd: { pkg: "hadolint" },
 });
 
 #[cfg(test)]

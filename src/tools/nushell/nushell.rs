@@ -11,6 +11,7 @@ define_tool!(NUSHELL, {
     macos: { brew: "nushell" },
     linux: { apt: "nushell", dnf: "nushell", pacman: "nushell", apk: "nushell" },
     windows: { winget: "Nushell.Nushell" },
+    bsd: { pkg: "nushell" },
 });
 
 #[cfg(test)]

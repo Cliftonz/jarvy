@@ -9,6 +9,7 @@ define_tool!(TERRAFORM, {
     macos: { brew: "terraform" },
     linux: { uniform: "terraform" },
     windows: { winget: "HashiCorp.Terraform" },
+    bsd: { pkg: "terraform" },
     default_hook: {
         description: "Install Terraform shell autocomplete",
         script: r#"

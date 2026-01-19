@@ -1,2 +1,3 @@
+#![allow(clippy::module_inception)]
 mod k3d;
 pub use k3d::*;

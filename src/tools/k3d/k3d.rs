@@ -11,6 +11,7 @@ define_tool!(K3D, {
     macos: { brew: "k3d" },
     linux: { brew: "k3d" },
     windows: { winget: "k3d-io.k3d" },
+    bsd: { pkg: "k3d" },
     depends_on: &["docker"],
 });
 

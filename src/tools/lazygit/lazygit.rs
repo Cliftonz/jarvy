@@ -9,6 +9,7 @@ define_tool!(LAZYGIT, {
     macos: { brew: "lazygit" },
     linux: { uniform: "lazygit" },
     windows: { winget: "JesseDuffield.lazygit" },
+    bsd: { pkg: "lazygit" },
     default_hook: {
         description: "Create lg alias for lazygit",
         script: r#"

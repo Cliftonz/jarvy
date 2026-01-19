@@ -11,6 +11,7 @@ define_tool!(ACT, {
     macos: { brew: "act" },
     linux: { brew: "act" },
     windows: { winget: "nektos.act", choco: "act-cli" },
+    bsd: { pkg: "act" },
 });
 
 #[cfg(test)]

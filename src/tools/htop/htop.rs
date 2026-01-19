@@ -10,6 +10,7 @@ define_tool!(HTOP, {
     macos: { brew: "htop" },
     linux: { uniform: "htop" },
     // No Windows support - htop is Unix-only
+    bsd: { pkg: "htop" },
 });
 
 #[cfg(test)]

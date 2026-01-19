@@ -11,6 +11,7 @@ define_tool!(CHECKOV, {
     command: "checkov",
     macos: { brew: "checkov" },
     linux: { brew: "checkov" },
+    bsd: { pkg: "py39-checkov" },
 });
 
 #[cfg(test)]

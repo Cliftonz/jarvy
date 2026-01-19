@@ -9,6 +9,7 @@ define_tool!(MAKE, {
     macos: { brew: "make" },
     linux: { uniform: "make" },
     windows: { winget: "GnuWin32.Make" },
+    bsd: { pkg: "gmake" },
 });
 
 #[cfg(test)]

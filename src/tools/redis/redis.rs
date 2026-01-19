@@ -9,6 +9,7 @@ define_tool!(REDIS, {
     macos: { brew: "redis" },
     linux: { uniform: "redis" },
     windows: { winget: "Redis.Redis" },
+    bsd: { pkg: "redis" },
 });
 
 #[cfg(test)]

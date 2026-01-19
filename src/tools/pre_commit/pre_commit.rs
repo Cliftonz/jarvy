@@ -9,6 +9,7 @@ define_tool!(PRE_COMMIT, {
     macos: { brew: "pre-commit" },
     linux: { uniform: "pre-commit" },
     windows: { choco: "pre-commit" },
+    bsd: { pkg: "py39-pre-commit" },
 });
 
 #[cfg(test)]

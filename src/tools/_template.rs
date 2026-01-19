@@ -10,6 +10,7 @@ define_tool!(__TOOL_UPPER__, {
     macos: { brew: "__PKG_BREW__" },
     linux: { uniform: "__PKG_LINUX__" },
     windows: { winget: "__PKG_WINGET_ID__" },
+    bsd: { pkg: "__PKG_BSD__" },
 });
 
 #[cfg(test)]

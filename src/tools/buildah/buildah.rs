@@ -11,6 +11,7 @@ define_tool!(BUILDAH, {
     command: "buildah",
     macos: { brew: "buildah" },
     linux: { apt: "buildah", dnf: "buildah", pacman: "buildah", apk: "buildah" },
+    bsd: { pkg: "buildah" },
 });
 
 #[cfg(test)]

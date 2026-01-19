@@ -9,6 +9,7 @@ define_tool!(PODMAN, {
     macos: { brew: "podman" },
     linux: { apt: "podman", dnf: "podman", pacman: "podman", apk: "podman" },
     windows: { winget: "RedHat.Podman" },
+    bsd: { pkg: "podman" },
 });
 
 #[cfg(test)]

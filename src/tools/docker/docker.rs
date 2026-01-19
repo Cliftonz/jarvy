@@ -9,6 +9,7 @@ define_tool!(DOCKER, {
     macos: { cask: "docker" },
     linux: { apt: "docker.io", dnf: "docker", pacman: "docker", apk: "docker" },
     windows: { winget: "Docker.DockerDesktop" },
+    bsd: { pkg: "docker" },
     default_hook: {
         description: "Add user to docker group (Linux) for rootless access",
         script: r#"

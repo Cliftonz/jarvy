@@ -9,6 +9,7 @@ define_tool!(AIR, {
     macos: { brew: "air" },
     linux: { uniform: "air" },
     windows: { winget: "cosmtrek.air" },
+    bsd: { pkg: "air" },
 });
 
 #[cfg(test)]

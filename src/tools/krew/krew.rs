@@ -9,7 +9,8 @@ use crate::define_tool;
 define_tool!(KREW, {
     command: "kubectl-krew",
     macos: { brew: "krew" },
-    linux: { brew: "krew" },
+    linux: { brew: "krew", apk: "kubectl-krew" },
+    bsd: { pkg: "krew" },
     default_hook: {
         description: "Add krew to PATH in .bashrc and .zshrc",
         script: r#"

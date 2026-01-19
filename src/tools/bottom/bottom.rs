@@ -9,6 +9,7 @@ define_tool!(BOTTOM, {
     macos: { brew: "bottom" },
     linux: { uniform: "bottom" },
     windows: { winget: "Clement.bottom" },
+    bsd: { pkg: "bottom" },
 });
 
 #[cfg(test)]

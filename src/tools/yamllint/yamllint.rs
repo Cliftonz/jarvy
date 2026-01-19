@@ -7,8 +7,9 @@ use crate::define_tool;
 define_tool!(YAMLLINT, {
     command: "yamllint",
     macos: { brew: "yamllint" },
-    linux: { uniform: "yamllint" },
+    linux: { apt: "yamllint", dnf: "yamllint", pacman: "yamllint", apk: "py3-yamllint" },
     windows: { winget: "adrienverge.yamllint" },
+    bsd: { pkg: "py39-yamllint" },
 });
 
 #[cfg(test)]

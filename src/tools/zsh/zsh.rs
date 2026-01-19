@@ -10,6 +10,7 @@ define_tool!(ZSH, {
     macos: { brew: "zsh" },
     linux: { uniform: "zsh" },
     // No Windows support - zsh is Unix-only
+    bsd: { pkg: "zsh" },
 });
 
 #[cfg(test)]

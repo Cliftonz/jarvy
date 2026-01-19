@@ -11,6 +11,7 @@ define_tool!(MICRO, {
     macos: { brew: "micro" },
     linux: { apt: "micro", dnf: "micro", pacman: "micro", apk: "micro" },
     windows: { winget: "zyedidia.micro" },
+    bsd: { pkg: "micro" },
 });
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ define_tool!(KUBENS, {
     command: "kubens",
     macos: { brew: "kubectx" },
     linux: { brew: "kubectx" },
+    bsd: { pkg: "kubectx" },
 });
 
 #[cfg(test)]

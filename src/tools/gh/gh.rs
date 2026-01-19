@@ -7,8 +7,9 @@ use crate::define_tool;
 define_tool!(GH, {
     command: "gh",
     macos: { brew: "gh" },
-    linux: { uniform: "gh" },
+    linux: { apt: "gh", dnf: "gh", pacman: "github-cli", apk: "github-cli" },
     windows: { winget: "GitHub.cli" },
+    bsd: { pkg: "gh" },
     default_hook: {
         description: "Configure GitHub CLI shell completion",
         script: r#"

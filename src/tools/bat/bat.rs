@@ -9,6 +9,7 @@ define_tool!(BAT, {
     macos: { brew: "bat" },
     linux: { uniform: "bat" },
     windows: { winget: "sharkdp.bat" },
+    bsd: { pkg: "bat" },
     default_hook: {
         description: "Configure bat as MANPAGER for colored man pages",
         script: r#"

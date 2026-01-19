@@ -9,6 +9,7 @@ define_tool!(TFSEC, {
     macos: { brew: "tfsec" },
     linux: { uniform: "tfsec" },
     windows: { winget: "aquasecurity.tfsec" },
+    bsd: { pkg: "tfsec" },
 });
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ define_tool!(KUBECTL, {
     macos: { brew: "kubectl" },
     linux: { uniform: "kubectl" },
     windows: { winget: "Kubernetes.kubectl" },
+    bsd: { pkg: "kubectl" },
     default_hook: {
         description: "Enable kubectl shell completion and 'k' alias",
         script: r#"

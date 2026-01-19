@@ -11,6 +11,7 @@ define_tool!(HYPERFINE, {
     macos: { brew: "hyperfine" },
     linux: { apt: "hyperfine", dnf: "hyperfine", pacman: "hyperfine", apk: "hyperfine" },
     windows: { winget: "sharkdp.hyperfine", choco: "hyperfine" },
+    bsd: { pkg: "hyperfine" },
 });
 
 #[cfg(test)]

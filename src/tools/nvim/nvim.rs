@@ -9,6 +9,7 @@ define_tool!(NVIM, {
     macos: { brew: "neovim" },
     linux: { uniform: "neovim" },
     windows: { winget: "Neovim.Neovim" },
+    bsd: { pkg: "neovim" },
 });
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ define_tool!(PYTHON, {
     macos: { brew: "python" },
     linux: { apt: "python3", dnf: "python3", pacman: "python", apk: "python3" },
     windows: { winget: "Python.Python.3" },
+    bsd: { pkg: "python3" },
     default_hook: {
         description: "Upgrade pip and configure user site-packages PATH",
         script: r#"

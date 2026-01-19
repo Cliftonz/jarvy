@@ -10,8 +10,9 @@ use crate::define_tool;
 define_tool!(SYFT, {
     command: "syft",
     macos: { brew: "syft" },
-    linux: { brew: "syft" },
+    linux: { brew: "syft", apk: "syft" },
     windows: { choco: "syft" },
+    bsd: { pkg: "syft" },
 });
 
 #[cfg(test)]

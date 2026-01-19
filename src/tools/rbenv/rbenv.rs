@@ -10,6 +10,7 @@ define_tool!(RBENV, {
     command: "rbenv",
     macos: { brew: "rbenv" },
     linux: { brew: "rbenv" },
+    bsd: { pkg: "rbenv" },
     default_hook: {
         description: "Add rbenv shell initialization to .bashrc and .zshrc",
         script: r#"

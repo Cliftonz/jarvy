@@ -9,6 +9,7 @@ define_tool!(FD, {
     macos: { brew: "fd" },
     linux: { apt: "fd-find", dnf: "fd-find", pacman: "fd", apk: "fd" },
     windows: { winget: "sharkdp.fd" },
+    bsd: { pkg: "fd-find" },
     default_hook: {
         description: "Add fd alias for Debian/Ubuntu (fd-find package)",
         script: r#"

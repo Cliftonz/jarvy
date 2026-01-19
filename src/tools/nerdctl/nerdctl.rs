@@ -9,7 +9,8 @@ use crate::define_tool;
 define_tool!(NERDCTL, {
     command: "nerdctl",
     macos: { brew: "nerdctl" },
-    linux: { brew: "nerdctl" },
+    linux: { brew: "nerdctl", apk: "nerdctl" },
+    bsd: { pkg: "nerdctl" },
 });
 
 #[cfg(test)]

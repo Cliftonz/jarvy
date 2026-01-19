@@ -9,6 +9,7 @@ define_tool!(TALOSCTL, {
     macos: { brew: "siderolabs/tap/talosctl" },
     linux: { uniform: "talosctl" },
     windows: { winget: "SideroLabs.talosctl" },
+    bsd: { pkg: "talosctl" },
 });
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ define_tool!(KUBECTX, {
     macos: { brew: "kubectx" },
     linux: { brew: "kubectx" },
     windows: { winget: "ahmetb.kubectx" },
+    bsd: { pkg: "kubectx" },
 });
 
 #[cfg(test)]

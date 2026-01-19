@@ -9,7 +9,8 @@ use crate::define_tool;
 define_tool!(DIVE, {
     command: "dive",
     macos: { brew: "dive" },
-    linux: { brew: "dive" },
+    linux: { brew: "dive", apk: "dive" },
+    bsd: { pkg: "dive" },
     // dive can explore images from docker or podman
     depends_on_one_of: &["docker", "podman"],
 });
