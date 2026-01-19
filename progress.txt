@@ -9,6 +9,8 @@
 > - **Cost & Resource Visibility** - No bandwidth tracking, disk space reporting, or download analytics
 > - **Plugin/Extension Ecosystem** - No third-party tool definitions, plugin registry, or custom package manager extensions
 > - **Parallel/Group Downloads** - No parallel binary downloads or download batching. Package managers (brew, apt, etc.) handle their own download optimization, and custom installers (rustup, nvm) already use efficient strategies. Complexity not justified for marginal benefit.
+> - **Tool Rollback** - No rollback functionality for individual tool installations (Jarvy self-update has rollback via `jarvy update --rollback`)
+> - **Cross-Project Consistency/Management** - No centralized management or synchronization of jarvy.toml across multiple projects
 
 ---
 
@@ -38,6 +40,7 @@
 | PRD-018 | Quality and Testing Infrastructure | 2026-01-18 | Coverage (cargo-llvm-cov + Codecov), proptest, cargo-fuzz, criterion benchmarks, mutation testing |
 | PRD-019 | Corporate Proxy Support | 2026-01-18 | `[network]` config section, HTTP/HTTPS/SOCKS proxies, CA bundles, per-tool overrides |
 | PRD-023 | User Onboarding & Education | 2026-01-18 | `jarvy init`, `jarvy quickstart`, `jarvy templates`, first-run detection, 20 built-in templates |
+| PRD-035 | Self-Updating Functionality | 2026-01-19 | `jarvy update`, multi-method detection (Homebrew/Cargo/apt/etc), rollback support, CI auto-disable |
 
 ---
 
@@ -94,6 +97,9 @@
 ### CLI & API
 - **Clap Parent Flags**: Flags on parent commands must appear BEFORE subcommand
 - **ureq 3.x**: `Agent::new_with_defaults()` replaced `Agent::new()`
+- **ureq Body Reading**: Use `response.into_body().as_reader()` not `.into_reader()`
+- **ureq Headers**: Use `.header()` not `.set()` for request headers
+- **ureq JSON**: Use `body.read_json()` for parsing JSON response bodies
 - **tracing-subscriber**: Needs `env-filter` and `json` features explicitly enabled
 
 ---
@@ -334,6 +340,78 @@ jarvy quickstart                     # Guided first-run flow
 - Template content validation
 - File collision handling
 - CLI argument parsing
+
+### PRD-024 Scope Update (2026-01-18)
+**Changed**: Replaced "Version Pinning & Lock Files" with "Automatic Tool Updates"
+
+**Rationale**: Version pinning via lock files adds complexity without significant benefit for Jarvy's use case. Automatic tool updates better serve the goal of keeping developer environments current.
+
+### PRD-035 Self-Updating Functionality (Completed 2026-01-19)
+**Module**: `src/update/` - Self-updating functionality for Jarvy CLI
+
+**Files Created:**
+- `config.rs` - UpdateConfig, Channel (Stable/Beta/Nightly), AutoInstallPolicy, CI detection
+- `method.rs` - InstallMethod detection (Homebrew, Cargo, apt, dnf, pacman, winget, Chocolatey, Scoop, Binary)
+- `release.rs` - GitHub Releases API client (GitHubRelease, ReleaseAsset, ReleaseClient)
+- `checker.rs` - UpdateChecker with throttling, UpdateState, version comparison
+- `installer.rs` - BinaryInstaller for direct downloads, SHA256 checksum verification
+- `rollback.rs` - RollbackInfo, RollbackManager for backup/restore
+- `commands.rs` - UpdateAction enum, CLI command handlers
+- `signature.rs` - Checksum verification utilities
+
+**CLI Commands:**
+```bash
+jarvy update                      # Check and install latest update
+jarvy update check                # Check for updates without installing
+jarvy update --version 1.2.3      # Install specific version
+jarvy update --channel beta       # Use beta channel
+jarvy update --rollback           # Rollback to previous version
+jarvy update history              # Show update history
+jarvy update config               # Show update configuration
+jarvy update enable               # Enable auto-updates
+jarvy update disable              # Disable auto-updates
+```
+
+**Configuration** (`~/.jarvy/config.toml`):
+```toml
+[update]
+enabled = true
+channel = "stable"          # stable, beta, nightly
+check_interval = "24h"
+auto_install = "never"      # never, patch-only, patch-minor, all
+show_notifications = true
+```
+
+**Environment Variables:**
+- `JARVY_UPDATE=0` - Disable update checks
+- `JARVY_UPDATE_CHANNEL=beta` - Override release channel
+- `JARVY_PINNED_VERSION=1.2.3` - Pin to specific version
+
+**Key Technical Details:**
+- Installation method detection via path analysis and package manager queries
+- Method caching in `~/.jarvy/install-method.json` for performance
+- GitHub Releases API for version checking and binary downloads
+- SHA256 checksum verification for binary downloads
+- Backup current binary before update for rollback support
+- Auto-disable in CI environments (`CI=true`)
+- Version throttling to avoid excessive API calls
+
+**Installation Methods Supported:**
+1. Homebrew (macOS) - `brew upgrade jarvy`
+2. Cargo (Rust) - `cargo install jarvy --force`
+3. apt (Debian/Ubuntu) - `apt-get update && apt-get install jarvy`
+4. dnf (Fedora/RHEL) - `dnf upgrade jarvy`
+5. pacman (Arch) - `pacman -Syu jarvy`
+6. winget (Windows) - `winget upgrade jarvy`
+7. Chocolatey (Windows) - `choco upgrade jarvy`
+8. Scoop (Windows) - `scoop update jarvy`
+9. Binary (fallback) - Direct download from GitHub Releases
+
+**Technical Learnings:**
+- ureq 3.x API: Use `Agent::new_with_defaults().get().header()` not `.set()`
+- Body reading: Use `response.into_body().as_reader()` not `.into_reader()`
+- JSON parsing: Use `body.read_json()` for parsing response bodies
+- Binary replacement: `self_update` crate for atomic binary updates
 
 ### Future Enhancements
 - `jarvy search --category` (category filtering)

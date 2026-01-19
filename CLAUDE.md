@@ -174,6 +174,41 @@ jarvy setup --role <name>           # Override role for single run
 - **`jarvy.toml`** (project) - Tools to provision with versions
 - **`~/.jarvy/config.toml`** (global) - Telemetry settings, machine fingerprint
 
+### Network/Proxy Configuration
+
+Jarvy supports corporate network environments with HTTP/HTTPS/SOCKS proxies and custom CA certificates.
+
+**Module**: `src/network/` - Proxy resolution, credential handling, environment propagation.
+
+**Configuration** (`jarvy.toml`):
+```toml
+[network]
+https_proxy = "http://proxy.corp.com:8080"
+no_proxy = ["localhost", "127.0.0.1", ".corp.com"]
+
+[network.auth]
+username = "jdoe"
+password = { env = "PROXY_PASSWORD" }  # Or plain string (not recommended)
+
+[network.tls]
+ca_bundle = "/etc/ssl/certs/corporate-ca.crt"
+
+[network.overrides.git]
+https_proxy = "http://git-proxy.corp.com:8888"
+```
+
+**Priority Order**: Environment variables > Tool overrides > Global config
+
+**Environment Variables Propagated**:
+- `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (both cases)
+- `CURL_CA_BUNDLE`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`
+
+**Key Types**:
+- `NetworkConfig` - Main proxy configuration
+- `ProxyAuth` - Username/password with secure password sources
+- `TlsConfig` - CA bundle and TLS settings
+- `NetworkOverride` - Per-tool proxy settings
+
 ### Telemetry
 
 Jarvy uses OpenTelemetry (OTEL) for unified telemetry: logs, metrics, and optional traces. Telemetry is **opt-in by default** (disabled until configured).
@@ -210,6 +245,70 @@ jarvy telemetry preview       # Show what events would be sent
 ```
 
 **Module**: `src/telemetry.rs` - Unified telemetry API with event functions and metrics.
+
+### Self-Updating
+
+Jarvy includes built-in self-updating functionality that can check for and install updates via multiple methods.
+
+**Module**: `src/update/` - Self-updating with multiple installation methods and rollback support.
+
+**Key Files**:
+- `config.rs` - UpdateConfig, Channel (stable/beta/nightly), auto-install policies
+- `method.rs` - InstallMethod detection (Homebrew, Cargo, apt, dnf, winget, etc.)
+- `release.rs` - GitHub Releases API client
+- `checker.rs` - Version checking with throttling
+- `installer.rs` - Binary download and installation
+- `rollback.rs` - Backup and rollback management
+- `commands.rs` - CLI command handlers
+
+**Configuration** (`~/.jarvy/config.toml`):
+```toml
+[update]
+enabled = true                    # Enable auto-update checks
+channel = "stable"                # stable, beta, nightly
+check_interval = "24h"            # How often to check
+auto_install = "never"            # never, patch-only, patch-minor, all
+show_notifications = true         # Show update notifications
+```
+
+**Environment Variables**:
+- `JARVY_UPDATE=0` - Disable update checks
+- `JARVY_UPDATE_CHANNEL=beta` - Override release channel
+- `JARVY_PINNED_VERSION=1.2.3` - Pin to specific version
+
+**CI Behavior**: Auto-update checks are disabled in CI environments (`CI=true`).
+
+**CLI Commands**:
+```bash
+jarvy update                      # Check and install latest update
+jarvy update check                # Check for updates without installing
+jarvy update --version 1.2.3      # Install specific version
+jarvy update --channel beta       # Use beta channel
+jarvy update --rollback           # Rollback to previous version
+jarvy update history              # Show update history
+jarvy update config               # Show update configuration
+jarvy update enable               # Enable auto-updates
+jarvy update disable              # Disable auto-updates
+```
+
+**Installation Methods Detected**:
+- Homebrew (macOS)
+- Cargo (Rust)
+- apt (Debian/Ubuntu)
+- dnf (Fedora/RHEL)
+- pacman (Arch)
+- winget (Windows)
+- Chocolatey (Windows)
+- Scoop (Windows)
+- Binary (direct download fallback)
+
+**Key Types**:
+- `UpdateConfig` - Update configuration
+- `Channel` - Release channel (Stable, Beta, Nightly)
+- `InstallMethod` - Detected installation method
+- `UpdateChecker` - Version checking with throttling
+- `BinaryInstaller` - Direct binary download/install
+- `RollbackManager` - Backup and restore previous versions
 
 ## Testing
 

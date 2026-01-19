@@ -44,6 +44,7 @@ mod team;
 mod telemetry;
 mod templates;
 mod tools;
+mod update;
 
 #[derive(Parser)]
 #[clap(
@@ -395,6 +396,23 @@ enum Commands {
         #[clap(long)]
         skip_check: bool,
     },
+    /// Check for and install Jarvy updates
+    Update {
+        #[clap(subcommand)]
+        action: Option<UpdateSubcommand>,
+        /// Install specific version
+        #[clap(long)]
+        version: Option<String>,
+        /// Use specific release channel (stable, beta, nightly)
+        #[clap(long)]
+        channel: Option<String>,
+        /// Override installation method (homebrew, cargo, apt, dnf, winget, chocolatey, scoop, binary)
+        #[clap(long)]
+        method: Option<String>,
+        /// Rollback to previous version
+        #[clap(long)]
+        rollback: bool,
+    },
     /// Catch-all for unknown subcommands and their args
     #[clap(external_subcommand)]
     External(Vec<String>),
@@ -560,6 +578,24 @@ enum ConfigAction {
     },
 }
 
+#[derive(Subcommand)]
+enum UpdateSubcommand {
+    /// Check for available updates
+    Check {
+        /// Check specific channel instead of configured
+        #[clap(long)]
+        channel: Option<String>,
+    },
+    /// Show update history
+    History {},
+    /// Show update configuration
+    Config {},
+    /// Enable auto-updates
+    Enable {},
+    /// Disable auto-updates
+    Disable {},
+}
+
 fn parse_ci_provider(s: &str) -> Result<ci::CiProvider, String> {
     match s.to_lowercase().as_str() {
         "github" | "github-actions" | "gha" => Ok(ci::CiProvider::GitHubActions),
@@ -576,6 +612,36 @@ fn parse_ci_provider(s: &str) -> Result<ci::CiProvider, String> {
             "Unknown CI provider '{}'. Supported: github, gitlab, circleci, azure, bitbucket",
             s
         )),
+    }
+}
+
+fn parse_update_channel(s: &str) -> Option<update::Channel> {
+    match s.to_lowercase().as_str() {
+        "stable" => Some(update::Channel::Stable),
+        "beta" => Some(update::Channel::Beta),
+        "nightly" => Some(update::Channel::Nightly),
+        _ => {
+            eprintln!("Unknown update channel '{}'. Using stable.", s);
+            Some(update::Channel::Stable)
+        }
+    }
+}
+
+fn parse_install_method(s: &str) -> Option<update::InstallMethod> {
+    match s.to_lowercase().as_str() {
+        "homebrew" | "brew" => Some(update::InstallMethod::Homebrew),
+        "cargo" => Some(update::InstallMethod::Cargo),
+        "apt" | "apt-get" => Some(update::InstallMethod::Apt),
+        "dnf" => Some(update::InstallMethod::Dnf),
+        "pacman" => Some(update::InstallMethod::Pacman),
+        "winget" => Some(update::InstallMethod::Winget),
+        "chocolatey" | "choco" => Some(update::InstallMethod::Chocolatey),
+        "scoop" => Some(update::InstallMethod::Scoop),
+        "binary" | "direct" => Some(update::InstallMethod::Binary),
+        _ => {
+            eprintln!("Unknown install method '{}'. Auto-detecting.", s);
+            None
+        }
     }
 }
 
@@ -2131,6 +2197,30 @@ fn main() {
         }
         Some(Commands::Config { action }) => {
             handle_config_command(action);
+        }
+        Some(Commands::Update { action, version, channel, method, rollback }) => {
+            let update_action = match action {
+                Some(UpdateSubcommand::Check { channel: ch }) => {
+                    let ch = ch.as_ref().or(channel.as_ref());
+                    update::UpdateAction::Check {
+                        channel: ch.and_then(|c| parse_update_channel(c)),
+                    }
+                }
+                Some(UpdateSubcommand::History {}) => update::UpdateAction::History,
+                Some(UpdateSubcommand::Config {}) => update::UpdateAction::Config,
+                Some(UpdateSubcommand::Enable {}) => update::UpdateAction::Enable,
+                Some(UpdateSubcommand::Disable {}) => update::UpdateAction::Disable,
+                None => {
+                    // Default: install update
+                    update::UpdateAction::Install {
+                        version: version.clone(),
+                        channel: channel.as_ref().and_then(|c| parse_update_channel(c)),
+                        method: method.as_ref().and_then(|m| parse_install_method(m)),
+                        rollback: *rollback,
+                    }
+                }
+            };
+            std::process::exit(update::run_update_command(update_action));
         }
         None => {
             user_select();
