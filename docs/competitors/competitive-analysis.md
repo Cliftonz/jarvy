@@ -114,6 +114,20 @@ Storage: $0.07/GB/month
 - **Strengths**: Full VM isolation, mature ecosystem
 - **Jarvy advantage**: Minimal overhead (no VM), faster setup, simpler config
 
+### Container-Based Solutions
+
+#### Docker (Dev Containers)
+- **Type**: Container platform with dev container support
+- **Pricing**: Free (personal) / $5-24/user/month (Docker Desktop business)
+- **Strengths**: Full isolation, CI/CD parity, massive ecosystem
+- **Jarvy advantage**: No Docker licensing, native performance, no daemon overhead, simpler mental model
+
+#### Chainguard
+- **Type**: Secure, minimal container base images
+- **Pricing**: Free tier / Enterprise pricing
+- **Strengths**: Near-zero CVEs, SBOM, Sigstore signing, daily rebuilds
+- **Jarvy advantage**: Different use case - Jarvy provisions dev environments, Chainguard provides production images. They're complementary rather than competing.
+
 ### Competitive Positioning Matrix
 
 | Tool | Type | Cross-Platform | Config Format | Cost | Isolation |
@@ -122,9 +136,11 @@ Storage: $0.07/GB/month
 | mise/asdf | Version manager | macOS/Linux | .tool-versions | Free | None |
 | Nix | Package manager | Linux/macOS | Nix lang | Free | Sandboxed |
 | Homebrew Bundle | Package manager | macOS (primary) | Brewfile | Free | None |
+| Docker | Container platform | macOS/Linux/Windows | Dockerfile | Free-$24/user | Container |
 | Codespaces | Cloud environment | Any (browser) | devcontainer.json | $$/hour | Container |
 | Gitpod | Cloud environment | Any (browser) | devcontainer.json | $$/month | Container |
 | DevPod | Hybrid | Any | devcontainer.json | Infra cost | Container |
+| Chainguard | Container images | Any (containers) | Registry pull | Free-$$$ | Container |
 
 ---
 

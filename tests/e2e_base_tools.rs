@@ -133,7 +133,11 @@ fn get_system_info() -> SystemInfo {
                 content
                     .lines()
                     .find(|l| l.starts_with("PRETTY_NAME="))
-                    .map(|l| l.trim_start_matches("PRETTY_NAME=").trim_matches('"').to_string())
+                    .map(|l| {
+                        l.trim_start_matches("PRETTY_NAME=")
+                            .trim_matches('"')
+                            .to_string()
+                    })
             })
             .unwrap_or_else(|| "Linux".to_string())
     } else if cfg!(target_os = "windows") {
@@ -155,11 +159,7 @@ fn get_system_info() -> SystemInfo {
 
     let package_manager = detect_package_manager();
 
-    let platform = format!(
-        "{}-{}",
-        os,
-        if arch == "aarch64" { "arm64" } else { &arch }
-    );
+    let platform = format!("{}-{}", os, if arch == "aarch64" { "arm64" } else { &arch });
 
     SystemInfo {
         platform,
@@ -186,7 +186,12 @@ fn detect_package_manager() -> Option<String> {
             ("apk", "apk"),
             ("zypper", "zypper"),
         ] {
-            if Command::new("which").arg(cmd).output().map(|o| o.status.success()).unwrap_or(false) {
+            if Command::new("which")
+                .arg(cmd)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
                 return Some(name.to_string());
             }
         }
@@ -406,7 +411,11 @@ fn write_results(results: &E2ETestResults) {
         results.system_info.arch,
         results.system_info.os_version,
         results.system_info.hostname,
-        results.system_info.package_manager.as_deref().unwrap_or("unknown"),
+        results
+            .system_info
+            .package_manager
+            .as_deref()
+            .unwrap_or("unknown"),
         results.system_info.timestamp
     );
     fs::write(&info_path, info).ok();
@@ -555,7 +564,8 @@ fn e2e_dry_run_mode() {
 
     let mut cmd = Command::new(&jarvy_bin);
     cmd.env("JARVY_TEST_MODE", "1");
-    cmd.args(["setup", "--dry-run", "--file"]).arg(config.path());
+    cmd.args(["setup", "--dry-run", "--file"])
+        .arg(config.path());
 
     cmd.assert()
         .success()

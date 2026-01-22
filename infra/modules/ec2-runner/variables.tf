@@ -11,9 +11,9 @@ variable "ami_id" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type"
+  description = "EC2 instance type (t3.small recommended for most, t3.micro for Alpine)"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 variable "vpc_id" {

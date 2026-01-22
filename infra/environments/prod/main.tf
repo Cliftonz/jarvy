@@ -82,13 +82,22 @@ variable "freebsd_ami_id" {
 }
 
 # EC2 Runner Modules
+#
+# Instance sizing rationale:
+# - t3.small (2 vCPU, 2GB RAM): Fedora, Arch, FreeBSD - sufficient for Rust compilation
+# - t3.micro (1 vCPU, 1GB RAM): Alpine only - minimal OS, lighter builds
+#
+# Spot pricing (us-west-2, ~20 min job):
+# - t3.small: ~$0.005/run
+# - t3.micro: ~$0.002/run
+
 module "fedora_runner" {
   source = "../../modules/ec2-runner"
   count  = var.fedora_ami_id != "" ? 1 : 0
 
   platform      = "fedora-40"
   ami_id        = var.fedora_ami_id
-  instance_type = "t3.medium"
+  instance_type = "t3.small"  # 2 vCPU, 2GB RAM
   vpc_id        = var.vpc_id
   subnet_id     = var.subnet_id
   github_repo   = var.github_repo
@@ -101,7 +110,7 @@ module "arch_runner" {
 
   platform      = "arch-linux"
   ami_id        = var.arch_ami_id
-  instance_type = "t3.medium"
+  instance_type = "t3.small"  # 2 vCPU, 2GB RAM
   vpc_id        = var.vpc_id
   subnet_id     = var.subnet_id
   github_repo   = var.github_repo
@@ -114,7 +123,7 @@ module "alpine_runner" {
 
   platform      = "alpine"
   ami_id        = var.alpine_ami_id
-  instance_type = "t3.small"
+  instance_type = "t3.micro"  # 1 vCPU, 1GB RAM - Alpine is lightweight
   vpc_id        = var.vpc_id
   subnet_id     = var.subnet_id
   github_repo   = var.github_repo
@@ -127,7 +136,7 @@ module "freebsd_runner" {
 
   platform      = "freebsd-14"
   ami_id        = var.freebsd_ami_id
-  instance_type = "t3.medium"
+  instance_type = "t3.small"  # 2 vCPU, 2GB RAM
   vpc_id        = var.vpc_id
   subnet_id     = var.subnet_id
   github_repo   = var.github_repo

@@ -6,7 +6,7 @@ Design and implement a comprehensive end-to-end testing harness using a **hybrid
 
 ## Problem Statement
 
-Current testing infrastructure has significant gaps in real-world platform coverage:
+The current testing infrastructure has significant gaps in real-world platform coverage:
 
 1. **macOS gaps**: GitHub now provides both Intel (macos-13) and Apple Silicon (macos-14/15) runners, but we're not fully utilizing them; shared runners have pre-installed tools that can mask installation failures
 2. **Linux distro gaps**: GitHub only offers Ubuntu; Testcontainers work but don't test real package manager interactions (sudo, system paths, service integration); missing Fedora, Arch, Alpine native testing
