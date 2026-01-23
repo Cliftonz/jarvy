@@ -62,6 +62,7 @@ tempfile = "3.20.0"
 assert_cmd = "2.0.17"
 proptest = "1.5"
 criterion = { version = "0.5", features = ["html_reports"] }
+chrono = "0.4"
 
 [[bench]]
 name = "config_parsing"

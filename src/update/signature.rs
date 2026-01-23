@@ -127,31 +127,36 @@ mod tests {
 
     #[test]
     fn test_parse_checksums() {
+        // SHA256 hashes are 64 hex characters
         let content = r#"
-abc123def456  jarvy-darwin-aarch64.tar.gz
-789xyz000111  jarvy-linux-x86_64.tar.gz
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  jarvy-darwin-aarch64.tar.gz
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  jarvy-linux-x86_64.tar.gz
 # Comment line
-deadbeef1234 *jarvy-windows-x86_64.zip
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc *jarvy-windows-x86_64.zip
 "#;
 
         let checksums = parse_checksums(content);
         assert_eq!(checksums.len(), 3);
-        assert_eq!(checksums[0].0, "abc123def456");
+        assert_eq!(
+            checksums[0].0,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
         assert_eq!(checksums[0].1, "jarvy-darwin-aarch64.tar.gz");
         assert_eq!(checksums[2].1, "jarvy-windows-x86_64.zip");
     }
 
     #[test]
     fn test_find_checksum() {
+        // SHA256 hashes are 64 hex characters
         let content = r#"
-abc123def456789012345678901234567890123456789012345678901234  jarvy-darwin-aarch64.tar.gz
-fedcba987654321098765432109876543210987654321098765432109876  jarvy-linux-x86_64.tar.gz
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  jarvy-darwin-aarch64.tar.gz
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  jarvy-linux-x86_64.tar.gz
 "#;
 
         let found = find_checksum(content, "jarvy-darwin-aarch64.tar.gz");
         assert_eq!(
             found,
-            Some("abc123def456789012345678901234567890123456789012345678901234".to_string())
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string())
         );
 
         let not_found = find_checksum(content, "nonexistent.tar.gz");
