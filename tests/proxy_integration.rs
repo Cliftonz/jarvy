@@ -2,7 +2,6 @@
 //!
 //! These tests verify the network/proxy configuration parsing and propagation.
 
-
 /// Test that TOML with [network] section can be parsed
 #[test]
 fn test_network_config_parsing() {

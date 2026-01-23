@@ -336,11 +336,7 @@ fn build_tool_entry(name: &str, config: &ToolConfig) -> (String, Tool) {
             version,
             version_manager,
             use_sudo,
-        } => (
-            version.clone(),
-            version_manager.unwrap_or(true),
-            *use_sudo,
-        ),
+        } => (version.clone(), version_manager.unwrap_or(true), *use_sudo),
         ToolConfig::Simple(version) => (version.clone(), true, None),
     };
 

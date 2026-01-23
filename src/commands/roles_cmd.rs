@@ -10,9 +10,7 @@ pub fn run_roles(file: &str, action: &roles::RolesAction) {
     if let Err(e) = roles::handle_roles_command(
         action.clone(),
         Some(config.get_roles_config()),
-        config
-            .get_assigned_roles()
-            .and_then(|v| v.first().copied()),
+        config.get_assigned_roles().and_then(|v| v.first().copied()),
     ) {
         eprintln!("Error: {}", e);
         std::process::exit(1);

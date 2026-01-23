@@ -9,9 +9,7 @@
 
 use crate::output::{ExitCode, Outputable, colors, header, icons};
 use crate::telemetry;
-use crate::tools::spec::{
-    get_tool_dependencies, get_tool_flexible_dependencies, list_tool_names,
-};
+use crate::tools::spec::{get_tool_dependencies, get_tool_flexible_dependencies, list_tool_names};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;

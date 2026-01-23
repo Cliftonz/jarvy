@@ -152,16 +152,12 @@ impl NetworkConfig {
 
     /// Get the effective proxy URL for HTTP requests
     pub fn effective_http_proxy(&self) -> Option<&str> {
-        self.http_proxy
-            .as_deref()
-            .or(self.https_proxy.as_deref())
+        self.http_proxy.as_deref().or(self.https_proxy.as_deref())
     }
 
     /// Get the effective proxy URL for HTTPS requests
     pub fn effective_https_proxy(&self) -> Option<&str> {
-        self.https_proxy
-            .as_deref()
-            .or(self.http_proxy.as_deref())
+        self.https_proxy.as_deref().or(self.http_proxy.as_deref())
     }
 
     /// Check if a host should bypass the proxy
