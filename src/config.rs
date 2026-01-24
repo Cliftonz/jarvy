@@ -298,6 +298,9 @@ pub struct Config {
     /// Git configuration
     #[serde(default)]
     pub git: Option<crate::git::GitConfig>,
+    /// Drift detection configuration
+    #[serde(default)]
+    pub drift: Option<crate::drift::DriftConfig>,
 }
 
 #[derive(Deserialize, Debug, Default)]

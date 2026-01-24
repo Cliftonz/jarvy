@@ -299,10 +299,80 @@ lg = "log --oneline --graph --decorate"
 
 **Integration**: Git configuration runs after package installation and before environment setup in `jarvy setup`.
 
+### Configuration Drift Detection
+
+Jarvy can detect when a developer's environment has drifted from the expected configuration after setup.
+
+**Module**: `src/drift/` - Configuration drift detection and remediation.
+
+**Key Files**:
+- `config.rs` - DriftConfig, VersionPolicy (Major/Minor/Patch/Exact)
+- `state.rs` - EnvironmentState, ToolState, SHA-256 file hashing
+- `detector.rs` - DriftDetector, DriftReport, version comparison
+- `reporter.rs` - Human-readable and JSON report output
+- `fixer.rs` - DriftFixer for remediation
+
+**Configuration** (`jarvy.toml`):
+```toml
+[drift]
+enabled = true                 # Enable drift detection
+check_on_run = false           # Check on every jarvy command
+track_files = [".vscode/settings.json", "package.json"]
+version_policy = "minor"       # major, minor, patch, exact
+ignore_tools = ["vim", "neovim"]
+allow_upgrades = true          # Only flag downgrades as drift
+```
+
+**Version Policy**:
+- `major` - Only major version must match (1.x.x)
+- `minor` - Major and minor must match (1.2.x) [default]
+- `patch` - Exact patch version must match (1.2.3)
+- `exact` - Exact version including pre-release/build metadata
+
+**State File** (`.jarvy/state.json`):
+```json
+{
+  "version": "1",
+  "created_at": "1706086800Z",
+  "updated_at": "1706086800Z",
+  "config_hash": "sha256:abc123...",
+  "tools": {
+    "node": {
+      "version": "20.10.0",
+      "path": "/opt/homebrew/bin/node",
+      "install_method": "brew"
+    }
+  },
+  "files": {
+    ".vscode/settings.json": "sha256:def456..."
+  }
+}
+```
+
+**CLI Commands**:
+```bash
+jarvy drift check              # Detect drift, exit 1 if found
+jarvy drift check --format json  # JSON output for CI
+jarvy drift status             # Show baseline state
+jarvy drift status -v          # Verbose with paths/methods
+jarvy drift accept             # Accept current state as baseline
+jarvy drift accept --tools node,docker  # Accept specific tools
+jarvy drift fix                # Remediate auto-fixable issues
+jarvy drift fix --dry-run      # Preview what would be fixed
+```
+
+**Exit Codes**:
+- `0` - No drift detected
+- `1` - Drift detected
+- `2` - No baseline state found
+
+**Integration**: State is captured automatically after successful `jarvy setup`.
+
 ### Config Files
 
 - **`jarvy.toml`** (project) - Tools to provision with versions
 - **`~/.jarvy/config.toml`** (global) - Telemetry settings, machine fingerprint
+- **`.jarvy/state.json`** (project) - Drift detection baseline state
 
 ### Network/Proxy Configuration
 

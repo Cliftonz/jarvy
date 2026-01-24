@@ -1,0 +1,368 @@
+{
+  "prd": "043-configuration-drift-detection",
+  "title": "Configuration Drift Detection",
+  "version": "1.0.0",
+  "priority": "medium",
+  "estimated_days": 9,
+  "created": "2026-01-24",
+  "status": "completed",
+  "progress": {
+    "completed": 20,
+    "total": 20,
+    "percentage": 100
+  },
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Module Foundation",
+      "status": "completed",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T001",
+          "title": "Create drift module structure",
+          "description": "Create src/drift/mod.rs with module declarations for config, state, detector, reporter, fixer, and commands modules",
+          "status": "completed",
+          "files": ["src/drift/mod.rs"],
+          "acceptance_criteria": [
+            "Module structure compiles",
+            "All submodules declared",
+            "Public API exported"
+          ]
+        },
+        {
+          "id": "T002",
+          "title": "Implement DriftConfig parsing",
+          "description": "Create src/drift/config.rs with DriftConfig, VersionPolicy types and integrate with src/config.rs",
+          "status": "completed",
+          "files": ["src/drift/config.rs", "src/config.rs"],
+          "acceptance_criteria": [
+            "DriftConfig struct with all fields from PRD",
+            "VersionPolicy enum (Major, Minor, Patch, Exact)",
+            "Serde derives for TOML parsing",
+            "Default values match spec",
+            "Integration with JarvyConfig"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "State Management",
+      "status": "completed",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T003",
+          "title": "Implement EnvironmentState",
+          "description": "Create src/drift/state.rs with EnvironmentState, ToolState types for capturing and persisting state",
+          "status": "completed",
+          "files": ["src/drift/state.rs"],
+          "acceptance_criteria": [
+            "EnvironmentState struct with version, timestamps, tools, files",
+            "ToolState struct with version, path, install_method",
+            "load() from .jarvy/state.json",
+            "save() to .jarvy/state.json",
+            "capture() from installed tools"
+          ]
+        },
+        {
+          "id": "T004",
+          "title": "Implement file hash tracking",
+          "description": "Add file hashing functionality using SHA-256 for tracking config file changes",
+          "status": "completed",
+          "files": ["src/drift/state.rs"],
+          "acceptance_criteria": [
+            "hash_file() returns SHA-256 hash",
+            "track_files from config are hashed",
+            "Missing files handled gracefully"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Drift Detection",
+      "status": "completed",
+      "estimated_days": 2,
+      "tasks": [
+        {
+          "id": "T005",
+          "title": "Implement DriftDetector",
+          "description": "Create src/drift/detector.rs with DriftDetector, DriftReport, DriftStatus types",
+          "status": "completed",
+          "files": ["src/drift/detector.rs"],
+          "acceptance_criteria": [
+            "DriftDetector struct with config and expected_state",
+            "DriftReport with status, version_changes, missing_tools, extra_tools, changed_files",
+            "DriftStatus enum (NoDrift, DriftDetected, NoBaseline)",
+            "detect() method returns DriftReport"
+          ]
+        },
+        {
+          "id": "T006",
+          "title": "Implement version comparison",
+          "description": "Add version_match logic respecting VersionPolicy (Major, Minor, Patch, Exact)",
+          "status": "completed",
+          "files": ["src/drift/detector.rs"],
+          "acceptance_criteria": [
+            "versions_match() uses semver parsing",
+            "Respects VersionPolicy setting",
+            "Fallback to string comparison for non-semver",
+            "is_upgrade() detects version direction"
+          ]
+        },
+        {
+          "id": "T007",
+          "title": "Implement tool detection",
+          "description": "Add detection of missing tools, extra tools, and version changes",
+          "status": "completed",
+          "files": ["src/drift/detector.rs"],
+          "acceptance_criteria": [
+            "Detect missing tools from state",
+            "Detect version changes",
+            "Detect upgrade vs downgrade",
+            "Respect ignore_tools list",
+            "Respect allow_upgrades setting"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Reporting",
+      "status": "completed",
+      "estimated_days": 1,
+      "tasks": [
+        {
+          "id": "T008",
+          "title": "Implement DriftReporter",
+          "description": "Create src/drift/reporter.rs for human-readable and JSON report output",
+          "status": "completed",
+          "files": ["src/drift/reporter.rs"],
+          "acceptance_criteria": [
+            "print_report() for terminal output",
+            "Color-coded output (upgrades yellow, downgrades red)",
+            "to_json() for JSON output",
+            "Summary line with issue count"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "CLI Commands",
+      "status": "completed",
+      "estimated_days": 2,
+      "tasks": [
+        {
+          "id": "T009",
+          "title": "Add DriftAction enum to CLI",
+          "description": "Add DriftAction subcommand enum with Check, Fix, Accept, Status variants",
+          "status": "completed",
+          "files": ["src/cli/subcommands.rs", "src/cli/args.rs"],
+          "acceptance_criteria": [
+            "DriftAction enum with all subcommands",
+            "Drift added to Commands enum",
+            "clap derives for --json flag"
+          ]
+        },
+        {
+          "id": "T010",
+          "title": "Create drift command handler",
+          "description": "Create src/commands/drift_cmd.rs with handler function routing",
+          "status": "completed",
+          "files": ["src/commands/drift_cmd.rs", "src/commands/mod.rs"],
+          "acceptance_criteria": [
+            "handle_drift_command() routes to subhandlers",
+            "Module properly exported"
+          ]
+        },
+        {
+          "id": "T011",
+          "title": "Implement drift check command",
+          "description": "Implement handler for jarvy drift check with --json option",
+          "status": "completed",
+          "files": ["src/commands/drift_cmd.rs"],
+          "acceptance_criteria": [
+            "Loads state file",
+            "Runs drift detection",
+            "Outputs report (text or JSON)",
+            "Returns exit code based on drift status"
+          ]
+        },
+        {
+          "id": "T012",
+          "title": "Implement drift status command",
+          "description": "Implement handler for jarvy drift status showing current state",
+          "status": "completed",
+          "files": ["src/commands/drift_cmd.rs"],
+          "acceptance_criteria": [
+            "Shows state file info",
+            "Lists tracked tools and versions",
+            "Lists tracked files",
+            "Shows last update time"
+          ]
+        },
+        {
+          "id": "T013",
+          "title": "Implement drift accept command",
+          "description": "Implement handler for jarvy drift accept to update baseline",
+          "status": "completed",
+          "files": ["src/commands/drift_cmd.rs"],
+          "acceptance_criteria": [
+            "Captures current environment state",
+            "Updates state file",
+            "Shows what changed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Remediation",
+      "status": "completed",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T014",
+          "title": "Implement DriftFixer",
+          "description": "Create src/drift/fixer.rs for remediating detected drift",
+          "status": "completed",
+          "files": ["src/drift/fixer.rs"],
+          "acceptance_criteria": [
+            "DriftFixer struct",
+            "fix() method with results",
+            "is_auto_fixable() for each issue type"
+          ]
+        },
+        {
+          "id": "T015",
+          "title": "Implement drift fix command",
+          "description": "Implement handler for jarvy drift fix",
+          "status": "completed",
+          "files": ["src/commands/drift_cmd.rs", "src/drift/fixer.rs"],
+          "acceptance_criteria": [
+            "Reinstalls missing tools",
+            "Downgrades upgraded tools (when not allowed)",
+            "Reports manual intervention needed",
+            "Shows fix summary"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "name": "Integration",
+      "status": "completed",
+      "estimated_days": 1,
+      "tasks": [
+        {
+          "id": "T016",
+          "title": "Integrate state capture with setup",
+          "description": "Update setup_cmd.rs to capture state after successful setup",
+          "status": "completed",
+          "files": ["src/commands/setup_cmd.rs"],
+          "acceptance_criteria": [
+            "Captures state after tool installation",
+            "Saves to .jarvy/state.json",
+            "Shows state capture message"
+          ]
+        },
+        {
+          "id": "T017",
+          "title": "Add main.rs command dispatch",
+          "description": "Wire up Drift command in main.rs dispatch",
+          "status": "completed",
+          "files": ["src/main.rs"],
+          "acceptance_criteria": [
+            "Drift command routed to handler",
+            "All subcommands accessible"
+          ]
+        },
+        {
+          "id": "T018",
+          "title": "Export drift module",
+          "description": "Add pub mod drift to src/lib.rs",
+          "status": "completed",
+          "files": ["src/lib.rs"],
+          "acceptance_criteria": [
+            "drift module exported",
+            "Public types accessible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-8",
+      "name": "Testing and Documentation",
+      "status": "completed",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T019",
+          "title": "Write drift unit tests",
+          "description": "Add tests to drift modules covering config, state, detection, and reporting",
+          "status": "completed",
+          "files": ["src/drift/config.rs", "src/drift/state.rs", "src/drift/detector.rs"],
+          "acceptance_criteria": [
+            "Config parsing tests",
+            "Version policy tests",
+            "State load/save tests",
+            "Detection logic tests"
+          ]
+        },
+        {
+          "id": "T020",
+          "title": "Update CLAUDE.md documentation",
+          "description": "Add [drift] section documentation to CLAUDE.md",
+          "status": "completed",
+          "files": ["CLAUDE.md"],
+          "acceptance_criteria": [
+            "[drift] config section documented",
+            "CLI commands listed",
+            "State file format explained"
+          ]
+        }
+      ]
+    }
+  ],
+  "files_to_create": [
+    "src/drift/mod.rs",
+    "src/drift/config.rs",
+    "src/drift/state.rs",
+    "src/drift/detector.rs",
+    "src/drift/reporter.rs",
+    "src/drift/fixer.rs",
+    "src/commands/drift_cmd.rs"
+  ],
+  "files_to_modify": [
+    "src/config.rs",
+    "src/lib.rs",
+    "src/main.rs",
+    "src/cli/args.rs",
+    "src/cli/subcommands.rs",
+    "src/commands/mod.rs",
+    "src/commands/setup_cmd.rs",
+    "CLAUDE.md",
+    "progress.txt"
+  ],
+  "dependencies": {
+    "existing": ["sha2", "semver", "serde_json"],
+    "added": ["which"]
+  },
+  "success_metrics": {
+    "state_visibility_before": "none",
+    "state_visibility_after": "full",
+    "drift_detection_time": "<5 seconds",
+    "works_on_my_machine_before": "common",
+    "works_on_my_machine_after": "rare"
+  },
+  "non_goals": [
+    "Automatic drift remediation without consent",
+    "Detecting user-specific settings changes",
+    "Monitoring/alerting system",
+    "Full system inventory",
+    "Change history/audit log"
+  ]
+}

@@ -57,6 +57,7 @@ self_update = "0.41"
 sha2 = "0.10"
 hex = "0.4"
 shellexpand = "3.1"
+which = "7.0"
 
 [dev-dependencies]
 tempfile = "3.20.0"

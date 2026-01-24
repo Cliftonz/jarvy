@@ -376,6 +376,14 @@ pub enum Commands {
         #[clap(long)]
         rollback: bool,
     },
+    /// Detect configuration drift in the environment
+    Drift {
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+        #[clap(subcommand)]
+        action: DriftAction,
+    },
     /// Catch-all for unknown subcommands and their args
     #[clap(external_subcommand)]
     External(Vec<String>),

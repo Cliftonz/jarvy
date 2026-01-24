@@ -45,6 +45,7 @@
 | PRD-038 | Hybrid Cross-Platform E2E Testing Harness | 2026-01-19 | GitHub-hosted runners (free) + AWS EC2 Spot (~$5-15/mo), 10 platforms, tiered tool testing |
 | PRD-039 | Language Package Dependencies | 2026-01-23 | `[npm]`, `[pip]`, `[cargo]` sections, package manager detection, virtual env support |
 | PRD-041 | Git Configuration Automation | 2026-01-24 | `[git]` section, identity, signing (SSH/GPG), aliases, defaults, credential helpers |
+| PRD-043 | Configuration Drift Detection | 2026-01-24 | `[drift]` section, state capture, version comparison, file hashing, remediation |
 
 ---
 
@@ -652,6 +653,77 @@ lg = "log --oneline --graph --decorate"
 - `shellexpand::tilde()` for path expansion in signing keys
 - `#[serde(untagged)]` allows ConfigValue to be either plain string or `{ env, default }` object
 - Credential helper auto-detection by target_os cfg flags
+
+### PRD-043 Configuration Drift Detection (Completed 2026-01-24)
+**Goal**: Detect when a developer's environment has drifted from the expected configuration.
+
+**Module**: `src/drift/` - Configuration drift detection
+
+**Files Created:**
+- `mod.rs` - Module structure and DriftError enum
+- `config.rs` - DriftConfig, VersionPolicy (Major/Minor/Patch/Exact)
+- `state.rs` - EnvironmentState, ToolState, SHA-256 file hashing
+- `detector.rs` - DriftDetector, DriftReport, version comparison
+- `reporter.rs` - Human-readable and JSON report formatting
+- `fixer.rs` - DriftFixer for remediation
+
+**Files Modified:**
+- `src/cli/args.rs` - Added Drift command
+- `src/cli/subcommands.rs` - Added DriftAction enum
+- `src/commands/mod.rs` - Added drift_cmd module
+- `src/commands/setup_cmd.rs` - Integrated state capture after setup
+- `src/config.rs` - Added drift field to Config struct
+- `src/lib.rs` - Exported drift module
+- `src/main.rs` - Added drift module and command routing
+- `Cargo.toml` - Added `which` crate for path detection
+
+**Configuration Example:**
+```toml
+[drift]
+enabled = true
+check_on_run = false
+track_files = [".vscode/settings.json", "package.json"]
+version_policy = "minor"    # major, minor, patch, exact
+ignore_tools = ["vim", "neovim"]
+allow_upgrades = true       # Only flag downgrades as drift
+```
+
+**CLI Commands:**
+```bash
+jarvy drift check              # Detect drift, exit 0 if clean
+jarvy drift check --format json  # JSON output for CI
+jarvy drift status             # Show baseline state
+jarvy drift status -v          # Verbose with paths/methods
+jarvy drift accept             # Accept current state as baseline
+jarvy drift accept --tools node,docker  # Accept specific tools
+jarvy drift fix                # Remediate auto-fixable issues
+jarvy drift fix --dry-run      # Preview what would be fixed
+```
+
+**Key Features:**
+- State capture after `jarvy setup` in `.jarvy/state.json`
+- Version comparison with semver-aware policies
+- SHA-256 file hashing for tracked config files
+- Version direction detection (upgrade vs downgrade)
+- Auto-fixable flag for reinstallable tools
+- Color-coded terminal output with issue counts
+- JSON output for CI/CD integration
+- Exit codes: 0=clean, 1=drift detected, 2=no baseline
+
+**Tests Added:** 27 unit tests covering:
+- Version policy matching (Major, Minor, Patch, Exact)
+- Config parsing and defaults
+- State save/load
+- Version extraction from tool output
+- Upgrade/downgrade detection
+- Auto-fixability determination
+- JSON serialization
+- Timestamp formatting
+
+**Technical Learnings:**
+- `#[serde(default = "fn")]` only works during deserialization, not `Default::default()` - implement Default manually
+- `which` crate for cross-platform binary path detection
+- Install method detection by analyzing binary paths (homebrew, cargo, nvm, etc.)
 
 ### Future Enhancements
 - `jarvy search --category` (category filtering)

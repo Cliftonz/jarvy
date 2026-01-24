@@ -696,8 +696,88 @@ pub fn run_setup(
         }
     }
 
+    // Capture environment state for drift detection
+    if !dry_run {
+        let drift_config = config.drift.clone().unwrap_or_default();
+        if drift_config.enabled {
+            let project_dir = std::path::Path::new(file)
+                .parent()
+                .unwrap_or(std::path::Path::new("."));
+
+            let mut state = crate::drift::EnvironmentState::new();
+
+            // Capture tool states
+            for (tool_name, tool) in &known_tools {
+                if let Ok(path) = which::which(tool_name) {
+                    state.set_tool(
+                        tool_name,
+                        &tool.version,
+                        &path,
+                        &detect_install_method(tool_name),
+                    );
+                }
+            }
+
+            // Capture tracked file hashes
+            for file_path in &drift_config.track_files {
+                let full_path = project_dir.join(file_path);
+                if full_path.exists() {
+                    if let Ok(hash) = crate::drift::state::hash_file(&full_path) {
+                        state.set_file_hash(file_path, &hash);
+                    }
+                }
+            }
+
+            // Capture config file hash
+            let config_path = project_dir.join("jarvy.toml");
+            if config_path.exists() {
+                if let Ok(hash) = crate::drift::state::hash_file(&config_path) {
+                    state.set_config_hash(&hash);
+                }
+            }
+
+            // Save state
+            if let Err(e) = state.save(project_dir) {
+                eprintln!("Warning: Could not save drift detection state: {}", e);
+            } else {
+                println!(
+                    "\nDrift detection baseline captured ({} tools)",
+                    state.tool_count()
+                );
+            }
+        }
+    }
+
     // Mark as initialized after successful setup (first-run complete)
     if !dry_run {
         let _ = mark_initialized();
     }
+}
+
+/// Detect install method for a tool based on its path
+fn detect_install_method(tool: &str) -> String {
+    if let Ok(path) = which::which(tool) {
+        let path_str = path.to_string_lossy();
+
+        if path_str.contains("/homebrew/") || path_str.contains("/opt/homebrew/") {
+            return "brew".to_string();
+        }
+        if path_str.contains("/.cargo/") {
+            return "cargo".to_string();
+        }
+        if path_str.contains("/.nvm/") {
+            return "nvm".to_string();
+        }
+        if path_str.contains("/.pyenv/") {
+            return "pyenv".to_string();
+        }
+        if path_str.contains("/.rustup/") {
+            return "rustup".to_string();
+        }
+        if path_str.contains("/usr/bin/") || path_str.contains("/usr/local/bin/") {
+            return "system".to_string();
+        }
+    }
+
+    "unknown".to_string()
 }

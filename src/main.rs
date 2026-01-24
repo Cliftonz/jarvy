@@ -12,6 +12,7 @@ mod ci;
 pub mod cli;
 mod commands;
 mod config;
+mod drift;
 mod env;
 mod error_codes;
 mod git;
@@ -281,6 +282,7 @@ fn dispatch_command(cli: &Cli, global_config: &init::CliConfig) {
         }) => {
             handle_update(action, version, channel, method, *rollback);
         }
+        Some(Commands::Drift { file, action }) => commands::run_drift(file, action),
         None => interactive::user_select(),
         Some(Commands::External(_)) => unreachable!("External subcommand handled before init"),
     }

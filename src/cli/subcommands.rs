@@ -181,3 +181,34 @@ pub enum UpdateSubcommand {
     /// Disable auto-updates
     Disable {},
 }
+
+#[derive(Subcommand)]
+pub enum DriftAction {
+    /// Check for configuration drift
+    Check {
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+    /// Show current state baseline
+    Status {
+        /// Show detailed tool information
+        #[clap(short, long)]
+        verbose: bool,
+    },
+    /// Accept current state as new baseline
+    Accept {
+        /// Accept specific tools only (comma-separated)
+        #[clap(long)]
+        tools: Option<String>,
+    },
+    /// Fix detected drift issues
+    Fix {
+        /// Show what would be fixed without making changes
+        #[clap(long)]
+        dry_run: bool,
+        /// Force fix non-auto-fixable issues (may require confirmation)
+        #[clap(long)]
+        force: bool,
+    },
+}
