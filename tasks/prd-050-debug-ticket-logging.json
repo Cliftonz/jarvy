@@ -1,0 +1,410 @@
+{
+  "prd": "050-debug-ticket-logging",
+  "title": "Debug Ticket & Enhanced Logging System",
+  "version": "1.0.0",
+  "priority": "medium",
+  "estimated_days": 13,
+  "created": "2026-01-26",
+  "status": "pending",
+  "progress": {
+    "completed": 0,
+    "total": 22,
+    "percentage": 0
+  },
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Logging Module Foundation",
+      "status": "pending",
+      "estimated_days": 2,
+      "tasks": [
+        {
+          "id": "T001",
+          "title": "Create logging module structure",
+          "description": "Create src/logging/mod.rs with module declarations for config, writer, rotator, formatter, and sanitizer modules",
+          "status": "pending",
+          "files": ["src/logging/mod.rs"],
+          "acceptance_criteria": [
+            "Module structure compiles",
+            "All submodules declared",
+            "Public API exported"
+          ]
+        },
+        {
+          "id": "T002",
+          "title": "Implement LoggingConfig",
+          "description": "Create src/logging/config.rs with LoggingConfig struct and defaults, integrate with global config",
+          "status": "pending",
+          "files": ["src/logging/config.rs", "src/config.rs"],
+          "acceptance_criteria": [
+            "LoggingConfig struct with enabled, level, directory, format, max_file_size, max_files, max_total_size, max_age_days",
+            "Serde derives for TOML parsing",
+            "Default values match PRD spec",
+            "Integration with global config (~/.jarvy/config.toml)"
+          ]
+        },
+        {
+          "id": "T003",
+          "title": "Implement log formatter",
+          "description": "Create src/logging/formatter.rs with JSON and text log formatters",
+          "status": "pending",
+          "files": ["src/logging/formatter.rs"],
+          "acceptance_criteria": [
+            "JSON formatter with timestamp, level, target, message, fields, span",
+            "Text formatter with human-readable output",
+            "Configurable format selection"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Log Writer & Rotation",
+      "status": "pending",
+      "estimated_days": 2.5,
+      "tasks": [
+        {
+          "id": "T004",
+          "title": "Implement RotatingFileWriter",
+          "description": "Create src/logging/writer.rs with file-based log writer supporting rotation triggers",
+          "status": "pending",
+          "files": ["src/logging/writer.rs"],
+          "acceptance_criteria": [
+            "Writes log entries to ~/.jarvy/logs/jarvy.log",
+            "Creates log directory if missing",
+            "Thread-safe writes with Mutex",
+            "Tracks current file size"
+          ]
+        },
+        {
+          "id": "T005",
+          "title": "Implement log rotation",
+          "description": "Create src/logging/rotator.rs with rotation by size and age, gzip compression",
+          "status": "pending",
+          "files": ["src/logging/rotator.rs"],
+          "acceptance_criteria": [
+            "Rotate when file exceeds max_file_size",
+            "Compress rotated logs with gzip",
+            "Rename files (current->1, 1->2, etc.)",
+            "Delete files beyond max_files limit",
+            "Enforce max_total_size across all logs"
+          ]
+        },
+        {
+          "id": "T006",
+          "title": "Implement age-based cleanup",
+          "description": "Add cleanup of logs older than max_age_days",
+          "status": "pending",
+          "files": ["src/logging/rotator.rs"],
+          "acceptance_criteria": [
+            "Detect file age from filesystem metadata",
+            "Delete logs older than max_age_days",
+            "Run cleanup on startup and rotation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Sanitization & Integration",
+      "status": "pending",
+      "estimated_days": 2,
+      "tasks": [
+        {
+          "id": "T007",
+          "title": "Implement sanitizer",
+          "description": "Create src/logging/sanitizer.rs for redacting sensitive data from logs",
+          "status": "pending",
+          "files": ["src/logging/sanitizer.rs"],
+          "acceptance_criteria": [
+            "Redact API keys, tokens, passwords",
+            "Redact Bearer tokens",
+            "Redact SSH keys",
+            "Redact AWS credentials",
+            "Redact GitHub and npm tokens",
+            "Mask email addresses",
+            "Replace home directory with ~"
+          ]
+        },
+        {
+          "id": "T008",
+          "title": "Integrate with tracing-subscriber",
+          "description": "Wire up RotatingFileWriter as a tracing layer alongside console output",
+          "status": "pending",
+          "files": ["src/logging/mod.rs", "src/main.rs"],
+          "acceptance_criteria": [
+            "File layer writes to log files",
+            "Console layer maintains existing behavior",
+            "Both layers active simultaneously",
+            "Logging initialized early in main()"
+          ]
+        },
+        {
+          "id": "T009",
+          "title": "Export logging module",
+          "description": "Add pub mod logging to src/lib.rs and ensure public types accessible",
+          "status": "pending",
+          "files": ["src/lib.rs"],
+          "acceptance_criteria": [
+            "logging module exported",
+            "LoggingConfig publicly accessible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "Logs CLI Command",
+      "status": "pending",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T010",
+          "title": "Add LogsAction enum to CLI",
+          "description": "Add LogsAction subcommand enum with view, stats, clean, config variants",
+          "status": "pending",
+          "files": ["src/cli/subcommands.rs", "src/cli/args.rs"],
+          "acceptance_criteria": [
+            "LogsAction enum with all subcommands",
+            "Logs added to Commands enum",
+            "clap derives for --lines, --level, --follow, --grep, --since, --until flags"
+          ]
+        },
+        {
+          "id": "T011",
+          "title": "Create logs command handler",
+          "description": "Create src/commands/logs_cmd.rs with handler function routing to subhandlers",
+          "status": "pending",
+          "files": ["src/commands/logs_cmd.rs", "src/commands/mod.rs"],
+          "acceptance_criteria": [
+            "handle_logs_command() routes to subhandlers",
+            "View logs with filtering",
+            "Show log statistics",
+            "Clean old logs",
+            "Configure logging settings"
+          ]
+        },
+        {
+          "id": "T012",
+          "title": "Add main.rs command dispatch for logs",
+          "description": "Wire up Logs command in main.rs dispatch",
+          "status": "pending",
+          "files": ["src/main.rs"],
+          "acceptance_criteria": [
+            "Logs command routed to handler",
+            "All subcommands accessible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Ticket Module Foundation",
+      "status": "pending",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T013",
+          "title": "Create ticket module structure",
+          "description": "Create src/ticket/mod.rs with module declarations for collector and bundler",
+          "status": "pending",
+          "files": ["src/ticket/mod.rs"],
+          "acceptance_criteria": [
+            "Module structure compiles",
+            "TicketData, TicketScope types defined",
+            "TicketError enum defined"
+          ]
+        },
+        {
+          "id": "T014",
+          "title": "Implement system info collector",
+          "description": "Add collection of OS, arch, CPU, memory, shell, locale info",
+          "status": "pending",
+          "files": ["src/ticket/collector.rs"],
+          "acceptance_criteria": [
+            "Detect OS name and version",
+            "Detect architecture",
+            "Get CPU cores and memory",
+            "Get shell and locale"
+          ]
+        },
+        {
+          "id": "T015",
+          "title": "Implement tools status collector",
+          "description": "Add collection of package managers and configured tools status",
+          "status": "pending",
+          "files": ["src/ticket/collector.rs"],
+          "acceptance_criteria": [
+            "Detect installed package managers",
+            "Get status of all configured tools",
+            "Include version, path, and any errors"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Ticket Data Collection",
+      "status": "pending",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T016",
+          "title": "Implement config and state collectors",
+          "description": "Add collection of jarvy config (sanitized) and environment state",
+          "status": "pending",
+          "files": ["src/ticket/collector.rs"],
+          "acceptance_criteria": [
+            "Load and sanitize jarvy.toml",
+            "Load .jarvy/state.json if exists",
+            "Include drift report if available"
+          ]
+        },
+        {
+          "id": "T017",
+          "title": "Implement log and environment collectors",
+          "description": "Add collection of recent logs and environment variables",
+          "status": "pending",
+          "files": ["src/ticket/collector.rs"],
+          "acceptance_criteria": [
+            "Read last N lines from log files",
+            "Collect relevant env vars",
+            "Sanitize all collected data"
+          ]
+        },
+        {
+          "id": "T018",
+          "title": "Implement ZIP bundler",
+          "description": "Create src/ticket/bundler.rs for creating ZIP archive with all collected data",
+          "status": "pending",
+          "files": ["src/ticket/bundler.rs"],
+          "acceptance_criteria": [
+            "Create ZIP archive in ~/.jarvy/tickets/",
+            "Include manifest.json with metadata",
+            "Include all collected data as JSON files",
+            "Generate unique ticket ID"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "name": "Ticket CLI Command",
+      "status": "pending",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T019",
+          "title": "Add TicketAction enum to CLI",
+          "description": "Add TicketAction subcommand enum with create, show, list, clean variants",
+          "status": "pending",
+          "files": ["src/cli/subcommands.rs", "src/cli/args.rs"],
+          "acceptance_criteria": [
+            "TicketAction enum with all subcommands",
+            "Ticket added to Commands enum",
+            "clap derives for --tool, --logs, --output, --dry-run flags"
+          ]
+        },
+        {
+          "id": "T020",
+          "title": "Create ticket command handler",
+          "description": "Create src/commands/ticket_cmd.rs with handler function routing",
+          "status": "pending",
+          "files": ["src/commands/ticket_cmd.rs", "src/commands/mod.rs"],
+          "acceptance_criteria": [
+            "handle_ticket_command() routes to subhandlers",
+            "Generate ticket with collection and bundling",
+            "Show ticket contents",
+            "List existing tickets",
+            "Clean expired tickets"
+          ]
+        },
+        {
+          "id": "T021",
+          "title": "Add main.rs command dispatch for ticket",
+          "description": "Wire up Ticket command in main.rs dispatch",
+          "status": "pending",
+          "files": ["src/main.rs"],
+          "acceptance_criteria": [
+            "Ticket command routed to handler",
+            "All subcommands accessible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-8",
+      "name": "Testing and Documentation",
+      "status": "pending",
+      "estimated_days": 2.5,
+      "tasks": [
+        {
+          "id": "T022",
+          "title": "Write logging and ticket tests",
+          "description": "Add unit and integration tests for logging, rotation, sanitization, and ticket generation",
+          "status": "pending",
+          "files": [
+            "src/logging/config.rs",
+            "src/logging/writer.rs",
+            "src/logging/sanitizer.rs",
+            "src/ticket/collector.rs",
+            "tests/logging_integration.rs",
+            "tests/ticket_integration.rs"
+          ],
+          "acceptance_criteria": [
+            "LoggingConfig parsing tests",
+            "Log rotation tests",
+            "Sanitization pattern tests",
+            "Ticket collection tests",
+            "CLI command tests"
+          ]
+        }
+      ]
+    }
+  ],
+  "files_to_create": [
+    "src/logging/mod.rs",
+    "src/logging/config.rs",
+    "src/logging/writer.rs",
+    "src/logging/rotator.rs",
+    "src/logging/formatter.rs",
+    "src/logging/sanitizer.rs",
+    "src/ticket/mod.rs",
+    "src/ticket/collector.rs",
+    "src/ticket/bundler.rs",
+    "src/commands/logs_cmd.rs",
+    "src/commands/ticket_cmd.rs",
+    "tests/logging_integration.rs",
+    "tests/ticket_integration.rs"
+  ],
+  "files_to_modify": [
+    "src/config.rs",
+    "src/lib.rs",
+    "src/main.rs",
+    "src/cli/args.rs",
+    "src/cli/subcommands.rs",
+    "src/commands/mod.rs",
+    "Cargo.toml",
+    "CLAUDE.md",
+    "progress.txt"
+  ],
+  "dependencies": {
+    "existing": ["tracing", "tracing-subscriber", "serde_json", "chrono", "dirs"],
+    "added": ["flate2", "zip", "sys-info", "num_cpus"]
+  },
+  "success_metrics": {
+    "log_persistence_before": "none",
+    "log_persistence_after": "30 days",
+    "ticket_creation_time": "<30 seconds",
+    "diagnostic_completeness_before": "20%",
+    "diagnostic_completeness_after": "95%",
+    "sensitive_data_exposure": "zero"
+  },
+  "non_goals": [
+    "Real-time log streaming to external services",
+    "Log aggregation across multiple machines",
+    "Automatic ticket submission to support systems",
+    "Alert/notification based on log patterns",
+    "Log encryption at rest"
+  ]
+}

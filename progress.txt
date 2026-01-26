@@ -725,6 +725,47 @@ jarvy drift fix --dry-run      # Preview what would be fixed
 - `which` crate for cross-platform binary path detection
 - Install method detection by analyzing binary paths (homebrew, cargo, nvm, etc.)
 
+### PRD-050 Debug Ticket & Enhanced Logging System (Created 2026-01-26)
+**Goal**: Add persistent file-based logging with rotation and debug ticket generation.
+
+**Planned Features:**
+- File-based logging to `~/.jarvy/logs/` with configurable levels
+- Automatic log rotation by size (default 10MB) and age (default 30 days)
+- Gzip compression of rotated logs
+- Sensitive data sanitization (API keys, tokens, passwords)
+- `jarvy logs` command for viewing, filtering, and cleaning logs
+- `jarvy ticket` command for generating diagnostic bundles
+- Ticket includes: system info, config, tools status, logs, environment, network config
+
+**Configuration:**
+```toml
+[logging]
+enabled = true
+level = "info"         # error, warn, info, debug, trace
+format = "json"        # text, json
+max_file_size = "10MB"
+max_files = 5
+max_total_size = "50MB"
+max_age_days = 30
+```
+
+**CLI Commands:**
+```bash
+jarvy logs                    # View recent logs
+jarvy logs --level error      # Filter by level
+jarvy logs --follow           # Tail logs
+jarvy logs stats              # Show log statistics
+jarvy logs clean              # Remove old logs
+jarvy ticket                  # Generate diagnostic bundle
+jarvy ticket list             # List existing tickets
+jarvy ticket show <id>        # View ticket contents
+jarvy ticket clean            # Remove expired tickets
+```
+
+**New Dependencies:** flate2 (gzip), zip, sys-info, num_cpus
+
+---
+
 ### Future Enhancements
 - `jarvy search --category` (category filtering)
 - `jarvy validate --from URL` (remote validation)
