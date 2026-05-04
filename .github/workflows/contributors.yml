@@ -1,8 +1,15 @@
 name: Update Contributors
 
 on:
-  push:
-    branches: [main]
+  # The push-on-main trigger was removed because the PR creation step
+  # (peter-evans/create-pull-request@v6) requires the repo setting
+  # "Settings -> Actions -> General -> Workflow permissions -> Allow
+  # GitHub Actions to create and approve pull requests". Without that,
+  # every push fired the workflow and every workflow ended in
+  # "GitHub Actions is not permitted to create or approve pull
+  # requests". Restrict to the weekly schedule + manual dispatch so the
+  # contributor list refreshes on a predictable cadence; flip the repo
+  # setting to enable the PR step.
   workflow_dispatch:
   schedule:
     # Run weekly on Sundays at midnight UTC

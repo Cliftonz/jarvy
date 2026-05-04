@@ -27,8 +27,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install MkDocs Material
-        run: pip install mkdocs-material
+      - name: Install MkDocs Material + social-card system deps
+        # mkdocs-material's social-card plugin (mkdocs.yml has it via the
+        # `material` theme bundle) requires cairosvg + Pillow at runtime
+        # to rasterize the social images. Without these, `mkdocs build
+        # --strict` fails with `ModuleNotFoundError: No module named
+        # 'cairosvg'` / 'PIL'. cairosvg also needs the libcairo2 system
+        # package which ubuntu-latest already ships.
+        run: pip install "mkdocs-material[imaging]" cairosvg Pillow
 
       - name: Build site
         run: mkdocs build --strict
