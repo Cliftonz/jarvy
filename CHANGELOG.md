@@ -7,14 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Policy
 
-- **Stable releases (`vX.Y.Z`)** get a curated entry below before the tag is pushed.
-- **Pre-releases (`vX.Y.Z-rc.N`, `-beta.N`, `-alpha.N`)** do not get a CHANGELOG
-  entry. They use the GitHub release auto-generated notes from
-  `generate_release_notes: true` in `.github/workflows/release.yml`. The curated
-  entry below is written once when the corresponding stable cuts.
-- The release workflow does not extract notes from this file; it auto-generates
-  from PR titles and commit messages. CHANGELOG is the human narrative parallel
-  record. Keep them aligned.
+- **Stable releases (`vX.Y.Z`)** get a curated entry below **before the tag is
+  pushed**. The release workflow's `Build release notes` step awk-extracts the
+  matching `## [vX.Y.Z]` section into the GitHub release body, then appends a
+  `**Full Changelog**` compare link plus Jarvy's standing install/security
+  footer. Forgetting this entry causes the workflow to fall through to a raw
+  `git log` listing — technically valid, but reads like a commit dump rather
+  than a curated narrative. Update CHANGELOG before tagging.
+- **Pre-releases (`vX.Y.Z-rc.N`, `-beta.N`, `-alpha.N`)** do **not** get a
+  CHANGELOG entry. The awk extraction returns empty, the workflow falls
+  through to `git log <prev-tag>..<tag>` notes, and that fallback is the
+  intended pre-release path. The curated stable entry below is written once
+  when the corresponding stable cuts.
+- Entry headers must match the awk pattern: `## [vX.Y.Z]` or
+  `## [vX.Y.Z] — Title` (em-dash optional). Other shapes won't be matched.
 
 See [`docs/release-testing.md`](docs/release-testing.md) for the full release
 process and [`docs/release-quirks-jarvy.md`](docs/release-quirks-jarvy.md) for

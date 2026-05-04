@@ -25,8 +25,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # PRD-051: Tag-signing enforcement.
-  # Refuses any tag-triggered release whose tag is not signed (GPG or SSH).
+  # PRD-051: Tag-signing enforcement + fail-fast guards.
+  # Mirrors the omni-infra-provider-truenas release workflow: refuses any
+  # tag-triggered release whose tag is not signed (GPG or SSH), and bails
+  # out before any build work if the release already exists (assets are
+  # immutable; you must delete the release before re-running).
   # Skipped on workflow_dispatch — manual runs use the operator's audit trail.
   verify_tag:
     name: Verify Tag Signature
@@ -35,39 +38,50 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout (fetch tags + signers)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # We need the tag object itself, plus any allowed-signer config in
-          # the repo if SSH signing is in use.
+          # actions/checkout does not fetch tag *objects* by default — only
+          # refs/heads. `git tag --verify` then fails with "cannot verify a
+          # non-tag object of type commit" because the annotated tag object
+          # isn't in the local clone.
+          fetch-tags: true
+
+      # Even with fetch-tags: true, actions/checkout creates a LIGHTWEIGHT
+      # local tag when the workflow is triggered by a tag push — the
+      # annotated tag object is replaced with a direct ref to the commit.
+      # See actions/checkout#1467. Re-fetch the annotated tag object
+      # explicitly so `git tag --verify` can read its signature.
+      - name: Refetch annotated tag object
+        run: git fetch origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}" --force
+
+      # SSH-signed tags require an allowed-signers file so git can map a
+      # signature back to a trusted identity. The file is committed to the
+      # repo at .github/allowed_signers; rotate entries by PR if a
+      # maintainer's signing key changes.
+      - name: Configure SSH allowed signers
+        run: |
+          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
+
       - name: Verify tag is signed
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          echo "Verifying signature on tag: $TAG"
-
-          # If the repo ships an allowed_signers file for SSH-signed tags,
-          # configure git to use it before verifying.
-          if [ -f .github/allowed_signers ]; then
-            git config gpg.ssh.allowedSignersFile .github/allowed_signers
+          TAG="${{ github.ref_name }}"
+          if ! git tag --verify "${TAG}" 2>&1; then
+            echo "::error::Tag ${TAG} is not signed or the signature did not verify. Re-tag with 'git tag -s ${TAG}' from a trusted signing key, or 'git -c gpg.format=ssh tag -s ${TAG}' for SSH signing. Ensure the public key is registered as a Signing key on the maintainer's GitHub profile and listed in .github/allowed_signers."
+            exit 1
           fi
+          echo "OK: tag ${TAG} is signed and verifies"
 
-          # `git tag -v` returns non-zero if the tag is unsigned or the key
-          # is unknown. Both fail the build by design.
-          if ! git tag -v "$TAG" 2>&1 | tee /tmp/tagverify.log; then
-            echo ""
-            echo "ERROR: Tag $TAG is not signed, or the signing key is not"
-            echo "trusted by this runner."
-            echo ""
-            echo "Sign tags with:"
-            echo "  git tag -s $TAG -m 'release: $TAG'   # GPG"
-            echo "  git -c gpg.format=ssh tag -s $TAG -m 'release: $TAG'   # SSH"
-            echo ""
-            echo "Ensure the signing public key is registered on the"
-            echo "maintainer's GitHub profile (Settings -> SSH and GPG keys),"
-            echo "and listed in .github/allowed_signers if SSH signing is used."
+      # Fail fast: if a release already exists for this tag, assets are
+      # immutable and cannot be overwritten. Delete the release first if
+      # you need to re-run.
+      - name: Check for existing release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ github.ref_name }}" &>/dev/null; then
+            echo "::error::Release ${{ github.ref_name }} already exists. Immutable releases cannot be updated. To re-release: gh release delete ${{ github.ref_name }} --yes && git push origin :refs/tags/${{ github.ref_name }}"
             exit 1
           fi
 
@@ -316,6 +330,14 @@ jobs:
       attestations: write
     needs: [build_and_package, generate_sbom, sign_artifacts]
     steps:
+      # Checkout so we have CHANGELOG.md + git history for release-note
+      # extraction. `fetch-depth: 0` is needed because `git describe` walks
+      # the full history to find the previous tag for the compare link.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -350,28 +372,127 @@ jobs:
           sha256sum sbom.* >> ../artifacts/SHA256SUMS.txt
           mv ../artifacts/SHA256SUMS.txt ../
 
-      # PRD-051: Detect pre-release tags and route them through the beta
-      # channel. Any tag containing a hyphen (e.g. v1.2.3-rc.1, v1.2.3-beta.2,
-      # v1.2.3-alpha.1) is published as a GitHub prerelease so it does not
-      # become "latest" for users on the stable channel.
+      # Pre-release detection (mirrors omni-infra-provider-truenas).
+      # Semver pre-release tags (vX.Y.Z-rc.N, -beta.N, -alpha.N) carry a `-`
+      # after the version core; stable tags never do. is_prerelease is consumed
+      # by `gh release create --prerelease` to keep the release out of
+      # "Latest", and by the install-script channel filter so users on the
+      # stable channel are not auto-served pre-release artifacts.
       - name: Detect prerelease
         id: detect_prerelease
         run: |
-          if [[ "${VERSION}" == *-* ]]; then
+          TAG="${VERSION}"
+          if [[ "$TAG" == *-* ]]; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "Detected prerelease tag: $VERSION"
+            echo "Tag ${TAG} is a pre-release (will not be marked latest)."
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "Detected stable tag: $VERSION"
+            echo "Tag ${TAG} is a stable release."
           fi
+
+      # Build the release body (mirrors omni-infra-provider-truenas).
+      # Stable releases pull their narrative from CHANGELOG.md via awk;
+      # pre-releases (no CHANGELOG entry by policy — see CHANGELOG.md
+      # "Policy" section) fall through to a git-log fallback. Either way,
+      # we append a "Full Changelog" compare link plus Jarvy's standing
+      # install/security/SBOM footer. Result is written to RELEASE_NOTES.md
+      # and consumed by `body_path:` on softprops/action-gh-release below.
+      - name: Build release notes
+        run: |
+          set -euo pipefail
+          TAG="${VERSION}"
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+
+          # Extract the section for this version from CHANGELOG.md.
+          # Matches from "## [vX.Y.Z]" (with or without leading 'v') to the
+          # next "## [" or end of file.
+          STRIPPED="${TAG#v}"
+          NOTES=$(awk "/^## \\[v?${STRIPPED}\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md || true)
+
+          if [ -z "$NOTES" ]; then
+            echo "::warning::No CHANGELOG.md entry for ${TAG}. Falling back to git log (expected for pre-release tags)."
+            RANGE="${PREV_TAG:+${PREV_TAG}..}${TAG}"
+            NOTES=$(git log "$RANGE" --pretty=format:"- %s (%h)" 2>/dev/null || true)
+          fi
+
+          BASE="${PREV_TAG:-$(git rev-list --max-parents=0 HEAD | head -1)}"
+
+          {
+            echo "$NOTES"
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${BASE}...${TAG}"
+            echo ""
+            echo "## Installation"
+            echo ""
+            echo "### Quick Install (Unix)"
+            echo '```bash'
+            echo "curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash"
+            echo '```'
+            echo ""
+            echo "### Quick Install (Windows PowerShell)"
+            echo '```powershell'
+            echo "irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex"
+            echo '```'
+            echo ""
+            echo "### Homebrew"
+            echo '```bash'
+            echo "brew install bearbinary/tap/jarvy"
+            echo '```'
+            echo ""
+            echo "### Cargo"
+            echo '```bash'
+            echo "cargo install jarvy"
+            echo '```'
+            echo ""
+            echo "### Early-Release Channel"
+            echo "Pre-release tags (\`-rc.N\`, \`-beta.N\`) are routed through the beta channel."
+            echo "Opt in: \`JARVY_CHANNEL=beta\` on the install script, or \`jarvy update --channel beta\`."
+            echo "See [docs/release-testing.md](https://github.com/bearbinary/jarvy/blob/main/docs/release-testing.md)."
+            echo ""
+            echo "See [installation docs](https://github.com/bearbinary/jarvy#installation) for more options."
+            echo ""
+            echo "## Security"
+            echo ""
+            echo "### Verify Signatures"
+            echo "All release artifacts are signed with [Sigstore](https://sigstore.dev/) keyless OIDC. Verify any artifact:"
+            echo ""
+            echo '```bash'
+            echo "ARTIFACT=jarvy-linux-x86_64.tar.gz"
+            echo "BASE=https://github.com/bearbinary/jarvy/releases/download/${TAG}"
+            echo "curl -LO \$BASE/\$ARTIFACT"
+            echo "curl -LO \$BASE/\$ARTIFACT.sig"
+            echo "curl -LO \$BASE/\$ARTIFACT.pem"
+            echo "cosign verify-blob \\"
+            echo "  --signature \$ARTIFACT.sig \\"
+            echo "  --certificate \$ARTIFACT.pem \\"
+            echo "  --certificate-identity-regexp 'https://github.com/bearbinary/jarvy' \\"
+            echo "  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \\"
+            echo "  \$ARTIFACT"
+            echo '```'
+            echo ""
+            echo "### Tag Signature"
+            echo "This release was cut from a signed git tag. Verify with:"
+            echo '```bash'
+            echo "git -c gpg.ssh.allowedSignersFile=.github/allowed_signers tag --verify ${TAG}"
+            echo '```'
+            echo ""
+            echo "### SBOM"
+            echo "Software Bill of Materials in SPDX 2.3 (\`sbom.spdx.json\`) and CycloneDX 1.4 (\`sbom.cdx.json\`)."
+            echo ""
+            echo "### Checksums"
+            echo "SHA256 checksums for all artifacts are in \`SHA256SUMS.txt\`."
+          } > RELEASE_NOTES.md
+
+          echo "--- Release notes ---"
+          cat RELEASE_NOTES.md
 
       - name: Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           prerelease: ${{ steps.detect_prerelease.outputs.is_prerelease }}
-          generate_release_notes: true
           tag_name: ${{ env.VERSION }}
+          body_path: RELEASE_NOTES.md
           files: |
             artifacts/**/jarvy*
             sbom/sbom.*
@@ -379,58 +500,3 @@ jobs:
             signatures/**/*.pem
             signatures/**/*.bundle
             SHA256SUMS.txt
-          body: |
-            ## Installation
-
-            ### Quick Install (Unix)
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
-            ```
-
-            ### Quick Install (Windows PowerShell)
-            ```powershell
-            irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
-            ```
-
-            ### Homebrew
-            ```bash
-            brew install bearbinary/tap/jarvy
-            ```
-
-            ### Cargo
-            ```bash
-            cargo install jarvy
-            ```
-
-            See [installation docs](https://github.com/bearbinary/jarvy#installation) for more options.
-
-            ## Security
-
-            ### Verify Signatures
-            All release artifacts are signed with [Sigstore](https://sigstore.dev/). To verify:
-
-            ```bash
-            # Install cosign
-            brew install cosign  # or see https://docs.sigstore.dev/cosign/installation
-
-            # Download artifact and signature
-            curl -LO https://github.com/bearbinary/jarvy/releases/download/${{ env.VERSION }}/jarvy-linux-x86_64.tar.gz
-            curl -LO https://github.com/bearbinary/jarvy/releases/download/${{ env.VERSION }}/jarvy-linux-x86_64.tar.gz.sig
-            curl -LO https://github.com/bearbinary/jarvy/releases/download/${{ env.VERSION }}/jarvy-linux-x86_64.tar.gz.pem
-
-            # Verify
-            cosign verify-blob \
-              --signature jarvy-linux-x86_64.tar.gz.sig \
-              --certificate jarvy-linux-x86_64.tar.gz.pem \
-              --certificate-identity-regexp "https://github.com/bearbinary/jarvy" \
-              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-              jarvy-linux-x86_64.tar.gz
-            ```
-
-            ### Software Bill of Materials (SBOM)
-            This release includes SBOMs in both SPDX and CycloneDX formats:
-            - `sbom.spdx.json` - SPDX 2.3 format
-            - `sbom.cdx.json` - CycloneDX 1.4 format
-
-            ### Checksums
-            SHA256 checksums for all artifacts are in `SHA256SUMS.txt`
