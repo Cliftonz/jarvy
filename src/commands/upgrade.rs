@@ -250,13 +250,14 @@ fn perform_upgrade(name: &str, _target_version: &str) -> Result<String, String> 
             }
             return Err("rustup not found".to_string());
         }
+        // nvm needs to be sourced, this is tricky; for now, suggest manual
+        // upgrade. Match guard collapses the inner `if has("nvm")` per
+        // clippy::collapsible_match (added as a deny-level lint in Rust 1.95).
+        "node" if has("nvm") => {
+            return Err("Use 'nvm install <version>' to upgrade node".to_string());
+        }
         "node" => {
-            // Try nvm first, then brew
-            if has("nvm") {
-                // nvm needs to be sourced, this is tricky
-                // For now, suggest manual upgrade
-                return Err("Use 'nvm install <version>' to upgrade node".to_string());
-            }
+            // fall through to package manager
         }
         _ => {}
     }

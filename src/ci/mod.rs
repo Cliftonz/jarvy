@@ -337,6 +337,30 @@ mod tests {
     // Use a mutex to serialize tests that modify environment variables
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Every CI provider env var jarvy looks at. `with_env` clears all of
+    /// these before setting the test's target vars so the test runs with
+    /// a known-empty CI baseline. Without this, tests run in a real CI
+    /// (GitHub Actions sets GITHUB_ACTIONS=true, CI=true, RUNNER_OS=...)
+    /// see the runner's vars leaking into detect() and consistently fail
+    /// because detect() returns the runner's provider instead of the
+    /// test's target. Keep this list in sync with the detect() function
+    /// in this module — anything detect() reads MUST be cleared here.
+    const CI_PROVIDER_VARS: &[&str] = &[
+        "CI",
+        "GITHUB_ACTIONS",
+        "GITLAB_CI",
+        "CIRCLECI",
+        "TRAVIS",
+        "TF_BUILD",
+        "JENKINS_URL",
+        "BITBUCKET_BUILD_NUMBER",
+        "BUILDKITE",
+        "TEAMCITY_VERSION",
+        "APPVEYOR",
+        "JARVY_NO_CI",
+        "JARVY_CI",
+    ];
+
     #[allow(unsafe_code)]
     fn with_env<F, R>(vars: &[(&str, &str)], f: F) -> R
     where
@@ -348,8 +372,24 @@ mod tests {
         // poisoned guard back is safe.
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
-        // Save original values and set new ones
-        // SAFETY: Tests run single-threaded with ENV_LOCK mutex
+        // SAFETY: Tests run single-threaded with ENV_LOCK mutex.
+        //
+        // Step 1: snapshot every known CI provider var and clear them all.
+        // This isolates the test from the runner's CI vars (GITHUB_ACTIONS,
+        // CI, etc.) which would otherwise make detect() return the wrong
+        // provider regardless of what the test sets.
+        let cleared: Vec<(&str, Option<String>)> = CI_PROVIDER_VARS
+            .iter()
+            .map(|k| {
+                let orig = env::var(k).ok();
+                unsafe { env::remove_var(k) };
+                (*k, orig)
+            })
+            .collect();
+
+        // Step 2: snapshot and set the test's target vars on top of the
+        // cleared baseline. Tracked separately from `cleared` because
+        // these may overlap and we want set-then-restore semantics.
         let originals: Vec<_> = vars
             .iter()
             .map(|(k, v)| {
@@ -361,8 +401,17 @@ mod tests {
 
         let result = f();
 
-        // Restore original values
+        // Restore the test-target vars first, then the cleared baseline.
+        // Order matters: a test target var could also be in the cleared
+        // list, in which case the cleared restore should be the final
+        // word.
         for (k, orig) in originals {
+            match orig {
+                Some(v) => unsafe { env::set_var(k, v) },
+                None => unsafe { env::remove_var(k) },
+            }
+        }
+        for (k, orig) in cleared {
             match orig {
                 Some(v) => unsafe { env::set_var(k, v) },
                 None => unsafe { env::remove_var(k) },

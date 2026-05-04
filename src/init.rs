@@ -213,12 +213,20 @@ mod tests {
     fn with_isolated_home<F: FnOnce(&std::path::Path)>(f: F) {
         let _guard = HOME_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::TempDir::new().expect("tempdir");
+
+        // dirs::home_dir() on Unix reads $HOME, but on Windows it falls
+        // back to USERPROFILE (with HOMEDRIVE+HOMEPATH after that). To
+        // isolate the test on every platform we override every var the
+        // home_dir() implementation might consult.
         let prev_home = std::env::var("HOME").ok();
+        let prev_userprofile = std::env::var("USERPROFILE").ok();
+
         // SAFETY: tests are serialized via HOME_MUTEX so set_var/remove_var
         // races are prevented by construction.
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("HOME", tmp.path());
+            std::env::set_var("USERPROFILE", tmp.path());
         }
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             f(tmp.path());
@@ -228,6 +236,10 @@ mod tests {
             match prev_home {
                 Some(v) => std::env::set_var("HOME", v),
                 None => std::env::remove_var("HOME"),
+            }
+            match prev_userprofile {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
             }
         }
         if let Err(payload) = res {

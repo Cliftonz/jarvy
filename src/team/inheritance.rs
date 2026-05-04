@@ -717,9 +717,13 @@ node = "18"
         fs::write(&base_path, base_content).unwrap();
 
         // Create child config that extends base
+        // TOML literal strings (single-quoted) survive Windows backslash
+        // paths verbatim. Using a regular `extends = "C:\\Users\\..."`
+        // would either need explicit escaping or fail to parse on Windows
+        // because TOML treats `\U` as a unicode escape.
         let child_content = format!(
             r#"
-extends = "{}"
+extends = '{}'
 
 [provisioner]
 git = "2.45"
@@ -754,12 +758,14 @@ docker = "latest"
         let a_path = temp_dir.path().join("a.toml");
         let b_path = temp_dir.path().join("b.toml");
 
+        // Single-quoted TOML literal so Windows backslash paths don't
+        // need escaping (see test_resolve_with_local_extends comment).
         let a_content = format!(
-            "extends = \"{}\"\n[provisioner]\na = \"1\"",
+            "extends = '{}'\n[provisioner]\na = \"1\"",
             b_path.display()
         );
         let b_content = format!(
-            "extends = \"{}\"\n[provisioner]\nb = \"1\"",
+            "extends = '{}'\n[provisioner]\nb = \"1\"",
             a_path.display()
         );
 
@@ -788,9 +794,10 @@ docker = "latest"
 
         // Create configs in reverse order
         for i in (0..paths.len()).rev() {
+            // Single-quoted TOML literal for Windows-path safety.
             let content = if i < paths.len() - 1 {
                 format!(
-                    "extends = \"{}\"\n[provisioner]\nvar{} = \"{}\"",
+                    "extends = '{}'\n[provisioner]\nvar{} = \"{}\"",
                     paths[i + 1].display(),
                     i,
                     i
@@ -823,11 +830,12 @@ docker = "latest"
         // D is the common ancestor
         fs::write(&d_path, "[provisioner]\nd_tool = \"1.0\"").unwrap();
 
+        // Single-quoted TOML literals for Windows-path safety.
         // B extends D
         fs::write(
             &b_path,
             format!(
-                "extends = \"{}\"\n[provisioner]\nb_tool = \"1.0\"",
+                "extends = '{}'\n[provisioner]\nb_tool = \"1.0\"",
                 d_path.display()
             ),
         )
@@ -837,7 +845,7 @@ docker = "latest"
         fs::write(
             &c_path,
             format!(
-                "extends = \"{}\"\n[provisioner]\nc_tool = \"1.0\"",
+                "extends = '{}'\n[provisioner]\nc_tool = \"1.0\"",
                 d_path.display()
             ),
         )
@@ -847,7 +855,7 @@ docker = "latest"
         fs::write(
             &a_path,
             format!(
-                "extends = [\"{}\", \"{}\"]\n[provisioner]\na_tool = \"1.0\"",
+                "extends = ['{}', '{}']\n[provisioner]\na_tool = \"1.0\"",
                 b_path.display(),
                 c_path.display()
             ),
@@ -873,10 +881,11 @@ docker = "latest"
         let child_path = temp_dir.path().join("child.toml");
 
         fs::write(&base_path, "[provisioner]\nbase = \"1\"").unwrap();
+        // Single-quoted TOML literal for Windows-path safety.
         fs::write(
             &child_path,
             format!(
-                "extends = \"{}\"\n[provisioner]\nchild = \"1\"",
+                "extends = '{}'\n[provisioner]\nchild = \"1\"",
                 base_path.display()
             ),
         )
