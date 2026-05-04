@@ -1,0 +1,30 @@
+# Python API (FastAPI / Django)
+# Run: jarvy setup
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+python = "3.12"
+docker = "latest"
+jq = "latest"
+httpie = "latest"
+
+[pip]
+pytest = ">=7.0"
+black = "latest"
+ruff = "latest"
+venv = ".venv"
+create_venv = true
+
+[hooks]
+post_setup = "python -m pip install -r requirements.txt"
+
+[env.vars]
+PYTHONDONTWRITEBYTECODE = "1"
+VIRTUAL_ENV = "$PWD/.venv"
+
+[commands]
+run = "python -m uvicorn app.main:app --reload"
+test = "pytest -v"

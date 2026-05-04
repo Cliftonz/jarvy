@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use Jarvy, please cite it as below."
+type: software
+title: "Jarvy"
+abstract: >-
+  Jarvy is a fast, cross-platform CLI tool that standardizes and automates
+  local development environment setup from a declarative configuration file.
+authors:
+  - family-names: Clifton
+    given-names: Zac
+repository-code: "https://github.com/bearbinary/jarvy"
+url: "https://jarvy.dev"
+license: MIT
+keywords:
+  - developer-experience
+  - devtools
+  - provisioning
+  - cli
+  - environment-setup
+  - cross-platform

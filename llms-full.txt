@@ -1,0 +1,68 @@
+# Jarvy — Full LLM Reference
+
+> Jarvy is a fast, Rust-based CLI that standardizes and automates local development environment setup across macOS, Linux, and Windows using a declarative `jarvy.toml` config file.
+
+## Q&A
+
+Q: What is Jarvy?
+A: Jarvy is an open-source, cross-platform CLI tool that provisions developer workstations from a single `jarvy.toml` configuration file. It installs tools using native package managers (Homebrew, apt, winget) and ensures every team member has an identical development environment. It replaces manual setup guides, remote dev environments like GitHub Codespaces, and ad-hoc provisioning scripts.
+
+Q: How do I install Jarvy?
+A: Install via Cargo (`cargo install jarvy`), Homebrew (`brew install jarvy`), or download a pre-built binary from the GitHub Releases page at https://github.com/bearbinary/jarvy/releases.
+
+Q: What problem does Jarvy solve?
+A: Jarvy eliminates the "works on my machine" problem. It codifies your team's required tools and versions in a version-controlled config file, so new developers can run `jarvy setup` and have a fully configured workstation in seconds instead of days.
+
+Q: How is Jarvy different from GitHub Codespaces or DevPod?
+A: Jarvy provisions your local machine instead of a remote VM or container. After initial setup you work offline at native performance with no vendor lock-in, no recurring cloud costs, and full control of your workstation.
+
+Q: What does a jarvy.toml look like?
+A: A minimal config lists tools under `[provisioner]`: `git = "latest"`, `node = "20"`, `docker = "latest"`. Advanced configs add `[env]` for environment variables, `[hooks]` for post-install scripts, `[roles]` for team role-based tool sets, and `[drift]` for configuration drift detection.
+
+Q: Does Jarvy support CI/CD?
+A: Yes. Jarvy auto-detects 11 CI providers (GitHub Actions, GitLab CI, CircleCI, etc.), provides a `setup-jarvy` GitHub Action, and can generate CI config files with `jarvy ci-config <provider>`.
+
+Q: Can AI agents use Jarvy?
+A: Yes. Jarvy includes a built-in MCP (Model Context Protocol) server that lets LLMs discover, check, and install development tools via JSON-RPC. Run `jarvy mcp` to start the server.
+
+Q: How many tools does Jarvy support?
+A: Jarvy supports 174+ tools across macOS, Linux, and Windows, including Node.js, Python, Go, Rust, Docker, Kubernetes, Terraform, AWS CLI, and many more. Run `jarvy search --all` to list them.
+
+Q: Does Jarvy support team configurations?
+A: Yes. Jarvy supports role-based configurations where you define tool sets per role (frontend, backend, devops) with inheritance. Assign roles via `role = "frontend"` in jarvy.toml and manage them with `jarvy roles list/show/diff`.
+
+Q: Is Jarvy open source?
+A: Yes. Jarvy is MIT-licensed and hosted at https://github.com/bearbinary/jarvy. Contributions are welcome.
+
+## Architecture Overview
+
+Jarvy is built in Rust (edition 2024) and uses a modular architecture:
+
+- **Tool Registry**: A global `OnceLock<RwLock<HashMap>>` maps tool names to installation handler functions. Tools are defined declaratively using a `define_tool!` macro.
+- **Config System**: `jarvy.toml` is parsed via serde into a typed `Config` struct. Supports simple (`git = "2.40"`) and detailed (`git = { version = "2.40", version_manager = true }`) formats.
+- **Role System**: Role-based tool sets with inheritance (up to 5 levels deep). Roles define which tools each team member needs.
+- **MCP Server**: JSON-RPC 2.0 over stdio. Exposes tools for listing, checking, and installing development tools with safety features (dry_run default, rate limiting, audit logging).
+- **Telemetry**: OpenTelemetry-based with OTLP export for logs, metrics, and traces. Opt-in by default, auto-disabled in CI.
+- **Drift Detection**: Captures environment state after setup and detects when tools drift from expected versions.
+
+## CLI Commands
+
+- `jarvy setup` — Provision environment from jarvy.toml
+- `jarvy init` — Create jarvy.toml interactively
+- `jarvy doctor` — Diagnose environment health
+- `jarvy diff` — Preview changes before setup
+- `jarvy search` — Find available tools
+- `jarvy explain <tool>` — Get detailed tool information
+- `jarvy audit` — Run security scanners
+- `jarvy drift check` — Detect configuration drift
+- `jarvy roles list/show/diff` — Manage role-based configs
+- `jarvy mcp` — Start MCP server for AI agents
+- `jarvy update` — Self-update Jarvy
+- `jarvy completions <shell>` — Generate shell completions
+
+## Links
+
+- Website: https://jarvy.dev
+- Documentation: https://docs.jarvy.dev
+- Repository: https://github.com/bearbinary/jarvy
+- Issues: https://github.com/bearbinary/jarvy/issues

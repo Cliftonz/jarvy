@@ -1,0 +1,99 @@
+site_name: Jarvy
+site_url: https://docs.jarvy.dev
+site_description: >-
+  Jarvy is a fast, cross-platform CLI that standardizes and automates
+  local development environment setup from a declarative jarvy.toml config file.
+site_author: Zac Clifton
+repo_url: https://github.com/bearbinary/jarvy
+repo_name: bearbinary/jarvy
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2025-2026 Zac Clifton
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+    - content.action.edit
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - social
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/bearbinary/jarvy
+  generator: false
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quickstart: quickstart.md
+    - Configuration Reference: configuration.md
+    - Roles Guide: roles.md
+  - Guides:
+    - CI/CD Integration: ci-cd.md
+    - Hooks: hooks.md
+    - MCP Server (AI Agents): mcp-server.md
+    - Error Codes: error-codes.md
+  - Reference:
+    - CLI Reference: cli.md
+    - FAQ: faq.md
+    - Changelog: changelog.md
+  - Comparisons:
+    - vs Codespaces: competitors/vs-codespaces.md
+    - vs DevPod: competitors/vs-devpod.md
+    - vs Nix: competitors/vs-nix.md
+    - vs mise: competitors/vs-mise.md
+    - vs Docker: competitors/vs-docker.md
+    - vs Homebrew Bundle: competitors/vs-homebrew-bundle.md
+  - Community:
+    - Contributing: contributing.md
+    - AI/LLM Reference: https://github.com/bearbinary/jarvy/blob/main/llms.txt

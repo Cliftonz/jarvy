@@ -1,0 +1,45 @@
+# Fullstack Application (Node + Go + Docker)
+# Run: jarvy setup --role fullstack
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+docker = "latest"
+jq = "latest"
+
+# Role-based tool sets
+[roles.frontend]
+description = "Frontend development"
+tools = ["node", "bun"]
+
+[roles.frontend.tools]
+node = "20"
+bun = "latest"
+
+[roles.backend]
+description = "Backend development"
+tools = ["go", "gopls", "golangci-lint"]
+
+[roles.backend.tools]
+go = "1.22"
+
+[roles.fullstack]
+description = "Full-stack development"
+extends = ["frontend", "backend"]
+
+# Services
+[services]
+enabled = true
+
+[hooks]
+post_setup = "docker compose up -d"
+
+[env.vars]
+NODE_ENV = "development"
+GO111MODULE = "on"
+
+[commands]
+run = "docker compose up"
+test = "make test-all"

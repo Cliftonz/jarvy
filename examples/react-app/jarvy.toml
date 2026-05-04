@@ -1,0 +1,25 @@
+# React/Next.js Application
+# Run: jarvy setup
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+node = "20"
+bun = "latest"
+docker = "latest"
+jq = "latest"
+
+[hooks]
+post_setup = "corepack enable && bun install"
+
+[hooks.node]
+post_install = "corepack enable"
+
+[env.vars]
+NODE_ENV = "development"
+
+[commands]
+run = "bun dev"
+test = "bun test"

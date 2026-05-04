@@ -1,0 +1,22 @@
+# Rust CLI Application
+# Run: jarvy setup
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+rust = { version = "stable", version_manager = true }
+just = "latest"
+cargo-watch = "latest"
+ripgrep = "latest"
+
+[hooks]
+post_setup = "cargo build"
+
+[env.vars]
+RUST_BACKTRACE = "1"
+
+[commands]
+run = "cargo run"
+test = "cargo test -- --show-output"

@@ -1,0 +1,9 @@
+# Default owners for everything
+* @bearbinary/maintainers
+
+# CI/CD workflows
+/.github/ @bearbinary/maintainers
+
+# Security-sensitive files
+/deny.toml @bearbinary/maintainers
+/SECURITY.md @bearbinary/maintainers

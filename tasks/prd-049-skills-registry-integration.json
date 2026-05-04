@@ -1,0 +1,474 @@
+{
+  "prd": "049-skills-registry-integration",
+  "title": "Skills Registry Integration",
+  "version": "1.0.0",
+  "priority": "medium",
+  "estimated_days": 10,
+  "created": "2026-01-24",
+  "status": "not_started",
+  "progress": {
+    "completed": 0,
+    "total": 28,
+    "percentage": 0
+  },
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Module Foundation",
+      "status": "not_started",
+      "estimated_days": 1.5,
+      "tasks": [
+        {
+          "id": "T001",
+          "title": "Create skills module structure",
+          "description": "Create src/skills/mod.rs with module declarations and re-exports for config, registry, installer, agents, cache, commands, and skill modules",
+          "status": "not_started",
+          "files": ["src/skills/mod.rs"],
+          "acceptance_criteria": [
+            "Module structure compiles",
+            "All submodules declared",
+            "Exports accessible from crate root"
+          ]
+        },
+        {
+          "id": "T002",
+          "title": "Implement SkillsConfig parsing",
+          "description": "Create src/skills/config.rs with SkillsConfig, SkillSource, and related types. Integrate with src/config.rs",
+          "status": "not_started",
+          "files": ["src/skills/config.rs", "src/config.rs"],
+          "acceptance_criteria": [
+            "SkillsConfig struct with all fields",
+            "SkillSource for custom sources",
+            "Serde derive for TOML parsing",
+            "Default values match spec",
+            "Integration with JarvyConfig"
+          ]
+        },
+        {
+          "id": "T003",
+          "title": "Implement AI agent detection",
+          "description": "Create src/skills/agents.rs with AIAgent enum, detection logic, and skill path resolution",
+          "status": "not_started",
+          "files": ["src/skills/agents.rs"],
+          "acceptance_criteria": [
+            "AIAgent enum with all supported agents",
+            "detect_all() finds installed agents",
+            "is_installed() checks config directory",
+            "skill_path() returns correct paths for Global/Project scope",
+            "name() and display_name() methods work"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Skills.sh Integration",
+      "status": "not_started",
+      "estimated_days": 2,
+      "tasks": [
+        {
+          "id": "T004",
+          "title": "Implement skills.sh API client",
+          "description": "Create src/skills/registry.rs with SkillsRegistry struct for searching, fetching, and downloading skills",
+          "status": "not_started",
+          "files": ["src/skills/registry.rs"],
+          "acceptance_criteria": [
+            "SkillsRegistry with base_url and cache_dir",
+            "search() queries skills.sh API",
+            "info() fetches skill details",
+            "download() clones skill from GitHub",
+            "popular() lists trending skills",
+            "SkillSummary and SkillDetails types"
+          ]
+        },
+        {
+          "id": "T005",
+          "title": "Implement skill caching",
+          "description": "Create src/skills/cache.rs for local caching of downloaded skills",
+          "status": "not_started",
+          "files": ["src/skills/cache.rs"],
+          "acceptance_criteria": [
+            "SkillCache struct with cache_dir",
+            "get() retrieves cached skill",
+            "put() stores downloaded skill",
+            "invalidate() removes stale cache",
+            "Cache directory creation on first use"
+          ]
+        },
+        {
+          "id": "T006",
+          "title": "Implement SKILL.md parsing",
+          "description": "Create src/skills/skill.rs with Skill struct and YAML frontmatter parser",
+          "status": "not_started",
+          "files": ["src/skills/skill.rs"],
+          "acceptance_criteria": [
+            "Skill struct with name, description, globs, triggers, content",
+            "parse() extracts YAML frontmatter",
+            "Handles skills with and without frontmatter",
+            "Error handling for invalid SKILL.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Installation Logic",
+      "status": "not_started",
+      "estimated_days": 2,
+      "tasks": [
+        {
+          "id": "T007",
+          "title": "Implement skill installation logic",
+          "description": "Create src/skills/installer.rs with SkillInstaller for installing skills to agents",
+          "status": "not_started",
+          "files": ["src/skills/installer.rs"],
+          "acceptance_criteria": [
+            "SkillInstaller struct with registry and cache",
+            "install() handles registry, GitHub, and local sources",
+            "Parses skill ID (owner/repo/path format)",
+            "Copies skill to all detected agents",
+            "Records installation metadata (.jarvy-skill.json)",
+            "Handles version pinning"
+          ]
+        },
+        {
+          "id": "T008",
+          "title": "Implement SkillRef parsing",
+          "description": "Add SkillRef enum for parsing different skill sources (registry, github:, local ./path)",
+          "status": "not_started",
+          "files": ["src/skills/installer.rs"],
+          "acceptance_criteria": [
+            "SkillRef::Registry for owner/repo/path",
+            "SkillRef::GitHub for github:url",
+            "SkillRef::Local for ./path",
+            "parse() handles all formats",
+            "Version suffix parsing (@v1.2.0)"
+          ]
+        },
+        {
+          "id": "T009",
+          "title": "Implement skill removal",
+          "description": "Add remove() method to SkillInstaller for uninstalling skills",
+          "status": "not_started",
+          "files": ["src/skills/installer.rs"],
+          "acceptance_criteria": [
+            "remove() deletes skill from all agents",
+            "Handles skills not installed",
+            "Cleans up installation metadata"
+          ]
+        },
+        {
+          "id": "T010",
+          "title": "Implement skill update logic",
+          "description": "Add update() method for updating installed skills to latest versions",
+          "status": "not_started",
+          "files": ["src/skills/installer.rs"],
+          "acceptance_criteria": [
+            "update() checks for newer versions",
+            "Respects version pins",
+            "Reports what was updated",
+            "Handles update failures gracefully"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "CLI Commands",
+      "status": "not_started",
+      "estimated_days": 2.5,
+      "tasks": [
+        {
+          "id": "T011",
+          "title": "Add SkillsAction enum to CLI",
+          "description": "Add SkillsAction subcommand enum with Install, List, Search, Info, Remove, Update, Status, Agents variants",
+          "status": "not_started",
+          "files": ["src/cli/subcommands.rs", "src/cli/args.rs"],
+          "acceptance_criteria": [
+            "SkillsAction enum with all subcommands",
+            "Skills added to Commands enum",
+            "clap derives for all options"
+          ]
+        },
+        {
+          "id": "T012",
+          "title": "Create skills command handler module",
+          "description": "Create src/commands/skills_cmd.rs with handler function routing",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs", "src/commands/mod.rs"],
+          "acceptance_criteria": [
+            "handle_skills_command() routes to subhandlers",
+            "Module properly exported"
+          ]
+        },
+        {
+          "id": "T013",
+          "title": "Implement skills install command",
+          "description": "Implement handler for jarvy skills install with skill ID, version, and agent options",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Parses skill ID argument",
+            "Supports --version flag",
+            "Supports --agent flag for specific agent",
+            "Shows installation progress",
+            "Reports success/failure per agent"
+          ]
+        },
+        {
+          "id": "T014",
+          "title": "Implement skills list command",
+          "description": "Implement handler for jarvy skills list showing installed skills per agent",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Lists skills grouped by agent",
+            "Shows skill name, source, version",
+            "Handles no skills installed"
+          ]
+        },
+        {
+          "id": "T015",
+          "title": "Implement skills search command",
+          "description": "Implement handler for jarvy skills search querying skills.sh",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Queries skills.sh API",
+            "Shows results with downloads count",
+            "Handles no results"
+          ]
+        },
+        {
+          "id": "T016",
+          "title": "Implement skills available command",
+          "description": "Implement handler for jarvy skills available showing popular skills",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Fetches popular skills from registry",
+            "Groups by owner/repo",
+            "Shows download counts"
+          ]
+        },
+        {
+          "id": "T017",
+          "title": "Implement skills info command",
+          "description": "Implement handler for jarvy skills info showing skill details",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Fetches skill details from registry",
+            "Shows SKILL.md preview",
+            "Lists supported agents",
+            "Shows versions available"
+          ]
+        },
+        {
+          "id": "T018",
+          "title": "Implement skills remove command",
+          "description": "Implement handler for jarvy skills remove",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Removes skill from all agents",
+            "Confirms removal",
+            "Handles skill not found"
+          ]
+        },
+        {
+          "id": "T019",
+          "title": "Implement skills update command",
+          "description": "Implement handler for jarvy skills update",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Checks all installed skills for updates",
+            "Shows version changes",
+            "Supports --skill flag for specific skill"
+          ]
+        },
+        {
+          "id": "T020",
+          "title": "Implement skills status command",
+          "description": "Implement handler for jarvy skills status",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Shows defined vs installed count",
+            "Shows update availability",
+            "Shows last update time"
+          ]
+        },
+        {
+          "id": "T021",
+          "title": "Implement skills agents command",
+          "description": "Implement handler for jarvy skills agents listing detected agents",
+          "status": "not_started",
+          "files": ["src/commands/skills_cmd.rs"],
+          "acceptance_criteria": [
+            "Lists all known agents",
+            "Shows installed status",
+            "Shows config directory path"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Setup Integration",
+      "status": "not_started",
+      "estimated_days": 1,
+      "tasks": [
+        {
+          "id": "T022",
+          "title": "Integrate skills with setup command",
+          "description": "Add skill installation step to jarvy setup when [skills] is configured",
+          "status": "not_started",
+          "files": ["src/commands/setup_cmd.rs"],
+          "acceptance_criteria": [
+            "Skills installed after hooks",
+            "Uses auto_install config",
+            "Shows agent detection",
+            "Reports skill installation results"
+          ]
+        },
+        {
+          "id": "T023",
+          "title": "Add main.rs command dispatch for skills",
+          "description": "Wire up Skills command in main.rs dispatch",
+          "status": "not_started",
+          "files": ["src/main.rs"],
+          "acceptance_criteria": [
+            "Skills command routed to handler",
+            "All subcommands accessible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "name": "Advanced Features",
+      "status": "not_started",
+      "estimated_days": 1,
+      "tasks": [
+        {
+          "id": "T024",
+          "title": "Add version pinning support",
+          "description": "Implement pinned skills from [skills.pinned] section",
+          "status": "not_started",
+          "files": ["src/skills/installer.rs", "src/skills/config.rs"],
+          "acceptance_criteria": [
+            "Pinned versions respected during install",
+            "Pinned versions prevent auto-update",
+            "Supports semver and commit hash"
+          ]
+        },
+        {
+          "id": "T025",
+          "title": "Add private registry support",
+          "description": "Implement custom registries from [skills.registries] section",
+          "status": "not_started",
+          "files": ["src/skills/registry.rs", "src/skills/config.rs"],
+          "acceptance_criteria": [
+            "Custom registry URLs configurable",
+            "Skills from custom registries installable",
+            "Authentication support (tokens, SSH)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "name": "Testing & Documentation",
+      "status": "not_started",
+      "estimated_days": 2,
+      "tasks": [
+        {
+          "id": "T026",
+          "title": "Write skills integration tests",
+          "description": "Create tests/skills_integration.rs with comprehensive test coverage",
+          "status": "not_started",
+          "files": ["tests/skills_integration.rs"],
+          "acceptance_criteria": [
+            "Agent detection tests",
+            "SKILL.md parsing tests",
+            "Installation/removal tests (mocked)",
+            "Config parsing tests",
+            "SkillRef parsing tests"
+          ]
+        },
+        {
+          "id": "T027",
+          "title": "Update CLAUDE.md documentation",
+          "description": "Add skills module documentation to CLAUDE.md including config syntax and module structure",
+          "status": "not_started",
+          "files": ["CLAUDE.md"],
+          "acceptance_criteria": [
+            "[skills] config section documented",
+            "Module structure documented",
+            "CLI commands listed",
+            "Agent detection explained"
+          ]
+        },
+        {
+          "id": "T028",
+          "title": "Run full test suite and verification",
+          "description": "Run cargo test, clippy, fmt, and manual CLI verification",
+          "status": "not_started",
+          "files": [],
+          "acceptance_criteria": [
+            "All tests pass",
+            "No clippy warnings",
+            "Code formatted",
+            "jarvy skills --help works",
+            "jarvy skills list works",
+            "jarvy skills agents works"
+          ]
+        }
+      ]
+    }
+  ],
+  "files_to_create": [
+    "src/skills/mod.rs",
+    "src/skills/config.rs",
+    "src/skills/registry.rs",
+    "src/skills/installer.rs",
+    "src/skills/agents.rs",
+    "src/skills/cache.rs",
+    "src/skills/skill.rs",
+    "src/commands/skills_cmd.rs",
+    "tests/skills_integration.rs"
+  ],
+  "files_to_modify": [
+    "src/config.rs",
+    "src/lib.rs",
+    "src/main.rs",
+    "src/cli/args.rs",
+    "src/cli/subcommands.rs",
+    "src/commands/mod.rs",
+    "src/commands/setup_cmd.rs",
+    "Cargo.toml",
+    "CLAUDE.md"
+  ],
+  "dependencies": {
+    "new": ["serde_yaml"],
+    "existing": ["reqwest", "serde", "tokio", "dirs"]
+  },
+  "success_metrics": {
+    "manual_skill_install_before": "100%",
+    "manual_skill_install_after": "<5%",
+    "skill_install_time_before": "5-10 min",
+    "skill_install_time_after": "<30 sec",
+    "discoverability_before": "poor",
+    "discoverability_after": "excellent"
+  },
+  "non_goals": [
+    "Skill authoring/creation tools",
+    "Skill execution or invocation",
+    "Agent configuration beyond skill installation",
+    "Building a competing skills registry",
+    "Skill marketplace/monetization"
+  ],
+  "related_prds": ["048-pre-commit-hook-installation", "025-docker-mcp-catalog"]
+}

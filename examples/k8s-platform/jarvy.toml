@@ -1,0 +1,29 @@
+# Kubernetes Platform Engineering
+# Run: jarvy setup
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+docker = "latest"
+kubectl = "latest"
+helm = "latest"
+k9s = "latest"
+terraform = "latest"
+awscli = "latest"
+stern = "latest"
+kubectx = "latest"
+
+[hooks.kubectl]
+post_install = "kubectl completion bash >> ~/.bashrc"
+
+[hooks.helm]
+post_install = "helm completion bash >> ~/.bashrc"
+
+[env.vars]
+KUBECONFIG = "$HOME/.kube/config"
+
+[commands]
+run = "kubectl get pods -A"
+test = "helm lint ./charts/*"
