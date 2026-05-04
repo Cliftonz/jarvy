@@ -1,10 +1,12 @@
 name: Fuzz Testing
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  # Fuzz testing is intentionally NOT triggered on push or pull_request.
+  # Fuzzers find bugs over hours of execution, not per-commit; running a
+  # 60s fuzz on every push burns CI minutes without finding meaningful
+  # regressions. Engineers run `cargo fuzz` locally during investigation;
+  # the weekly schedule below covers continuous coverage with corpus
+  # persistence; workflow_dispatch covers ad-hoc deep runs.
   schedule:
     # Run weekly fuzz testing (Sunday at 2 AM UTC)
     - cron: '0 2 * * 0'
@@ -23,44 +25,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  fuzz-pr:
-    name: Quick Fuzz (PR)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - fuzz_config_parser
-          - fuzz_version_parser
-          - fuzz_toml_input
-          - fuzz_tool_spec
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-
-      - name: Run fuzz target (60 seconds)
-        run: |
-          cd fuzz
-          cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=60
-        continue-on-error: true
-
-      - name: Upload crash artifacts
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: fuzz-crashes-${{ matrix.target }}
-          path: fuzz/artifacts/
-          retention-days: 30
-
+  # The previous fuzz-pr job (60s per-PR/per-push run) was removed when
+  # the on: triggers were tightened. Quick-fuzz capability is preserved
+  # via workflow_dispatch with a small fuzz_duration input.
   fuzz-scheduled:
     name: Extended Fuzz (Scheduled)
     runs-on: ubuntu-latest

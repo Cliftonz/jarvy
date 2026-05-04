@@ -1,10 +1,19 @@
 name: Benchmarks
 
 on:
-  push:
-    branches: [ "main" ]
+  # Benchmarks are most useful at PR time (regression detection vs main
+  # baseline). Path-filtered to changes under src/ or benches/ so doc-
+  # only and CI-only PRs don't burn benchmark minutes. Push to main is
+  # intentionally NOT triggered — the PR run already covered it, and the
+  # post-merge run produces the same numbers without anyone reading
+  # them. workflow_dispatch covers manual reruns.
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "src/**"
+      - "benches/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   workflow_dispatch:
 
 env:

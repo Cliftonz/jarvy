@@ -9,9 +9,13 @@
 name: E2E Cross-Platform Tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # E2E cross-platform runs are heavy (multi-OS install matrix). The
+  # nightly cron below produces the canonical signal that main is
+  # green; per-push and per-PR runs were redundant and routinely added
+  # ~30 min of runner time without finding bugs the nightly missed.
+  # workflow_dispatch covers ad-hoc validation when a PR touches the
+  # tools registry or install scripts and the author wants pre-merge
+  # confirmation.
   schedule:
     # Nightly at 2 AM UTC
     - cron: '0 2 * * *'
