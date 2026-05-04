@@ -223,9 +223,13 @@ jobs:
           key: ${{ runner.os }}-cargo-sbom-tools
 
       - name: Install SBOM tools
+        # cargo-cyclonedx was dropped — its `--format json > file`
+        # invocation produced a 0-byte file (the tool writes to its
+        # own path, not stdout), and the cargo-metadata + jq fallback
+        # below is fully sufficient for CycloneDX 1.4. Only cargo-sbom
+        # remains; it's used for SPDX 2.3.
         run: |
           cargo install cargo-sbom --locked || true
-          cargo install cargo-cyclonedx --locked || true
 
       - name: Generate SPDX SBOM
         run: |
@@ -246,8 +250,25 @@ jobs:
           }' > sbom.spdx.json
 
       - name: Generate CycloneDX SBOM
+        # The previous version called `cargo cyclonedx --format json >
+        # sbom.cdx.json` and fell back to the metadata + jq path on
+        # non-zero exit. Two bugs:
+        #   1. `cargo cyclonedx` writes to <crate-name>.cdx.json by
+        #      default and emits NOTHING to stdout. The shell redirect
+        #      captured the (empty) stdout and produced a 0-byte
+        #      sbom.cdx.json. The OR fallback never fired because
+        #      cyclonedx exited 0.
+        #   2. The signed-but-empty sbom.cdx.json then shipped to the
+        #      release as 0 bytes (skipped by the upload step's `-s`
+        #      filter), but its .sig/.pem/.bundle still uploaded —
+        #      signatures over empty content, useless for verification.
+        # Fix: drop cargo-cyclonedx entirely. The metadata + jq
+        # fallback is a valid CycloneDX 1.4 doc and always works (jq
+        # is preinstalled on ubuntu-latest, cargo-metadata always
+        # produces valid JSON). One code path, no fallbacks, always
+        # produces a non-empty file.
         run: |
-          cargo cyclonedx --format json > sbom.cdx.json 2>/dev/null || \
+          set -euo pipefail
           cargo metadata --format-version 1 | jq '{
             bomFormat: "CycloneDX",
             specVersion: "1.4",
@@ -268,6 +289,24 @@ jobs:
               licenses: [{license: {id: .license}}]
             }]
           }' > sbom.cdx.json
+
+      - name: Verify SBOM outputs are non-empty + parseable
+        # Belt-and-braces: catch any future SBOM-generator regression
+        # before it leaks into a release. Both files must exist, be
+        # non-empty, and parse as JSON.
+        run: |
+          set -euo pipefail
+          for f in sbom.spdx.json sbom.cdx.json; do
+            if [ ! -s "$f" ]; then
+              echo "::error::$f is missing or empty"
+              exit 1
+            fi
+            if ! jq -e '.' "$f" >/dev/null; then
+              echo "::error::$f is not valid JSON"
+              exit 1
+            fi
+            echo "✅ $f: $(wc -c < "$f") bytes, valid JSON"
+          done
 
       - name: Upload SBOMs
         uses: actions/upload-artifact@v4
