@@ -4,7 +4,14 @@
 # Add an entry only after confirming the finding is a synthetic test fixture
 # or a public, intentionally-published value.
 
-# Synthetic test fixture in the sanitizer's unit test. The string
-# "sk_live_abc123def456" is shaped like a Stripe key on purpose so the
-# sanitizer's regex catches it; it is not a real credential.
+# Synthetic test fixture in the sanitizer's unit test. A fake Stripe-shaped
+# value exercises the redaction regex; it is not a real credential. The
+# literal string is intentionally not quoted in this comment so this file
+# does not itself trip the scanner.
 762fc8b3f0ca5ffc2e1c285a526c6470a7327164:src/observability/sanitizer.rs:stripe-access-token:220
+
+# Self-allowlist: a previous version of THIS file accidentally quoted the
+# synthetic value in a comment, leaving the literal in commit 2366a8c's blob.
+# That commit cannot be rewritten without also rewriting all later commits,
+# so allowlist its fingerprint instead.
+2366a8c126f8a9593bd698a867d5247cc93dc45d:.betterleaksignore:stripe-access-token:8
