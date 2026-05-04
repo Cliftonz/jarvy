@@ -93,11 +93,12 @@ it must cover the platforms Jarvy ships to.
 
 **Note on macOS Intel (x86_64)**: jarvy v0.1.0+ does not ship prebuilt
 Intel macOS binaries. Apple stopped selling Intel Macs in 2022; macOS 15+
-retired most Intel hardware. Intel macOS users install via
-`cargo install jarvy` or Homebrew (both compile from source). The
-`install.sh` script detects and rejects Intel macOS with a clear
-recommendation to use cargo. Re-add `macos-13` to the release matrix
-if there is demand for prebuilt Intel .dmg.
+retired most Intel hardware. The `install.sh` script detects Intel macOS
+and **automatically falls through to `cargo install jarvy`** when cargo
+is present (or prompts the user to install Rust via rustup if not).
+Homebrew also remains a viable path (compiles from source on Intel).
+Re-add `macos-13` to the release matrix if there is demand for prebuilt
+Intel .dmg artifacts.
 
 **Optional but recommended**:
 
