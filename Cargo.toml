@@ -67,7 +67,7 @@ hostname = "0.4"
 sys-info = "0.9"
 num_cpus = "1.16"
 chrono = { version = "0.4", features = ["serde"] }
-self_update = "0.44"
+self_update = { version = "0.44", default-features = false, features = ["ureq", "rustls", "archive-tar", "compression-flate2"] }
 sha2 = "0.11"
 hex = "0.4"
 shellexpand = "3.1"
@@ -126,25 +126,18 @@ workspace = true
 
 [package.metadata.packager]
 product-name = "jarvy"
-
 identifier = "io.github.bearbinary.jarvy"
 category = "Utility"
 homepage = "https://github.com/bearbinary/jarvy"
 licenseFile = "LICENSE"
-formats = ["all"]                  # Or ["all"] if you want every supported format
-# NOTE: The `generate-desktop-entry` key is not supported by cargo-packager and caused
-# deserialization errors. It has been removed to maintain compatibility.
-
-[package.metadata.packager.macos]
-icons = ["assets/icns/CLI_Logo.icns"]
-
-[package.metadata.packager.windows]
-# If an .ico is added later, list it here (e.g., assets/icons/jarvy.ico)
-icons = ["assets/CLI_Logo.png"]
-
-[package.metadata.packager.linux]
-# If .png sizes are added later, list them here
-icons = ["assets/CLI_Logo.png"]
+formats = ["all"]
+# cargo-packager treats `icons` as a top-level field. It auto-picks .icns for
+# macOS DMG, .png for Linux AppImage, and .ico (or falls back to .png) for
+# Windows MSI/EXE based on file extension. Per-platform `[macos]`, `[windows]`,
+# and `[linux]` sections do not accept `icons` (verified against the schema:
+# MacOsConfig has signing/framework fields only, WindowsConfig has signing,
+# LinuxConfig has only `generate_desktop_entry`).
+icons = ["assets/icns/CLI_Logo.icns", "assets/CLI_Logo.png"]
 
 # AppImage extra files (optional; keep/remove to match your repo)
 [package.metadata.packager.appimage.files]
