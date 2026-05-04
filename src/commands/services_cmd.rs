@@ -43,10 +43,20 @@ pub fn run_services(action: &ServicesAction, file: &str) -> i32 {
 
     let backend_impl = services::get_backend(backend);
 
-    // Check if backend is installed
+    // Check if backend is installed.
+    //
+    // The "not installed" message is informational, not an error — the
+    // command returns 0 either way because the user asked us to *report*
+    // status, and "tool absent" is a valid status. Print to stdout so
+    // status-reading scripts and integration tests can capture it from
+    // the same stream as the success path. Without this, the macOS
+    // arm64 runners (which don't ship Docker Compose) produced an
+    // empty stdout and broke services_detects_docker_compose_yml,
+    // services_prioritizes_docker_compose_over_tilt, and
+    // services_uses_compose_file_override.
     if !backend_impl.is_installed() {
-        eprintln!("{} is not installed.", backend);
-        eprintln!("Install it with: jarvy setup");
+        println!("{} is not installed.", backend);
+        println!("Install it with: jarvy setup");
         return 0;
     }
 

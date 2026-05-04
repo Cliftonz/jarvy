@@ -172,8 +172,19 @@ pub fn save_global_config(config: &CliConfig) -> Result<(), String> {
 }
 
 /// Single source of truth for the global config path: `~/.jarvy/config.toml`.
+///
+/// Honors the `JARVY_TEST_HOME` env var as a deliberate override so tests
+/// can isolate config writes to a temp directory. `dirs::home_dir()` on
+/// Windows uses `SHGetKnownFolderPath` and ignores HOME/USERPROFILE, so
+/// env-var-based isolation does not work there without an explicit hook.
+/// JARVY_TEST_HOME is opt-in and Jarvy-namespaced; production environments
+/// will never set it.
 pub fn global_config_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".jarvy").join("config.toml"))
+    let home = std::env::var("JARVY_TEST_HOME")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(dirs::home_dir)?;
+    Some(home.join(".jarvy").join("config.toml"))
 }
 
 /// Load the current global config (returning `Default` if missing/unreadable),
@@ -214,32 +225,25 @@ mod tests {
         let _guard = HOME_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::TempDir::new().expect("tempdir");
 
-        // dirs::home_dir() on Unix reads $HOME, but on Windows it falls
-        // back to USERPROFILE (with HOMEDRIVE+HOMEPATH after that). To
-        // isolate the test on every platform we override every var the
-        // home_dir() implementation might consult.
-        let prev_home = std::env::var("HOME").ok();
-        let prev_userprofile = std::env::var("USERPROFILE").ok();
+        // global_config_path() honors JARVY_TEST_HOME above all else.
+        // Setting that single var isolates tests on every platform,
+        // including Windows where dirs::home_dir() ignores env vars.
+        let prev = std::env::var("JARVY_TEST_HOME").ok();
 
         // SAFETY: tests are serialized via HOME_MUTEX so set_var/remove_var
         // races are prevented by construction.
         #[allow(unsafe_code)]
         unsafe {
-            std::env::set_var("HOME", tmp.path());
-            std::env::set_var("USERPROFILE", tmp.path());
+            std::env::set_var("JARVY_TEST_HOME", tmp.path());
         }
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             f(tmp.path());
         }));
         #[allow(unsafe_code)]
         unsafe {
-            match prev_home {
-                Some(v) => std::env::set_var("HOME", v),
-                None => std::env::remove_var("HOME"),
-            }
-            match prev_userprofile {
-                Some(v) => std::env::set_var("USERPROFILE", v),
-                None => std::env::remove_var("USERPROFILE"),
+            match prev {
+                Some(v) => std::env::set_var("JARVY_TEST_HOME", v),
+                None => std::env::remove_var("JARVY_TEST_HOME"),
             }
         }
         if let Err(payload) = res {
