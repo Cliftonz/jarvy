@@ -78,9 +78,25 @@ pub fn run_quickstart(options: QuickstartOptions) -> QuickstartResult {
     // Check if running in TTY
     let is_tty = io::stdin().is_terminal();
 
-    if !is_tty && !options.non_interactive {
-        eprintln!("Error: Quickstart requires an interactive terminal.");
-        eprintln!("Use non-interactive commands like 'jarvy init --template <name>'");
+    // No TTY means we cannot run any of the inquire-based prompts further
+    // down. Two paths, both bail before a prompt is reached:
+    //   - non_interactive mode: print "Quickstart cancelled" to stdout and
+    //     exit cleanly. Without this, on Windows the inquire prompt would
+    //     block on ReadConsoleW indefinitely (Unix returns NotTTY quickly
+    //     so the bug was platform-masked). The Tools E2E job at
+    //     v0.1.0-rc.7 hung for 35 minutes here before the 45-min timeout.
+    //   - interactive mode (no flag): print the existing error to stderr
+    //     directing the user at non-interactive subcommands.
+    if !is_tty {
+        if options.non_interactive {
+            println!(
+                "Quickstart cancelled: no interactive terminal detected. \
+                 Use 'jarvy init --template <name>' for non-interactive setup."
+            );
+        } else {
+            eprintln!("Error: Quickstart requires an interactive terminal.");
+            eprintln!("Use non-interactive commands like 'jarvy init --template <name>'");
+        }
         return QuickstartResult {
             system: SystemCheck {
                 os: "unknown".to_string(),
