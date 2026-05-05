@@ -11,6 +11,16 @@
 //! 3. World-writable plugin directories are refused on Unix.
 
 use jarvy::tools::plugins::{self, PluginPlatform, PluginTool, get_plugin, install_by_name};
+use std::sync::Mutex;
+
+/// Serializes every test that mutates the global plugin registry. Cargo
+/// runs integration tests in parallel; without this lock, one test's
+/// `_test_clear()` can wipe another test's `_test_register(...)` between
+/// the register call and the subsequent get_plugin lookup, causing
+/// install_by_name_resolves_to_correct_plugin (and friends) to flake.
+/// Tests that DON'T touch the registry (validates_*, refuses_*, etc.)
+/// don't need this guard.
+static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
 
 fn fresh_plugin(name: &str, command: &str) -> PluginTool {
     PluginTool {
@@ -51,6 +61,7 @@ fn fresh_plugin(name: &str, command: &str) -> PluginTool {
 
 #[test]
 fn install_by_name_resolves_to_correct_plugin() {
+    let _guard = REGISTRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     plugins::_test_clear();
     plugins::_test_register(fresh_plugin("alpha", "alpha-cmd"));
     plugins::_test_register(fresh_plugin("beta", "beta-cmd"));
@@ -68,6 +79,7 @@ fn install_by_name_resolves_to_correct_plugin() {
 
 #[test]
 fn install_by_name_returns_false_for_unknown_plugin() {
+    let _guard = REGISTRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     plugins::_test_clear();
     plugins::_test_register(fresh_plugin("known", "known-cmd"));
 
@@ -77,6 +89,7 @@ fn install_by_name_returns_false_for_unknown_plugin() {
 
 #[test]
 fn lookup_is_case_insensitive() {
+    let _guard = REGISTRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     plugins::_test_clear();
     plugins::_test_register(fresh_plugin("CamelCase", "camelcase"));
 
