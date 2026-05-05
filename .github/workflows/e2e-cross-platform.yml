@@ -52,10 +52,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS - Intel
-          - os: macos-13
-            name: macOS Intel
-            platform: macos-x86_64
+          # macos-13 (Intel) intentionally dropped from v0.1.0 to align
+          # with the release matrix. Apple stopped selling Intel Macs in
+          # 2022 and macOS 15+ retired most Intel hardware. Re-add this
+          # slot if there is demand for prebuilt Intel .dmg artifacts;
+          # see .github/workflows/release.yml for the canonical comment.
           # macOS - Apple Silicon
           - os: macos-14
             name: macOS ARM (M1)
@@ -94,10 +95,19 @@ jobs:
         id: jarvy
         shell: bash
         run: |
+          # On Windows, ${{ github.workspace }} renders with backslashes
+          # (e.g. D:\a\Jarvy\Jarvy). When that value lands in a step
+          # output and a subsequent `shell: bash` step references it via
+          # template substitution, bash consumes the backslashes during
+          # word splitting/escape processing, turning the path into
+          # D:aJarvyJarvy/... and producing "No such file or directory"
+          # at exec time. Normalize to forward slashes here; Git Bash on
+          # Windows accepts mixed-slash paths uniformly.
+          WORKSPACE="${GITHUB_WORKSPACE//\\//}"
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            echo "bin=${{ github.workspace }}/target/release/jarvy.exe" >> $GITHUB_OUTPUT
+            echo "bin=$WORKSPACE/target/release/jarvy.exe" >> $GITHUB_OUTPUT
           else
-            echo "bin=${{ github.workspace }}/target/release/jarvy" >> $GITHUB_OUTPUT
+            echo "bin=$WORKSPACE/target/release/jarvy" >> $GITHUB_OUTPUT
           fi
 
       - name: Verify Jarvy runs
