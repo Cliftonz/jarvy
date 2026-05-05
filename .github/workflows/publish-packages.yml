@@ -69,7 +69,27 @@ jobs:
           sed -i "s/SHA256_PLACEHOLDER_LINUX_X86/${{ steps.get_assets.outputs.linux_x86_sha }}/g" "$FORMULA"
           sed -i "s/SHA256_PLACEHOLDER_LINUX_ARM/${{ steps.get_assets.outputs.linux_arm_sha }}/g" "$FORMULA"
 
+      # Skip when the secret isn't configured. Homebrew tap propagation
+      # requires HOMEBREW_TAP_DEPLOY_KEY (an SSH private key with write
+      # access to the bearbinary/homebrew-tap repo) — see
+      # docs/MAINTAINER_RELEASE_GUIDE.md for setup. Without it, the
+      # cpina/github-action-push-to-another-repository action errors with
+      # "API_TOKEN_GITHUB and SSH_DEPLOY_KEY are empty" and fails the
+      # whole workflow. Mirror the AUR job's pattern (`continue-on-error`)
+      # by gating the push step on secret presence so missing setup
+      # surfaces as a warning instead of a release-breaking failure.
+      - name: Check Homebrew tap secret
+        id: tap_secret
+        run: |
+          if [ -z "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}" ]; then
+            echo "::warning::HOMEBREW_TAP_DEPLOY_KEY not configured; skipping homebrew-tap push. Set the secret per docs/MAINTAINER_RELEASE_GUIDE.md to enable Homebrew distribution."
+            echo "have_secret=false" >> $GITHUB_OUTPUT
+          else
+            echo "have_secret=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Push to Homebrew tap
+        if: steps.tap_secret.outputs.have_secret == 'true'
         uses: cpina/github-action-push-to-another-repository@main
         env:
           SSH_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}

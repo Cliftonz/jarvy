@@ -29,6 +29,45 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+## [v0.0.4] — Lint formatting + scorecard + homebrew-tap guard (2026-05-05)
+
+### Fixed
+
+- **`cargo fmt --check`** failed in the Lint job on
+  `src/team/inheritance.rs:760-768` because the v0.0.3 single-quoted
+  TOML literal edits left format strings on multiple lines that
+  rustfmt wanted compacted. Re-ran `cargo fmt` to normalize.
+- **OpenSSF Scorecard** failed on the v0.0.3 tag with `Only the
+  default branch main is supported`. ossf/scorecard-action explicitly
+  refuses tag-push triggers; v0.0.3's trigger trim moved scorecard
+  off main-push, which broke it. Restored `push: branches: [main]`
+  for scorecard only — every other validating workflow stays
+  tag-triggered. Release-tag scorecard runs produce no useful signal
+  anyway since the action only inspects the default branch.
+- **Homebrew tap publish** now gracefully skips when
+  `HOMEBREW_TAP_DEPLOY_KEY` is not configured. Previously the whole
+  `publish-packages.yml` workflow exited 1 with "API_TOKEN_GITHUB
+  and SSH_DEPLOY_KEY are empty", masking the success of crates.io,
+  AUR, winget, and Chocolatey jobs. New behavior: missing secret
+  emits a warning ("set per docs/MAINTAINER_RELEASE_GUIDE.md") and
+  the push step is skipped via `if:` guard.
+
+### Validated downstream (v0.0.3)
+
+After the v0.0.3 fixes, the following propagation channels worked:
+
+- ✅ crates.io: jarvy@0.0.3 + cargo-jarvy@0.0.3 published
+- ✅ Submit to winget (job inside publish-packages.yml; the separate
+  winget.yml workflow still requires manual first submission per
+  v0.0.3 release notes)
+- ✅ Chocolatey
+- ✅ AUR (jarvy-bin)
+- ✅ GitHub Pages docs site (after maintainer enabled Pages in repo
+  Settings)
+- ⚠️  Homebrew tap: blocked on `HOMEBREW_TAP_DEPLOY_KEY` secret;
+  v0.0.4 makes this a non-blocker so missing-secret no longer fails
+  the whole workflow.
+
 ## [v0.0.3] — Unblock crates.io and Homebrew downstream publish (2026-05-05)
 
 Patch release. v0.0.2 went live on the GitHub release page but the
@@ -177,7 +216,8 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/bearbinary/jarvy/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/bearbinary/jarvy/compare/v0.0.4...HEAD
+[v0.0.4]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.4
 [v0.0.3]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.3
 [v0.0.2]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.2
 [v0.0.1]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.1

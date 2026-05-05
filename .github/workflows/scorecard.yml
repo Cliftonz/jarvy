@@ -11,18 +11,20 @@
 name: OpenSSF Scorecard
 
 on:
-  # Scorecard publishes a security-posture score that's most useful
-  # when keyed to released artifacts. push-to-main was removed because
-  # the merge commit matches a validated PR head and weekly cron +
-  # release tag are sufficient touchpoints. branch_protection_rule
-  # event still fires when repo policy changes.
+  # ossf/scorecard-action explicitly refuses to run on tag pushes:
+  # "Only the default branch main is supported." The previous
+  # trigger trim moved scorecard from `push: branches: [main]` to
+  # `push: tags: ['v*']` to match other validating workflows; that
+  # broke scorecard but didn't break the others. Restore main-push
+  # so scorecard fires on every merge to main, plus the existing
+  # weekly cron + branch_protection_rule. Release-tag scorecard
+  # runs are not supported by the action and produce no useful
+  # signal anyway.
   branch_protection_rule:
   schedule:
     - cron: '0 0 * * 1'  # Weekly on Monday at midnight UTC
   push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+    branches: [main]
   workflow_dispatch:
 
 permissions: read-all

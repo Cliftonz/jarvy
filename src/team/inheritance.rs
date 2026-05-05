@@ -760,14 +760,8 @@ docker = "latest"
 
         // Single-quoted TOML literal so Windows backslash paths don't
         // need escaping (see test_resolve_with_local_extends comment).
-        let a_content = format!(
-            "extends = '{}'\n[provisioner]\na = \"1\"",
-            b_path.display()
-        );
-        let b_content = format!(
-            "extends = '{}'\n[provisioner]\nb = \"1\"",
-            a_path.display()
-        );
+        let a_content = format!("extends = '{}'\n[provisioner]\na = \"1\"", b_path.display());
+        let b_content = format!("extends = '{}'\n[provisioner]\nb = \"1\"", a_path.display());
 
         fs::write(&a_path, a_content).unwrap();
         fs::write(&b_path, b_content).unwrap();
