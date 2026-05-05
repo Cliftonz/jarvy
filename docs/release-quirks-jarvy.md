@@ -60,7 +60,7 @@ package, SBOM, and checksum artifact. Verification:
 cosign verify-blob \
   --signature jarvy-linux-x86_64.tar.gz.sig \
   --certificate jarvy-linux-x86_64.tar.gz.pem \
-  --certificate-identity-regexp "https://github.com/bearbinary/jarvy" \
+  --certificate-identity-regexp "https://github.com/bearbinary/Jarvy/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   jarvy-linux-x86_64.tar.gz
 ```

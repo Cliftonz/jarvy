@@ -29,6 +29,25 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+## [v0.0.2] — Cosign verify-command case fix (2026-05-05)
+
+Patch release fixing the cosign verification snippet baked into
+release notes, SECURITY.md, and docs/release-quirks-jarvy.md.
+
+### Fixed
+
+- **release notes / SECURITY.md / docs**: the
+  `--certificate-identity-regexp` value used `bearbinary/jarvy`
+  (lowercase j). The actual Sigstore cert subject GitHub Actions
+  produces is `bearbinary/Jarvy/...` (capital J — the repo's
+  canonical case). cosign's regex is case-sensitive, so users
+  copy-pasting the verify command from the v0.0.1 release page
+  saw "none of the expected identities matched" even though the
+  signature was valid. Corrected all three sources to
+  `bearbinary/Jarvy/`. github.com URLs elsewhere in the repo are
+  unchanged because GitHub URL matching is case-insensitive — only
+  cosign's regex was affected.
+
 ## [v0.0.1] — Initial public release (2026-05-05)
 
 First publicly tagged stable release. Validated through the
@@ -110,5 +129,6 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/bearbinary/jarvy/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/bearbinary/jarvy/compare/v0.0.2...HEAD
+[v0.0.2]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.2
 [v0.0.1]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.1
