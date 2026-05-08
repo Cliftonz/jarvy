@@ -177,6 +177,7 @@ impl ResolvedProxy {
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
 
@@ -251,6 +252,166 @@ mod tests {
         assert_eq!(
             resolved.source,
             ProxySource::ToolOverride("git".to_string())
+        );
+    }
+
+    /// RAII guard that snapshots the listed env vars on construction and
+    /// restores them on drop. Pair with `#[serial(proxy_env)]` so concurrent
+    /// tests do not race on the global env.
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn new(vars: &[&'static str]) -> Self {
+            let saved = vars.iter().map(|k| (*k, std::env::var(k).ok())).collect();
+            // Wipe each so tests start from a known state.
+            for k in vars {
+                // SAFETY: tests run with #[serial(proxy_env)] so no other
+                // thread is reading or writing these vars concurrently.
+                unsafe { std::env::remove_var(k) };
+            }
+            Self { saved }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, v) in &self.saved {
+                // SAFETY: see EnvGuard::new.
+                unsafe {
+                    match v {
+                        Some(val) => std::env::set_var(k, val),
+                        None => std::env::remove_var(k),
+                    }
+                }
+            }
+        }
+    }
+
+    const PROXY_ENV_VARS: &[&str] = &[
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SOCKS_PROXY",
+        "socks_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ];
+
+    #[test]
+    #[serial_test::serial(proxy_env)]
+    fn proxy_precedence_env_beats_tool_and_global() {
+        let _guard = EnvGuard::new(PROXY_ENV_VARS);
+        // SAFETY: serialized via #[serial(proxy_env)].
+        unsafe { std::env::set_var("HTTPS_PROXY", "https://env.example/x") };
+
+        let git_override = NetworkOverride {
+            https_proxy: Some("https://tool.example/y".to_string()),
+            ..Default::default()
+        };
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("git".to_string(), git_override);
+        let config = NetworkConfig {
+            https_proxy: Some("https://global.example/z".to_string()),
+            overrides,
+            ..Default::default()
+        };
+
+        let resolver = ProxyResolver::new(Some(&config));
+        let resolved = resolver.resolve_for_tool("git");
+
+        assert_eq!(resolved.source, ProxySource::Environment);
+        assert_eq!(
+            resolved.https_proxy.as_deref(),
+            Some("https://env.example/x")
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(proxy_env)]
+    fn proxy_precedence_tool_beats_global_when_no_env() {
+        let _guard = EnvGuard::new(PROXY_ENV_VARS);
+
+        let git_override = NetworkOverride {
+            https_proxy: Some("https://tool.example/y".to_string()),
+            ..Default::default()
+        };
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("git".to_string(), git_override);
+        let config = NetworkConfig {
+            https_proxy: Some("https://global.example/z".to_string()),
+            overrides,
+            ..Default::default()
+        };
+
+        let resolver = ProxyResolver::new(Some(&config));
+        let resolved = resolver.resolve_for_tool("git");
+
+        assert_eq!(
+            resolved.source,
+            ProxySource::ToolOverride("git".to_string())
+        );
+        assert_eq!(
+            resolved.https_proxy.as_deref(),
+            Some("https://tool.example/y")
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(proxy_env)]
+    fn proxy_no_proxy_all_drops_global_proxy() {
+        let _guard = EnvGuard::new(PROXY_ENV_VARS);
+
+        let git_override = NetworkOverride {
+            no_proxy_all: true,
+            ..Default::default()
+        };
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("git".to_string(), git_override);
+        let config = NetworkConfig {
+            https_proxy: Some("https://global.example/z".to_string()),
+            overrides,
+            ..Default::default()
+        };
+
+        let resolver = ProxyResolver::new(Some(&config));
+        let resolved = resolver.resolve_for_tool("git");
+
+        assert!(!resolved.has_proxy());
+        assert_eq!(
+            resolved.source,
+            ProxySource::ToolOverride("git".to_string())
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(proxy_env)]
+    fn proxy_unrelated_tool_falls_back_to_global() {
+        let _guard = EnvGuard::new(PROXY_ENV_VARS);
+
+        let git_override = NetworkOverride {
+            https_proxy: Some("https://git.example/y".to_string()),
+            ..Default::default()
+        };
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("git".to_string(), git_override);
+        let config = NetworkConfig {
+            https_proxy: Some("https://global.example/z".to_string()),
+            overrides,
+            ..Default::default()
+        };
+
+        let resolver = ProxyResolver::new(Some(&config));
+        let resolved = resolver.resolve_for_tool("npm");
+
+        assert_eq!(resolved.source, ProxySource::GlobalConfig);
+        assert_eq!(
+            resolved.https_proxy.as_deref(),
+            Some("https://global.example/z")
         );
     }
 

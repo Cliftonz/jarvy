@@ -80,6 +80,7 @@ tempfile = "3.27"
 assert_cmd = "2.2"
 proptest = "1.11"
 criterion = { version = "0.8", features = ["html_reports"] }
+serial_test = "3.2"
 
 [[bench]]
 name = "config_parsing"

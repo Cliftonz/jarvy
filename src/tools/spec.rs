@@ -1332,27 +1332,26 @@ where
         .collect();
 
     // Build a set of tools we're installing (for dependency filtering)
-    let tool_set: HashSet<&str> = tool_list.iter().map(|(n, _)| n.as_str()).collect();
+    let tool_set: HashSet<String> = tool_list.iter().map(|(n, _)| n.clone()).collect();
 
     // Build adjacency list (tool -> tools that depend on it)
-    // and in-degree map (tool -> count of dependencies within our set)
-    let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
-    let mut in_degree: HashMap<&str, usize> = HashMap::new();
+    // and in-degree map (tool -> count of dependencies within our set).
+    // Owned `String` keys — previous code leaked a `String` per edge via `.leak()`,
+    // which is unsound for repeated invocations (long-lived processes / IDE plugins).
+    let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+    let mut in_degree: HashMap<String, usize> = HashMap::new();
 
     for (name, _) in &tool_list {
-        in_degree.entry(name.as_str()).or_insert(0);
+        in_degree.entry(name.clone()).or_insert(0);
 
         // Handle strict dependencies (ALL must be present)
         let deps = get_tool_dependencies(name);
         for dep in deps {
             let dep_lower = dep.to_lowercase();
             // Only count dependencies that are in our tool set
-            if tool_set.contains(dep_lower.as_str()) {
-                *in_degree.entry(name.as_str()).or_insert(0) += 1;
-                dependents
-                    .entry(dep_lower.leak()) // leak is safe for static strings
-                    .or_default()
-                    .push(name.as_str());
+            if tool_set.contains(&dep_lower) {
+                *in_degree.entry(name.clone()).or_insert(0) += 1;
+                dependents.entry(dep_lower).or_default().push(name.clone());
             }
         }
 
@@ -1360,17 +1359,14 @@ where
         let flex_deps = get_tool_flexible_dependencies(name);
         if !flex_deps.is_empty() {
             // Find the first flexible dependency that is in our tool set
-            if let Some(flex_dep) = flex_deps.iter().find(|dep| {
-                let dep_lower = dep.to_lowercase();
-                tool_set.contains(dep_lower.as_str())
-            }) {
+            if let Some(flex_dep) = flex_deps
+                .iter()
+                .find(|dep| tool_set.contains(&dep.to_lowercase()))
+            {
                 let dep_lower = flex_dep.to_lowercase();
                 // Add edge: flex_dep -> name (flex_dep must be installed before name)
-                *in_degree.entry(name.as_str()).or_insert(0) += 1;
-                dependents
-                    .entry(dep_lower.leak())
-                    .or_default()
-                    .push(name.as_str());
+                *in_degree.entry(name.clone()).or_insert(0) += 1;
+                dependents.entry(dep_lower).or_default().push(name.clone());
             }
         }
     }
@@ -1382,22 +1378,22 @@ where
         .collect();
 
     // Kahn's algorithm for topological sort
-    let mut queue: VecDeque<&str> = in_degree
+    let mut queue: VecDeque<String> = in_degree
         .iter()
         .filter(|(_, deg)| **deg == 0)
-        .map(|(name, _)| *name)
+        .map(|(name, _)| name.clone())
         .collect();
 
     let mut result: Vec<(String, String)> = Vec::with_capacity(tool_list.len());
 
     while let Some(tool) = queue.pop_front() {
-        if let Some(&version) = version_map.get(tool) {
-            result.push((tool.to_string(), version.to_string()));
+        if let Some(&version) = version_map.get(tool.as_str()) {
+            result.push((tool.clone(), version.to_string()));
         }
 
-        if let Some(deps) = dependents.get(tool) {
-            for &dependent in deps {
-                if let Some(deg) = in_degree.get_mut(dependent) {
+        if let Some(deps) = dependents.get(&tool).cloned() {
+            for dependent in deps {
+                if let Some(deg) = in_degree.get_mut(&dependent) {
                     *deg = deg.saturating_sub(1);
                     if *deg == 0 {
                         queue.push_back(dependent);
