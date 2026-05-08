@@ -40,10 +40,12 @@ impl TicketBundler {
         // Create the ZIP file path
         let zip_path = self.output_dir.join(format!("{}.zip", ticket.ticket_id));
 
-        // Create the ZIP file
+        // Create the ZIP file. Wrap in BufWriter so the per-entry writes
+        // ZipWriter performs don't translate to one syscall each.
         let file = File::create(&zip_path)
             .map_err(|e| TicketError::ArchiveCreationFailed(e.to_string()))?;
-        let mut zip = ZipWriter::new(file);
+        let buffered = std::io::BufWriter::with_capacity(64 * 1024, file);
+        let mut zip = ZipWriter::new(buffered);
 
         let options = FileOptions::<()>::default()
             .compression_method(zip::CompressionMethod::Deflated)

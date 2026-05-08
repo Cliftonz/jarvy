@@ -165,8 +165,9 @@ impl Registry {
         // Fetch index.toml from source URL
         let index_url = format!("{}/index.toml", source.url.trim_end_matches('/'));
 
-        let response = ureq::Agent::new_with_defaults()
+        let response = crate::net::agent()
             .get(&index_url)
+            .header("User-Agent", &crate::net::user_agent())
             .call()
             .map_err(|e| RegistryError::FetchError {
                 url: index_url.clone(),

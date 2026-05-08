@@ -102,16 +102,19 @@ fn ensure_log_directory() -> std::io::Result<PathBuf> {
     Ok(log_dir)
 }
 
-/// File writer that implements Write
+/// File writer that implements `Write`. Wraps the underlying file in a
+/// `BufWriter` so per-event tracing emits are coalesced into 8 KB writes
+/// instead of one `write(2)` syscall per log line. The `Mutex` serializes
+/// concurrent writers (rayon parallel install path).
 struct FileWriter {
-    file: Mutex<std::fs::File>,
+    file: Mutex<std::io::BufWriter<std::fs::File>>,
 }
 
 impl FileWriter {
     fn new(path: &str) -> std::io::Result<Self> {
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
-            file: Mutex::new(file),
+            file: Mutex::new(std::io::BufWriter::with_capacity(8 * 1024, file)),
         })
     }
 }

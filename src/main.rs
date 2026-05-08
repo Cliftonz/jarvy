@@ -22,6 +22,7 @@ pub mod interactive;
 mod lock;
 pub mod logging;
 mod mcp;
+mod net;
 mod network;
 mod observability;
 mod onboarding;

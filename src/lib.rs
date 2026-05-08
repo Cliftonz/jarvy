@@ -2,6 +2,7 @@
 pub mod drift;
 pub mod git;
 pub mod logging;
+pub mod net;
 pub mod network;
 pub mod observability;
 pub mod packages;

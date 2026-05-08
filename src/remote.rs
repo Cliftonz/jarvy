@@ -201,8 +201,8 @@ pub fn fetch_remote_config(url: &str, headers: &[String]) -> Result<String, Stri
     // Transform GitHub URLs to raw URLs if needed
     let fetch_url = transform_github_url(url);
 
-    // Create HTTP agent
-    let agent = ureq::Agent::new_with_defaults();
+    // Use the process-wide shared agent (timeouts + connection reuse).
+    let agent = crate::net::agent();
 
     // Build the request with default headers
     let mut request = agent
@@ -403,5 +403,58 @@ mod tests {
         assert!(header_is_sensitive("X-API-Key"));
         assert!(!header_is_sensitive("User-Agent"));
         assert!(!header_is_sensitive("Accept"));
+    }
+
+    #[test]
+    fn transform_github_url_rewrites_blob_paths() {
+        let cases: &[(&str, &str)] = &[
+            (
+                "https://github.com/u/r/blob/main/jarvy.toml",
+                "https://raw.githubusercontent.com/u/r/main/jarvy.toml",
+            ),
+            (
+                // Branch with a slash (e.g. `feat/foo`).
+                "https://github.com/u/r/blob/feat/foo/jarvy.toml",
+                "https://raw.githubusercontent.com/u/r/feat/foo/jarvy.toml",
+            ),
+            (
+                // Percent-encoded path segment must survive.
+                "https://github.com/u/r/blob/main/path%20with%20space.toml",
+                "https://raw.githubusercontent.com/u/r/main/path%20with%20space.toml",
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                transform_github_url(input),
+                *expected,
+                "transform_github_url({input:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn transform_github_url_appends_raw_to_gists() {
+        assert_eq!(
+            transform_github_url("https://gist.github.com/u/abc"),
+            "https://gist.github.com/u/abc/raw"
+        );
+        assert_eq!(
+            // Trailing slash should be normalized before /raw.
+            transform_github_url("https://gist.github.com/u/abc/"),
+            "https://gist.github.com/u/abc/raw"
+        );
+    }
+
+    #[test]
+    fn transform_github_url_does_not_double_suffix_raw_gists() {
+        // If the URL already has /raw, leave it alone.
+        let already_raw = "https://gist.github.com/u/abc/raw";
+        assert_eq!(transform_github_url(already_raw), already_raw);
+    }
+
+    #[test]
+    fn transform_github_url_passes_unrelated_hosts_through() {
+        let unrelated = "https://example.com/x.toml";
+        assert_eq!(transform_github_url(unrelated), unrelated);
     }
 }

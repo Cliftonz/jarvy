@@ -147,13 +147,9 @@ impl ReleaseClient {
             self.owner, self.repo
         );
 
-        let agent = ureq::Agent::new_with_defaults();
-        let response = agent
+        let response = crate::net::agent()
             .get(&url)
-            .header(
-                "User-Agent",
-                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
-            )
+            .header("User-Agent", &crate::net::user_agent())
             .header("Accept", "application/vnd.github.v3+json")
             .call()
             .map_err(|e| ReleaseError::NetworkError(e.to_string()))?;
@@ -192,13 +188,9 @@ impl ReleaseClient {
             self.owner, self.repo, tag
         );
 
-        let agent = ureq::Agent::new_with_defaults();
-        let response = agent
+        let response = crate::net::agent()
             .get(&url)
-            .header(
-                "User-Agent",
-                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
-            )
+            .header("User-Agent", &crate::net::user_agent())
             .header("Accept", "application/vnd.github.v3+json")
             .call()
             .map_err(|e| ReleaseError::NetworkError(e.to_string()))?;

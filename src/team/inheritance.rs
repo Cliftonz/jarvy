@@ -413,8 +413,9 @@ impl InheritanceResolver {
 
     /// Fetch content from URL
     fn fetch_url(&self, url: &str) -> Result<String> {
-        let response = ureq::Agent::new_with_defaults()
+        let response = crate::net::agent()
             .get(url)
+            .header("User-Agent", &crate::net::user_agent())
             .call()
             .map_err(|e| InheritanceError::FetchFailed {
                 url: url.to_string(),

@@ -576,6 +576,50 @@ mod tests {
         ));
     }
 
+    /// Build a synthetic linear inheritance chain `r0 <- r1 <- ... <- rN`
+    /// for the depth-limit tests below.
+    fn linear_chain_config(length: usize) -> RolesConfig {
+        let mut config = RolesConfig::default();
+        for i in 0..length {
+            let extends = if i == 0 {
+                None
+            } else {
+                Some(RoleExtends::Single(format!("r{}", i - 1)))
+            };
+            let def = RoleDefinition {
+                extends,
+                ..Default::default()
+            };
+            config
+                .roles
+                .insert(format!("r{i}"), RoleDefinitionWrapper::Simple(def));
+        }
+        config
+    }
+
+    #[test]
+    fn role_inheritance_at_max_depth_succeeds() {
+        // r0 <- r1 <- r2 <- r3 <- r4 <- r5 — exactly MAX_INHERITANCE_DEPTH.
+        let config = linear_chain_config(MAX_INHERITANCE_DEPTH + 1);
+        let mut resolver = RoleResolver::new(&config);
+        let resolved = resolver
+            .resolve(&format!("r{}", MAX_INHERITANCE_DEPTH))
+            .expect("max-depth chain should resolve");
+        assert_eq!(resolved.inheritance_chain.len(), MAX_INHERITANCE_DEPTH + 1);
+    }
+
+    #[test]
+    fn role_inheritance_above_max_depth_returns_error() {
+        // r0 <- r1 <- r2 <- r3 <- r4 <- r5 <- r6 — one over the limit.
+        let config = linear_chain_config(MAX_INHERITANCE_DEPTH + 2);
+        let mut resolver = RoleResolver::new(&config);
+        let result = resolver.resolve(&format!("r{}", MAX_INHERITANCE_DEPTH + 1));
+        assert!(
+            matches!(result, Err(RoleResolverError::MaxDepthExceeded { .. })),
+            "expected MaxDepthExceeded, got {result:?}"
+        );
+    }
+
     #[test]
     fn test_resolve_multiple_roles() {
         let config = create_test_config();

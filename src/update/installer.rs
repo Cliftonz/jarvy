@@ -10,7 +10,7 @@ use crate::update::release::{GitHubRelease, ReleaseAsset};
 use crate::update::rollback::RollbackManager;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Binary installer for direct updates
@@ -140,36 +140,34 @@ impl BinaryInstaller {
     fn download_asset(&self, asset: &ReleaseAsset) -> Result<PathBuf, UpdateError> {
         let target_path = self.staging_dir.join(&asset.name);
 
-        let agent = ureq::Agent::new_with_defaults();
-        let response = agent
+        let response = crate::net::agent()
             .get(&asset.browser_download_url)
-            .header(
-                "User-Agent",
-                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
-            )
+            .header("User-Agent", &crate::net::user_agent())
             .call()
             .map_err(|e| UpdateError::DownloadFailed(e.to_string()))?;
 
-        let mut file = File::create(&target_path)
+        // BufWriter so the ~8KB chunks ureq emits don't translate to
+        // ~3,800 raw write(2) syscalls for a 30 MB tarball.
+        let file = File::create(&target_path)
             .map_err(|e| UpdateError::DownloadFailed(format!("Cannot create file: {}", e)))?;
+        let mut writer = std::io::BufWriter::with_capacity(64 * 1024, file);
 
         let mut body = response.into_body();
         let mut reader = body.as_reader();
-        io::copy(&mut reader, &mut file)
+        io::copy(&mut reader, &mut writer)
             .map_err(|e| UpdateError::DownloadFailed(format!("Download failed: {}", e)))?;
+        writer
+            .flush()
+            .map_err(|e| UpdateError::DownloadFailed(format!("Flush failed: {}", e)))?;
 
         Ok(target_path)
     }
 
     /// Download checksums file
     fn download_checksums(&self, asset: &ReleaseAsset) -> Result<String, UpdateError> {
-        let agent = ureq::Agent::new_with_defaults();
-        let response = agent
+        let response = crate::net::agent()
             .get(&asset.browser_download_url)
-            .header(
-                "User-Agent",
-                &format!("jarvy/{}", env!("CARGO_PKG_VERSION")),
-            )
+            .header("User-Agent", &crate::net::user_agent())
             .call()
             .map_err(|e| UpdateError::DownloadFailed(e.to_string()))?;
 
