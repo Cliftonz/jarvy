@@ -1,6 +1,11 @@
 ---
 title: "Migrate: Homebrew Bundle (Brewfile) → Jarvy"
 description: "Step-by-step migration from a Brewfile to jarvy.toml. Map formulae and casks, preserve taps, and ship cross-platform support to teammates on Linux and Windows."
+tags:
+  - migrate
+  - package-manager
+  - homebrew
+
 ---
 
 # Migrating from Homebrew Bundle to Jarvy

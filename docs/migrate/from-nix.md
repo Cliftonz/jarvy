@@ -1,6 +1,11 @@
 ---
 title: "Migrate: Nix → Jarvy"
 description: "Practical migration from Nix shells / flakes to jarvy.toml. Trade hermetic builds for native package managers and a much faster onboarding ramp."
+tags:
+  - migrate
+  - reproducibility
+  - nix
+
 ---
 
 # Migrating from Nix to Jarvy

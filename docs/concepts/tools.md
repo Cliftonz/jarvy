@@ -1,6 +1,10 @@
 ---
 title: "Concept: Tools — Jarvy"
 description: "How Jarvy represents tools internally, how it resolves versions, and how the tool registry maps a name like `node` to a real install command on every OS."
+tags:
+  - concept
+  - tools
+
 ---
 
 # Concept: tools

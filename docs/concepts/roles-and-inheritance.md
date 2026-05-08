@@ -1,6 +1,10 @@
 ---
 title: "Concept: Roles & inheritance — Jarvy"
 description: "How roles merge, how inheritance resolves, and the precedence rules when the same tool appears in a base role, a child role, and a direct provisioner entry."
+tags:
+  - concept
+  - roles
+
 ---
 
 # Concept: roles & inheritance

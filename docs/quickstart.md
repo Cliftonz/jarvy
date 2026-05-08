@@ -1,6 +1,9 @@
 ---
 title: "Quickstart — Jarvy"
 description: "Install Jarvy and provision your first environment in under 60 seconds. The TL;DR for impatient developers."
+tags:
+  - getting-started
+
 ---
 
 # Quickstart

@@ -1,0 +1,19 @@
+{# Asciinema demo embed (used on the landing page) #}
+<div id="jarvy-demo" style="margin: 1.5rem 0; max-width: 100%;"></div>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof AsciinemaPlayer !== 'undefined' && document.getElementById('jarvy-demo')) {
+      AsciinemaPlayer.create(
+        '/assets/jarvy-setup.cast',
+        document.getElementById('jarvy-demo'),
+        {
+          fit: 'width',
+          terminalFontSize: 'medium',
+          theme: 'asciinema',
+          poster: 'npt:0:13',
+          idleTimeLimit: 1
+        }
+      );
+    }
+  });
+</script>

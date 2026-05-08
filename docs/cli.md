@@ -1,6 +1,9 @@
 ---
 title: "CLI Reference - Jarvy"
 description: "Complete reference for all Jarvy CLI commands, flags, and exit codes."
+tags:
+  - reference
+
 ---
 
 # CLI Reference

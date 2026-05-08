@@ -1,6 +1,11 @@
 ---
 title: "Migrate: mise → Jarvy"
 description: "Side-by-side migration from a `.tool-versions` or `mise.toml` to `jarvy.toml` — keep the runtime version pinning, gain native install, drift detection, and team roles."
+tags:
+  - migrate
+  - runtime
+  - mise
+
 ---
 
 # Migrating from mise to Jarvy

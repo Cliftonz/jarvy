@@ -1,6 +1,10 @@
 ---
 title: "Examples gallery — Jarvy"
 description: "Drop-in jarvy.toml templates for Node, Python, Go, Rust, Ruby, Java, fullstack, and Kubernetes platform engineering. Copy, edit, commit."
+tags:
+  - examples
+  - templates
+
 ---
 
 # Examples gallery

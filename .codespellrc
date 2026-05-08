@@ -1,0 +1,6 @@
+[codespell]
+skip = ./target,./site,./node_modules,./.git,*.lock,*.svg,./llms-full.txt,./docs/llms-full.txt,./docs/llms.txt,./Cargo.lock
+ignore-words = .codespellignore
+quiet-level = 3
+check-filenames =
+check-hidden =

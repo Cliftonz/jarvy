@@ -1,6 +1,9 @@
 ---
 title: "Concepts overview — Jarvy"
 description: "The mental model behind Jarvy: how the config, tools, hooks, roles, and drift state fit together."
+tags:
+  - concept
+
 ---
 
 # Concepts overview

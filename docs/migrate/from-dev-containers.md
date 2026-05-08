@@ -1,6 +1,11 @@
 ---
 title: "Migrate: VS Code Dev Containers → Jarvy"
 description: "Move from VS Code Dev Containers (devcontainer.json) to a native Jarvy setup. Translate features, lifecycle scripts, and editor extensions."
+tags:
+  - migrate
+  - container
+  - devcontainer
+
 ---
 
 # Migrating from VS Code Dev Containers to Jarvy

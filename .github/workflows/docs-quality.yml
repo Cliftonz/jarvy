@@ -1,0 +1,78 @@
+name: Docs Quality
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs-quality.yml'
+      - '.lychee.toml'
+      - '.vale.ini'
+      - '.codespellrc'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  link-check:
+    name: Link check (lychee)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: lychee-${{ runner.os }}
+      - name: Lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --config .lychee.toml
+            --no-progress
+            'docs/**/*.md'
+            'mkdocs.yml'
+          fail: true
+
+  prose-lint:
+    name: Prose lint (vale)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Vale
+        uses: errata-ai/vale-action@v2
+        with:
+          version: 3.7.1
+          files: docs
+          fail_on_error: false # Advisory until baseline established
+          reporter: github-pr-check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  spell-check:
+    name: Spell check (codespell)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: codespell-project/actions-codespell@v2
+        with:
+          check_filenames: true
+          check_hidden: true
+          path: docs/
+          ignore_words_file: .codespellignore
+
+  build-strict:
+    name: Build (mkdocs --strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "mkdocs-material[imaging]" cairosvg Pillow mike
+      - run: mkdocs build --strict

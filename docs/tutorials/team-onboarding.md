@@ -1,6 +1,10 @@
 ---
 title: "Tutorial: Onboard a team in 10 minutes — Jarvy"
 description: "Take an existing repo and ship a jarvy.toml that gets every contributor — new hires, contractors, OSS contributors — to a working dev environment with one command."
+tags:
+  - tutorial
+  - team
+
 ---
 
 # Tutorial: onboard a team in 10 minutes

@@ -1,6 +1,11 @@
 ---
 title: "Migrate: DevPod → Jarvy"
 description: "Move from DevPod (devcontainer.json + Docker/K8s providers) to a native Jarvy setup. Translate features, postCreateCommand, and container env into jarvy.toml."
+tags:
+  - migrate
+  - container
+  - devpod
+
 ---
 
 # Migrating from DevPod to Jarvy

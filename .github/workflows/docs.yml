@@ -1,59 +1,103 @@
 name: Deploy Docs
 
+# Versioned docs deployment via mike. On every release tag, the docs at that
+# tag are deployed to gh-pages under that version label, and the "latest"
+# alias points to the new version. Workflow_dispatch with input lets us
+# rebuild any version on demand.
 on:
-  # Deploy on release tags so the published site always reflects a
-  # tagged version. push-to-main with path-filter was removed because
-  # docs landing on main between releases now wait until the next
-  # release to publish — acceptable since docs are versioned with the
-  # binary anyway. workflow_dispatch covers ad-hoc deploys (e.g. for
-  # an out-of-band typo fix).
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label (e.g. v1.2.3 or "dev"). Leave blank to derive from current ref.'
+        required: false
+      set_latest:
+        description: 'Update the "latest" alias to point at this version'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # mike needs gh-pages history
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install MkDocs Material + social-card system deps
-        # mkdocs-material's social-card plugin (mkdocs.yml has it via the
-        # `material` theme bundle) requires cairosvg + Pillow at runtime
-        # to rasterize the social images. Without these, `mkdocs build
-        # --strict` fails with `ModuleNotFoundError: No module named
-        # 'cairosvg'` / 'PIL'. cairosvg also needs the libcairo2 system
-        # package which ubuntu-latest already ships.
-        run: pip install "mkdocs-material[imaging]" cairosvg Pillow
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-mkdocs
 
-      - name: Build site
+      - name: Install MkDocs Material + mike
+        run: pip install "mkdocs-material[imaging]" cairosvg Pillow mike
+
+      - name: Configure git for mike
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build jarvy binary (for auto-gen pages)
+        run: cargo build --bin jarvy --release
+
+      - name: Generate auto-built docs pages
+        env:
+          JARVY_BIN: ${{ github.workspace }}/target/release/jarvy
+        run: bash scripts/gen-docs.sh
+
+      - name: Determine version label
+        id: version
+        run: |
+          if [[ -n "${{ inputs.version }}" ]]; then
+              VERSION="${{ inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              VERSION="${GITHUB_REF#refs/tags/}"
+          else
+              VERSION="dev"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      - name: Strict build check
         run: mkdocs build --strict
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
+      - name: Deploy with mike
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          SET_LATEST: ${{ inputs.set_latest != 'false' }}
+        run: |
+          if [[ "$SET_LATEST" == "true" ]]; then
+              mike deploy --push --update-aliases "$VERSION" latest
+              mike set-default --push latest
+          else
+              mike deploy --push "$VERSION"
+          fi
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Summary
+        run: |
+          echo "## Deployed docs" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version:** \`${{ steps.version.outputs.VERSION }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **URL:** https://docs.jarvy.dev/${{ steps.version.outputs.VERSION }}/" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Latest alias:** ${{ inputs.set_latest != 'false' }}" >> "$GITHUB_STEP_SUMMARY"

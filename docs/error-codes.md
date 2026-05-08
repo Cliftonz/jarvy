@@ -1,6 +1,9 @@
 ---
 title: "Error Codes - Jarvy"
 description: "Standard exit codes used by the Jarvy CLI with remediation steps."
+tags:
+  - reference
+
 ---
 
 # Jarvy Standard Error Codes

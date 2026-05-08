@@ -1,6 +1,10 @@
 ---
 title: "Concept: Drift baseline — Jarvy"
 description: "How Jarvy snapshots a known-good environment to `.jarvy/state.json`, what it tracks, and how `jarvy drift check` decides whether a machine has wandered off."
+tags:
+  - concept
+  - drift
+
 ---
 
 # Concept: drift baseline

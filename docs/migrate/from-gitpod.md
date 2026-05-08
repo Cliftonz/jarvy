@@ -1,6 +1,11 @@
 ---
 title: "Migrate: Gitpod → Jarvy"
 description: "Move from Gitpod's `.gitpod.yml` to a local Jarvy setup. Translate tasks, image config, ports, and environment variables."
+tags:
+  - migrate
+  - cloud
+  - gitpod
+
 ---
 
 # Migrating from Gitpod to Jarvy

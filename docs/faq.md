@@ -1,6 +1,9 @@
 ---
 title: "FAQ - Jarvy"
 description: "Frequently asked questions about Jarvy, the cross-platform dev environment CLI."
+tags:
+  - reference
+
 ---
 
 # Frequently Asked Questions

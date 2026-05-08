@@ -1,6 +1,11 @@
 ---
 title: "Migrate: asdf → Jarvy"
 description: "Move from asdf's `.tool-versions` and plugin model to a unified `jarvy.toml`. Keep runtime version pinning, gain CLI-tool management and drift detection."
+tags:
+  - migrate
+  - runtime
+  - asdf
+
 ---
 
 # Migrating from asdf to Jarvy

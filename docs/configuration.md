@@ -1,6 +1,9 @@
 ---
 title: "Configuration Reference - Jarvy"
 description: "Complete reference for jarvy.toml — tools, versions, hooks, environment variables, roles, drift detection, and more."
+tags:
+  - reference
+
 ---
 
 # Configuration Reference

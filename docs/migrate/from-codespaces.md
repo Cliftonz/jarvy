@@ -1,6 +1,11 @@
 ---
 title: "Migrate: GitHub Codespaces → Jarvy"
 description: "Move from Codespaces to local Jarvy. Translate devcontainer.json features, postCreateCommand, lifecycle scripts, and secrets — and stop paying per-hour."
+tags:
+  - migrate
+  - cloud
+  - codespaces
+
 ---
 
 # Migrating from GitHub Codespaces to Jarvy

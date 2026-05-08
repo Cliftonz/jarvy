@@ -1,6 +1,10 @@
 ---
 title: "Concept: Hook execution — Jarvy"
 description: "When hooks run, what environment they see, how default hooks interact with user hooks, and the rules around timeouts, errors, and idempotency."
+tags:
+  - concept
+  - hooks
+
 ---
 
 # Concept: hook execution

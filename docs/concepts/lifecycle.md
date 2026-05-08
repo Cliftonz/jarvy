@@ -1,6 +1,10 @@
 ---
 title: "Concept: Setup lifecycle — Jarvy"
 description: "The exact ordering of phases inside `jarvy setup` — config load, role resolution, tool install, hooks, env, and snapshot — and where to plug in."
+tags:
+  - concept
+  - lifecycle
+
 ---
 
 # Concept: setup lifecycle

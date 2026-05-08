@@ -1,6 +1,9 @@
 ---
 title: "Migration guides — Jarvy"
 description: "Switch to Jarvy from Codespaces, DevPod, Gitpod, Dev Containers, Vagrant, Homebrew Bundle, mise, asdf, or Nix. Step-by-step guides with conceptual mappings."
+tags:
+  - migrate
+
 ---
 
 # Migration guides

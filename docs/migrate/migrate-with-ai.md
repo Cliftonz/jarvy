@@ -1,6 +1,11 @@
 ---
 title: "Migrate with AI — Jarvy"
 description: "Use any LLM (Claude, ChatGPT, Cursor, Gemini) to translate a Brewfile, devcontainer.json, mise.toml, Vagrantfile, or other config into a working jarvy.toml. Includes tested prompt templates."
+tags:
+  - migrate
+  - ai
+  - llm
+
 ---
 
 # Migrate with AI

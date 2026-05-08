@@ -1,6 +1,10 @@
 ---
 title: "Tutorial: Your first jarvy.toml — Jarvy"
 description: "A 5-minute guided tutorial: install Jarvy, write your first jarvy.toml, provision a real Node project, and verify the environment."
+tags:
+  - tutorial
+  - getting-started
+
 ---
 
 # Tutorial: your first `jarvy.toml`

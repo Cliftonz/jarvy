@@ -1,6 +1,11 @@
 ---
 title: "Migrate: Vagrant → Jarvy"
 description: "Move from a Vagrantfile to a native Jarvy setup. Translate provisioners, synced folders, and forwarded ports for teams that no longer need a full VM."
+tags:
+  - migrate
+  - vm
+  - vagrant
+
 ---
 
 # Migrating from Vagrant to Jarvy

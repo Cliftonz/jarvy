@@ -89,9 +89,20 @@ extra:
   version:
     provider: mike
     default: latest
+  # Plausible Analytics — privacy-friendly, GDPR-safe, no cookies.
+  # Configure the domain to match the deployed site.
+  analytics:
+    provider: custom
+    plausible:
+      domain: docs.jarvy.dev
+      script: https://plausible.io/js/script.js
 
 extra_css:
   - assets/extra.css
+  - https://cdn.jsdelivr.net/npm/asciinema-player@3.7.0/dist/bundle/asciinema-player.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/asciinema-player@3.7.0/dist/bundle/asciinema-player.min.js
 
 markdown_extensions:
   - abbr
@@ -153,6 +164,15 @@ nav:
     - Hook execution: concepts/hooks-execution.md
     - Drift baseline: concepts/drift-baseline.md
 
+  - Cookbook:
+    - Overview: cookbook/index.md
+    - Behind a corporate proxy: cookbook/corporate-proxy.md
+    - Multi-project Postgres: cookbook/multi-project-postgres.md
+    - Monorepo roles: cookbook/monorepo-roles.md
+    - Secrets via 1Password: cookbook/secrets-1password.md
+    - GitHub Actions matrix: cookbook/github-actions-matrix.md
+    - Slack notifier hook: cookbook/slack-notifier.md
+
   - Guides:
     - Roles guide: roles.md
     - Hooks guide: hooks.md
@@ -182,7 +202,10 @@ nav:
 
   - Reference:
     - Configuration (jarvy.toml): configuration.md
-    - CLI reference: cli.md
+    - JSON Schema (editor autocomplete): schema/index.md
+    - CLI reference (auto): cli-reference.md
+    - CLI guide: cli.md
+    - Tool registry (auto): tools-registry.md
     - Error codes: error-codes.md
     - FAQ: faq.md
     - Changelog: changelog.md

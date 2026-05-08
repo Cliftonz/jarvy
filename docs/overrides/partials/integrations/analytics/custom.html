@@ -1,0 +1,16 @@
+{# Plausible Analytics — privacy-friendly, no cookies, GDPR-compliant. #}
+{# Loaded only when extra.analytics.provider == "custom". To opt out per #}
+{# session, users can run: localStorage.plausible_ignore = "true" #}
+{% if config.extra.analytics.plausible %}
+  <script
+    defer
+    data-domain="{{ config.extra.analytics.plausible.domain }}"
+    src="{{ config.extra.analytics.plausible.script }}">
+  </script>
+  {# Allow `pa.event(...)` calls from custom JS without errors when blocked. #}
+  <script>
+    window.plausible = window.plausible || function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+  </script>
+{% endif %}

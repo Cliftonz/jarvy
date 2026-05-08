@@ -1,0 +1,463 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.jarvy.dev/schema/jarvy.schema.json",
+  "title": "jarvy.toml",
+  "description": "Jarvy declarative dev environment config. Matches the schema accepted by `jarvy validate`. See https://docs.jarvy.dev/configuration/ for the full reference.",
+  "type": "object",
+  "properties": {
+    "role": {
+      "description": "Role assignment for this checkout. Either a single role name or an array of role names (last wins on conflicts).",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "extends": {
+      "description": "Inherit from another jarvy.toml (path or URL).",
+      "type": "string"
+    },
+    "provisioner": {
+      "description": "Tools to install. Map of tool name to version spec (string) or detailed object.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ToolSpec"
+      }
+    },
+    "privileges": {
+      "$ref": "#/$defs/PrivilegeConfig"
+    },
+    "hooks": {
+      "$ref": "#/$defs/HooksConfig"
+    },
+    "env": {
+      "$ref": "#/$defs/EnvConfig"
+    },
+    "services": {
+      "$ref": "#/$defs/ServicesConfig"
+    },
+    "roles": {
+      "description": "Named role definitions. Each role can extend another and add tools.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Role"
+      }
+    },
+    "npm":   { "$ref": "#/$defs/PackageBlock" },
+    "pip":   { "$ref": "#/$defs/PackageBlock" },
+    "cargo": { "$ref": "#/$defs/PackageBlock" },
+    "git":   { "$ref": "#/$defs/GitConfig" },
+    "network": { "$ref": "#/$defs/NetworkConfig" },
+    "drift":   { "$ref": "#/$defs/DriftConfig" },
+    "telemetry": { "$ref": "#/$defs/TelemetryConfig" },
+    "update":    { "$ref": "#/$defs/UpdateConfig" },
+    "logging":   { "$ref": "#/$defs/LoggingConfig" },
+    "commands":  { "$ref": "#/$defs/CommandsConfig" }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "ToolSpec": {
+      "description": "Either a version string (\"latest\", \"20\", \"^3.10\", \"=20.11.0\") or a detailed object.",
+      "oneOf": [
+        {
+          "type": "string",
+          "examples": ["latest", "20", "^3.10", "~3.12", "=20.11.0", ">=3.10"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string",
+              "description": "Version requirement",
+              "examples": ["latest", "20", "^3.10", "=20.11.0"]
+            },
+            "version_manager": {
+              "type": "boolean",
+              "description": "Use a version manager (nvm/pyenv/rbenv) when available",
+              "default": true
+            },
+            "use_sudo": {
+              "type": "boolean",
+              "description": "Override sudo usage for this tool"
+            }
+          },
+          "required": ["version"],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "PrivilegeConfig": {
+      "type": "object",
+      "properties": {
+        "use_sudo": {
+          "type": "boolean",
+          "description": "Default sudo behavior. If unset, auto-detected per OS."
+        },
+        "per_os": {
+          "type": "object",
+          "description": "Per-OS sudo override",
+          "properties": {
+            "linux":   { "type": "boolean" },
+            "macos":   { "type": "boolean" },
+            "windows": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "HooksConfig": {
+      "type": "object",
+      "properties": {
+        "pre_setup": {
+          "type": "string",
+          "description": "Shell script run once before any tool installs"
+        },
+        "post_setup": {
+          "type": "string",
+          "description": "Shell script run once after all tools and per-tool hooks finish"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "shell": {
+              "type": "string",
+              "description": "Shell to run hooks in. Default: bash on Unix, PowerShell on Windows.",
+              "examples": ["bash", "zsh", "sh", "pwsh"]
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "Hook timeout in seconds",
+              "default": 300,
+              "minimum": 1
+            },
+            "continue_on_error": {
+              "type": "boolean",
+              "description": "If true, hook failures warn and continue. Default: false.",
+              "default": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "Per-tool hook (e.g. [hooks.node])",
+        "properties": {
+          "post_install": {
+            "type": "string",
+            "description": "Shell script run after this tool installs"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "EnvConfig": {
+      "type": "object",
+      "properties": {
+        "vars": {
+          "type": "object",
+          "description": "Plain environment variables written to .env and shell rc",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" }
+            ]
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "description": "Required environment variables. Sourced from the user's environment, never the file.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "env": {
+                "type": "string",
+                "description": "Name of the env var to read"
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Fail setup if missing",
+                "default": false
+              },
+              "default": {
+                "type": "string",
+                "description": "Fallback if env is unset"
+              }
+            },
+            "required": ["env"],
+            "additionalProperties": false
+          }
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "shell": { "type": "string" },
+            "update_rc": { "type": "boolean", "default": true },
+            "generate_dotenv": { "type": "boolean", "default": true },
+            "dotenv_path": { "type": "string", "default": ".env" },
+            "add_to_gitignore": { "type": "boolean", "default": true },
+            "backup_rc": { "type": "boolean", "default": true }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "ServicesConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "auto_start": { "type": "boolean", "default": false },
+        "compose_file": { "type": "string", "default": "docker-compose.yml" },
+        "tilt_file": { "type": "string" },
+        "start_in_ci": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+
+    "Role": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "extends": {
+          "description": "Parent role(s) — name or array",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tool names this role pulls in"
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "PackageBlock": {
+      "type": "object",
+      "description": "Language-specific package list. Keys are package names, values are version specs or detailed objects.",
+      "properties": {
+        "package_manager": {
+          "type": "string",
+          "description": "Override package manager (npm only). Auto-detected from lock files otherwise.",
+          "enum": ["npm", "yarn", "pnpm"]
+        },
+        "from_lockfile": {
+          "type": "boolean",
+          "description": "Install from lock file (package-lock.json, requirements.txt, Cargo.lock)",
+          "default": false
+        },
+        "venv": {
+          "type": "string",
+          "description": "Virtual environment path (pip only)"
+        },
+        "create_venv": {
+          "type": "boolean",
+          "description": "Auto-create venv if missing (pip only)",
+          "default": false
+        },
+        "locked": {
+          "type": "boolean",
+          "description": "Use --locked flag (cargo only)",
+          "default": false
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "properties": {
+              "version":  { "type": "string" },
+              "optional": { "type": "boolean" },
+              "features": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+
+    "GitConfig": {
+      "type": "object",
+      "properties": {
+        "user_name":  { "$ref": "#/$defs/ConfigValue" },
+        "user_email": { "$ref": "#/$defs/ConfigValue" },
+        "signing":          { "type": "boolean" },
+        "signing_key":      { "type": "string" },
+        "signing_format":   { "type": "string", "enum": ["ssh", "gpg"] },
+        "default_branch":   { "type": "string" },
+        "pull_rebase":      { "type": "boolean" },
+        "auto_stash":       { "type": "boolean" },
+        "push_autosetup":   { "type": "boolean" },
+        "editor":           { "type": "string" },
+        "autocrlf":         { "type": "string", "enum": ["true", "false", "input"] },
+        "eol":              { "type": "string", "enum": ["lf", "crlf", "native"] },
+        "credential_helper": { "type": "string" },
+        "scope":            { "type": "string", "enum": ["global", "local"] },
+        "aliases":          {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "ConfigValue": {
+      "description": "Either a plain string or { env = \"VAR\", default = \"…\" } indirection.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "properties": {
+            "env":     { "type": "string" },
+            "default": { "type": "string" }
+          },
+          "required": ["env"],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "NetworkConfig": {
+      "type": "object",
+      "properties": {
+        "http_proxy":  { "type": "string" },
+        "https_proxy": { "type": "string" },
+        "no_proxy": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "username": { "$ref": "#/$defs/ConfigValue" },
+            "password": { "$ref": "#/$defs/ConfigValue" }
+          },
+          "additionalProperties": false
+        },
+        "tls": {
+          "type": "object",
+          "properties": {
+            "ca_bundle": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/NetworkOverride" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "NetworkOverride": {
+      "type": "object",
+      "properties": {
+        "http_proxy":  { "type": "string" },
+        "https_proxy": { "type": "string" },
+        "no_proxy": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "DriftConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "check_on_run": { "type": "boolean", "default": false },
+        "track_files": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "version_policy": {
+          "type": "string",
+          "enum": ["major", "minor", "patch", "exact"],
+          "default": "minor"
+        },
+        "ignore_tools": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "allow_upgrades": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    },
+
+    "TelemetryConfig": {
+      "type": "object",
+      "properties": {
+        "enabled":  { "type": "boolean", "default": false },
+        "endpoint": { "type": "string" },
+        "protocol": { "type": "string", "enum": ["http", "grpc"] },
+        "logs":     { "type": "boolean" },
+        "metrics":  { "type": "boolean" },
+        "traces":   { "type": "boolean" },
+        "sample_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "UpdateConfig": {
+      "type": "object",
+      "properties": {
+        "enabled":            { "type": "boolean", "default": true },
+        "channel":            { "type": "string", "enum": ["stable", "beta", "nightly"] },
+        "check_interval":     { "type": "string", "examples": ["24h", "7d"] },
+        "auto_install":       {
+          "type": "string",
+          "enum": ["never", "patch-only", "patch-minor", "all"],
+          "default": "never"
+        },
+        "show_notifications": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    },
+
+    "LoggingConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "level":   {
+          "type": "string",
+          "enum": ["error", "warn", "info", "debug", "trace"],
+          "default": "info"
+        },
+        "format":        { "type": "string", "enum": ["text", "json"] },
+        "max_file_size": { "type": "string", "examples": ["10MB", "1GB"] },
+        "max_files":     { "type": "integer", "minimum": 1 },
+        "max_age_days":  { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "CommandsConfig": {
+      "type": "object",
+      "description": "Project-level command shortcuts shown in the interactive menu.",
+      "properties": {
+        "run":   { "type": "string" },
+        "test":  { "type": "string" },
+        "setup": { "type": "string" }
+      },
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

@@ -39,6 +39,20 @@ Stop writing onboarding wikis. Stop paying for cloud dev pods. Stop debugging "w
 
 ## See it in 30 seconds
 
+<div id="jarvy-demo" style="margin: 1.5rem 0; max-width: 100%;"></div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof AsciinemaPlayer !== 'undefined' && document.getElementById('jarvy-demo')) {
+      AsciinemaPlayer.create(
+        'assets/jarvy-setup.cast',
+        document.getElementById('jarvy-demo'),
+        { fit: 'width', terminalFontSize: 'medium', theme: 'asciinema', poster: 'npt:0:13', idleTimeLimit: 1 }
+      );
+    }
+  });
+</script>
+
 ```toml title="jarvy.toml"
 [provisioner]
 git    = "latest"
