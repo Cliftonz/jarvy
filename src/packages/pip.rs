@@ -5,7 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
-use super::common::{PackageError, command_exists, run_package_command};
+use super::common::{
+    PackageError, command_exists, run_package_command, validate_package_name,
+    validate_package_version,
+};
 use super::config::{PackageSpec, PipConfig};
 
 /// Handler for pip package installation with virtual environment support
@@ -133,6 +136,15 @@ impl PipHandler {
 
     /// Install specific packages from configuration
     fn install_packages(&self, pip: &Path) -> Result<(), PackageError> {
+        // Validate names + versions before building argv (see npm handler).
+        for (name, spec) in &self.config.packages {
+            if spec.is_optional() {
+                continue;
+            }
+            validate_package_name(name, "[pip]")?;
+            validate_package_version(spec.version(), "[pip]")?;
+        }
+
         let packages: Vec<String> = self
             .config
             .packages

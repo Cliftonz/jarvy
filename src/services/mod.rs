@@ -194,33 +194,54 @@ pub fn detect_backend(dir: &Path) -> Option<(ServiceBackend, PathBuf)> {
     None
 }
 
+/// Resolve a `[services.compose_file] | [services.tiltfile]` config path
+/// against the project root and refuse anything that would escape it.
+/// A hostile project `jarvy.toml` setting `compose_file = "../../etc/x.yml"`
+/// or `compose_file = "/tmp/evil/compose.yml"` is dropped here so docker
+/// compose / tilt never gets handed an attacker-staged file containing
+/// `volumes: ["/:/host"]` or a privileged service definition.
+fn resolve_within_project(dir: &Path, raw: &Path, kind: &'static str) -> Option<PathBuf> {
+    let candidate = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        dir.join(raw)
+    };
+    let canonical_candidate = std::fs::canonicalize(&candidate).ok()?;
+    let canonical_root = std::fs::canonicalize(dir).ok()?;
+    if !canonical_candidate.starts_with(&canonical_root) {
+        tracing::warn!(
+            event = "services.refused_escape",
+            kind = %kind,
+            path = %canonical_candidate.display(),
+            root = %canonical_root.display(),
+            "refused [services] path that escapes project root"
+        );
+        return None;
+    }
+    Some(canonical_candidate)
+}
+
 /// Detect which service backend is available, with config override support
 pub fn detect_backend_with_config(
     dir: &Path,
     compose_file: Option<&Path>,
     tilt_file: Option<&Path>,
 ) -> Option<(ServiceBackend, PathBuf)> {
-    // If compose_file is explicitly set, use it
+    // If compose_file is explicitly set, use it (containment-checked).
     if let Some(compose) = compose_file {
-        let path = if compose.is_absolute() {
-            compose.to_path_buf()
-        } else {
-            dir.join(compose)
-        };
-        if path.exists() {
-            return Some((ServiceBackend::DockerCompose, path));
+        if let Some(path) = resolve_within_project(dir, compose, "compose_file") {
+            if path.exists() {
+                return Some((ServiceBackend::DockerCompose, path));
+            }
         }
     }
 
-    // If tilt_file is explicitly set, use it
+    // If tilt_file is explicitly set, use it (containment-checked).
     if let Some(tilt) = tilt_file {
-        let path = if tilt.is_absolute() {
-            tilt.to_path_buf()
-        } else {
-            dir.join(tilt)
-        };
-        if path.exists() {
-            return Some((ServiceBackend::Tilt, path));
+        if let Some(path) = resolve_within_project(dir, tilt, "tiltfile") {
+            if path.exists() {
+                return Some((ServiceBackend::Tilt, path));
+            }
         }
     }
 

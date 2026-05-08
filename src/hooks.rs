@@ -32,6 +32,81 @@ pub enum HookError {
     #[error("Shell not found: {0}")]
     #[allow(dead_code)] // Reserved for shell validation feature
     ShellNotFound(String),
+
+    /// `[hooks.config] shell` was set to a value outside the allowlist of
+    /// trusted shell binaries. Without this guard, a hostile `jarvy.toml`
+    /// could land
+    ///
+    ///     [hooks.config]
+    ///     shell = "/tmp/attacker-shell"
+    ///
+    /// and any local user with write access to `/tmp` could win RCE the
+    /// next time the user ran `jarvy setup`.
+    #[error("Refused untrusted shell binary '{0}'")]
+    RefusedShell(String),
+}
+
+/// Allowlist of shell binary names that hooks may use. Names match what
+/// users typically put in `[hooks.config] shell`. Absolute paths must
+/// resolve into one of `ALLOWED_SHELL_DIRS` and have one of these basenames.
+const ALLOWED_SHELL_NAMES: &[&str] = &[
+    "bash",
+    "zsh",
+    "sh",
+    "fish",
+    "dash",
+    "ash",
+    "ksh",
+    "powershell",
+    "powershell.exe",
+    "pwsh",
+    "pwsh.exe",
+    "cmd",
+    "cmd.exe",
+];
+
+/// Directory allowlist for absolute shell paths. Anything outside these
+/// roots is refused.
+const ALLOWED_SHELL_DIRS: &[&str] = &[
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    // Windows system shells live in C:\Windows\System32; cmd/powershell
+    // are matched by basename below, not by an absolute-path prefix here.
+];
+
+/// Returns true if `shell` is acceptable as a hook executor. The check is
+/// applied at execution time so a malicious `[hooks.config] shell` field
+/// surfaces as a refusal rather than running an attacker binary.
+pub(crate) fn is_allowed_shell(shell: &str) -> bool {
+    if shell.is_empty() {
+        return false;
+    }
+    let lowered = shell.to_lowercase();
+    let basename = std::path::Path::new(&lowered)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&lowered)
+        .to_string();
+
+    if !ALLOWED_SHELL_NAMES.contains(&basename.as_str()) {
+        return false;
+    }
+
+    if shell.starts_with('/') {
+        // Absolute path must live under an allowed directory.
+        return ALLOWED_SHELL_DIRS
+            .iter()
+            .any(|dir| shell.starts_with(&format!("{dir}/")));
+    }
+    // Bare name resolved via PATH or platform fallback in `build_shell_command`
+    // is fine — the basename check covers it.
+    true
 }
 
 /// Result type for hook operations
@@ -328,6 +403,14 @@ pub fn detect_shell() -> String {
 
 /// Build the shell command and arguments for script execution
 fn build_shell_command(shell: &str, script: &str) -> HookResult<(String, Vec<String>)> {
+    if !is_allowed_shell(shell) {
+        tracing::warn!(
+            event = "hooks.refused_shell",
+            shell = %shell,
+            "refused untrusted shell binary"
+        );
+        return Err(HookError::RefusedShell(shell.to_string()));
+    }
     let shell_lower = shell.to_lowercase();
 
     // Determine the shell binary and args based on the shell name
@@ -526,5 +609,40 @@ mod tests {
         // Just ensure it doesn't panic
         let hook = Hook::new("echo test", "Dry run test");
         hook.dry_run();
+    }
+
+    #[test]
+    fn allowed_shell_accepts_canonical_names() {
+        for ok in [
+            "bash",
+            "zsh",
+            "sh",
+            "/bin/bash",
+            "/usr/bin/zsh",
+            "powershell",
+            "pwsh",
+        ] {
+            assert!(is_allowed_shell(ok), "expected {ok:?} to be allowed");
+        }
+    }
+
+    #[test]
+    fn allowed_shell_rejects_attacker_paths() {
+        for bad in [
+            "/tmp/attacker-shell",
+            "/var/tmp/sh",
+            "/home/u/.cache/sh",
+            "./relative-sh",
+            "/etc/sh",
+            "",
+        ] {
+            assert!(!is_allowed_shell(bad), "expected {bad:?} to be refused");
+        }
+    }
+
+    #[test]
+    fn build_shell_command_refuses_untrusted_shell() {
+        let err = build_shell_command("/tmp/evil-shell", "echo x").unwrap_err();
+        assert!(matches!(err, HookError::RefusedShell(_)), "got {err:?}");
     }
 }

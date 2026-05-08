@@ -3,7 +3,10 @@
 //! Provides installation of Rust binaries via `cargo install`.
 //! Supports version pinning and feature selection.
 
-use super::common::{PackageError, command_exists, run_package_command};
+use super::common::{
+    PackageError, command_exists, run_package_command, validate_package_name,
+    validate_package_version,
+};
 use super::config::{CargoConfig, PackageSpec};
 
 /// Handler for cargo binary installation
@@ -46,6 +49,15 @@ impl CargoHandler {
 
     /// Install a single crate
     fn install_crate(&self, name: &str, spec: &PackageSpec) -> Result<(), PackageError> {
+        // Reject names that look like cargo flags (`--git`, `--root`) or
+        // direct-URL deps (`git+https://attacker/x.git`) before they hit
+        // `cargo install`. cargo would happily honor these.
+        validate_package_name(name, "[cargo]")?;
+        validate_package_version(spec.version(), "[cargo]")?;
+        for feature in spec.features() {
+            validate_package_name(feature, "[cargo features]")?;
+        }
+
         println!("    Installing {}...", name);
 
         let mut args = vec!["install", name];

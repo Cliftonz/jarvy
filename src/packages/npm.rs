@@ -5,7 +5,10 @@
 
 use std::path::PathBuf;
 
-use super::common::{PackageError, command_exists, run_package_command};
+use super::common::{
+    PackageError, command_exists, run_package_command, validate_package_name,
+    validate_package_version,
+};
 use super::config::{NpmConfig, NpmPackageManager, PackageSpec};
 
 /// Handler for npm/yarn/pnpm package installation
@@ -75,6 +78,18 @@ impl NpmHandler {
 
     /// Install specific packages from configuration
     fn install_packages(&self, pm: NpmPackageManager) -> Result<(), PackageError> {
+        // Validate every name + version BEFORE building the argv. A malicious
+        // jarvy.toml that ships `--registry=http://attacker = "..."` or
+        // `git+https://attacker/x.git = "1.0"` is refused here, not by the
+        // package manager (which would happily honor the flag/URL).
+        for (name, spec) in &self.config.packages {
+            if spec.is_optional() {
+                continue;
+            }
+            validate_package_name(name, "[npm]")?;
+            validate_package_version(spec.version(), "[npm]")?;
+        }
+
         let packages: Vec<String> = self
             .config
             .packages

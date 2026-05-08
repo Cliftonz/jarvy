@@ -4,6 +4,13 @@ use std::str;
 use crate::telemetry;
 use crate::tools::common::run_capture;
 
+// The pinned-installer constants and helpers live in
+// `crate::tools::brew::definition` so they can be reused by the tool-registry
+// brew installer path (which is in lib code and cannot import from `main`).
+use crate::tools::brew::{
+    HOMEBREW_INSTALLER_COMMIT, brew_auto_install_allowed, pinned_homebrew_installer_command,
+};
+
 pub fn install_homebrew() {
     // Macos Only
     let Some(test_brew_cmd) =
@@ -13,15 +20,25 @@ pub fn install_homebrew() {
     };
 
     if !test_brew_cmd.status.success() {
-        println!("Installing Homebrew");
+        if !brew_auto_install_allowed() {
+            eprintln!(
+                "Refusing to auto-install Homebrew in CI. \
+                 Pre-install brew in your runner image or set up brew via your CI provisioner."
+            );
+            telemetry::tool_failed("homebrew", "latest", "refused-in-ci");
+            return;
+        }
+
+        println!("Installing Homebrew (pinned to commit {HOMEBREW_INSTALLER_COMMIT})");
         let start = telemetry::now();
 
-        let curl_cmd = r#"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)""#;
+        let verify_then_exec = pinned_homebrew_installer_command();
+
         if run_capture(
             "sh",
-            &["-c", curl_cmd],
+            &["-c", &verify_then_exec],
             "macos_setup",
-            "Failed to execute Homebrew install command",
+            "Failed to execute pinned Homebrew installer",
         )
         .is_none()
         {

