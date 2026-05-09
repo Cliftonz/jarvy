@@ -18,6 +18,26 @@
 - **Safe and idempotent** -- Run repeatedly; Jarvy detects what's already installed and skips it
 - **200+ tools supported** -- From git and docker to terraform, kubectl, and language runtimes
 
+## Contributor Onboarding (Clean Laptop)
+
+Brand-new machine, nothing installed? Two commands:
+
+```bash
+# 1. Install Jarvy
+curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+
+# 2. Clone + provision everything else
+git clone https://github.com/bearbinary/jarvy && cd jarvy && make setup
+```
+
+That's it. `make setup` runs [`scripts/bootstrap.sh`](scripts/bootstrap.sh), which is idempotent — re-run any time you've been away from the project or the environment drifts.
+
+**Windows (PowerShell):** swap step 1 for `irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex`, then run the same `git clone ... && cd jarvy && make setup`.
+
+**Already have a tool installed via your own package manager?** Jarvy detects it and skips reinstall. It only adds what's missing.
+
+**Want to skip the curl pipe?** `brew install jarvy` or `cargo install jarvy` work too — assuming you already have brew or cargo on the machine.
+
 ## Installation
 
 ```bash
