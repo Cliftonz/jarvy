@@ -111,7 +111,13 @@ fn initialize_from_disk() -> CliConfig {
             eprintln!("Unable to create jarvy config directory: {e}");
             return CliConfig::default();
         }
-        println!(
+        // Notice → stderr. Stdout is reserved for command output so
+        // callers piping `jarvy <cmd> --format json` get a clean payload
+        // on first run (when ~/.jarvy doesn't yet exist). This used to
+        // be a `println!` and broke `scripts/gen-docs.sh` in CI runs
+        // that hit a virgin $HOME. Documented in
+        // docs/release-quirks-jarvy.md.
+        eprintln!(
             r"
         Jarvy tool collects telemetry data to help us improve your experience.
         The data collected is anonymized and used solely for analytics purposes.
