@@ -12,6 +12,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   rateLimit:
     average: {{ .Values.gatewayApi.traefikMiddlewares.rateLimit.average }}
@@ -28,6 +32,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   buffering:
     maxRequestBodyBytes: {{ .Values.gatewayApi.traefikMiddlewares.bodyLimit.maxRequestBodyBytes }}

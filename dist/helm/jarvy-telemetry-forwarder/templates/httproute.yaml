@@ -1,4 +1,15 @@
 {{- if .Values.gatewayApi.enabled }}
+{{- /*
+  Guard: traefikMiddlewares.enabled=true requires Traefik as the
+  GatewayClass. Helm will not warn about referenced ExtensionRef
+  Middlewares belonging to a CRD that doesn't exist in the cluster
+  (Envoy/Cilium/Istio); the install succeeds and the HTTPRoute
+  reconciles into a permanent failed state. Fail loudly at template
+  time instead.
+*/ -}}
+{{- if and .Values.gatewayApi.traefikMiddlewares.enabled (ne .Values.gatewayApi.gateway.gatewayClassName "traefik") }}
+{{- fail (printf "gatewayApi.traefikMiddlewares.enabled=true requires gatewayApi.gateway.gatewayClassName=traefik (got %q). For non-Traefik GatewayClasses, set traefikMiddlewares.enabled=false and supply equivalent filters via gatewayApi.httpRoute.extraFilters." .Values.gatewayApi.gateway.gatewayClassName) }}
+{{- end }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -9,10 +20,13 @@ metadata:
     {{- with .Values.gatewayApi.httpRoute.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- with .Values.gatewayApi.httpRoute.annotations }}
   annotations:
+    {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+    {{- . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.gatewayApi.httpRoute.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   parentRefs:
     {{- if .Values.gatewayApi.gateway.create }}
@@ -41,20 +55,26 @@ spec:
           {{- end }}
         {{- end }}
       filters:
-        {{- /* Traefik Middleware bridge — body cap then rate limit, attached via ExtensionRef. */ -}}
+        {{- /*
+          Order matters: rate-limit BEFORE body-cap. Abusive clients
+          get rejected before allocating the body buffer
+          (memRequestBodyBytes per request). The 0.1.0 chart had this
+          inverted — fixed in 0.2.0 as part of the security/perf
+          review enhancement plan.
+        */ -}}
         {{- if $.Values.gatewayApi.traefikMiddlewares.enabled }}
         - type: ExtensionRef
           extensionRef:
             group: traefik.io
             kind: Middleware
-            name: {{ include "jarvy-telemetry-forwarder.fullname" $ }}-bodylimit
+            name: {{ include "jarvy-telemetry-forwarder.fullname" $ }}-ratelimit
         - type: ExtensionRef
           extensionRef:
             group: traefik.io
             kind: Middleware
-            name: {{ include "jarvy-telemetry-forwarder.fullname" $ }}-ratelimit
+            name: {{ include "jarvy-telemetry-forwarder.fullname" $ }}-bodylimit
         {{- end }}
-        {{- /* Caller-supplied filters appended last (e.g. Envoy Gateway policies, custom Traefik middlewares). */ -}}
+        {{- /* Caller-supplied filters appended last. */ -}}
         {{- with $.Values.gatewayApi.httpRoute.extraFilters }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

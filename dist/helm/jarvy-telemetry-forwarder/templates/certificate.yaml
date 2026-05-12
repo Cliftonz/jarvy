@@ -6,6 +6,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   secretName: {{ include "jarvy-telemetry-forwarder.fullname" . }}-tls
   issuerRef:

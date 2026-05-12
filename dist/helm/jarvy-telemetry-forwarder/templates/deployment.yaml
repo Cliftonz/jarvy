@@ -5,6 +5,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if not .Values.collector.autoscaling.enabled }}
   replicas: {{ .Values.collector.replicas }}
@@ -27,6 +31,13 @@ spec:
       annotations:
         # Roll pods when the ConfigMap content changes.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Roll pods when the Secret references change. This is
+        # belt-and-suspenders alongside the `reloader.stakater.com/auto`
+        # annotation in values.yaml — works even when Reloader isn't
+        # installed, picks up Secret renames in helm upgrade. Does
+        # NOT detect in-place ExternalSecret refreshes; for that you
+        # need Reloader.
+        checksum/secrets: {{ printf "%s|%s|%s|%s" .Values.secrets.strategy .Values.secrets.grafanaTokenSecretName .Values.secrets.piiSaltSecretName (.Values.secrets.externalSecrets.refreshInterval | default "") | sha256sum }}
         {{- with .Values.collector.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -37,7 +48,7 @@ spec:
         {{- toYaml .Values.collector.podSecurityContext | nindent 8 }}
       containers:
         - name: otelcol
-          image: "{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}"
+          image: {{ include "jarvy-telemetry-forwarder.image" . | quote }}
           imagePullPolicy: {{ .Values.collector.image.pullPolicy }}
           args: ["--config=/etc/otelcol/config.yaml"]
           ports:

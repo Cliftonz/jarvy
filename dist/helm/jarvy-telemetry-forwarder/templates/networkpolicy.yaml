@@ -1,4 +1,11 @@
 {{- if .Values.networkPolicy.enabled }}
+{{- /*
+  Standard NetworkPolicy: ingress restricted to the cluster's ingress
+  controller namespace + (optionally) the Prometheus scrape namespace;
+  egress allows DNS + HTTPS (broad). For tighter egress restricting to
+  the parsed exporter hostname, also enable
+  networkPolicy.cilium.enabled (requires Cilium CNI).
+*/ -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -6,6 +13,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   podSelector:
     matchLabels:
@@ -34,7 +45,56 @@ spec:
               k8s-app: kube-dns
       ports:
         - { protocol: UDP, port: 53 }
+    {{- if not .Values.networkPolicy.cilium.enabled }}
     - to: []
       ports:
         - { protocol: TCP, port: 443 }
+    {{- end }}
+{{- if .Values.networkPolicy.cilium.enabled }}
+---
+{{- /*
+  CiliumNetworkPolicy: FQDN-based egress restriction. Only allows
+  egress to the parsed hostname of `exporter.endpoint` over 443.
+  Cilium's L7 DNS-resolved policy enforcement is the only standard
+  way to do this without CNI-specific magic.
+
+  Parsing: strip the scheme then take everything up to the first `/`
+  or `:`. This is brittle if the endpoint includes a port; document
+  override via `networkPolicy.cilium.fqdn` if needed.
+*/ -}}
+{{- $endpoint := .Values.exporter.endpoint -}}
+{{- $noScheme := regexReplaceAll "^https?://" $endpoint "" -}}
+{{- $fqdn := regexReplaceAll "[/:].*$" $noScheme "" -}}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "jarvy-telemetry-forwarder.fullname" . }}-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "jarvy-telemetry-forwarder.selectorLabels" . | nindent 6 }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: {{ $fqdn | quote }}
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }
+{{- end }}
 {{- end }}

@@ -16,10 +16,22 @@ The chart ships as an OCI artifact on the project's GitHub Container
 Registry:
 
 ```bash
+# Replace <version> with the current chart version. Latest release:
+# https://github.com/bearbinary/Jarvy/releases?q=helm-v
 helm install jarvy-telemetry \
   oci://ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder \
-  --version 0.1.0 \
+  --version <version> \
   --namespace jarvy-telemetry --create-namespace
+```
+
+Verify the signature with the exact identity (not a regex — see
+the release notes for the full command):
+
+```bash
+cosign verify \
+  --certificate-identity "https://github.com/bearbinary/Jarvy/.github/workflows/helm-release.yml@refs/tags/helm-v<version>" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder:<version>
 ```
 
 For a development install with inline secrets (dev clusters only):
@@ -27,9 +39,10 @@ For a development install with inline secrets (dev clusters only):
 ```bash
 helm install jarvy-telemetry \
   oci://ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder \
-  --version 0.1.0 \
+  --version <version> \
   --namespace jarvy-telemetry --create-namespace \
   --set secrets.strategy=inline \
+  --set secrets.inline.acceptRisk=true \
   --set secrets.inline.grafanaToken="$(cat ~/grafana-token)" \
   --set secrets.inline.piiSalt="$(openssl rand -hex 32)"
 ```

@@ -6,6 +6,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -20,4 +24,25 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.collector.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.collector.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.collector.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.collector.autoscaling.queueDepth.enabled }}
+    - type: Pods
+      pods:
+        metric:
+          name: {{ .Values.collector.autoscaling.queueDepth.metricName }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.collector.autoscaling.queueDepth.averageValue | quote }}
+    {{- end }}
+  {{- with .Values.collector.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}

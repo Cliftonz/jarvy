@@ -9,6 +9,9 @@ fullnameOverride: ""
 # -- Common labels applied to every resource in the release.
 commonLabels: {}
 # -- Common annotations applied to every resource in the release.
+# Applied to every resource the chart renders (not only Namespace +
+# ServiceAccount as in 0.1.0). Use for ArgoCD sync-waves, OPA tags,
+# cost-allocation labels.
 commonAnnotations: {}
 
 # -----------------------------------------------------------------------------
@@ -17,27 +20,56 @@ commonAnnotations: {}
 collector:
   image:
     repository: otel/opentelemetry-collector-contrib
-    # Pin to a digest in production; tag-only is convenient for first install.
+    # Prefer `digest` over `tag` in production. When `digest` is set,
+    # the deployment renders `repository@digest` and `tag` is decorative.
+    # Tag-only is convenient for first install but allows upstream to
+    # silently re-push under the same tag (supply-chain risk).
     tag: "0.107.0"
+    digest: ""
     pullPolicy: IfNotPresent
   replicas: 2
   # -- Pod-level annotations. Useful for stakater/reloader rolling
-  # restart on ConfigMap change, or to attach Vault Agent injection.
-  podAnnotations: {}
+  # restart on ConfigMap *and* Secret change (salt rotation depends on
+  # this — see `reloader.stakater.com/auto: "true"` in podAnnotations
+  # below, on by default).
+  podAnnotations:
+    reloader.stakater.com/auto: "true"
   podLabels: {}
+  # Resources sized so memory_limiter trips graceful backpressure
+  # *before* the cgroup OOMKills the pod. Rule: memory_limiter.limit_mib
+  # (in collector.pipeline.memoryLimiter below) must be ≤ ~75% of
+  # `limits.memory`. Default math: 500 MiB limiter / 768 Mi cgroup
+  # = 65% — leaves headroom for Go runtime + goroutine stacks + tail
+  # sampling LRU. Do not lower without also lowering pipeline.memoryLimiter.
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 384Mi
     limits:
       cpu: 1000m
-      memory: 512Mi
+      memory: 768Mi
   # -- Set `autoscaling.enabled: true` to swap fixed `replicas` for an HPA.
+  # The Collector workload is memory- and queue-bound, not CPU-bound; HPA
+  # defaults below scale on memory + an optional custom metric. CPU alone
+  # is insufficient — pods OOMKill before CPU reaches 70%.
   autoscaling:
     enabled: false
     minReplicas: 2
     maxReplicas: 6
     targetCPUUtilizationPercentage: 70
+    # Memory target. Recommended on by default.
+    targetMemoryUtilizationPercentage: 70
+    # Queue-depth custom metric. Opt-in: requires prometheus-adapter
+    # (or a custom-metrics provider) that exposes
+    # `otelcol_exporter_queue_size` as a Pods metric. Off by default
+    # so HPA still works without the adapter.
+    queueDepth:
+      enabled: false
+      metricName: otelcol_exporter_queue_size
+      averageValue: "500"
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
   # -- Topology spread across nodes; safe default.
   topologySpread:
     enabled: true
@@ -67,14 +99,54 @@ collector:
     httpGet: { path: /, port: health }
     initialDelaySeconds: 5
     periodSeconds: 10
+  # -- Self-log level + format. JSON is required for structured Loki
+  # queries; INFO is the right default for production (DEBUG floods
+  # at scale).
+  logLevel: info
+  logFormat: json
+  # -- Pipeline tuning knobs. Sized for ~5-figure MAU. Each one has
+  # measurable cost; document the math when changing.
+  pipeline:
+    memoryLimiter:
+      # ≤ ~75% of pod `resources.limits.memory`. See resources block.
+      limitMib: 500
+      spikeLimitMib: 100
+      checkInterval: 1s
+    batch:
+      timeout: 10s
+      # Record-count target. Grafana Cloud OTLP gateway 413s above
+      # ~4 MiB body; with variable record sizes this is a soft cap.
+      sendBatchSize: 1024
+      # Hard ceiling on records per batch — set so worst-case batch
+      # size × record size stays under the gateway's body limit.
+      sendBatchMaxSize: 2048
+    tailSampling:
+      # `numTraces` allocates an LRU of in-flight traces. Memory cost
+      # ≈ numTraces × spans_per_trace × span_size. Default 5000 fits
+      # 10s decision_wait at ~500 traces/s arrival in <100 MiB.
+      numTraces: 5000
+      decisionWaitSeconds: 10
+      probabilisticSamplingPercentage: 1
   # -- Override the entire Collector config inline. When unset, the
-  # chart renders the canonical anonymize-don't-drop pipeline from
-  # `templates/_collector-config.tpl`. Override when you need to add
-  # an exporter, a receiver, or a custom processor without forking
-  # the chart.
+  # chart renders the canonical anonymize-don't-drop pipeline. When
+  # set, replaces the pipeline ENTIRELY and skips the anonymize
+  # processor. You MUST also set `acceptRawConfigUnsafe: true` to
+  # acknowledge that anonymization is your responsibility on the
+  # override path.
   config: ""
-  # -- Extra environment variables for the Collector pod. Use this to
-  # inject backend credentials when External Secrets is disabled.
+  # -- Acknowledge that `collector.config` overrides the anonymize
+  # pipeline. Required when `config` is non-empty.
+  acceptRawConfigUnsafe: false
+  # -- Optional debug exporter on every pipeline. WHEN ENABLED, the
+  # post-anonymization payload is printed to stdout and lands in
+  # `kubectl logs`. Useful for "why is this record not being
+  # anonymized correctly?" debugging; never leave on in production.
+  debugExporter:
+    enabled: false
+    verbosity: detailed
+    samplingInitial: 5
+    samplingThereafter: 200
+  # -- Extra environment variables for the Collector pod.
   extraEnv: []
   #  - name: SOME_OTHER_TOKEN
   #    valueFrom:
@@ -95,9 +167,36 @@ exporter:
 # PII anonymization
 # -----------------------------------------------------------------------------
 pii:
-  # -- Keys hashed with the salted-SHA256 transform in the default
-  # pipeline. Extending this list does NOT require touching the
-  # ConfigMap — `_collector-config.tpl` iterates over it.
+  # -- Keys that pass through to the backend UNHASHED. The
+  # anonymization model is allowlist-shaped: every resource attribute
+  # is either on this list (passes through verbatim) or on
+  # `hashedAttributes` (replaced with salted-SHA256). Any attribute
+  # NOT on either list is DROPPED by the keep_keys filter — preventing
+  # future schema additions or attacker-controlled keys from
+  # exfiltrating plaintext. Adding a new attribute requires conscious
+  # placement here or in `hashedAttributes`.
+  passThroughAttributes:
+    - service.name
+    - service.version
+    - service.instance.id
+    - service.namespace
+    - telemetry.sdk.name
+    - telemetry.sdk.language
+    - telemetry.sdk.version
+    - os.type
+    - os.version
+    - os.description
+    - process.runtime.name
+    - process.runtime.version
+    - deployment.environment
+    - jarvy.event
+    - jarvy.version
+    - jarvy.channel
+    - jarvy.os
+    - jarvy.arch
+  # -- Keys hashed with the salted-SHA256 transform. Adding a new
+  # hashed attribute is a one-line change; the helper iterates this
+  # list at render time.
   hashedAttributes:
     - host.name
     - host.id
@@ -117,10 +216,17 @@ pii:
   # -- Inline body redaction patterns. Substitutes with bounded type
   # markers (`<email>`, `<ip>`, `/Users/<user>`) — distinct identity
   # is not preserved inside free-text bodies, by design.
+  #
+  # IMPORTANT: OTTL uses Go's RE2 regex engine, which does NOT support
+  # lookahead/lookbehind. The IPv4 pattern below matches every IPv4
+  # shape including loopback; if you need to preserve loopback, drop
+  # it post-redact in a separate `filter` processor.
   bodyRedactPatterns:
     - pattern: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
       replacement: "<email>"
-    - pattern: "\\b(?!127\\.0\\.0\\.1)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b"
+    - pattern: "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b"
+      replacement: "<ip>"
+    - pattern: "(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}"
       replacement: "<ip>"
     - pattern: "/Users/[^/\\s]+"
       replacement: "/Users/<user>"
@@ -136,10 +242,11 @@ secrets:
   # - externalSecrets: chart creates ExternalSecret resources that
   #   pull from your `ClusterSecretStore`. Production default.
   # - existing: you create the Kubernetes Secrets yourself before
-  #   install. Chart only references them by name.
+  #   install. Chart only references them by name. NO validation
+  #   the Secrets actually exist — first signal is CrashLoopBackOff.
   # - inline: chart creates Secrets from `inline.*` values below.
-  #   Only acceptable for dev clusters; secrets land in helm
-  #   release values.
+  #   Plaintext secrets land in `helm get values` output. Requires
+  #   `inline.acceptRisk: true` to acknowledge.
   strategy: externalSecrets
 
   # Names of the two Secrets the Deployment mounts. Keep these
@@ -168,6 +275,9 @@ secrets:
     # commit real values here. 32-byte hex string for the salt.
     grafanaToken: ""
     piiSalt: ""
+    # Required: set to true to acknowledge that inline secrets are
+    # only for dev clusters and ship plaintext in `helm get values`.
+    acceptRisk: false
 
 # -----------------------------------------------------------------------------
 # Ingress: Kubernetes Gateway API (HTTPRoute)
@@ -260,6 +370,10 @@ gatewayApi:
   # Traefik Middlewares and attach them via ExtensionRef in the
   # HTTPRoute filters list. Disable when running on another
   # GatewayClass and supply the equivalent via `extraFilters`.
+  #
+  # Guard: enabling this without `gateway.gatewayClassName=traefik`
+  # is a misconfiguration; chart fails install rather than render
+  # inert Middleware resources.
   # ---------------------------------------------------------------
   traefikMiddlewares:
     enabled: true
@@ -272,7 +386,9 @@ gatewayApi:
       ipStrategyDepth: 1
     bodyLimit:
       maxRequestBodyBytes: 65536
-      memRequestBodyBytes: 65536
+      # In-memory portion of the body buffer. Smaller than maxBody
+      # so large requests spill to disk rather than pinning RAM.
+      memRequestBodyBytes: 8192
 
 # -----------------------------------------------------------------------------
 # TLS via cert-manager
@@ -300,6 +416,12 @@ networkPolicy:
   ingressNamespace: traefik
   # -- Namespace of the Prometheus scraper (for ServiceMonitor).
   monitoringNamespace: monitoring
+  # -- CiliumNetworkPolicy with FQDN-based egress restriction.
+  # When enabled, replaces the wide `to: []` egress on 443 with a
+  # CiliumNetworkPolicy that restricts egress to the parsed hostname
+  # of `exporter.endpoint` only. Requires Cilium as the CNI.
+  cilium:
+    enabled: false
 
 # -----------------------------------------------------------------------------
 # Monitoring
@@ -310,6 +432,42 @@ serviceMonitor:
   labels:
     release: kube-prometheus-stack
   interval: 30s
+  # -- Allowlist of self-metrics to keep. Empty list = scrape everything
+  # (high cardinality). The default keeps only the metrics referenced
+  # in the operational doc + PrometheusRule.
+  metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: "otelcol_receiver_(accepted|refused)_.*|otelcol_exporter_(sent|send_failed|queue_size).*|otelcol_processor_(dropped|tail_sampling_count).*|process_resident_memory_bytes|process_cpu_seconds_total|otelcol_process_uptime"
+      action: keep
+
+# -----------------------------------------------------------------------------
+# PrometheusRule — ships alerts named in the operational doc as code.
+# -----------------------------------------------------------------------------
+prometheusRule:
+  enabled: true
+  # -- Matches the Prometheus instance's `ruleSelector`.
+  labels:
+    release: kube-prometheus-stack
+  # -- Per-alert toggles + thresholds. All defaults are conservative;
+  # tune for your traffic shape.
+  alerts:
+    refusedRecords:
+      enabled: true
+      for: 10m
+    exporterFailing:
+      enabled: true
+      threshold: 1
+      for: 5m
+    memoryPressure:
+      enabled: true
+      thresholdBytes: 629145600  # 600 MiB
+      for: 10m
+    saltStale:
+      enabled: true
+      thresholdDays: 100  # quarterly rotation +10d grace
+    tailSamplingLow:
+      enabled: true
+      thresholdPercent: 0.005  # alert below 0.5% effective sample rate
 
 # -----------------------------------------------------------------------------
 # Pod Disruption Budget — keep at least one replica during voluntary

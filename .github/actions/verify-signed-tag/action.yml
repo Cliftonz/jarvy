@@ -1,0 +1,79 @@
+name: Verify signed tag
+description: |
+  Fail fast if the workflow was triggered by an unsigned tag, the
+  signature doesn't verify against `.github/allowed_signers`, or the
+  underlying GitHub Release already exists (releases are immutable;
+  attempting to re-create one is a workflow design error).
+
+  Encapsulates ~50 lines of setup that was previously copy-pasted
+  across `release.yml` (CLI) and `helm-release.yml` (chart). Both
+  workflows hit the same gotchas: actions/checkout creates a
+  LIGHTWEIGHT local tag on tag-push, the annotated tag object must be
+  re-fetched, and the SSH allowed-signers file must be wired via
+  `git config gpg.ssh.allowedSignersFile` so signature verification
+  can map back to a trusted identity.
+
+  Inputs:
+    tag-prefix: "v" for CLI releases, "helm-v" for chart releases,
+                etc. Used to compute the GitHub Release name to
+                check for duplicates.
+    check-release-exists: When "true" (default), also fails if a
+                          GitHub Release for the tag already exists.
+                          Set "false" for workflows that legitimately
+                          re-trigger against existing releases.
+
+inputs:
+  tag-prefix:
+    description: 'Tag name prefix, e.g. "v" for CLI, "helm-v" for chart'
+    required: true
+  check-release-exists:
+    description: 'Fail if a release already exists for this tag (default: true)'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Refetch annotated tag object
+      shell: bash
+      run: |
+        set -euo pipefail
+        # actions/checkout creates lightweight local tags on tag-push runs
+        # (actions/checkout#1467). Re-fetch the annotated tag so
+        # `git tag --verify` can read its signature.
+        git fetch origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}" --force
+
+    - name: Configure SSH allowed signers
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ ! -f .github/allowed_signers ]]; then
+          echo "::error::.github/allowed_signers not present in the repo. SSH-signed tags cannot be verified without it. Add a line per maintainer's signing key."
+          exit 1
+        fi
+        git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
+
+    - name: Verify tag is signed
+      shell: bash
+      run: |
+        set -euo pipefail
+        TAG="${{ github.ref_name }}"
+        if ! git tag --verify "${TAG}" 2>&1; then
+          echo "::error::Tag ${TAG} is not signed or the signature did not verify. Re-tag with 'git tag -s ${TAG}' from a trusted signing key. Public key must be on the maintainer's GitHub profile AND in .github/allowed_signers."
+          exit 1
+        fi
+        echo "OK: tag ${TAG} is signed and verifies"
+
+    - name: Check for existing release
+      if: inputs.check-release-exists == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        TAG="${{ github.ref_name }}"
+        if gh release view "${TAG}" >/dev/null 2>&1; then
+          echo "::error::Release ${TAG} already exists. GitHub release assets are immutable; delete the existing release (gh release delete ${TAG} --yes) before re-running this workflow."
+          exit 1
+        fi
+        echo "OK: no existing release for ${TAG}"

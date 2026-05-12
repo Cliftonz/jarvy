@@ -38,52 +38,19 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 0
-          # actions/checkout does not fetch tag *objects* by default — only
-          # refs/heads. `git tag --verify` then fails with "cannot verify a
-          # non-tag object of type commit" because the annotated tag object
-          # isn't in the local clone.
+          fetch-depth: 1
           fetch-tags: true
 
-      # Even with fetch-tags: true, actions/checkout creates a LIGHTWEIGHT
-      # local tag when the workflow is triggered by a tag push — the
-      # annotated tag object is replaced with a direct ref to the commit.
-      # See actions/checkout#1467. Re-fetch the annotated tag object
-      # explicitly so `git tag --verify` can read its signature.
-      - name: Refetch annotated tag object
-        run: git fetch origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}" --force
-
-      # SSH-signed tags require an allowed-signers file so git can map a
-      # signature back to a trusted identity. The file is committed to the
-      # repo at .github/allowed_signers; rotate entries by PR if a
-      # maintainer's signing key changes.
-      - name: Configure SSH allowed signers
-        run: |
-          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
-
-      - name: Verify tag is signed
-        run: |
-          set -euo pipefail
-          TAG="${{ github.ref_name }}"
-          if ! git tag --verify "${TAG}" 2>&1; then
-            echo "::error::Tag ${TAG} is not signed or the signature did not verify. Re-tag with 'git tag -s ${TAG}' from a trusted signing key, or 'git -c gpg.format=ssh tag -s ${TAG}' for SSH signing. Ensure the public key is registered as a Signing key on the maintainer's GitHub profile and listed in .github/allowed_signers."
-            exit 1
-          fi
-          echo "OK: tag ${TAG} is signed and verifies"
-
-      # Fail fast: if a release already exists for this tag, assets are
-      # immutable and cannot be overwritten. Delete the release first if
-      # you need to re-run.
-      - name: Check for existing release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh release view "${{ github.ref_name }}" &>/dev/null; then
-            echo "::error::Release ${{ github.ref_name }} already exists. Immutable releases cannot be updated. To re-release: gh release delete ${{ github.ref_name }} --yes && git push origin :refs/tags/${{ github.ref_name }}"
-            exit 1
-          fi
+      # Shared composite action handles annotated-tag refetch, signed-tag
+      # verification, allowed-signers config, and the "release already
+      # exists" guard. Same logic as the chart release; bug fixes in
+      # one workflow propagate to the other.
+      - uses: ./.github/actions/verify-signed-tag
+        with:
+          tag-prefix: "v"
+          check-release-exists: "true"
 
   build_and_package:
     name: Build & Package

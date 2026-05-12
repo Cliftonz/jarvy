@@ -1,3 +1,6 @@
+{{- if and .Values.collector.config (not .Values.collector.acceptRawConfigUnsafe) -}}
+{{- fail "collector.config is set but collector.acceptRawConfigUnsafe is false. Setting collector.config replaces the canonical anonymize pipeline entirely; the chart cannot guarantee PII anonymization on this path. Set collector.acceptRawConfigUnsafe: true to explicitly accept the privacy implications and confirm your override config includes equivalent transform/anonymize + filter/keep_allowlist processors. See https://jarvy.dev/operations/telemetry-forwarder/" -}}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -5,6 +8,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 data:
   config.yaml: |
     {{- if .Values.collector.config }}

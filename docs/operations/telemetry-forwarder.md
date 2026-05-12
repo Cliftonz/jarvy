@@ -227,9 +227,11 @@ ServiceMonitor, PodDisruptionBudget. Released independently from the
 Jarvy CLI as a signed OCI artifact:
 
 ```bash
+# Replace <version> with the current chart version — see the
+# chart's GitHub release page or `dist/helm/jarvy-telemetry-forwarder/Chart.yaml`.
 helm install jarvy-telemetry \
   oci://ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder \
-  --version 0.1.0 \
+  --version <version> \
   --namespace jarvy-telemetry --create-namespace
 ```
 
@@ -367,119 +369,28 @@ metadata:
   namespace: jarvy-telemetry
 data:
   config.yaml: |
-    receivers:
-      otlp:
-        protocols:
-          http:
-            endpoint: 0.0.0.0:4318
-            # gRPC intentionally disabled — clients are OTLP/HTTP only.
-
-    processors:
-      # --------------------------------------------------------------
-      # PII anonymization. Replaces each known PII-shaped attribute
-      # with a salted SHA-256 of its value. Keeps analytical value
-      # (distinct-count, co-occurrence) while preventing recovery of
-      # the original string.
-      #
-      # Salt is read from env `PII_SALT`, sourced from the
-      # `pii-salt` Secret. Rotation of that Secret rotates the salt
-      # in this pipeline within `refreshInterval` of the
-      # ExternalSecret (default 1h) plus a Collector restart.
-      #
-      # Allowlist model: only the keys explicitly listed below are
-      # passed through unhashed. Anything else (including future
-      # attributes we haven't seen yet) is hashed by the catch-all
-      # statement at the end.
-      # --------------------------------------------------------------
-      transform/anonymize:
-        error_mode: ignore
-        log_statements:
-          - context: resource
-            statements:
-              # Anonymize known PII keys explicitly.
-              - set(attributes["host.name"], SHA256(Concat([attributes["host.name"], "${env:PII_SALT}"], ""))) where attributes["host.name"] != nil
-              - set(attributes["host.id"],   SHA256(Concat([attributes["host.id"],   "${env:PII_SALT}"], ""))) where attributes["host.id"]   != nil
-              - set(attributes["host.ip"],   SHA256(Concat([attributes["host.ip"],   "${env:PII_SALT}"], ""))) where attributes["host.ip"]   != nil
-              - set(attributes["user.name"], SHA256(Concat([attributes["user.name"], "${env:PII_SALT}"], ""))) where attributes["user.name"] != nil
-              - set(attributes["user.email"],SHA256(Concat([attributes["user.email"],"${env:PII_SALT}"], ""))) where attributes["user.email"]!= nil
-              - set(attributes["jarvy.config.path"],    SHA256(Concat([attributes["jarvy.config.path"],    "${env:PII_SALT}"], ""))) where attributes["jarvy.config.path"]    != nil
-              - set(attributes["jarvy.toml.contents"],  SHA256(Concat([attributes["jarvy.toml.contents"],  "${env:PII_SALT}"], ""))) where attributes["jarvy.toml.contents"]  != nil
-              - set(attributes["jarvy.cwd"],            SHA256(Concat([attributes["jarvy.cwd"],            "${env:PII_SALT}"], ""))) where attributes["jarvy.cwd"]            != nil
-              - set(attributes["jarvy.install_id"],     SHA256(Concat([attributes["jarvy.install_id"],     "${env:PII_SALT}"], ""))) where attributes["jarvy.install_id"]     != nil
-
-      # --------------------------------------------------------------
-      # Inline body redaction. The anonymization above operates on
-      # structured attributes; this catches free-text PII shapes that
-      # may slip into log message bodies. Replaces matches with bounded
-      # type markers — we keep "an email occurred here" as a signal
-      # without preserving the email's distinct identity (which would
-      # require per-match hashing, awkward in OTTL replace_pattern).
-      # --------------------------------------------------------------
-      transform/redact_bodies:
-        error_mode: ignore
-        log_statements:
-          - context: log
-            statements:
-              - replace_pattern(body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "<email>")
-              - replace_pattern(body, "\\b(?!127\\.0\\.0\\.1)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b", "<ip>")
-              - replace_pattern(body, "/Users/[^/\\s]+", "/Users/<user>")
-              - replace_pattern(body, "/home/[^/\\s]+", "/home/<user>")
-
-      memory_limiter:
-        check_interval: 1s
-        limit_mib: 400
-        spike_limit_mib: 100
-
-      tail_sampling:
-        decision_wait: 10s
-        num_traces: 50000
-        policies:
-          - name: errors
-            type: status_code
-            status_code: { status_codes: [ERROR] }
-          - name: probabilistic
-            type: probabilistic
-            probabilistic: { sampling_percentage: 1 }
-
-      batch:
-        timeout: 10s
-        send_batch_size: 1024
-
-    exporters:
-      otlphttp/grafana:
-        endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
-        auth:
-          authenticator: bearertokenauth/grafana
-
-    extensions:
-      bearertokenauth/grafana:
-        scheme: "Basic"
-        token: ${env:GRAFANA_OTLP_TOKEN}
-      health_check:
-        endpoint: 0.0.0.0:13133
-
-    service:
-      extensions: [bearertokenauth/grafana, health_check]
-      telemetry:
-        metrics:
-          address: 0.0.0.0:8888
-      pipelines:
-        logs:
-          receivers: [otlp]
-          processors: [memory_limiter, transform/anonymize, transform/redact_bodies, batch]
-          exporters: [otlphttp/grafana]
-        metrics:
-          receivers: [otlp]
-          processors: [memory_limiter, transform/anonymize, batch]
-          exporters: [otlphttp/grafana]
-        traces:
-          receivers: [otlp]
-          processors: [memory_limiter, transform/anonymize, tail_sampling, batch]
-          exporters: [otlphttp/grafana]
+    # See the chart's `_helpers.tpl::collectorConfig` for the rendered
+    # pipeline. The source of truth lives in `values.yaml`:
+    #   - pii.passThroughAttributes  — allowlist of unhashed keys
+    #   - pii.hashedAttributes       — keys replaced with salted SHA-256
+    #   - pii.bodyRedactPatterns     — inline body redact patterns
+    #   - collector.pipeline.*       — memory_limiter / batch / tail_sampling
+    # The pipeline ordering (memory_limiter → transform/anonymize
+    # → filter/keep_allowlist → transform/redact_bodies → batch) is
+    # encoded in `_helpers.tpl` and is the data-handling contract.
+    #
+    # The `filter/keep_allowlist` step is load-bearing: it DROPS every
+    # attribute not in (passThroughAttributes ∪ hashedAttributes).
+    # Without it, attacker-controlled attribute keys (the OTLP
+    # endpoint is unauthenticated by design) would land in the
+    # backend plaintext.
 ```
 
 When you add a new PII-shaped attribute to the Jarvy schema, add a
-matching `set(...)` line here in the same pull request. The reviewer
+matching entry to `pii.hashedAttributes` (or, for public-safe
+attributes like `service.name`, to `pii.passThroughAttributes`) in
+`dist/helm/jarvy-telemetry-forwarder/values.yaml`. The OTTL is
+generated from those lists; one PR, one place. The reviewer
 should treat any schema PR that doesn't touch this file as
 incomplete.
 
@@ -529,7 +440,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: otelcol
-          image: otel/opentelemetry-collector-contrib:0.107.0  # pin a digest in prod
+          image: otel/opentelemetry-collector-contrib  # actual tag/digest from chart values.yaml
           args: ["--config=/etc/otelcol/config.yaml"]
           ports:
             - { name: otlp-http, containerPort: 4318 }

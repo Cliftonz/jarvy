@@ -9,10 +9,13 @@ metadata:
     {{- with .Values.gatewayApi.gateway.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- with .Values.gatewayApi.gateway.annotations }}
   annotations:
+    {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+    {{- . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.gatewayApi.gateway.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   gatewayClassName: {{ .Values.gatewayApi.gateway.gatewayClassName }}
   listeners:

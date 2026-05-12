@@ -1,0 +1,84 @@
+{{- if and .Values.prometheusRule.enabled .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "jarvy-telemetry-forwarder.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: jarvy-telemetry-forwarder
+      rules:
+        {{- if .Values.prometheusRule.alerts.refusedRecords.enabled }}
+        - alert: JarvyForwarderRefusedRecords
+          expr: rate(otelcol_receiver_refused_log_records{namespace="{{ .Release.Namespace }}"}[5m]) > 0
+          for: {{ .Values.prometheusRule.alerts.refusedRecords.for }}
+          labels:
+            severity: warning
+            service: jarvy-telemetry-forwarder
+          annotations:
+            summary: "Forwarder is refusing telemetry records"
+            description: "The OTLP receiver in pod {{`{{ $labels.pod }}`}} has been refusing log records for over {{ .Values.prometheusRule.alerts.refusedRecords.for }}. Memory limiter or rate limit is engaged. Investigate `kubectl logs` for backpressure cause."
+        {{- end }}
+        {{- if .Values.prometheusRule.alerts.exporterFailing.enabled }}
+        - alert: JarvyForwarderExporterFailing
+          expr: rate(otelcol_exporter_send_failed_log_records{namespace="{{ .Release.Namespace }}"}[5m]) > {{ .Values.prometheusRule.alerts.exporterFailing.threshold }}
+          for: {{ .Values.prometheusRule.alerts.exporterFailing.for }}
+          labels:
+            severity: critical
+            service: jarvy-telemetry-forwarder
+          annotations:
+            summary: "Forwarder cannot ship telemetry to backend"
+            description: "Exporter to {{ "{{ $labels.exporter }}" }} is failing > {{ .Values.prometheusRule.alerts.exporterFailing.threshold }} records/sec. Check backend OTLP endpoint health and the Grafana write token validity."
+        {{- end }}
+        {{- if .Values.prometheusRule.alerts.memoryPressure.enabled }}
+        - alert: JarvyForwarderMemoryPressure
+          expr: process_resident_memory_bytes{namespace="{{ .Release.Namespace }}"} > {{ .Values.prometheusRule.alerts.memoryPressure.thresholdBytes }}
+          for: {{ .Values.prometheusRule.alerts.memoryPressure.for }}
+          labels:
+            severity: warning
+            service: jarvy-telemetry-forwarder
+          annotations:
+            summary: "Forwarder memory headroom thin — OOMKill risk"
+            description: "Pod {{ "{{ $labels.pod }}" }} RSS has exceeded the memory pressure threshold ({{ .Values.prometheusRule.alerts.memoryPressure.thresholdBytes }} bytes). The memory_limiter processor will engage backpressure soon; verify tail_sampling buffer and batch queue sizing in the chart values."
+        {{- end }}
+        {{- /* Salt staleness depends on the per-pod metric exposed by
+              an init container or sidecar. If not present, this alert
+              will never fire (no error), so it's safe to enable by
+              default. */ -}}
+        {{- if .Values.prometheusRule.alerts.saltStale.enabled }}
+        - alert: JarvyForwarderSaltStale
+          expr: (time() - jarvy_forwarder_salt_loaded_timestamp_seconds{namespace="{{ .Release.Namespace }}"}) > ({{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} * 86400)
+          for: 1h
+          labels:
+            severity: warning
+            service: jarvy-telemetry-forwarder
+          annotations:
+            summary: "PII salt has not been rotated in over {{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} days"
+            description: "The anonymization salt for pod {{ "{{ $labels.pod }}" }} loaded > {{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} days ago. Quarterly rotation requires a new salt in the secret backend AND a Collector pod restart (Reloader picks up the new Secret automatically when the `reloader.stakater.com/auto` annotation is set)."
+        {{- end }}
+        {{- if .Values.prometheusRule.alerts.tailSamplingLow.enabled }}
+        - alert: JarvyForwarderTailSamplingRateLow
+          expr: |
+            (
+              rate(otelcol_processor_tail_sampling_count_traces_sampled{namespace="{{ .Release.Namespace }}",policy="probabilistic"}[10m])
+              /
+              clamp_min(rate(otelcol_processor_tail_sampling_count_traces_sampled{namespace="{{ .Release.Namespace }}"}[10m]), 1)
+            ) < {{ .Values.prometheusRule.alerts.tailSamplingLow.thresholdPercent }}
+          for: 30m
+          labels:
+            severity: info
+            service: jarvy-telemetry-forwarder
+          annotations:
+            summary: "Tail-sampling effective rate below configured threshold"
+            description: "Probabilistic tail-sampling is producing < {{ .Values.prometheusRule.alerts.tailSamplingLow.thresholdPercent }} effective sample rate over 30m. Either the configured probabilisticSamplingPercentage is too low for current traffic shape, or the policy buffer is overflowing. Check `collector.pipeline.tailSampling` values."
+        {{- end }}
+{{- end }}

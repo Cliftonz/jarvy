@@ -6,14 +6,6 @@ name: Helm Chart Release
 # Publishes the packaged chart as an OCI artifact to GHCR plus a
 # cosign signature alongside it (keyless OIDC, matches the CLI's
 # release-artifact signing model).
-#
-# Why a separate workflow from `release.yml`:
-#   - Chart cadence is decoupled from CLI cadence (chart docs typo
-#     fix should not require a CLI release).
-#   - Different artifact type (OCI helm vs cargo-packager binaries)
-#     and different consumers (cluster operators vs CLI users).
-#   - Lets cluster operators subscribe to chart-only release notes
-#     via the chart's GitHub release.
 on:
   push:
     tags:
@@ -33,6 +25,10 @@ permissions:
 env:
   CHART_DIR: dist/helm/jarvy-telemetry-forwarder
   OCI_REGISTRY: ghcr.io/${{ github.repository_owner }}/charts
+  # Pinned action SHAs. Mutable tags (@v4, @v3) let a compromise of
+  # the action's org or a maintainer's PAT inject code into every
+  # release run with `id-token: write` + `packages: write`. Dependabot
+  # keeps these SHAs current via .github/dependabot.yml.
 
 jobs:
   release:
@@ -40,30 +36,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 0
-          # actions/checkout does not fetch tag *objects* by default —
-          # only refs/heads. Without this `git tag --verify` fails
-          # with "cannot verify a non-tag object of type commit".
+          fetch-depth: 1
+          # actions/checkout does not fetch tag *objects* by default;
+          # composite action below re-fetches the annotated tag.
           fetch-tags: true
 
-      # Even with fetch-tags: true, actions/checkout creates a
-      # LIGHTWEIGHT local tag when the workflow is triggered by a
-      # tag push — the annotated tag object is replaced with a
-      # direct ref to the commit (actions/checkout#1467). Re-fetch
-      # the annotated tag object explicitly. Same workaround the CLI
-      # release.yml uses.
-      - name: Refetch annotated tag object
+      - name: Verify signed tag and check no duplicate release
         if: startsWith(github.ref, 'refs/tags/helm-v')
-        run: git fetch origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}" --force
-
-      # SSH-signed tags need an allowed-signers file so git can map a
-      # signature back to a trusted identity. Same file the CLI
-      # release uses.
-      - name: Configure SSH allowed signers
-        run: |
-          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
+        uses: ./.github/actions/verify-signed-tag
+        with:
+          tag-prefix: "helm-v"
+          check-release-exists: "true"
 
       - name: Resolve version
         id: version
@@ -82,51 +67,59 @@ jobs:
             echo "::error::Tag version ${VERSION} does not match Chart.yaml version ${CHART_VERSION}. Bump Chart.yaml and re-tag, or pick a matching tag."
             exit 1
           fi
+          # Validate semver shape so workflow_dispatch with a junk input fails fast.
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Version ${VERSION} is not valid semver (expected X.Y.Z or X.Y.Z-prerelease)."
+            exit 1
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Resolved chart version: ${VERSION}"
 
-      - name: Verify tag is signed
-        if: startsWith(github.ref, 'refs/tags/helm-v')
-        run: |
-          set -euo pipefail
-          TAG="${{ github.ref_name }}"
-          if ! git tag --verify "${TAG}" 2>&1; then
-            echo "::error::Tag ${TAG} is not signed or the signature did not verify. Re-tag with 'git tag -s ${TAG}' from a trusted signing key. Ensure the public key is registered on the maintainer's GitHub profile and listed in .github/allowed_signers."
-            exit 1
-          fi
-          echo "OK: tag ${TAG} is signed and verifies"
-
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
           version: v3.16.1
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@c56c2d3e59e4281cc41dea2217323ba5694b171e # v3.8.2
         with:
           cosign-release: v2.4.0
 
-      - name: Lint chart
+      - name: Install kubeconform
         run: |
           set -euo pipefail
-          helm lint "${CHART_DIR}" --strict
+          KUBECONFORM_VERSION=v0.6.7
+          # Source-of-truth checksums:
+          # https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS
+          curl -sSfL -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          curl -sSfL -o /tmp/kubeconform-CHECKSUMS \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS"
+          EXPECTED=$(grep 'kubeconform-linux-amd64.tar.gz' /tmp/kubeconform-CHECKSUMS | awk '{print $1}')
+          ACTUAL=$(sha256sum /tmp/kubeconform.tar.gz | awk '{print $1}')
+          if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+            echo "::error::kubeconform tarball SHA mismatch — expected ${EXPECTED}, got ${ACTUAL}"
+            exit 1
+          fi
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
+          sudo install /tmp/kubeconform /usr/local/bin/
 
-      - name: Template chart (sanity render)
+      - name: Lint chart
+        run: helm lint "${CHART_DIR}" --strict
+
+      - name: Template chart (matrix smoke render)
         run: |
           set -euo pipefail
-          # Render the chart under two values combinations to catch
-          # template errors that lint can't see:
-          #   1. Defaults — `gateway.create: true`, externalSecrets
-          #   2. Shared-Gateway pattern — `gateway.create: false`
-          #      with explicit `parentRefs` (the multi-tenant path)
-          #      + inline secrets + HPA enabled
-          # Either failing here means a user's cluster would fail
-          # the same way on first install.
+          # Renders the chart under multiple value combinations to
+          # catch template errors that lint can't see. Each case must
+          # also pass kubeconform.
           mkdir -p /tmp/render
+
           helm template smoke "${CHART_DIR}" \
             --namespace jarvy-telemetry \
             --debug \
             > /tmp/render/default.yaml
+
           helm template smoke "${CHART_DIR}" \
             --namespace jarvy-telemetry \
             --set gatewayApi.gateway.create=false \
@@ -134,12 +127,65 @@ jobs:
             --set 'gatewayApi.httpRoute.parentRefs[0].namespace=networking' \
             --set 'gatewayApi.httpRoute.parentRefs[0].sectionName=https' \
             --set secrets.strategy=inline \
+            --set secrets.inline.acceptRisk=true \
             --set secrets.inline.grafanaToken=fake \
             --set secrets.inline.piiSalt=fake \
             --set collector.autoscaling.enabled=true \
             > /tmp/render/shared-gw.yaml
+
+          helm template smoke "${CHART_DIR}" \
+            --namespace jarvy-telemetry \
+            --set gatewayApi.enabled=false \
+            --set secrets.strategy=existing \
+            > /tmp/render/gatewayapi-disabled.yaml
+
           test -s /tmp/render/default.yaml
           test -s /tmp/render/shared-gw.yaml
+          test -s /tmp/render/gatewayapi-disabled.yaml
+
+      - name: Validate manifests (kubeconform)
+        run: |
+          set -euo pipefail
+          # Tolerates CRD-defined kinds (Gateway, HTTPRoute, Middleware,
+          # ExternalSecret, Certificate, ServiceMonitor, PrometheusRule,
+          # CiliumNetworkPolicy) via the datreeio CRDs catalog.
+          for f in /tmp/render/*.yaml; do
+            kubeconform -strict -summary \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{ .Group }}/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json' \
+              -ignore-missing-schemas \
+              "${f}"
+          done
+
+      - name: Anonymization invariant check
+        run: |
+          set -euo pipefail
+          # Assert the rendered ConfigMap contains the anonymize pipeline
+          # in the expected ordering: anonymize → keep_allowlist → batch.
+          # A render that ships without these is a privacy regression.
+          if ! grep -F "transform/anonymize" /tmp/render/default.yaml >/dev/null; then
+            echo "::error::default render missing transform/anonymize processor"
+            exit 1
+          fi
+          if ! grep -F "filter/keep_allowlist" /tmp/render/default.yaml >/dev/null; then
+            echo "::error::default render missing filter/keep_allowlist processor — denylist gap reintroduced"
+            exit 1
+          fi
+          # The SHA256(Concat([value, salt], "")) ordering is the safe
+          # length-extension orientation. Reverse-ordered Concat would
+          # be silently exploitable; fail loud if anyone copy-pastes.
+          if grep -E 'SHA256\(Concat\(\["\$\{env:PII_SALT\}"' /tmp/render/default.yaml >/dev/null; then
+            echo "::error::transform/anonymize statement has salt-then-value Concat ordering. Use value-then-salt to preserve length-extension safety."
+            exit 1
+          fi
+
+      - name: Upload rendered manifests as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: helm-rendered-${{ steps.version.outputs.version }}
+          path: /tmp/render/
+          retention-days: 30
 
       - name: Package chart
         id: package
@@ -157,10 +203,10 @@ jobs:
 
       - name: Log in to GHCR (helm + cosign)
         run: |
-          # helm and cosign use independent credential stores. Log
-          # into both — helm to push the chart, cosign to push the
-          # signature and SBOM attestation manifests to the same
-          # registry namespace.
+          set -euo pipefail
+          # helm and cosign use independent credential stores.
+          # Log into both — helm to push the chart, cosign to push
+          # the signature and SBOM attestation to the same namespace.
           echo "${{ secrets.GITHUB_TOKEN }}" | \
             helm registry login ${OCI_REGISTRY%%/*} -u "${{ github.actor }}" --password-stdin
           echo "${{ secrets.GITHUB_TOKEN }}" | \
@@ -171,41 +217,58 @@ jobs:
         run: |
           set -euo pipefail
           PUSH_OUT=$(helm push "${{ steps.package.outputs.package }}" "oci://${OCI_REGISTRY}" 2>&1 | tee /dev/stderr)
-          # Capture the digest helm prints on push for the cosign sign step.
           DIGEST=$(echo "${PUSH_OUT}" | awk -F'Digest: ' 'NF==2 { print $2 }' | tail -1)
           if [[ -z "${DIGEST}" ]]; then
-            echo "::error::Failed to capture digest from helm push output. Is the registry URL correct?"
+            echo "::error::Failed to capture digest from helm push output."
             exit 1
           fi
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Pushed at digest: ${DIGEST}"
 
       - name: Sign chart with cosign (keyless OIDC)
+        id: sign
         run: |
           set -euo pipefail
-          COSIGN_EXPERIMENTAL=1 cosign sign --yes \
-            "${OCI_REGISTRY}/jarvy-telemetry-forwarder@${{ steps.push.outputs.digest }}"
+          cosign sign --yes \
+            --output-signature /tmp/cosign.sig \
+            "${OCI_REGISTRY}/jarvy-telemetry-forwarder@${{ steps.push.outputs.digest }}" 2>&1 | tee /tmp/cosign.out
+          # Capture the Rekor entry UUID for the Summary so on-call can
+          # link to the transparency-log entry without re-deriving it.
+          REKOR_UUID=$(grep -oE 'tlog entry created with index: [0-9]+' /tmp/cosign.out | awk '{print $NF}' | head -1)
+          echo "rekor_uuid=${REKOR_UUID}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate SBOM
-        run: |
-          set -euo pipefail
-          # syft is the de facto OSS SBOM generator and supports
-          # Helm charts via the `helm` cataloger.
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-          syft "${{ steps.package.outputs.package }}" -o spdx-json > /tmp/sbom.spdx.json
-          syft "${{ steps.package.outputs.package }}" -o cyclonedx-json > /tmp/sbom.cdx.json
+      - name: Generate SBOM (single invocation, two output formats)
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.8
+        with:
+          file: ${{ steps.package.outputs.package }}
+          format: spdx-json
+          output-file: /tmp/sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SBOM (cyclonedx)
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.8
+        with:
+          file: ${{ steps.package.outputs.package }}
+          format: cyclonedx-json
+          output-file: /tmp/sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
 
       - name: Attest SBOM via cosign
+        id: attest
         run: |
           set -euo pipefail
-          COSIGN_EXPERIMENTAL=1 cosign attest --yes \
+          cosign attest --yes \
             --predicate /tmp/sbom.spdx.json \
             --type spdxjson \
-            "${OCI_REGISTRY}/jarvy-telemetry-forwarder@${{ steps.push.outputs.digest }}"
+            "${OCI_REGISTRY}/jarvy-telemetry-forwarder@${{ steps.push.outputs.digest }}" 2>&1 | tee /tmp/cosign-attest.out
+          REKOR_ATT_UUID=$(grep -oE 'tlog entry created with index: [0-9]+' /tmp/cosign-attest.out | awk '{print $NF}' | head -1)
+          echo "rekor_uuid=${REKOR_ATT_UUID}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/helm-v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           name: "Helm chart ${{ steps.version.outputs.version }}"
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}
@@ -227,11 +290,16 @@ jobs:
               --namespace jarvy-telemetry --create-namespace
             ```
 
-            ## Verify
+            ## Verify signature
+
+            The `--certificate-identity` flag is **exact**, not a
+            substring match. A fork named `bearbinary/jarvy-anything`
+            cannot satisfy this identity even with a valid Sigstore
+            certificate.
 
             ```bash
             cosign verify \
-              --certificate-identity-regexp "https://github.com/${{ github.repository }}/" \
+              --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/helm-release.yml@refs/tags/helm-v${{ steps.version.outputs.version }}" \
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
               ${{ env.OCI_REGISTRY }}/jarvy-telemetry-forwarder:${{ steps.version.outputs.version }}
             ```
@@ -241,18 +309,25 @@ jobs:
             - OCI: `${{ env.OCI_REGISTRY }}/jarvy-telemetry-forwarder:${{ steps.version.outputs.version }}`
             - Digest: `${{ steps.push.outputs.digest }}`
             - Chart SHA256: `${{ steps.package.outputs.sha256 }}`
+            - Signature Rekor UUID: `${{ steps.sign.outputs.rekor_uuid }}` — `https://search.sigstore.dev/?logIndex=${{ steps.sign.outputs.rekor_uuid }}`
+            - SBOM attestation Rekor UUID: `${{ steps.attest.outputs.rekor_uuid }}` — `https://search.sigstore.dev/?logIndex=${{ steps.attest.outputs.rekor_uuid }}`
             - SBOMs: `sbom.spdx.json`, `sbom.cdx.json` attached
 
             Operational documentation:
             <https://jarvy.dev/operations/telemetry-forwarder/>
 
       - name: Summary
+        if: always()
         run: |
           {
-            echo "## Helm chart released"
+            echo "## Helm chart release"
             echo
             echo "- **Version:** \`${{ steps.version.outputs.version }}\`"
             echo "- **OCI ref:** \`${{ env.OCI_REGISTRY }}/jarvy-telemetry-forwarder:${{ steps.version.outputs.version }}\`"
             echo "- **Digest:** \`${{ steps.push.outputs.digest }}\`"
             echo "- **SHA256:** \`${{ steps.package.outputs.sha256 }}\`"
+            echo "- **Signature Rekor:** [logIndex ${{ steps.sign.outputs.rekor_uuid }}](https://search.sigstore.dev/?logIndex=${{ steps.sign.outputs.rekor_uuid }})"
+            echo "- **SBOM attest Rekor:** [logIndex ${{ steps.attest.outputs.rekor_uuid }}](https://search.sigstore.dev/?logIndex=${{ steps.attest.outputs.rekor_uuid }})"
+            echo
+            echo "Rendered manifests for this release are attached as a workflow artifact (\`helm-rendered-${{ steps.version.outputs.version }}\`)."
           } >> "$GITHUB_STEP_SUMMARY"
