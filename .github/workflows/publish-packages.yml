@@ -18,6 +18,13 @@ env:
 jobs:
   publish-crates-io:
     name: Publish to crates.io
+    # Skip on prereleases — rc / beta / alpha tags should not bump
+    # crates.io (Cargo.toml carries the stable version, so publishing
+    # on prerelease tag would push the next stable to crates.io as
+    # `latest` prematurely). Empty `github.event.release` on
+    # workflow_dispatch makes the property null, and `!null` is true
+    # under GHA expression rules, so manual dispatches still run.
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +38,7 @@ jobs:
 
   update-homebrew:
     name: Update Homebrew Formula
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     needs: [publish-crates-io]
     steps:
@@ -103,6 +111,7 @@ jobs:
 
   update-aur:
     name: Update AUR Package
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     needs: [publish-crates-io]
     steps:
@@ -133,6 +142,7 @@ jobs:
 
   update-winget:
     name: Submit to winget
+    if: ${{ !github.event.release.prerelease }}
     runs-on: windows-latest
     needs: [publish-crates-io]
     steps:
@@ -162,6 +172,7 @@ jobs:
 
   update-chocolatey:
     name: Publish to Chocolatey
+    if: ${{ !github.event.release.prerelease }}
     runs-on: windows-latest
     needs: [publish-crates-io]
     steps:
