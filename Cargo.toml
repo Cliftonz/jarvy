@@ -49,7 +49,7 @@ dirs = "6.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 opentelemetry = { version = "0.31", features = ["metrics"] }
-opentelemetry-otlp = { version = "0.31", features = ["logs", "http-proto", "metrics"] }
+opentelemetry-otlp = { version = "0.32", features = ["logs", "http-proto", "metrics"] }
 opentelemetry_sdk = { version = "0.31", features = ["metrics"] }
 opentelemetry-appender-tracing = "0.31"
 thiserror = "2.0"
