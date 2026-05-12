@@ -155,10 +155,16 @@ jobs:
           echo "Packaged chart: ${PKG}"
           echo "sha256: ${SHA}"
 
-      - name: Log in to GHCR
+      - name: Log in to GHCR (helm + cosign)
         run: |
+          # helm and cosign use independent credential stores. Log
+          # into both — helm to push the chart, cosign to push the
+          # signature and SBOM attestation manifests to the same
+          # registry namespace.
           echo "${{ secrets.GITHUB_TOKEN }}" | \
             helm registry login ${OCI_REGISTRY%%/*} -u "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            cosign login ${OCI_REGISTRY%%/*} -u "${{ github.actor }}" --password-stdin
 
       - name: Push chart to OCI registry
         id: push
