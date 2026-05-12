@@ -91,9 +91,14 @@ echo "wrote $out ($(wc -l < "$out") lines)"
 # 2. Tool registry
 # ----------------------------------------------------------------------
 out="docs/tools-registry.md"
-{
-    "$JARVY_BIN" tools --index --format json
-} > /tmp/jarvy-tools-index.json
+"$JARVY_BIN" tools --index --format json > /tmp/jarvy-tools-index.json
+
+# Diagnostic: surface the first 3 lines + total byte count so any future
+# stdout contamination is visible in CI logs without needing to reproduce
+# the failure locally. Non-fatal — proceeds to the Python parse below.
+echo "--- /tmp/jarvy-tools-index.json head (3 lines, $(wc -c < /tmp/jarvy-tools-index.json) bytes) ---"
+head -3 /tmp/jarvy-tools-index.json
+echo "--- end head ---"
 
 python3 - "$out" <<'PY'
 import json, sys
