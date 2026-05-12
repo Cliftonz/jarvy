@@ -1,5 +1,5 @@
 site_name: Jarvy
-site_url: https://docs.jarvy.dev
+site_url: https://jarvy.dev
 site_description: >-
   Jarvy is a fast, cross-platform CLI that provisions a complete local
   development environment from a single declarative jarvy.toml file —

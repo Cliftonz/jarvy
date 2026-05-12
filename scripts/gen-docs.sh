@@ -14,6 +14,14 @@
 
 set -euo pipefail
 
+# Defense in depth: silence the tracing console layer so an info-level
+# event from jarvy startup cannot contaminate a JSON-emitting command's
+# stdout. The architectural fix lives in src/analytics.rs (non-error
+# console logs go to stderr), but RUST_LOG=off here makes this script
+# robust against future regressions in either direction.
+export RUST_LOG="${RUST_LOG:-off}"
+export JARVY_TELEMETRY=0
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 

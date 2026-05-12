@@ -74,8 +74,16 @@ pub fn init_logging(enable_analytics: bool) {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,jarvy=info"));
 
-    // Always log to console: stdout for non-errors, stderr for errors
-    let stdout_non_error = tracing_subscriber::fmt::layer()
+    // Console output goes to stderr at every level. Stdout is reserved
+    // for command output (e.g. `jarvy tools --index --format json`,
+    // `jarvy explain --format json`) so downstream consumers can pipe
+    // a clean payload. A non-error tracing event arriving on stdout
+    // ahead of the `println!` of the JSON body breaks the parser —
+    // `scripts/gen-docs.sh` hit exactly this in CI envs where the
+    // default `warn,jarvy=info` filter let registry-load `info!()`
+    // events fire before the index emit.
+    let stderr_non_error = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
         .with_filter(FilterFn::new(|meta| meta.level() < &Level::ERROR));
 
     let stderr_errors = tracing_subscriber::fmt::layer()
@@ -161,7 +169,7 @@ pub fn init_logging(enable_analytics: bool) {
 
     let subscriber = Registry::default()
         .with(env_filter)
-        .with(stdout_non_error)
+        .with(stderr_non_error)
         .with(stderr_errors)
         .with(file_layer)
         .with(otel_layer_opt);
