@@ -43,6 +43,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # actions/checkout does not fetch tag *objects* by default —
+          # only refs/heads. Without this `git tag --verify` fails
+          # with "cannot verify a non-tag object of type commit".
+          fetch-tags: true
+
+      # Even with fetch-tags: true, actions/checkout creates a
+      # LIGHTWEIGHT local tag when the workflow is triggered by a
+      # tag push — the annotated tag object is replaced with a
+      # direct ref to the commit (actions/checkout#1467). Re-fetch
+      # the annotated tag object explicitly. Same workaround the CLI
+      # release.yml uses.
+      - name: Refetch annotated tag object
+        if: startsWith(github.ref, 'refs/tags/helm-v')
+        run: git fetch origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}" --force
+
+      # SSH-signed tags need an allowed-signers file so git can map a
+      # signature back to a trusted identity. Same file the CLI
+      # release uses.
+      - name: Configure SSH allowed signers
+        run: |
+          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
 
       - name: Resolve version
         id: version
@@ -68,14 +89,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/helm-v')
         run: |
           set -euo pipefail
-          # The CLI release workflow enforces signed tags; do the same
-          # for the chart. Allowed signers from .github/allowed_signers
-          # if present, else fall back to git's default verification.
-          if [[ -f .github/allowed_signers ]]; then
-            git -c gpg.ssh.allowedSignersFile=.github/allowed_signers tag --verify "${GITHUB_REF#refs/tags/}"
-          else
-            git tag --verify "${GITHUB_REF#refs/tags/}"
+          TAG="${{ github.ref_name }}"
+          if ! git tag --verify "${TAG}" 2>&1; then
+            echo "::error::Tag ${TAG} is not signed or the signature did not verify. Re-tag with 'git tag -s ${TAG}' from a trusted signing key. Ensure the public key is registered on the maintainer's GitHub profile and listed in .github/allowed_signers."
+            exit 1
           fi
+          echo "OK: tag ${TAG} is signed and verifies"
 
       - name: Install Helm
         uses: azure/setup-helm@v4
