@@ -216,6 +216,50 @@ The cluster must already have these working:
 
 ## Provisioning
 
+### Install via Helm (recommended)
+
+The chart at `dist/helm/jarvy-telemetry-forwarder/` packages every
+manifest below — Collector Deployment + Service, anonymize pipeline
+ConfigMap, ExternalSecrets, Gateway API HTTPRoute (+ optional
+Gateway), Traefik Middleware bridge for rate limit / body cap,
+cert-manager Certificate, NetworkPolicy, optional HPA, optional
+ServiceMonitor, PodDisruptionBudget. Released independently from the
+Jarvy CLI as a signed OCI artifact:
+
+```bash
+helm install jarvy-telemetry \
+  oci://ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder \
+  --version 0.1.0 \
+  --namespace jarvy-telemetry --create-namespace
+```
+
+`values.yaml` is the canonical customization surface. Every
+ingress concern (Gateway annotations / labels / GatewayClass,
+HTTPRoute filters / parentRefs / hostnames, Traefik Middleware
+toggles) is overridable. Common patterns:
+
+- **Different ingress controller** (Envoy Gateway, Cilium, Istio,
+  Contour): set `gatewayApi.gateway.gatewayClassName` and disable
+  `gatewayApi.traefikMiddlewares.enabled`; supply equivalent rate
+  limit / body cap via `gatewayApi.httpRoute.extraFilters` as
+  ExtensionRef entries pointing at your implementation's CRDs.
+- **Existing shared Gateway**: set `gatewayApi.gateway.create:
+  false` and fill `gatewayApi.httpRoute.parentRefs` to attach to it.
+- **Different secret backend**: change
+  `secrets.externalSecrets.secretStoreRef` to your ESO store; the
+  two `remoteRef.key` paths are independent.
+
+Chart release pipeline:
+[`.github/workflows/helm-release.yml`](../../.github/workflows/helm-release.yml)
+fires on `helm-vX.Y.Z` tags, lints + packages + signs (cosign
+keyless OIDC) + attests SBOM + pushes to GHCR. Decoupled from the
+CLI release so chart-only fixes don't require a CLI release.
+
+The sections below describe the manifests the chart renders, for
+readers who want to apply them by hand or fork the chart. They are
+**not** an installation path — keep the chart in sync if you go
+that route, and contribute back any divergence you find useful.
+
 ### 1. DNS + Cloudflare
 
 - Create `telemetry.jarvy.dev` as an A or CNAME record pointing at
@@ -557,15 +601,26 @@ spec:
     - { name: self-metrics, port: 8888, targetPort: self-metrics }
 ```
 
-### 6. Traefik IngressRoute with Middlewares
+### 6. Gateway API ingress (HTTPRoute + optional Gateway)
 
-Traefik's CRD model lets each ingress concern be its own resource.
-Three Middlewares (rate limit, body cap, method filter) chain in
-front of the Service.
+Routing is via Kubernetes Gateway API, not Traefik's native
+`IngressRoute`. Gateway API is portable across implementations —
+the same manifests work on Traefik, Envoy Gateway, Cilium, Istio,
+Contour. Gateway API does not yet have first-class rate limit or
+body cap, so when running on Traefik those concerns ride on
+Traefik `Middleware` CRDs attached to the `HTTPRoute` via
+`ExtensionRef` filters. Other GatewayClasses substitute their own
+equivalents in the same filter slot (see the Helm chart's
+`gatewayApi.httpRoute.extraFilters` for the documented extension
+points per implementation).
 
 ```yaml
-# Rate limit: 60 requests/min/IP at the cluster edge. Cloudflare's
-# rate limit is still the primary defense; this is defense in depth.
+# Traefik Middleware: rate limit. 60 requests/min/IP. Cloudflare's
+# rate limit is still primary defense; this is defense in depth at
+# the cluster edge. On non-Traefik GatewayClasses, swap for the
+# implementation's equivalent (Envoy Gateway `BackendTrafficPolicy`,
+# Cilium `CiliumEnvoyConfig`, etc.) and attach via `extraFilters`
+# in the Helm chart.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -578,14 +633,13 @@ spec:
     burst: 30
     sourceCriterion:
       ipStrategy:
-        # Trust Cloudflare's CF-Connecting-IP header. Without
-        # `depth` set correctly, the rate limiter sees all traffic
-        # coming from Cloudflare's IPs and limits globally rather
-        # than per-client.
+        # Trust Cloudflare's CF-Connecting-IP. depth=1 reads the
+        # first IP in X-Forwarded-For; depth=0 (no proxy) uses the
+        # immediate peer.
         depth: 1
 ---
-# Body cap: reject anything larger than 64 KiB. OTLP/HTTP payloads
-# from a single Jarvy invocation are well under 10 KiB.
+# Traefik Middleware: body cap. Reject anything > 64 KiB. OTLP/HTTP
+# payloads from a single Jarvy invocation are well under 10 KiB.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -593,27 +647,11 @@ metadata:
   namespace: jarvy-telemetry
 spec:
   buffering:
-    maxRequestBodyBytes: 65536  # 64 KiB
+    maxRequestBodyBytes: 65536
     memRequestBodyBytes: 65536
 ---
-# Method + path filter. IngressRoute matches restrict accepted
-# requests; this Middleware adds belt-and-suspenders headers
-# verification (Content-Type must be JSON/protobuf for OTLP/HTTP)
-# and strips any request hop headers a client might inject.
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: otelcol-headers
-  namespace: jarvy-telemetry
-spec:
-  headers:
-    customRequestHeaders:
-      X-Forwarder: "jarvy-telemetry"
-    # Strip identifying headers a client might think they need to send.
-    sslRedirect: true
----
-# Certificate via cert-manager. Traefik picks this up automatically
-# when referenced by the IngressRoute's tls.secretName.
+# cert-manager-issued certificate. Gateway listener references this
+# Secret directly via `certificateRefs`.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -627,33 +665,72 @@ spec:
   dnsNames:
     - telemetry.jarvy.dev
 ---
-# Public ingress. Matches only POST to the three OTLP signal paths;
-# anything else 404s at the Traefik router before hitting the
-# Service. TLS terminated here.
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
+# Gateway. Create one per public ingress data plane; many clusters
+# already have a shared Gateway in a networking namespace, in which
+# case skip this resource and just attach the HTTPRoute below to
+# it via parentRefs.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
 metadata:
   name: telemetry
   namespace: jarvy-telemetry
 spec:
-  entryPoints: [websecure]
-  routes:
-    - match: |
-        Host(`telemetry.jarvy.dev`) &&
-        Method(`POST`) &&
-        ( PathPrefix(`/v1/logs`) ||
-          PathPrefix(`/v1/metrics`) ||
-          PathPrefix(`/v1/traces`) )
-      kind: Rule
-      services:
+  # GatewayClass name varies per implementation:
+  #   Traefik:        "traefik"
+  #   Envoy Gateway:  "envoy"
+  #   Cilium:         "cilium"
+  #   Istio:          "istio"
+  #   Contour:        "contour"
+  gatewayClassName: traefik
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: telemetry-jarvy-dev-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# HTTPRoute. The actual telemetry routing rule. Always required.
+# Filters attach the Traefik Middlewares above via ExtensionRef —
+# this is the standard Gateway API extension point.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: telemetry
+  namespace: jarvy-telemetry
+spec:
+  parentRefs:
+    - name: telemetry
+      sectionName: https
+  hostnames:
+    - telemetry.jarvy.dev
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /v1/logs }
+          method: POST
+        - path: { type: PathPrefix, value: /v1/metrics }
+          method: POST
+        - path: { type: PathPrefix, value: /v1/traces }
+          method: POST
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: otelcol-bodylimit
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: otelcol-ratelimit
+      backendRefs:
         - name: otelcol
-          port: otlp-http
-      middlewares:
-        - name: otelcol-ratelimit
-        - name: otelcol-bodylimit
-        - name: otelcol-headers
-  tls:
-    secretName: telemetry-jarvy-dev-tls
+          port: 4318
 ```
 
 ### 7. NetworkPolicy: lock the namespace down
@@ -809,6 +886,7 @@ land on one of those two lists in the same PR that adds them.
 - `user.name`, `user.email`
 - `jarvy.config.path`, `jarvy.toml.contents`, `jarvy.cwd`
 - `jarvy.install_id`
+- `jarvy.parent_config_hash` (see correlation note below)
 
 **Replaced inline (in log bodies) with type markers:**
 
@@ -827,6 +905,38 @@ land on one of those two lists in the same PR that adds them.
   picks up the new value
 - The previous quarter's salt is **discarded**, not archived —
   retaining it would defeat the linkability bound
+
+**Correlation by parent config (`jarvy.parent_config_hash`)**
+
+Jarvy supports config inheritance via `extends = "<url-or-path>"` —
+projects can layer on top of an organization-wide or
+team-maintained parent config. The CLI computes a SHA-256 of the
+*resolved parent config* (after templating, before merging with the
+project's own config) and emits it as the
+`jarvy.parent_config_hash` resource attribute on every telemetry
+batch.
+
+The forwarder treats this attribute like any other PII-shaped key:
+salted SHA-256 with the project-wide rotating salt. Because the
+salt is deterministic across the cohort and the parent hash is
+deterministic across users on the same parent, **two users on the
+same org config produce the same final hash**. This enables
+analytics queries like:
+
+```logql
+{service_name="jarvy"} | json
+  | jarvy_parent_config_hash="<hash>"
+  | line_format "{{.jarvy_event}}"
+```
+
+— answering "how many distinct hosts use org X's parent config" or
+"what's the install-failure rate for tools required by org X" without
+exposing what the config contains or who is on it. Distinct-count
+analytics on the hash are bounded by the salt rotation window
+(quarterly): cross-quarter joins are not possible.
+
+If a project does not use `extends`, the attribute is absent and
+the rule above is a no-op.
 
 **On schema change:**
 

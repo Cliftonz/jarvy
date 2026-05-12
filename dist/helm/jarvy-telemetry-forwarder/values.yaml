@@ -1,0 +1,333 @@
+# Default values for jarvy-telemetry-forwarder.
+# Everything is overridable. The shape of this file is the chart's
+# public API — additions are minor-bumps, removals/renames are
+# major-bumps.
+
+# -- Global name / labelling overrides.
+nameOverride: ""
+fullnameOverride: ""
+# -- Common labels applied to every resource in the release.
+commonLabels: {}
+# -- Common annotations applied to every resource in the release.
+commonAnnotations: {}
+
+# -----------------------------------------------------------------------------
+# Collector
+# -----------------------------------------------------------------------------
+collector:
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    # Pin to a digest in production; tag-only is convenient for first install.
+    tag: "0.107.0"
+    pullPolicy: IfNotPresent
+  replicas: 2
+  # -- Pod-level annotations. Useful for stakater/reloader rolling
+  # restart on ConfigMap change, or to attach Vault Agent injection.
+  podAnnotations: {}
+  podLabels: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  # -- Set `autoscaling.enabled: true` to swap fixed `replicas` for an HPA.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  # -- Topology spread across nodes; safe default.
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+  # -- Pod security context. Restricted PSS-compatible defaults.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
+  # -- Health probes. The Collector's `health_check` extension binds
+  # to 13133 inside the pod.
+  livenessProbe:
+    httpGet: { path: /, port: health }
+    initialDelaySeconds: 10
+    periodSeconds: 30
+  readinessProbe:
+    httpGet: { path: /, port: health }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  # -- Override the entire Collector config inline. When unset, the
+  # chart renders the canonical anonymize-don't-drop pipeline from
+  # `templates/_collector-config.tpl`. Override when you need to add
+  # an exporter, a receiver, or a custom processor without forking
+  # the chart.
+  config: ""
+  # -- Extra environment variables for the Collector pod. Use this to
+  # inject backend credentials when External Secrets is disabled.
+  extraEnv: []
+  #  - name: SOME_OTHER_TOKEN
+  #    valueFrom:
+  #      secretKeyRef: { name: my-secret, key: token }
+
+# -----------------------------------------------------------------------------
+# Exporter (downstream backend) — defaults to Grafana Cloud
+# -----------------------------------------------------------------------------
+exporter:
+  # -- OTLP/HTTP endpoint of the downstream backend.
+  endpoint: "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
+  # -- Auth scheme passed to the `bearertokenauth` extension. Grafana
+  # Cloud uses "Basic" (instance ID + token, base64'd). Honeycomb /
+  # Datadog use "Bearer".
+  authScheme: "Basic"
+
+# -----------------------------------------------------------------------------
+# PII anonymization
+# -----------------------------------------------------------------------------
+pii:
+  # -- Keys hashed with the salted-SHA256 transform in the default
+  # pipeline. Extending this list does NOT require touching the
+  # ConfigMap — `_collector-config.tpl` iterates over it.
+  hashedAttributes:
+    - host.name
+    - host.id
+    - host.ip
+    - user.name
+    - user.email
+    - jarvy.config.path
+    - jarvy.toml.contents
+    - jarvy.cwd
+    - jarvy.install_id
+    # Parent-config correlation. Same parent toml across users →
+    # same hash → ability to group "all users on org X's config".
+    # Client emits this as SHA-256 of the resolved parent config;
+    # the salted re-hash here adds a quarter-bounded linkability
+    # ceiling on top of that.
+    - jarvy.parent_config_hash
+  # -- Inline body redaction patterns. Substitutes with bounded type
+  # markers (`<email>`, `<ip>`, `/Users/<user>`) — distinct identity
+  # is not preserved inside free-text bodies, by design.
+  bodyRedactPatterns:
+    - pattern: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+      replacement: "<email>"
+    - pattern: "\\b(?!127\\.0\\.0\\.1)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b"
+      replacement: "<ip>"
+    - pattern: "/Users/[^/\\s]+"
+      replacement: "/Users/<user>"
+    - pattern: "/home/[^/\\s]+"
+      replacement: "/home/<user>"
+
+# -----------------------------------------------------------------------------
+# Secrets — backend write token + PII salt
+# -----------------------------------------------------------------------------
+secrets:
+  # -- Strategy for materializing the two required secrets.
+  # One of: `externalSecrets`, `existing`, `inline`.
+  # - externalSecrets: chart creates ExternalSecret resources that
+  #   pull from your `ClusterSecretStore`. Production default.
+  # - existing: you create the Kubernetes Secrets yourself before
+  #   install. Chart only references them by name.
+  # - inline: chart creates Secrets from `inline.*` values below.
+  #   Only acceptable for dev clusters; secrets land in helm
+  #   release values.
+  strategy: externalSecrets
+
+  # Names of the two Secrets the Deployment mounts. Keep these
+  # stable; renaming requires a Deployment restart.
+  grafanaTokenSecretName: grafana-otlp-token
+  grafanaTokenSecretKey: token
+  piiSaltSecretName: pii-salt
+  piiSaltSecretKey: salt
+
+  externalSecrets:
+    # -- Name of an existing ClusterSecretStore (or SecretStore).
+    secretStoreRef:
+      name: vault-default
+      kind: ClusterSecretStore
+    refreshInterval: 1h
+    # -- Backend keys for the two secrets. Adjust to your layout.
+    grafanaToken:
+      remoteRef:
+        key: jarvy/telemetry/grafana-otlp-write-token
+    piiSalt:
+      remoteRef:
+        key: jarvy/telemetry/pii-salt
+
+  inline:
+    # Used only when `strategy: inline`. Override on install; never
+    # commit real values here. 32-byte hex string for the salt.
+    grafanaToken: ""
+    piiSalt: ""
+
+# -----------------------------------------------------------------------------
+# Ingress: Kubernetes Gateway API (HTTPRoute)
+# -----------------------------------------------------------------------------
+gatewayApi:
+  # -- Whether to install Gateway API resources. Disable if you
+  # provision ingress with a different mechanism (e.g. legacy
+  # Ingress resource managed elsewhere) — the chart's Service is
+  # still installed and can be targeted by your external routing.
+  enabled: true
+
+  # ---------------------------------------------------------------
+  # Gateway. When `gateway.create: true`, the chart creates a
+  # Gateway in the release namespace. When false, the chart only
+  # creates the HTTPRoute, which attaches to an existing Gateway
+  # named by `httpRoute.parentRefs`.
+  # ---------------------------------------------------------------
+  gateway:
+    create: false
+    # If creating: which GatewayClass to use. Common values:
+    #   "traefik" (Traefik), "envoy" (Envoy Gateway / Contour),
+    #   "cilium" (Cilium), "istio" (Istio).
+    gatewayClassName: traefik
+    # -- Annotations on the Gateway resource. Use this slot for
+    # ingress-controller-specific tuning. Examples:
+    #   Traefik:
+    #     "traefik.io/external-traffic-policy": "Local"
+    #   Envoy Gateway:
+    #     "gateway.envoyproxy.io/extension": "..."
+    annotations: {}
+    labels: {}
+    # -- Listeners on the Gateway. HTTPS only by default.
+    listeners:
+      - name: https
+        port: 443
+        protocol: HTTPS
+        tls:
+          mode: Terminate
+          # Certificate ref filled in from tls.* below by the template.
+        allowedRoutes:
+          namespaces:
+            from: Same
+
+  # ---------------------------------------------------------------
+  # HTTPRoute — the actual telemetry endpoint routing rule. Always
+  # created when gatewayApi.enabled is true.
+  # ---------------------------------------------------------------
+  httpRoute:
+    # -- Annotations on the HTTPRoute. Downstream systems use this to
+    # attach controller-specific policies (e.g. Traefik's
+    # `traefik.io/router.priority`, Envoy's
+    # `gateway.envoyproxy.io/...`).
+    annotations: {}
+    labels: {}
+    # -- Hostnames the route accepts. Override for self-hosted /
+    # non-jarvy.dev deployments.
+    hostnames:
+      - telemetry.jarvy.dev
+    # -- Parent Gateway references. When `gateway.create: false`,
+    # set this to your existing Gateway. When `gateway.create: true`,
+    # the template auto-fills with the chart's own Gateway.
+    parentRefs: []
+    #  - name: my-existing-gateway
+    #    namespace: networking
+    #    sectionName: https
+    # -- Custom filters appended after the chart's defaults. Use
+    # this to attach Traefik Middlewares, Envoy Gateway policies,
+    # or any other implementation-specific filter via ExtensionRef.
+    extraFilters: []
+    #  - type: ExtensionRef
+    #    extensionRef:
+    #      group: traefik.io
+    #      kind: Middleware
+    #      name: my-custom-middleware
+    # -- Rule shape: only POST to OTLP signal paths. Override if
+    # you front this with a path rewriter.
+    rules:
+      - matches:
+          - path: { type: PathPrefix, value: /v1/logs }
+            method: POST
+          - path: { type: PathPrefix, value: /v1/metrics }
+            method: POST
+          - path: { type: PathPrefix, value: /v1/traces }
+            method: POST
+
+  # ---------------------------------------------------------------
+  # Traefik Middleware bridge. Gateway API has no first-class rate
+  # limit / body cap yet, so when running on Traefik we install
+  # Traefik Middlewares and attach them via ExtensionRef in the
+  # HTTPRoute filters list. Disable when running on another
+  # GatewayClass and supply the equivalent via `extraFilters`.
+  # ---------------------------------------------------------------
+  traefikMiddlewares:
+    enabled: true
+    rateLimit:
+      average: 60
+      period: 1m
+      burst: 30
+      # IP strategy: trust depth=1 (Cloudflare) by default. Set to
+      # 0 if you don't have a trusted proxy in front.
+      ipStrategyDepth: 1
+    bodyLimit:
+      maxRequestBodyBytes: 65536
+      memRequestBodyBytes: 65536
+
+# -----------------------------------------------------------------------------
+# TLS via cert-manager
+# -----------------------------------------------------------------------------
+tls:
+  # -- When true, a cert-manager `Certificate` resource is created
+  # and referenced from the Gateway listener. When false, you are
+  # expected to manage the cert externally and supply the Secret
+  # name via `tls.existingSecretName`.
+  certManager:
+    enabled: true
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+  existingSecretName: ""
+
+# -----------------------------------------------------------------------------
+# Network policy
+# -----------------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  # -- Namespace of the ingress controller that should be allowed to
+  # reach the Collector. Used as a `kubernetes.io/metadata.name`
+  # selector. Adjust per cluster.
+  ingressNamespace: traefik
+  # -- Namespace of the Prometheus scraper (for ServiceMonitor).
+  monitoringNamespace: monitoring
+
+# -----------------------------------------------------------------------------
+# Monitoring
+# -----------------------------------------------------------------------------
+serviceMonitor:
+  enabled: true
+  # -- Matches the Prometheus instance's `serviceMonitorSelector`.
+  labels:
+    release: kube-prometheus-stack
+  interval: 30s
+
+# -----------------------------------------------------------------------------
+# Pod Disruption Budget — keep at least one replica during voluntary
+# disruptions (node drains, cluster upgrades).
+# -----------------------------------------------------------------------------
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# -----------------------------------------------------------------------------
+# Namespace
+# -----------------------------------------------------------------------------
+namespace:
+  # -- Whether the chart should create the namespace. Most installs
+  # use `helm install --create-namespace` instead; leave this false.
+  create: false
+  # -- Pod Security Standard enforcement labels applied if the
+  # namespace is created by the chart.
+  podSecurityStandard:
+    enforce: restricted
+    audit: restricted
+    warn: restricted

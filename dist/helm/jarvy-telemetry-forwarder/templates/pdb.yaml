@@ -1,0 +1,14 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "jarvy-telemetry-forwarder.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "jarvy-telemetry-forwarder.selectorLabels" . | nindent 6 }}
+{{- end }}

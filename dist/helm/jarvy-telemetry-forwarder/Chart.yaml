@@ -1,0 +1,32 @@
+apiVersion: v2
+name: jarvy-telemetry-forwarder
+description: |
+  Public OTLP forwarder for the Jarvy CLI's opt-in telemetry. Receives
+  OTLP/HTTP from anywhere on the internet, anonymizes every PII-shaped
+  attribute with a salted SHA-256 (rotating salt), and fans out to
+  Grafana Cloud (Loki / Mimir / Tempo) or any OTLP backend. Ingress is
+  via Kubernetes Gateway API (HTTPRoute) — bring your own GatewayClass
+  (Traefik, Envoy/Contour, Cilium, Istio). Gateway and HTTPRoute
+  annotations / labels / filters are fully customizable so downstream
+  systems can adapt to their cluster's ingress conventions.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://jarvy.dev
+sources:
+  - https://github.com/bearbinary/jarvy
+maintainers:
+  - name: Zac Clifton
+    url: https://github.com/bearbinary
+keywords:
+  - opentelemetry
+  - otlp
+  - telemetry
+  - grafana
+  - gateway-api
+  - jarvy
+icon: https://jarvy.dev/assets/logo.png
+annotations:
+  artifacthub.io/category: monitoring-logging
+  artifacthub.io/license: MIT
+  artifacthub.io/operator: "false"

@@ -1,0 +1,15 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  labels:
+    {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurityStandard.enforce }}
+    pod-security.kubernetes.io/audit: {{ .Values.namespace.podSecurityStandard.audit }}
+    pod-security.kubernetes.io/warn: {{ .Values.namespace.podSecurityStandard.warn }}
+  {{- with (include "jarvy-telemetry-forwarder.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+{{- end }}

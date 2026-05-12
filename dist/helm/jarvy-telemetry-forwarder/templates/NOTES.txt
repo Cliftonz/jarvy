@@ -1,0 +1,45 @@
+{{ include "jarvy-telemetry-forwarder.fullname" . }} installed in namespace {{ .Release.Namespace }}.
+
+What was installed:
+  • OpenTelemetry Collector Deployment + Service (port 4318)
+  • Anonymize-not-drop pipeline (salted SHA-256 over hashedAttributes)
+  • {{ if .Values.gatewayApi.enabled }}Gateway API HTTPRoute for {{ join ", " .Values.gatewayApi.httpRoute.hostnames }}{{ else }}NO Gateway API resources (gatewayApi.enabled=false){{ end }}
+  • {{ if .Values.networkPolicy.enabled }}NetworkPolicy locking ingress + egress{{ else }}NO NetworkPolicy (networkPolicy.enabled=false){{ end }}
+  • {{ if .Values.serviceMonitor.enabled }}ServiceMonitor for kube-prometheus-stack{{ else }}NO ServiceMonitor (serviceMonitor.enabled=false){{ end }}
+
+Verify end-to-end:
+
+  1. Probes:
+     curl -I https://{{ index .Values.gatewayApi.httpRoute.hostnames 0 }}/v1/logs
+     # Expect HTTP/2 405 (method filter) or 404 (route mismatch)
+
+     curl -X POST -H 'Content-Type: application/json' \
+       -d '{"resourceLogs":[]}' \
+       https://{{ index .Values.gatewayApi.httpRoute.hostnames 0 }}/v1/logs
+     # Expect HTTP/2 200
+
+  2. Synthetic Jarvy event:
+     JARVY_TELEMETRY=1 \
+     JARVY_OTLP_ENDPOINT=https://{{ index .Values.gatewayApi.httpRoute.hostnames 0 }} \
+     jarvy --version
+
+  3. Anonymization spot check (in your backend's logs query):
+     resource.host.name must be a 64-char hex string, NOT a hostname.
+     If it's plaintext, the salt is missing — check the PII_SALT env in
+     `kubectl describe deploy {{ include "jarvy-telemetry-forwarder.fullname" . }} -n {{ .Release.Namespace }}`.
+
+{{ if eq .Values.secrets.strategy "inline" -}}
+⚠  secrets.strategy=inline is set. The Grafana write token and PII
+   salt are stored as Kubernetes Secrets created from chart values.
+   For production, switch to externalSecrets and a real secret
+   backend.
+{{- end }}
+
+{{ if not .Values.gatewayApi.traefikMiddlewares.enabled -}}
+Note: traefikMiddlewares is disabled. Make sure your HTTPRoute
+`extraFilters` provide equivalent body-size limit and rate limit, or
+this forwarder is unprotected against runaway clients.
+{{- end }}
+
+Operational guide:
+  https://jarvy.dev/operations/telemetry-forwarder/

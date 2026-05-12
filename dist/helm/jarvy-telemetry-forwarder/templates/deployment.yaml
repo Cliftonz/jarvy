@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jarvy-telemetry-forwarder.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.collector.autoscaling.enabled }}
+  replicas: {{ .Values.collector.replicas }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "jarvy-telemetry-forwarder.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "jarvy-telemetry-forwarder.selectorLabels" . | nindent 8 }}
+        {{- with .Values.collector.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Roll pods when the ConfigMap content changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.collector.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "jarvy-telemetry-forwarder.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.collector.podSecurityContext | nindent 8 }}
+      containers:
+        - name: otelcol
+          image: "{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}"
+          imagePullPolicy: {{ .Values.collector.image.pullPolicy }}
+          args: ["--config=/etc/otelcol/config.yaml"]
+          ports:
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: health, containerPort: 13133 }
+            - { name: self-metrics, containerPort: 8888 }
+          env:
+            - name: BACKEND_OTLP_ENDPOINT
+              value: {{ .Values.exporter.endpoint | quote }}
+            - name: BACKEND_OTLP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.grafanaTokenSecretName }}
+                  key: {{ .Values.secrets.grafanaTokenSecretKey }}
+            - name: PII_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.piiSaltSecretName }}
+                  key: {{ .Values.secrets.piiSaltSecretKey }}
+            {{- with .Values.collector.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.collector.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.collector.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.collector.readinessProbe | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.collector.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/otelcol }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "jarvy-telemetry-forwarder.fullname" . }}-config
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.collector.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.collector.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.collector.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.collector.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "jarvy-telemetry-forwarder.selectorLabels" . | nindent 14 }}
+      {{- end }}

@@ -1,0 +1,228 @@
+name: Helm Chart Release
+
+# Releases the jarvy-telemetry-forwarder Helm chart independently from
+# the Jarvy CLI. Triggered by tags shaped `helm-vX.Y.Z` — the version
+# after `helm-v` must match `version` in `dist/helm/<chart>/Chart.yaml`.
+# Publishes the packaged chart as an OCI artifact to GHCR plus a
+# cosign signature alongside it (keyless OIDC, matches the CLI's
+# release-artifact signing model).
+#
+# Why a separate workflow from `release.yml`:
+#   - Chart cadence is decoupled from CLI cadence (chart docs typo
+#     fix should not require a CLI release).
+#   - Different artifact type (OCI helm vs cargo-packager binaries)
+#     and different consumers (cluster operators vs CLI users).
+#   - Lets cluster operators subscribe to chart-only release notes
+#     via the chart's GitHub release.
+on:
+  push:
+    tags:
+      - 'helm-v[0-9]+.[0-9]+.[0-9]+'
+      - 'helm-v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Chart version to publish (e.g. 0.1.0). Must match Chart.yaml. Leave blank to derive from the current tag.'
+        required: false
+
+permissions:
+  contents: write    # for creating the GitHub release
+  packages: write    # for pushing to GHCR
+  id-token: write    # for cosign keyless OIDC signing
+
+env:
+  CHART_DIR: dist/helm/jarvy-telemetry-forwarder
+  OCI_REGISTRY: ghcr.io/${{ github.repository_owner }}/charts
+
+jobs:
+  release:
+    name: Release Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/helm-v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/helm-v}"
+          else
+            echo "::error::This workflow must be triggered by a helm-vX.Y.Z tag or workflow_dispatch with an explicit version."
+            exit 1
+          fi
+          CHART_VERSION=$(awk '/^version:/ { print $2; exit }' "${CHART_DIR}/Chart.yaml")
+          if [[ "${VERSION}" != "${CHART_VERSION}" ]]; then
+            echo "::error::Tag version ${VERSION} does not match Chart.yaml version ${CHART_VERSION}. Bump Chart.yaml and re-tag, or pick a matching tag."
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved chart version: ${VERSION}"
+
+      - name: Verify tag is signed
+        if: startsWith(github.ref, 'refs/tags/helm-v')
+        run: |
+          set -euo pipefail
+          # The CLI release workflow enforces signed tags; do the same
+          # for the chart. Allowed signers from .github/allowed_signers
+          # if present, else fall back to git's default verification.
+          if [[ -f .github/allowed_signers ]]; then
+            git -c gpg.ssh.allowedSignersFile=.github/allowed_signers tag --verify "${GITHUB_REF#refs/tags/}"
+          else
+            git tag --verify "${GITHUB_REF#refs/tags/}"
+          fi
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.0
+
+      - name: Lint chart
+        run: |
+          set -euo pipefail
+          helm lint "${CHART_DIR}" --strict
+
+      - name: Template chart (sanity render)
+        run: |
+          set -euo pipefail
+          # Render with the default values + a synthetic
+          # values-override that exercises every conditional branch.
+          # This is the chart's smoke test — if a template breaks on
+          # a values combination, fail here, not in a user's cluster.
+          mkdir -p /tmp/render
+          helm template smoke "${CHART_DIR}" \
+            --namespace jarvy-telemetry \
+            --debug \
+            > /tmp/render/default.yaml
+          helm template smoke "${CHART_DIR}" \
+            --namespace jarvy-telemetry \
+            --set gatewayApi.gateway.create=true \
+            --set secrets.strategy=inline \
+            --set secrets.inline.grafanaToken=fake \
+            --set secrets.inline.piiSalt=fake \
+            --set collector.autoscaling.enabled=true \
+            > /tmp/render/exhaustive.yaml
+          # Check for obvious template errors (Helm sometimes succeeds
+          # with malformed output that fails on `kubectl apply`).
+          test -s /tmp/render/default.yaml
+          test -s /tmp/render/exhaustive.yaml
+
+      - name: Package chart
+        id: package
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/dist
+          helm package "${CHART_DIR}" --destination /tmp/dist
+          PKG="/tmp/dist/jarvy-telemetry-forwarder-${{ steps.version.outputs.version }}.tgz"
+          test -f "${PKG}"
+          SHA=$(sha256sum "${PKG}" | awk '{print $1}')
+          echo "package=${PKG}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "Packaged chart: ${PKG}"
+          echo "sha256: ${SHA}"
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ${OCI_REGISTRY%%/*} -u "${{ github.actor }}" --password-stdin
+
+      - name: Push chart to OCI registry
+        id: push
+        run: |
+          set -euo pipefail
+          PUSH_OUT=$(helm push "${{ steps.package.outputs.package }}" "oci://${OCI_REGISTRY}" 2>&1 | tee /dev/stderr)
+          # Capture the digest helm prints on push for the cosign sign step.
+          DIGEST=$(echo "${PUSH_OUT}" | awk -F'Digest: ' 'NF==2 { print $2 }' | tail -1)
+          if [[ -z "${DIGEST}" ]]; then
+            echo "::error::Failed to capture digest from helm push output. Is the registry URL correct?"
+            exit 1
+          fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Pushed at digest: ${DIGEST}"
+
+      - name: Sign chart with cosign (keyless OIDC)
+        run: |
+          set -euo pipefail
+          COSIGN_EXPERIMENTAL=1 cosign sign --yes \
+            "${OCI_REGISTRY}/jarvy-telemetry-forwarder@${{ steps.push.outputs.digest }}"
+
+      - name: Generate SBOM
+        run: |
+          set -euo pipefail
+          # syft is the de facto OSS SBOM generator and supports
+          # Helm charts via the `helm` cataloger.
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft "${{ steps.package.outputs.package }}" -o spdx-json > /tmp/sbom.spdx.json
+          syft "${{ steps.package.outputs.package }}" -o cyclonedx-json > /tmp/sbom.cdx.json
+
+      - name: Attest SBOM via cosign
+        run: |
+          set -euo pipefail
+          COSIGN_EXPERIMENTAL=1 cosign attest --yes \
+            --predicate /tmp/sbom.spdx.json \
+            --type spdxjson \
+            "${OCI_REGISTRY}/jarvy-telemetry-forwarder@${{ steps.push.outputs.digest }}"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/helm-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Helm chart ${{ steps.version.outputs.version }}"
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          draft: true
+          generate_release_notes: true
+          files: |
+            ${{ steps.package.outputs.package }}
+            /tmp/sbom.spdx.json
+            /tmp/sbom.cdx.json
+          body: |
+            Helm chart for the Jarvy telemetry forwarder.
+
+            ## Install
+
+            ```bash
+            helm install jarvy-telemetry \
+              oci://${{ env.OCI_REGISTRY }}/jarvy-telemetry-forwarder \
+              --version ${{ steps.version.outputs.version }} \
+              --namespace jarvy-telemetry --create-namespace
+            ```
+
+            ## Verify
+
+            ```bash
+            cosign verify \
+              --certificate-identity-regexp "https://github.com/${{ github.repository }}/" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              ${{ env.OCI_REGISTRY }}/jarvy-telemetry-forwarder:${{ steps.version.outputs.version }}
+            ```
+
+            ## Artifacts
+
+            - OCI: `${{ env.OCI_REGISTRY }}/jarvy-telemetry-forwarder:${{ steps.version.outputs.version }}`
+            - Digest: `${{ steps.push.outputs.digest }}`
+            - Chart SHA256: `${{ steps.package.outputs.sha256 }}`
+            - SBOMs: `sbom.spdx.json`, `sbom.cdx.json` attached
+
+            Operational documentation:
+            <https://jarvy.dev/operations/telemetry-forwarder/>
+
+      - name: Summary
+        run: |
+          {
+            echo "## Helm chart released"
+            echo
+            echo "- **Version:** \`${{ steps.version.outputs.version }}\`"
+            echo "- **OCI ref:** \`${{ env.OCI_REGISTRY }}/jarvy-telemetry-forwarder:${{ steps.version.outputs.version }}\`"
+            echo "- **Digest:** \`${{ steps.push.outputs.digest }}\`"
+            echo "- **SHA256:** \`${{ steps.package.outputs.sha256 }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

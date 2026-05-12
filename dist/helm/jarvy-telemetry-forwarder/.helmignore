@@ -1,0 +1,16 @@
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.hg/
+.svn/
+*.swp
+*.tmp
+*.bak
+*.orig
+*.tgz
+.idea/
+*.iml
+.vscode/
+.helmignore
+OWNERS
