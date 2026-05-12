@@ -9,6 +9,17 @@ Jarvy emits OpenTelemetry (OTLP) signals — logs, metrics, and optional traces 
 
 **Telemetry is opt-in.** Nothing is sent until you explicitly configure an endpoint or set `JARVY_TELEMETRY=1`. CI environments are auto-disabled unless overridden.
 
+When opted in, Jarvy CLIs send to the project's hardened public forwarder
+at `https://telemetry.jarvy.dev` by default. The forwarder strips PII,
+rate-limits, and fans out to Grafana Cloud. The full architecture,
+threat model, scrub policy, and operational runbook live in
+[Telemetry forwarder operations](operations/telemetry-forwarder.md) —
+that doc is the contract this page's data-handling promise must
+implement.
+
+Override the endpoint with `JARVY_OTLP_ENDPOINT=https://your-collector`
+or `[telemetry] endpoint = "..."` to send to your own collector instead.
+
 ## Quick Enable
 
 ```bash
@@ -22,7 +33,7 @@ Or edit `~/.jarvy/config.toml` directly:
 ```toml
 [telemetry]
 enabled = true
-endpoint = "http://localhost:4318"
+endpoint = "https://telemetry.jarvy.dev"  # project's public forwarder; override for self-hosted
 protocol = "http"     # "http" or "grpc"
 logs = true
 metrics = true

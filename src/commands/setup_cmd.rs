@@ -701,7 +701,50 @@ pub fn run_setup(
         let _ = mark_initialized();
     }
 
+    // Second chance to surface the telemetry opt-in. The first-run
+    // boxed notice in `src/init.rs` is the primary ask, but it only
+    // fires when `~/.jarvy/` is created. A user can blow past it
+    // (CI, copy-pasted setup) — show a one-liner at the end of
+    // every `jarvy setup` until they've made a decision. Stays
+    // quiet once `[telemetry] enabled` is either explicitly true
+    // or explicitly false (we treat any persisted config as a
+    // signal of intent). Stderr so command-output piping is safe.
+    if !dry_run {
+        emit_telemetry_hint_if_undecided();
+    }
+
     0
+}
+
+/// Print a one-line telemetry opt-in nudge on stderr if the user has
+/// not yet made an explicit choice. "Explicit" means the
+/// `[telemetry]` section exists in `~/.jarvy/config.toml` with
+/// `enabled` set either way; absence of the section (the default-
+/// shaped first-run config) is treated as "not yet decided" and
+/// triggers the nudge.
+fn emit_telemetry_hint_if_undecided() {
+    use std::fs;
+
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let config_path = home.join(".jarvy").join("config.toml");
+    let Ok(content) = fs::read_to_string(&config_path) else {
+        return;
+    };
+    // A user who set `[telemetry]\nenabled = true|false` has decided.
+    // Anything else (no section, or section present without an
+    // explicit `enabled = …` line) is treated as undecided.
+    let decided = content.lines().any(|l| {
+        let t = l.trim();
+        t == "enabled = true" || t == "enabled = false"
+    });
+    if decided {
+        return;
+    }
+    eprintln!(
+        "\nTip: Jarvy telemetry is opt-in and currently off. Anonymized usage data helps prioritize fixes.\n     Enable with: jarvy telemetry enable   |   Details: https://jarvy.dev/telemetry/"
+    );
 }
 
 /// Install language-specific packages (npm, pip, cargo) configured under

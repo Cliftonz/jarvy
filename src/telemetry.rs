@@ -36,9 +36,17 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TelemetryConfig {
-    /// Master switch for telemetry (default: false)
+    /// Master switch for telemetry. Default is `false` (opt-in).
+    /// Users enable with `jarvy telemetry enable` (persistent),
+    /// `JARVY_TELEMETRY=1` (per-invocation), or by setting
+    /// `[telemetry] enabled = true` in `~/.jarvy/config.toml`.
+    /// The first-run prompt in `src/init.rs` makes the choice visible.
     pub enabled: bool,
-    /// OTLP endpoint URL (default: http://localhost:4318)
+    /// OTLP endpoint URL. Default is the project's hardened public
+    /// forwarder — only reached if the user actually opts in. See
+    /// `docs/operations/telemetry-forwarder.md` for how the forwarder
+    /// is provisioned, the security model (TLS, rate limits, PII
+    /// scrubbing), and the fan-out to Grafana Cloud.
     pub endpoint: String,
     /// Protocol: "http" or "grpc" (default: "http")
     pub protocol: String,
@@ -58,8 +66,18 @@ pub struct TelemetryConfig {
 impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {
+            // Opt-in: telemetry is off by default. Documented in
+            // CLAUDE.md and surfaced as a loud first-run prompt in
+            // src/init.rs. Users opt in with `jarvy telemetry enable`,
+            // `JARVY_TELEMETRY=1`, or `[telemetry] enabled = true` in
+            // `~/.jarvy/config.toml`.
             enabled: false,
-            endpoint: "http://localhost:4318".to_string(),
+            // Default endpoint is the project's hardened public OTLP
+            // forwarder. Only reached if the user opts in.
+            // Provisioning, security model, and data-handling policy
+            // live in docs/operations/telemetry-forwarder.md.
+            // Override per-install with `JARVY_OTLP_ENDPOINT`.
+            endpoint: "https://telemetry.jarvy.dev".to_string(),
             protocol: "http".to_string(),
             logs: true,
             metrics: true,

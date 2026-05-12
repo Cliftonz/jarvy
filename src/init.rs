@@ -113,20 +113,36 @@ fn initialize_from_disk() -> CliConfig {
         }
         // Notice → stderr. Stdout is reserved for command output so
         // callers piping `jarvy <cmd> --format json` get a clean payload
-        // on first run (when ~/.jarvy doesn't yet exist). This used to
-        // be a `println!` and broke `scripts/gen-docs.sh` in CI runs
-        // that hit a virgin $HOME. Documented in
-        // docs/release-quirks-jarvy.md.
+        // on first run (when ~/.jarvy doesn't yet exist). Documented
+        // in docs/release-quirks-jarvy.md.
+        //
+        // Telemetry is **opt-in** (CLAUDE.md commitment): `enabled` in
+        // TelemetryConfig::default() is false. This notice does not
+        // enable anything — it asks the user to decide. The boxed
+        // format is deliberate; an opt-in regime works only when the
+        // ask is visible enough that users actually see it.
         eprintln!(
-            r"
-        Jarvy tool collects telemetry data to help us improve your experience.
-        The data collected is anonymized and used solely for analytics purposes.
-        If you wish to opt-out of telemetry collection, you can disable it by adding the following line to your configuration file located at ~/.jarvy/config.toml:
-        [settings]
-        telemetry = false
-
-        Thank you for using Jarvy!
-                "
+            r#"
+╭─────────────────────────────────────────────────────────────────╮
+│  Jarvy telemetry is currently DISABLED.                         │
+│                                                                 │
+│  Anonymized usage data (which tools you install, setup          │
+│  durations, failure categories) helps prioritize what to fix    │
+│  and improve. No file contents, no command output, no           │
+│  hostnames, no IPs. Full schema + data-handling policy:         │
+│    https://jarvy.dev/telemetry/                                 │
+│                                                                 │
+│  Forwarder security model (TLS, rate limits, PII scrubbing,     │
+│  fan-out to Grafana Cloud):                                     │
+│    https://jarvy.dev/operations/telemetry-forwarder/            │
+│                                                                 │
+│  Opt in (you can opt out again any time):                       │
+│    jarvy telemetry enable                                       │
+│                                                                 │
+│  Or per-invocation:                                             │
+│    JARVY_TELEMETRY=1 jarvy <cmd>                                │
+╰─────────────────────────────────────────────────────────────────╯
+"#
         );
 
         // Write initial config
