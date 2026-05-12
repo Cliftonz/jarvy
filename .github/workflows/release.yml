@@ -164,7 +164,7 @@ jobs:
             cargo generate-rpm
           fi
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.platform }}${{ matrix.cross && format('-{0}', matrix.pkg_arch) || '' }}-release-artifacts
           path: ${{ matrix.artifact_paths }}
@@ -276,7 +276,7 @@ jobs:
           done
 
       - name: Upload SBOMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ env.VERSION }}
           path: |
@@ -327,7 +327,7 @@ jobs:
           done
 
       - name: Upload signed artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signed-artifacts-${{ env.VERSION }}
           path: |
