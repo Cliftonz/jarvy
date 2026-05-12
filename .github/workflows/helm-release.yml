@@ -114,10 +114,14 @@ jobs:
       - name: Template chart (sanity render)
         run: |
           set -euo pipefail
-          # Render with the default values + a synthetic
-          # values-override that exercises every conditional branch.
-          # This is the chart's smoke test — if a template breaks on
-          # a values combination, fail here, not in a user's cluster.
+          # Render the chart under two values combinations to catch
+          # template errors that lint can't see:
+          #   1. Defaults — `gateway.create: true`, externalSecrets
+          #   2. Shared-Gateway pattern — `gateway.create: false`
+          #      with explicit `parentRefs` (the multi-tenant path)
+          #      + inline secrets + HPA enabled
+          # Either failing here means a user's cluster would fail
+          # the same way on first install.
           mkdir -p /tmp/render
           helm template smoke "${CHART_DIR}" \
             --namespace jarvy-telemetry \
@@ -125,16 +129,17 @@ jobs:
             > /tmp/render/default.yaml
           helm template smoke "${CHART_DIR}" \
             --namespace jarvy-telemetry \
-            --set gatewayApi.gateway.create=true \
+            --set gatewayApi.gateway.create=false \
+            --set 'gatewayApi.httpRoute.parentRefs[0].name=shared-gw' \
+            --set 'gatewayApi.httpRoute.parentRefs[0].namespace=networking' \
+            --set 'gatewayApi.httpRoute.parentRefs[0].sectionName=https' \
             --set secrets.strategy=inline \
             --set secrets.inline.grafanaToken=fake \
             --set secrets.inline.piiSalt=fake \
             --set collector.autoscaling.enabled=true \
-            > /tmp/render/exhaustive.yaml
-          # Check for obvious template errors (Helm sometimes succeeds
-          # with malformed output that fails on `kubectl apply`).
+            > /tmp/render/shared-gw.yaml
           test -s /tmp/render/default.yaml
-          test -s /tmp/render/exhaustive.yaml
+          test -s /tmp/render/shared-gw.yaml
 
       - name: Package chart
         id: package

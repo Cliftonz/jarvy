@@ -180,13 +180,14 @@ gatewayApi:
   enabled: true
 
   # ---------------------------------------------------------------
-  # Gateway. When `gateway.create: true`, the chart creates a
-  # Gateway in the release namespace. When false, the chart only
-  # creates the HTTPRoute, which attaches to an existing Gateway
-  # named by `httpRoute.parentRefs`.
+  # Gateway. When `gateway.create: true` (default), the chart
+  # creates a Gateway in the release namespace and the HTTPRoute
+  # auto-attaches to it. Set to false in multi-tenant clusters that
+  # have a shared Gateway in another namespace — then fill
+  # `httpRoute.parentRefs` to attach to it.
   # ---------------------------------------------------------------
   gateway:
-    create: false
+    create: true
     # If creating: which GatewayClass to use. Common values:
     #   "traefik" (Traefik), "envoy" (Envoy Gateway / Contour),
     #   "cilium" (Cilium), "istio" (Istio).
