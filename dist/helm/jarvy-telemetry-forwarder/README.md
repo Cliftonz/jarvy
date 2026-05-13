@@ -190,3 +190,73 @@ manually in sync.
 See [`values.yaml`](values.yaml) for the full, commented value tree.
 Every default is overridable; the shape of that file is the chart's
 public API.
+
+## Validating values from other systems
+
+The chart ships a JSON Schema describing its values:
+
+- In-tree: [`values.schema.json`](values.schema.json)
+- Published: <https://jarvy.dev/schema/jarvy-telemetry-forwarder.values.schema.json>
+
+Helm validates against this schema automatically on every
+`helm install`, `helm upgrade`, and `helm template` — invalid
+values fail early with a clear "does not match pattern" / "is not
+one of expected values" error.
+
+External systems that need to validate inputs **before** they reach
+Helm (ArgoCD ApplicationSets, OPA Gatekeeper policies, in-house CI,
+admission webhooks, GitOps PR-time checks) can import the schema
+directly:
+
+```bash
+# CLI validation with ajv
+curl -fsSL https://jarvy.dev/schema/jarvy-telemetry-forwarder.values.schema.json \
+  -o telemetry-forwarder.schema.json
+yq -o=json . my-overrides.yaml > my-overrides.json
+ajv validate -s telemetry-forwarder.schema.json -d my-overrides.json \
+  --spec=draft7 -c ajv-formats
+```
+
+```yaml
+# ArgoCD ApplicationSet — fail the generator if a tenant supplies
+# an invalid override before the rendered Application is committed.
+spec:
+  template:
+    spec:
+      sources:
+        - chart: jarvy-telemetry-forwarder
+          repoURL: oci://ghcr.io/bearbinary/charts
+          helm:
+            valuesObject: { /* tenant overrides */ }
+            # ApplicationSet generator validates this against the
+            # published schema before commit. See your ArgoCD docs
+            # for the generator's schema-validation hook syntax.
+```
+
+```rego
+# OPA Gatekeeper — refuse Helm releases whose values do not satisfy
+# the chart's schema. Pull the schema in the policy bundle build.
+package helm.jarvy_telemetry_forwarder
+import future.keywords
+deny[msg] {
+  input.chart == "jarvy-telemetry-forwarder"
+  errs := json.verify_schema(input.values, data.schemas.jarvy_telemetry_forwarder)
+  count(errs) > 0
+  msg := sprintf("values violate schema: %v", [errs])
+}
+```
+
+Schema invariants enforced beyond plain JSON-Schema (checked at
+chart CI time, see `.github/workflows/helm-chart-ci.yml`):
+
+- `pii.passThroughAttributes` and `pii.hashedAttributes` are disjoint
+- `collector.image.digest` must be `sha256:` + 64 hex chars or empty
+- `exporter.endpoint` is `^https?://.+`
+- `collector.logLevel ∈ {debug,info,warn,error}`,
+  `collector.logFormat ∈ {json,text,console}`
+- `secrets.strategy ∈ {externalSecrets,existing,inline}`
+- All required sections present; no unknown top-level keys
+  (`additionalProperties: false` at every level)
+
+When you change `values.yaml`, update `values.schema.json` in the
+same PR. Chart CI fails on drift between them.
