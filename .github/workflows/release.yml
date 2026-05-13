@@ -480,7 +480,7 @@ jobs:
             echo "cosign verify-blob \\"
             echo "  --signature \$ARTIFACT.sig \\"
             echo "  --certificate \$ARTIFACT.pem \\"
-            echo "  --certificate-identity-regexp 'https://github.com/bearbinary/Jarvy/' \\"
+            echo "  --certificate-identity-regexp '^https://github\\.com/bearbinary/Jarvy/\\.github/workflows/release\\.yml@refs/tags/v[0-9.]+(-[A-Za-z0-9.]+)?$' \\"
             echo "  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \\"
             echo "  \$ARTIFACT"
             echo '```'

@@ -195,14 +195,20 @@ jobs:
         run: |
           if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
             --set 'collector.extraEnv[0].name=PII_SALT' \
-            --set 'collector.extraEnv[0].value=zero' 2>/tmp/out; then
-            echo "::error::render unexpectedly succeeded"
+            --set 'collector.extraEnv[0].value=zero' 2>/tmp/out 1>&2; then
+            echo "::error::render unexpectedly succeeded with reserved env name"
+            cat /tmp/out
             exit 1
           fi
-          # Schema rejection path doesn't print the value PII_SALT —
-          # it prints the path `/collector/extraEnv/0/name` plus
-          # "'not' failed". Match on either signal.
-          grep -E "'not' failed|extraEnv/0/name" /tmp/out
+          # Helm versions format schema errors differently — older
+          # builds say `'not' failed`, newer say `does not match
+          # pattern` for the same schema clause class. Match
+          # broadly on either the path or any schema-rejection phrase.
+          grep -iE "extraenv|schema|'not'|does not match" /tmp/out || {
+            echo "::error::helm exited non-zero but the output does not look like a schema rejection — verify the failure cause"
+            cat /tmp/out
+            exit 1
+          }
 
       - name: invalid image digest pattern must fail
         run: |
@@ -326,7 +332,15 @@ jobs:
           test -s /tmp/collector.yaml
           # Pinned to the same tag values.yaml uses.
           IMG="$(yq -r '.collector.image.repository' "${CHART_DIR}/values.yaml"):$(yq -r '.collector.image.tag' "${CHART_DIR}/values.yaml")"
-          docker run --rm -v /tmp:/cfg "${IMG}" validate --config=/cfg/collector.yaml
+          # Stub env vars so ${env:...} references in the rendered
+          # config resolve to non-empty strings during validate.
+          # In a real pod these are populated from Secrets; here we
+          # only care that the YAML + OTTL parses.
+          docker run --rm -v /tmp:/cfg \
+            -e BACKEND_OTLP_ENDPOINT=https://stub.example/otlp \
+            -e BACKEND_OTLP_TOKEN=stub-token \
+            -e PII_SALT=000000000000000000000000000000000000000000000000000000000000fake \
+            "${IMG}" validate --config=/cfg/collector.yaml
 
   composite-action-smoke:
     name: verify-signed-tag composite action smoke test
@@ -411,18 +425,33 @@ jobs:
           grep -E "helm registry login.*--password-stdin" .github/workflows/helm-release.yml
           grep -E "cosign login.*--password-stdin" .github/workflows/helm-release.yml
 
-      - name: cosign verify uses anchored identity
+      - name: cosign verify uses anchored identity (chart release)
         run: |
           set -euo pipefail
-          # Exclude THIS workflow's own error-message text from the
-          # regex search (self-match would always fail the check).
-          MATCHES=$(grep -E -- '--certificate-identity-regexp' .github/workflows/*.yml | grep -v 'helm-chart-ci.yml' || true)
-          if [[ -n "${MATCHES}" ]]; then
-            echo "::error::cosign --certificate-identity-regexp found; use --certificate-identity for exact match"
-            echo "${MATCHES}"
+          # Chart's helm-release.yml: must use the EXACT
+          # --certificate-identity. The chart is signed at a single
+          # workflow path per tag, so a regex is unnecessary and an
+          # unanchored regex was the v0.1.0 spoof vector.
+          if grep -F -- "--certificate-identity-regexp" .github/workflows/helm-release.yml; then
+            echo "::error::helm-release.yml uses --certificate-identity-regexp; switch to --certificate-identity for exact identity binding"
             exit 1
           fi
           grep -F -- "--certificate-identity \"https://github.com/" .github/workflows/helm-release.yml
+
+      - name: CLI release verify regex must be anchored
+        run: |
+          set -euo pipefail
+          # release.yml's CLI verify (in release-notes echo block)
+          # can legitimately use --certificate-identity-regexp because
+          # it documents the per-tag verify command. But the regex
+          # MUST be anchored (^...$) or a fork-name-prefix attacker
+          # can spoof identity. Same v0.1.0 vulnerability class.
+          # Check: every --certificate-identity-regexp in release.yml
+          # must be followed by a quoted regex beginning with ^.
+          if grep -E "^[[:space:]]*echo[[:space:]]+\"[[:space:]]*--certificate-identity-regexp[[:space:]]+'[^^]" .github/workflows/release.yml; then
+            echo "::error::release.yml has unanchored --certificate-identity-regexp. Add ^ prefix to the regex."
+            exit 1
+          fi
 
       - name: publish-packages tag-name gate is present
         run: grep -F "startsWith(github.event.release.tag_name, 'v')" .github/workflows/publish-packages.yml
