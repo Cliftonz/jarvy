@@ -39,9 +39,13 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
-          # actions/checkout does not fetch tag *objects* by default;
-          # composite action below re-fetches the annotated tag.
-          fetch-tags: true
+          # `fetch-tags: true` conflicts with `fetch-depth: 1` on
+          # tag-trigger runs — actions/checkout tries to fetch both
+          # the commit SHA and the tag ref into the SAME refs/tags/...
+          # destination, failing with "Cannot fetch both ... and
+          # refs/tags/... to refs/tags/...". The composite action
+          # `verify-signed-tag` explicitly re-fetches the annotated
+          # tag, so `fetch-tags` is redundant here anyway.
 
       - name: Verify signed tag and check no duplicate release
         if: startsWith(github.ref, 'refs/tags/helm-v')

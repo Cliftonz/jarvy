@@ -41,7 +41,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
-          fetch-tags: true
+          # `fetch-tags: true` would conflict with the tag-trigger
+          # ref-spec on `fetch-depth: 1` runs. Composite action
+          # below does the annotated-tag refetch explicitly.
 
       # Shared composite action handles annotated-tag refetch, signed-tag
       # verification, allowed-signers config, and the "release already
