@@ -193,37 +193,51 @@ jobs:
 
       - name: extraEnv reserved name PII_SALT must fail
         run: |
+          # Use a values file (Helm v3.x doesn't enforce schema on
+          # `--set`; v4 does. Values files are always validated.)
+          cat > /tmp/bad-env.yaml <<'EOF'
+          collector:
+            extraEnv:
+              - name: PII_SALT
+                value: zero
+          EOF
           if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
-            --set 'collector.extraEnv[0].name=PII_SALT' \
-            --set 'collector.extraEnv[0].value=zero' 2>/tmp/out 1>&2; then
+            --values /tmp/bad-env.yaml 2>/tmp/out; then
             echo "::error::render unexpectedly succeeded with reserved env name"
             cat /tmp/out
             exit 1
           fi
-          # Helm versions format schema errors differently — older
-          # builds say `'not' failed`, newer say `does not match
-          # pattern` for the same schema clause class. Match
-          # broadly on either the path or any schema-rejection phrase.
-          grep -iE "extraenv|schema|'not'|does not match" /tmp/out || {
-            echo "::error::helm exited non-zero but the output does not look like a schema rejection — verify the failure cause"
-            cat /tmp/out
-            exit 1
-          }
+          grep -iE "extraenv|schema|'not'|does not match" /tmp/out
 
       - name: invalid image digest pattern must fail
         run: |
+          # Helm v3.x does not enforce JSON Schema patterns on `--set`
+          # overrides (it does on `--values` file inputs). Use a values
+          # file to exercise the schema's pattern validation. Helm v4
+          # fixes this but CI is pinned to v3.18 for stability.
+          cat > /tmp/bad-digest.yaml <<'EOF'
+          collector:
+            image:
+              digest: not-a-valid-digest
+          EOF
           if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
-            --set 'collector.image.digest=not-a-valid-digest' 2>/tmp/out; then
+            --values /tmp/bad-digest.yaml 2>/tmp/out; then
             echo "::error::render unexpectedly succeeded"
+            cat /tmp/out
             exit 1
           fi
           grep -F "does not match pattern" /tmp/out
 
       - name: invalid exporter.endpoint (userinfo) must fail
         run: |
+          cat > /tmp/bad-endpoint.yaml <<'EOF'
+          exporter:
+            endpoint: https://attacker@target.example/otlp
+          EOF
           if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
-            --set 'exporter.endpoint=https://attacker@target.example/otlp' 2>/tmp/out; then
+            --values /tmp/bad-endpoint.yaml 2>/tmp/out; then
             echo "::error::render unexpectedly succeeded"
+            cat /tmp/out
             exit 1
           fi
           grep -F "does not match pattern" /tmp/out
