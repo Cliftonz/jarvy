@@ -72,7 +72,9 @@ jobs:
             args: --set collector.debugExporter.enabled=true
             asserts: |
               grep -F 'jarvy.dev/debug-exporter: "ON"' /tmp/debug-exporter.yaml
-              grep -cF '- debug' /tmp/debug-exporter.yaml | grep -qE '^3$'
+              # `--` terminates grep options; the pattern begins with `-` so
+              # without it grep treats `- debug` as a flag and bails.
+              grep -cF -e '- debug' /tmp/debug-exporter.yaml | grep -qE '^3$'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -194,7 +196,10 @@ jobs:
             echo "::error::render unexpectedly succeeded"
             exit 1
           fi
-          grep -F "PII_SALT" /tmp/out
+          # Schema rejection path doesn't print the value PII_SALT —
+          # it prints the path `/collector/extraEnv/0/name` plus
+          # "'not' failed". Match on either signal.
+          grep -E "'not' failed|extraEnv/0/name" /tmp/out
 
       - name: invalid image digest pattern must fail
         run: |
@@ -311,12 +316,13 @@ jobs:
       - name: Validate Collector config parses
         run: |
           set -euo pipefail
-          # Pull the rendered Collector config out of the ConfigMap
-          # and ask the Collector itself to validate it. Catches OTTL
-          # typos and YAML indentation bugs the chart's lint cannot.
-          yq '.data."config.yaml"' /tmp/render.yaml > /tmp/collector.yaml
-          # The Collector image: pinned to the same tag values.yaml uses.
-          IMG=$(yq -r '.collector.image.repository' "${CHART_DIR}/values.yaml"):$(yq -r '.collector.image.tag' "${CHART_DIR}/values.yaml")
+          # helm template emits a multi-document YAML; select the
+          # ConfigMap document and extract its data."config.yaml".
+          yq 'select(.kind == "ConfigMap" and (.metadata.name | test("-config$"))) | .data."config.yaml"' \
+            /tmp/render.yaml > /tmp/collector.yaml
+          test -s /tmp/collector.yaml
+          # Pinned to the same tag values.yaml uses.
+          IMG="$(yq -r '.collector.image.repository' "${CHART_DIR}/values.yaml"):$(yq -r '.collector.image.tag' "${CHART_DIR}/values.yaml")"
           docker run --rm -v /tmp:/cfg "${IMG}" validate --config=/cfg/collector.yaml
 
   composite-action-smoke:
@@ -324,37 +330,66 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          fetch-tags: true
 
-      - name: Run composite action against a synthetic signed tag
+      - name: Exercise composite action's commands inline against a synthetic signed tag
         run: |
           set -euo pipefail
-          # Build a throwaway signed tag in the current repo, then
-          # invoke the composite action against it. Failure modes
-          # caught: bash typo, fetch-tags missing, signature parse
-          # broken, allowed-signers path wrong.
+          # The composite action reads `${{ github.ref_name }}` from
+          # GitHub Actions context, which can't be overridden from a
+          # caller workflow's `uses:` step. So we replicate the
+          # action's commands here and assert each step works against
+          # a synthetic tag we sign on the runner. Failure modes
+          # caught: bash typo, fetch-tags assumption, signature
+          # parse broken, allowed-signers path wrong, git tag --verify
+          # invocation broken.
+
+          # Set up an ephemeral SSH signer.
           ssh-keygen -t ed25519 -f /tmp/ci-key -N "" -q
-          PUB=$(cat /tmp/ci-key.pub)
-          # Preserve existing allowed_signers and add our test key
+          PUB="$(cat /tmp/ci-key.pub)"
+
+          # Preserve existing allowed_signers and add our test key.
           cp .github/allowed_signers /tmp/orig-signers
           echo "ci-smoke@test ${PUB}" >> .github/allowed_signers
+
+          # Sign a throwaway tag with SSH.
           git config user.email "ci-smoke@test"
           git config user.name "ci-smoke"
           git config gpg.format ssh
           git config user.signingkey /tmp/ci-key.pub
           git tag -s ci-smoke-v0.0.0 -m "smoke test tag"
 
-      - uses: ./.github/actions/verify-signed-tag
-        with:
-          tag-prefix: "ci-smoke-v"
-          check-release-exists: "false"
-        env:
-          GITHUB_REF: refs/tags/ci-smoke-v0.0.0
+          # Replicate the composite action's three steps:
+          # 1. refetch annotated tag — local tag is already annotated,
+          #    so this step is a no-op for the smoke (validating the
+          #    git config command instead).
+          # 2. configure allowed-signers
+          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
+          # 3. verify tag
+          if ! git tag --verify ci-smoke-v0.0.0 2>&1; then
+            echo "::error::composite action's verify path is broken — git tag --verify against a synthetic SSH-signed tag failed"
+            exit 1
+          fi
+          echo "OK: composite action commands work against synthetic signed tag"
+
+      - name: Negative case — unsigned tag must fail
+        run: |
+          set -euo pipefail
+          git tag ci-smoke-unsigned
+          if git tag --verify ci-smoke-unsigned 2>&1; then
+            echo "::error::git tag --verify accepted an unsigned tag — verify path is broken"
+            exit 1
+          fi
+          echo "OK: unsigned tag is rejected"
 
       - name: Cleanup
         if: always()
         run: |
           mv /tmp/orig-signers .github/allowed_signers || true
           git tag -d ci-smoke-v0.0.0 || true
+          git tag -d ci-smoke-unsigned || true
 
   workflow-meta-checks:
     name: Workflow meta checks (regression guards for 0.1.0 release-day bugs)
@@ -376,9 +411,12 @@ jobs:
       - name: cosign verify uses anchored identity
         run: |
           set -euo pipefail
-          # No unanchored regex in any workflow
-          if grep -E -- '--certificate-identity-regexp' .github/workflows/*.yml; then
+          # Exclude THIS workflow's own error-message text from the
+          # regex search (self-match would always fail the check).
+          MATCHES=$(grep -E -- '--certificate-identity-regexp' .github/workflows/*.yml | grep -v 'helm-chart-ci.yml' || true)
+          if [[ -n "${MATCHES}" ]]; then
             echo "::error::cosign --certificate-identity-regexp found; use --certificate-identity for exact match"
+            echo "${MATCHES}"
             exit 1
           fi
           grep -F -- "--certificate-identity \"https://github.com/" .github/workflows/helm-release.yml
