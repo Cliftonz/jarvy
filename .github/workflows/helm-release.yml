@@ -85,24 +85,7 @@ jobs:
         with:
           cosign-release: v2.4.0
 
-      - name: Install kubeconform
-        run: |
-          set -euo pipefail
-          KUBECONFORM_VERSION=v0.6.7
-          # Source-of-truth checksums:
-          # https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS
-          curl -sSfL -o /tmp/kubeconform.tar.gz \
-            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
-          curl -sSfL -o /tmp/kubeconform-CHECKSUMS \
-            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS"
-          EXPECTED=$(grep 'kubeconform-linux-amd64.tar.gz' /tmp/kubeconform-CHECKSUMS | awk '{print $1}')
-          ACTUAL=$(sha256sum /tmp/kubeconform.tar.gz | awk '{print $1}')
-          if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
-            echo "::error::kubeconform tarball SHA mismatch — expected ${EXPECTED}, got ${ACTUAL}"
-            exit 1
-          fi
-          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
-          sudo install /tmp/kubeconform /usr/local/bin/
+      - uses: ./.github/actions/install-kubeconform
 
       - name: Lint chart
         run: helm lint "${CHART_DIR}" --strict
@@ -157,27 +140,10 @@ jobs:
               "${f}"
           done
 
-      - name: Anonymization invariant check
-        run: |
-          set -euo pipefail
-          # Assert the rendered ConfigMap contains the anonymize pipeline
-          # in the expected ordering: anonymize → keep_allowlist → batch.
-          # A render that ships without these is a privacy regression.
-          if ! grep -F "transform/anonymize" /tmp/render/default.yaml >/dev/null; then
-            echo "::error::default render missing transform/anonymize processor"
-            exit 1
-          fi
-          if ! grep -F "filter/keep_allowlist" /tmp/render/default.yaml >/dev/null; then
-            echo "::error::default render missing filter/keep_allowlist processor — denylist gap reintroduced"
-            exit 1
-          fi
-          # The SHA256(Concat([value, salt], "")) ordering is the safe
-          # length-extension orientation. Reverse-ordered Concat would
-          # be silently exploitable; fail loud if anyone copy-pastes.
-          if grep -E 'SHA256\(Concat\(\["\$\{env:PII_SALT\}"' /tmp/render/default.yaml >/dev/null; then
-            echo "::error::transform/anonymize statement has salt-then-value Concat ordering. Use value-then-salt to preserve length-extension safety."
-            exit 1
-          fi
+      # Anonymize-pipeline invariants live in helm-chart-ci.yml's
+      # `anonymize-invariants` job, which runs on every PR. Re-running
+      # them here would be belt-and-suspenders on a byte-deterministic
+      # render. Skip — see chart-ci for the regression surface.
 
       - name: Upload rendered manifests as workflow artifact
         if: always()
@@ -205,12 +171,11 @@ jobs:
         run: |
           set -euo pipefail
           # helm and cosign use independent credential stores.
-          # Log into both — helm to push the chart, cosign to push
-          # the signature and SBOM attestation to the same namespace.
+          REGISTRY_HOST="${OCI_REGISTRY%%/*}"
           echo "${{ secrets.GITHUB_TOKEN }}" | \
-            helm registry login ${OCI_REGISTRY%%/*} -u "${{ github.actor }}" --password-stdin
+            helm registry login "${REGISTRY_HOST}" -u "${{ github.actor }}" --password-stdin
           echo "${{ secrets.GITHUB_TOKEN }}" | \
-            cosign login ${OCI_REGISTRY%%/*} -u "${{ github.actor }}" --password-stdin
+            cosign login "${REGISTRY_HOST}" -u "${{ github.actor }}" --password-stdin
 
       - name: Push chart to OCI registry
         id: push
@@ -237,23 +202,18 @@ jobs:
           REKOR_UUID=$(grep -oE 'tlog entry created with index: [0-9]+' /tmp/cosign.out | awk '{print $NF}' | head -1)
           echo "rekor_uuid=${REKOR_UUID}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate SBOM (single invocation, two output formats)
-        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.8
-        with:
-          file: ${{ steps.package.outputs.package }}
-          format: spdx-json
-          output-file: /tmp/sbom.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.8
 
-      - name: Generate SBOM (cyclonedx)
-        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.8
-        with:
-          file: ${{ steps.package.outputs.package }}
-          format: cyclonedx-json
-          output-file: /tmp/sbom.cdx.json
-          upload-artifact: false
-          upload-release-assets: false
+      - name: Generate SBOM (single syft invocation, two output formats)
+        run: |
+          set -euo pipefail
+          # anchore/sbom-action does not accept multiple output formats
+          # in one invocation; call syft directly to do the catalog
+          # scan ONCE and emit both formats. Cuts ~10s per release.
+          syft scan "${{ steps.package.outputs.package }}" \
+            -o "spdx-json=/tmp/sbom.spdx.json" \
+            -o "cyclonedx-json=/tmp/sbom.cdx.json"
 
       - name: Attest SBOM via cosign
         id: attest

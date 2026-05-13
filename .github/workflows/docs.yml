@@ -55,6 +55,18 @@ jobs:
       - name: Install MkDocs Material
         run: pip install "mkdocs-material[imaging]" cairosvg Pillow
 
+      - name: Sync Helm chart values.schema.json into docs site
+        run: |
+          set -euo pipefail
+          # Source of truth is the chart's values.schema.json. The
+          # published copy at jarvy.dev/schema/... must be byte-identical
+          # so external systems pinning to the URL get the same schema
+          # Helm enforces. Done at build time so we don't maintain two
+          # copies in git.
+          mkdir -p docs/schema
+          cp dist/helm/jarvy-telemetry-forwarder/values.schema.json \
+             docs/schema/jarvy-telemetry-forwarder.values.schema.json
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 

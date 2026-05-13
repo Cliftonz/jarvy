@@ -62,12 +62,16 @@ helm install jarvy-telemetry \
 | `ServiceMonitor` (optional) | Prometheus Operator scrape of the Collector's self-metrics |
 | `PodDisruptionBudget` | minAvailable: 1 during voluntary disruptions |
 
-## Customizing for different GatewayClasses
+## Customizing the ingress
 
-Every `Gateway` and `HTTPRoute` annotation / label / filter is
-exposed in `values.yaml`. Common patterns:
+The chart's **supported and tested** ingress configuration is Traefik
+(via the Traefik Middleware bridge). Every `Gateway` and `HTTPRoute`
+field is also exposed in `values.yaml` for operators on other
+GatewayClasses, but the chart's CI only renders + validates against
+Traefik — non-Traefik users are responsible for verifying their own
+filter equivalents work end-to-end.
 
-### Traefik (default)
+### Traefik (default, supported)
 
 ```yaml
 gatewayApi:
@@ -77,53 +81,10 @@ gatewayApi:
     enabled: true   # body cap + rate limit via Middleware CRDs
 ```
 
-### Envoy Gateway
-
-```yaml
-gatewayApi:
-  gateway:
-    gatewayClassName: envoy
-    annotations:
-      gateway.envoyproxy.io/inline-policy: "..."
-  traefikMiddlewares:
-    enabled: false
-  httpRoute:
-    extraFilters:
-      - type: ExtensionRef
-        extensionRef:
-          group: gateway.envoyproxy.io
-          kind: BackendTrafficPolicy
-          name: my-rate-limit
-      - type: ExtensionRef
-        extensionRef:
-          group: gateway.envoyproxy.io
-          kind: ClientTrafficPolicy
-          name: my-body-limit
-```
-
-### Cilium
-
-```yaml
-gatewayApi:
-  gateway:
-    gatewayClassName: cilium
-    annotations:
-      io.cilium/lb-mode: snat
-  traefikMiddlewares:
-    enabled: false
-  httpRoute:
-    extraFilters:
-      - type: ExtensionRef
-        extensionRef:
-          group: cilium.io
-          kind: CiliumEnvoyConfig
-          name: my-policy
-```
-
 ### Existing shared Gateway
 
 If your cluster already runs a shared Gateway (typical multi-tenant
-pattern), don't create another one — just attach the HTTPRoute:
+pattern), attach the HTTPRoute instead of creating your own Gateway:
 
 ```yaml
 gatewayApi:
@@ -134,7 +95,18 @@ gatewayApi:
       - name: shared-public-gateway
         namespace: networking
         sectionName: https
+    # Cross-namespace attach requires a ReferenceGrant on the target.
+    # Setting allowCrossNamespaceParent: true acknowledges that.
+    allowCrossNamespaceParent: true
 ```
+
+### Other GatewayClasses (Envoy / Cilium / Istio / Contour)
+
+Disable `traefikMiddlewares` and supply equivalent rate-limit + body-
+cap filters via `gatewayApi.httpRoute.extraFilters`. The exact
+ExtensionRef shape varies per implementation — consult your
+controller's docs for the right `group`/`kind`. **Not exercised by
+chart CI**; treat as community-contributed integration.
 
 ## PII policy
 

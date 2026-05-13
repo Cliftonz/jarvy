@@ -9,8 +9,16 @@
   "properties": {
     "nameOverride": { "type": "string" },
     "fullnameOverride": { "type": "string" },
-    "commonLabels": { "type": "object", "additionalProperties": { "type": "string" } },
-    "commonAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
+    "commonLabels": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9._/-]{0,251}[a-zA-Z0-9])?$" },
+      "additionalProperties": { "type": "string", "maxLength": 63 }
+    },
+    "commonAnnotations": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9._/-]{0,251}[a-zA-Z0-9])?$" },
+      "additionalProperties": { "type": "string" }
+    },
 
     "collector": {
       "type": "object",
@@ -143,7 +151,24 @@
             "samplingThereafter": { "type": "integer" }
           }
         },
-        "extraEnv": { "type": "array", "items": { "type": "object" } }
+        "extraEnv": {
+          "type": "array",
+          "description": "Additional env vars for the Collector pod. Reserved chart-managed names (PII_SALT, BACKEND_OTLP_TOKEN, BACKEND_OTLP_ENDPOINT) cannot be supplied via extraEnv — they would override the chart-managed values and defeat anonymization.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "not": { "enum": ["PII_SALT", "BACKEND_OTLP_TOKEN", "BACKEND_OTLP_ENDPOINT"] }
+              },
+              "value": { "type": "string" },
+              "valueFrom": { "type": "object" }
+            }
+          }
+        }
       }
     },
 
@@ -155,7 +180,8 @@
         "endpoint": {
           "type": "string",
           "format": "uri",
-          "pattern": "^https?://.+"
+          "description": "OTLP backend endpoint. Pattern intentionally rejects userinfo (`user@host`) which would slip through the CiliumNetworkPolicy FQDN parser; rejects whitespace; allows https only (http loopback supported by client lib but not here, since this is an internet-facing forwarder).",
+          "pattern": "^https://[a-z0-9.-]+(?::[0-9]+)?(?:/[^\\s]*)?$"
         },
         "authScheme": { "type": "string", "enum": ["Basic", "Bearer"] }
       }
@@ -286,7 +312,24 @@
               },
               "minItems": 1
             },
-            "parentRefs": { "type": "array", "items": { "type": "object" } },
+            "parentRefs": {
+              "type": "array",
+              "description": "Gateway API parentRefs. Schema constrains structure so cross-namespace references and arbitrary kinds can't be passed through. Cross-namespace attach to a Gateway you don't own requires a ReferenceGrant on the target side regardless.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "group": { "type": "string", "enum": ["gateway.networking.k8s.io"] },
+                  "kind": { "type": "string", "enum": ["Gateway"] },
+                  "namespace": { "type": "string" },
+                  "sectionName": { "type": "string" },
+                  "port": { "type": "integer" }
+                }
+              }
+            },
+            "allowCrossNamespaceParent": { "type": "boolean" },
             "extraFilters": { "type": "array", "items": { "type": "object" } },
             "rules": { "type": "array", "items": { "type": "object" }, "minItems": 1 }
           }
@@ -354,7 +397,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" }
+            "enabled": { "type": "boolean" },
+            "fqdn": { "type": "string" }
           }
         }
       }
@@ -368,6 +412,7 @@
         "enabled": { "type": "boolean" },
         "labels": { "type": "object", "additionalProperties": { "type": "string" } },
         "interval": { "type": "string" },
+        "honorLabels": { "type": "boolean" },
         "metricRelabelings": { "type": "array", "items": { "type": "object" } }
       }
     },
@@ -379,19 +424,34 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "runbookBaseUrl": { "type": "string", "format": "uri" },
+        "alertLabels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "extraRules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["alert", "expr"],
+            "properties": {
+              "alert": { "type": "string", "minLength": 1 },
+              "expr": { "type": "string", "minLength": 1 },
+              "for": { "type": "string" },
+              "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+              "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        },
         "alerts": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "refusedRecords": {
               "type": "object",
-              "properties": {
-                "enabled": { "type": "boolean" },
-                "for": { "type": "string" }
-              }
+              "additionalProperties": false,
+              "properties": { "enabled": { "type": "boolean" }, "for": { "type": "string" } }
             },
             "exporterFailing": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean" },
                 "threshold": { "type": "number" },
@@ -400,6 +460,7 @@
             },
             "memoryPressure": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean" },
                 "thresholdBytes": { "type": "integer", "minimum": 1 },
@@ -408,6 +469,7 @@
             },
             "saltStale": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean" },
                 "thresholdDays": { "type": "integer", "minimum": 1 }
@@ -415,9 +477,38 @@
             },
             "tailSamplingLow": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean" },
                 "thresholdPercent": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            },
+            "allowlistDroppingKeys": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "enabled": { "type": "boolean" }, "for": { "type": "string" } }
+            },
+            "reloaderMissing": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "enabled": { "type": "boolean" }, "for": { "type": "string" } }
+            },
+            "debugExporterEnabled": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "enabled": { "type": "boolean" }, "for": { "type": "string" } }
+            },
+            "certNotReady": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "enabled": { "type": "boolean" }, "for": { "type": "string" } }
+            },
+            "certExpiringSoon": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "daysBeforeExpiry": { "type": "integer", "minimum": 1 }
               }
             }
           }

@@ -31,6 +31,12 @@ spec:
       annotations:
         # Roll pods when the ConfigMap content changes.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.collector.debugExporter.enabled }}
+        # Surface debug-exporter state so the
+        # JarvyForwarderDebugExporterEnabled PrometheusRule alert
+        # can fire via kube_pod_annotations{annotation_jarvy_dev_debug_exporter="ON"}.
+        jarvy.dev/debug-exporter: "ON"
+        {{- end }}
         # Roll pods when the Secret references change. This is
         # belt-and-suspenders alongside the `reloader.stakater.com/auto`
         # annotation in values.yaml — works even when Reloader isn't
@@ -56,6 +62,14 @@ spec:
             - { name: health, containerPort: 13133 }
             - { name: self-metrics, containerPort: 8888 }
           env:
+            # User-supplied extraEnv FIRST. K8s resolves duplicate
+            # env[].name entries by keeping the LAST one — so the
+            # chart-managed entries below ALWAYS win, defeating the
+            # PII_SALT-override attack vector even if the schema's
+            # reserved-name guard is somehow bypassed.
+            {{- with .Values.collector.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
             - name: BACKEND_OTLP_ENDPOINT
               value: {{ .Values.exporter.endpoint | quote }}
             - name: BACKEND_OTLP_TOKEN
@@ -68,9 +82,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.piiSaltSecretName }}
                   key: {{ .Values.secrets.piiSaltSecretKey }}
-            {{- with .Values.collector.extraEnv }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
           resources:
             {{- toYaml .Values.collector.resources | nindent 12 }}
           livenessProbe:

@@ -10,7 +10,7 @@ description: |
   annotations / labels / filters are fully customizable so downstream
   systems can adapt to their cluster's ingress conventions.
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "0.1.0"
 home: https://jarvy.dev
 sources:

@@ -1,8 +1,11 @@
-{{- if and .Values.prometheusRule.enabled .Values.serviceMonitor.enabled }}
+{{- if and .Values.prometheusRule.enabled .Values.serviceMonitor.enabled -}}
+{{- $fullname := include "jarvy-telemetry-forwarder.fullname" . -}}
+{{- $selector := printf "app_kubernetes_io_name=\"%s\",app_kubernetes_io_instance=\"%s\"" (include "jarvy-telemetry-forwarder.name" .) .Release.Name -}}
+{{- $runbook := .Values.prometheusRule.runbookBaseUrl -}}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ include "jarvy-telemetry-forwarder.fullname" . }}
+  name: {{ $fullname }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
@@ -17,68 +20,180 @@ spec:
   groups:
     - name: jarvy-telemetry-forwarder
       rules:
+        {{- /*
+          All alerts use selector labels (app_kubernetes_io_name +
+          _instance) rather than namespace=. This makes the rule
+          resilient to release-name changes and to operators using
+          serviceMonitor.namespaceSelector to scrape from a different
+          namespace than the chart installed into.
+        */ -}}
         {{- if .Values.prometheusRule.alerts.refusedRecords.enabled }}
         - alert: JarvyForwarderRefusedRecords
-          expr: rate(otelcol_receiver_refused_log_records{namespace="{{ .Release.Namespace }}"}[5m]) > 0
+          expr: |
+            sum by (instance) (
+              rate(otelcol_receiver_refused_log_records{ {{ $selector }} }[5m])
+              + rate(otelcol_receiver_refused_metric_points{ {{ $selector }} }[5m])
+              + rate(otelcol_receiver_refused_spans{ {{ $selector }} }[5m])
+            ) > 0
           for: {{ .Values.prometheusRule.alerts.refusedRecords.for }}
           labels:
             severity: warning
-            service: jarvy-telemetry-forwarder
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           annotations:
-            summary: "Forwarder is refusing telemetry records"
-            description: "The OTLP receiver in pod {{`{{ $labels.pod }}`}} has been refusing log records for over {{ .Values.prometheusRule.alerts.refusedRecords.for }}. Memory limiter or rate limit is engaged. Investigate `kubectl logs` for backpressure cause."
+            summary: "Forwarder is refusing telemetry records (logs/metrics/spans)"
+            description: "OTLP receiver in pod {{ "{{ $labels.instance }}" }} is refusing records (memory_limiter engaged or rate-limit hit). Investigate with `kubectl logs` and check exporter queue depth."
+            runbook_url: "{{ $runbook }}#alert-refused-records"
         {{- end }}
         {{- if .Values.prometheusRule.alerts.exporterFailing.enabled }}
         - alert: JarvyForwarderExporterFailing
-          expr: rate(otelcol_exporter_send_failed_log_records{namespace="{{ .Release.Namespace }}"}[5m]) > {{ .Values.prometheusRule.alerts.exporterFailing.threshold }}
+          expr: |
+            sum by (instance, exporter) (
+              rate(otelcol_exporter_send_failed_log_records{ {{ $selector }} }[5m])
+              + rate(otelcol_exporter_send_failed_metric_points{ {{ $selector }} }[5m])
+              + rate(otelcol_exporter_send_failed_spans{ {{ $selector }} }[5m])
+            ) > {{ .Values.prometheusRule.alerts.exporterFailing.threshold }}
           for: {{ .Values.prometheusRule.alerts.exporterFailing.for }}
           labels:
             severity: critical
-            service: jarvy-telemetry-forwarder
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           annotations:
             summary: "Forwarder cannot ship telemetry to backend"
-            description: "Exporter to {{ "{{ $labels.exporter }}" }} is failing > {{ .Values.prometheusRule.alerts.exporterFailing.threshold }} records/sec. Check backend OTLP endpoint health and the Grafana write token validity."
+            description: "Exporter {{ "{{ $labels.exporter }}" }} on pod {{ "{{ $labels.instance }}" }} is failing > {{ .Values.prometheusRule.alerts.exporterFailing.threshold }} records/sec. Check backend endpoint health and the Grafana write token validity."
+            runbook_url: "{{ $runbook }}#alert-exporter-failing"
         {{- end }}
         {{- if .Values.prometheusRule.alerts.memoryPressure.enabled }}
         - alert: JarvyForwarderMemoryPressure
-          expr: process_resident_memory_bytes{namespace="{{ .Release.Namespace }}"} > {{ .Values.prometheusRule.alerts.memoryPressure.thresholdBytes }}
+          expr: process_resident_memory_bytes{ {{ $selector }} } > {{ .Values.prometheusRule.alerts.memoryPressure.thresholdBytes }}
           for: {{ .Values.prometheusRule.alerts.memoryPressure.for }}
           labels:
             severity: warning
-            service: jarvy-telemetry-forwarder
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           annotations:
             summary: "Forwarder memory headroom thin — OOMKill risk"
-            description: "Pod {{ "{{ $labels.pod }}" }} RSS has exceeded the memory pressure threshold ({{ .Values.prometheusRule.alerts.memoryPressure.thresholdBytes }} bytes). The memory_limiter processor will engage backpressure soon; verify tail_sampling buffer and batch queue sizing in the chart values."
+            description: "Pod {{ "{{ $labels.instance }}" }} RSS > {{ .Values.prometheusRule.alerts.memoryPressure.thresholdBytes }} bytes. memory_limiter will engage backpressure soon; verify tail_sampling buffer + batch queue sizing in chart values."
+            runbook_url: "{{ $runbook }}#alert-memory-pressure"
         {{- end }}
-        {{- /* Salt staleness depends on the per-pod metric exposed by
-              an init container or sidecar. If not present, this alert
-              will never fire (no error), so it's safe to enable by
-              default. */ -}}
         {{- if .Values.prometheusRule.alerts.saltStale.enabled }}
         - alert: JarvyForwarderSaltStale
-          expr: (time() - jarvy_forwarder_salt_loaded_timestamp_seconds{namespace="{{ .Release.Namespace }}"}) > ({{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} * 86400)
+          expr: |
+            (time() - kube_secret_info{namespace="{{ .Release.Namespace }}",secret="{{ .Values.secrets.piiSaltSecretName }}"}
+              * on(namespace, secret) group_left()
+              kube_secret_created{namespace="{{ .Release.Namespace }}",secret="{{ .Values.secrets.piiSaltSecretName }}"}
+            ) > ({{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} * 86400)
           for: 1h
           labels:
             severity: warning
-            service: jarvy-telemetry-forwarder
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           annotations:
-            summary: "PII salt has not been rotated in over {{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} days"
-            description: "The anonymization salt for pod {{ "{{ $labels.pod }}" }} loaded > {{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} days ago. Quarterly rotation requires a new salt in the secret backend AND a Collector pod restart (Reloader picks up the new Secret automatically when the `reloader.stakater.com/auto` annotation is set)."
+            summary: "PII salt has not been rotated in > {{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} days"
+            description: "Salt Secret {{ .Values.secrets.piiSaltSecretName }} in {{ .Release.Namespace }} hasn't been recreated for over {{ .Values.prometheusRule.alerts.saltStale.thresholdDays }} days. Rotate in your secret backend; ExternalSecret will refresh the K8s Secret; Reloader rolls the pods (verify Reloader running: see JarvyForwarderReloaderMissing alert)."
+            runbook_url: "{{ $runbook }}#alert-salt-stale"
         {{- end }}
         {{- if .Values.prometheusRule.alerts.tailSamplingLow.enabled }}
         - alert: JarvyForwarderTailSamplingRateLow
           expr: |
             (
-              rate(otelcol_processor_tail_sampling_count_traces_sampled{namespace="{{ .Release.Namespace }}",policy="probabilistic"}[10m])
+              rate(otelcol_processor_tail_sampling_count_traces_sampled{ {{ $selector }},policy="probabilistic",sampled="true"}[10m])
               /
-              clamp_min(rate(otelcol_processor_tail_sampling_count_traces_sampled{namespace="{{ .Release.Namespace }}"}[10m]), 1)
+              clamp_min(rate(otelcol_processor_tail_sampling_count_traces_sampled{ {{ $selector }},policy="probabilistic"}[10m]), 0.001)
             ) < {{ .Values.prometheusRule.alerts.tailSamplingLow.thresholdPercent }}
+            and on() rate(otelcol_processor_tail_sampling_count_traces_sampled{ {{ $selector }},policy="probabilistic"}[10m]) > 0.1
           for: 30m
           labels:
             severity: info
-            service: jarvy-telemetry-forwarder
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           annotations:
             summary: "Tail-sampling effective rate below configured threshold"
-            description: "Probabilistic tail-sampling is producing < {{ .Values.prometheusRule.alerts.tailSamplingLow.thresholdPercent }} effective sample rate over 30m. Either the configured probabilisticSamplingPercentage is too low for current traffic shape, or the policy buffer is overflowing. Check `collector.pipeline.tailSampling` values."
+            description: "Probabilistic sampling under {{ .Values.prometheusRule.alerts.tailSamplingLow.thresholdPercent }} effective rate for 30m. Either configured probabilisticSamplingPercentage is too low for current traffic, or the policy LRU is overflowing — check `collector.pipeline.tailSampling` in values."
+            runbook_url: "{{ $runbook }}#alert-tail-sampling-low"
+        {{- end }}
+        {{- if .Values.prometheusRule.alerts.allowlistDroppingKeys.enabled }}
+        - alert: JarvyForwarderAllowlistDroppingKeys
+          expr: |
+            sum by (instance, processor) (
+              rate(otelcol_processor_transform_logs_modified{ {{ $selector }},processor=~"transform/keep_allowlist_attrs"}[10m])
+              + rate(otelcol_processor_transform_metrics_modified{ {{ $selector }},processor=~"transform/keep_allowlist_attrs"}[10m])
+              + rate(otelcol_processor_transform_spans_modified{ {{ $selector }},processor=~"transform/keep_allowlist_attrs"}[10m])
+            ) > 0
+          for: {{ .Values.prometheusRule.alerts.allowlistDroppingKeys.for }}
+          labels:
+            severity: warning
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "Forwarder is dropping unknown attribute keys"
+            description: "Either an attacker is sending OTLP records with attribute keys outside the allowlist, OR a recent Jarvy CLI release introduced a new resource attribute that needs to be added to pii.passThroughAttributes (if public-safe) or pii.hashedAttributes (if identifying)."
+            runbook_url: "{{ $runbook }}#alert-allowlist-dropping-keys"
+        {{- end }}
+        {{- if .Values.prometheusRule.alerts.reloaderMissing.enabled }}
+        - alert: JarvyForwarderReloaderMissing
+          expr: absent(reloader_reloader_reload_executed_total)
+          for: {{ .Values.prometheusRule.alerts.reloaderMissing.for }}
+          labels:
+            severity: warning
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "stakater/reloader is not running — PII salt rotation will silently no-op"
+            description: "The chart's salt rotation contract depends on Reloader detecting Secret changes and rolling pods. With Reloader absent, ExternalSecret will refresh the K8s Secret but the Collector keeps reading the old PII_SALT env var until next deploy. Either install Reloader or run `kubectl rollout restart` after every salt rotation."
+            runbook_url: "{{ $runbook }}#alert-reloader-missing"
+        {{- end }}
+        {{- if .Values.prometheusRule.alerts.debugExporterEnabled.enabled }}
+        - alert: JarvyForwarderDebugExporterEnabled
+          expr: |
+            sum by (pod) (kube_pod_annotations{namespace="{{ .Release.Namespace }}",annotation_jarvy_dev_debug_exporter="ON"}) > 0
+          for: {{ .Values.prometheusRule.alerts.debugExporterEnabled.for }}
+          labels:
+            severity: warning
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "Debug exporter is ON in production for > {{ .Values.prometheusRule.alerts.debugExporterEnabled.for }}"
+            description: "Pod {{ "{{ $labels.pod }}" }} has collector.debugExporter.enabled=true. Post-anonymize record summaries are being written to stdout (kubectl logs), readable by anyone with pods/log RBAC. Disable in production: `--set collector.debugExporter.enabled=false`."
+            runbook_url: "{{ $runbook }}#alert-debug-exporter-enabled"
+        {{- end }}
+        {{- if and .Values.prometheusRule.alerts.certNotReady.enabled .Values.tls.certManager.enabled }}
+        - alert: JarvyForwarderCertNotReady
+          expr: certmanager_certificate_ready_status{namespace="{{ .Release.Namespace }}",name="{{ $fullname }}-tls",condition="True"} == 0
+          for: {{ .Values.prometheusRule.alerts.certNotReady.for }}
+          labels:
+            severity: critical
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "TLS Certificate not Ready — clients will fail handshake"
+            description: "cert-manager Certificate {{ $fullname }}-tls has been not-Ready for > {{ .Values.prometheusRule.alerts.certNotReady.for }}. Check `kubectl describe certificate -n {{ .Release.Namespace }}` and ClusterIssuer health."
+            runbook_url: "{{ $runbook }}#alert-cert-not-ready"
+        {{- end }}
+        {{- if and .Values.prometheusRule.alerts.certExpiringSoon.enabled .Values.tls.certManager.enabled }}
+        - alert: JarvyForwarderCertExpiringSoon
+          expr: (certmanager_certificate_expiration_timestamp_seconds{namespace="{{ .Release.Namespace }}",name="{{ $fullname }}-tls"} - time()) < ({{ .Values.prometheusRule.alerts.certExpiringSoon.daysBeforeExpiry }} * 86400)
+          for: 1h
+          labels:
+            severity: warning
+            {{- with .Values.prometheusRule.alertLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "TLS Certificate expiring within {{ .Values.prometheusRule.alerts.certExpiringSoon.daysBeforeExpiry }} days"
+            description: "cert-manager has not renewed {{ $fullname }}-tls. Investigate renewal failures — typically ACME rate limit or DNS-01 record drift."
+            runbook_url: "{{ $runbook }}#alert-cert-expiring-soon"
+        {{- end }}
+        {{- with .Values.prometheusRule.extraRules }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
 {{- end }}

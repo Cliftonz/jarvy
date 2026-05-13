@@ -53,11 +53,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 Common annotations (rendered into every resource that opts in).
-Applied to EVERY resource — Namespace, ServiceAccount, Deployment,
-Service, ConfigMap, Gateway, HTTPRoute, NetworkPolicy, HPA, PDB,
-ServiceMonitor, ExternalSecrets, Certificate, Middlewares,
-PrometheusRule. If you set commonAnnotations expecting them on one
-or two resources, you'll get them on all 14+ — by design.
 */}}
 {{- define "jarvy-telemetry-forwarder.annotations" -}}
 {{- with .Values.commonAnnotations -}}
@@ -66,8 +61,8 @@ or two resources, you'll get them on all 14+ — by design.
 {{- end -}}
 
 {{/*
-Compute the container image reference. Prefer `digest` over `tag` for
-production supply-chain hygiene; tag is decorative when digest is set.
+Container image reference. Prefer `digest` over `tag` for production
+supply-chain hygiene; tag is decorative when digest is set.
 */}}
 {{- define "jarvy-telemetry-forwarder.image" -}}
 {{- $img := .Values.collector.image -}}
@@ -79,34 +74,75 @@ production supply-chain hygiene; tag is decorative when digest is set.
 {{- end -}}
 
 {{/*
+Render the OTTL anonymize statements — one `set(...)` per key in
+`pii.hashedAttributes`. Used in three OTel contexts
+(resource attributes on log_statements / metric_statements /
+trace_statements) so this helper is the single source of truth for
+the salt construction. The Concat order is value-then-salt to keep
+SHA-256 length-extension safe; reversing it would be silently
+exploitable. The chart CI greps for the ordering to prevent
+regression.
+*/}}
+{{- define "jarvy-telemetry-forwarder.anonymizeStatements" -}}
+{{- range . }}
+- set(attributes[{{ . | quote }}], SHA256(Concat([attributes[{{ . | quote }}], "${env:PII_SALT}"], ""))) where attributes[{{ . | quote }}] != nil
+{{- end }}
+{{- end -}}
+
+{{/*
+Render the OTel allowlist as a single OTTL `keep_keys(attributes, [...])`
+call that DROPS every attribute not on the (passThrough ∪ hashed)
+union. This is the actual enforcement of the privacy contract — the
+chart's headline claim "anything not on the allowlist is dropped"
+depends on this statement producing a `keep_keys` (which removes
+unknown keys from each record), not a `filter` (which only drops
+whole records lacking allowlisted keys).
+*/}}
+{{- define "jarvy-telemetry-forwarder.keepKeysStatement" -}}
+{{- $allowed := concat .Values.pii.passThroughAttributes .Values.pii.hashedAttributes | uniq -}}
+- keep_keys(attributes, [{{- range $i, $k := $allowed }}{{- if $i }}, {{ end }}{{ $k | quote }}{{- end }}])
+{{- end -}}
+
+{{/*
 Render the Collector configuration. Used by the ConfigMap template
-when `collector.config` is empty. The pipeline shape encodes the
-chart's central privacy contract:
+when `collector.config` is empty. Pipeline shape encodes the chart's
+privacy contract:
 
-  receivers → memory_limiter → transform/anonymize → keep_keys
-            → transform/redact_bodies (logs only) → tail_sampling
-            (traces only) → batch → exporter
+  receivers → memory_limiter
+            → transform/anonymize  (salted SHA-256 of hashed keys)
+            → transform/keep_allowlist_attrs  (drop unknown keys)
+            → transform/redact_bodies  (logs only)
+            → tail_sampling  (traces only)
+            → batch → exporter
 
-`transform/anonymize` hashes every key in `pii.hashedAttributes`
-with a salted SHA-256. The `keep_keys` filter then DROPS every
-attribute not in `pii.passThroughAttributes ∪ pii.hashedAttributes`
-— this is the allowlist enforcement. Without keep_keys, future
-schema additions or attacker-controlled attribute keys land in the
-backend plaintext.
+The keep_allowlist_attrs step is load-bearing: without it,
+attacker-controlled or future-emitted attribute keys land in the
+backend unhashed.
 
-`error_mode: propagate` on the transform processors means OTTL
-failures (compile errors, type mismatches) surface as
-`otelcol_processor_dropped_*` metrics rather than silently bypassing
-the anonymization. Required for the salt-staleness and
-denylist-not-allowlist alerts in the PrometheusRule to actually
-fire.
+A render-time guard refuses the install if
+`pii.passThroughAttributes` and `pii.hashedAttributes` overlap —
+a key cannot simultaneously be passed through unhashed AND hashed.
 */}}
 {{- define "jarvy-telemetry-forwarder.collectorConfig" -}}
+{{- $overlap := list -}}
+{{- $hashed := .Values.pii.hashedAttributes -}}
+{{- range .Values.pii.passThroughAttributes -}}
+{{- if has . $hashed -}}
+{{- $overlap = append $overlap . -}}
+{{- end -}}
+{{- end -}}
+{{- if $overlap -}}
+{{- fail (printf "pii.passThroughAttributes and pii.hashedAttributes overlap on keys: %v. A key cannot be both passed through unhashed AND hashed. Move each conflicting key to exactly one list." $overlap) -}}
+{{- end -}}
 receivers:
   otlp:
     protocols:
       http:
         endpoint: 0.0.0.0:4318
+        # Conservative receiver-level body cap (defense in depth in
+        # case the ingress-side body cap is misconfigured on a
+        # non-Traefik GatewayClass).
+        max_request_body_size: 4194304  # 4 MiB
 
 processors:
   transform/anonymize:
@@ -114,51 +150,30 @@ processors:
     log_statements:
       - context: resource
         statements:
-{{- range .Values.pii.hashedAttributes }}
-          - set(attributes[{{ . | quote }}], SHA256(Concat([attributes[{{ . | quote }}], "${env:PII_SALT}"], ""))) where attributes[{{ . | quote }}] != nil
-{{- end }}
+          {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
     metric_statements:
       - context: resource
         statements:
-{{- range .Values.pii.hashedAttributes }}
-          - set(attributes[{{ . | quote }}], SHA256(Concat([attributes[{{ . | quote }}], "${env:PII_SALT}"], ""))) where attributes[{{ . | quote }}] != nil
-{{- end }}
+          {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
     trace_statements:
       - context: resource
         statements:
-{{- range .Values.pii.hashedAttributes }}
-          - set(attributes[{{ . | quote }}], SHA256(Concat([attributes[{{ . | quote }}], "${env:PII_SALT}"], ""))) where attributes[{{ . | quote }}] != nil
-{{- end }}
+          {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
 
-  {{- /* keep_keys allowlist closes the denylist gap. Anything not
-        on passThroughAttributes ∪ hashedAttributes is DROPPED. */}}
-  filter/keep_allowlist:
+  transform/keep_allowlist_attrs:
     error_mode: propagate
-    logs:
-      log_record:
-        - 'not (
-{{- $allowed := concat .Values.pii.passThroughAttributes .Values.pii.hashedAttributes -}}
-{{- range $i, $k := $allowed -}}
-{{- if $i }} or {{ end -}}
-resource.attributes[{{ $k | quote }}] != nil
-{{- end -}}
-)'
-    metrics:
-      metric:
-        - 'not (
-{{- range $i, $k := $allowed -}}
-{{- if $i }} or {{ end -}}
-resource.attributes[{{ $k | quote }}] != nil
-{{- end -}}
-)'
-    traces:
-      span:
-        - 'not (
-{{- range $i, $k := $allowed -}}
-{{- if $i }} or {{ end -}}
-resource.attributes[{{ $k | quote }}] != nil
-{{- end -}}
-)'
+    log_statements:
+      - context: resource
+        statements:
+          {{- include "jarvy-telemetry-forwarder.keepKeysStatement" . | nindent 10 }}
+    metric_statements:
+      - context: resource
+        statements:
+          {{- include "jarvy-telemetry-forwarder.keepKeysStatement" . | nindent 10 }}
+    trace_statements:
+      - context: resource
+        statements:
+          {{- include "jarvy-telemetry-forwarder.keepKeysStatement" . | nindent 10 }}
 
   transform/redact_bodies:
     error_mode: propagate
@@ -226,7 +241,7 @@ service:
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, transform/anonymize, filter/keep_allowlist, transform/redact_bodies, batch]
+      processors: [memory_limiter, transform/anonymize, transform/keep_allowlist_attrs, transform/redact_bodies, batch]
       exporters:
         - otlphttp/backend
 {{- if .Values.collector.debugExporter.enabled }}
@@ -234,7 +249,7 @@ service:
 {{- end }}
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, transform/anonymize, filter/keep_allowlist, batch]
+      processors: [memory_limiter, transform/anonymize, transform/keep_allowlist_attrs, batch]
       exporters:
         - otlphttp/backend
 {{- if .Values.collector.debugExporter.enabled }}
@@ -242,7 +257,7 @@ service:
 {{- end }}
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, transform/anonymize, filter/keep_allowlist, tail_sampling, batch]
+      processors: [memory_limiter, transform/anonymize, transform/keep_allowlist_attrs, tail_sampling, batch]
       exporters:
         - otlphttp/backend
 {{- if .Values.collector.debugExporter.enabled }}

@@ -1,24 +1,26 @@
 name: Helm Chart CI
 
 # PR-time validation for the jarvy-telemetry-forwarder chart and its
-# release workflow. The pipeline shipped with chart 0.1.0 had three
-# bugs that surfaced only at release time (tag-verify gotcha, default-
-# render fail, cosign UNAUTHORIZED). This workflow catches each of
-# them on PR before they merge — none of those three regressions
-# should ever ship again.
+# release workflow.
 on:
   pull_request:
     paths:
       - 'dist/helm/jarvy-telemetry-forwarder/**'
+      - 'docs/schema/jarvy-telemetry-forwarder.values.schema.json'
       - '.github/workflows/helm-release.yml'
       - '.github/workflows/helm-chart-ci.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/publish-packages.yml'
       - '.github/actions/verify-signed-tag/**'
+      - '.github/actions/install-kubeconform/**'
   push:
     branches: [main]
     paths:
       - 'dist/helm/jarvy-telemetry-forwarder/**'
+      - 'docs/schema/jarvy-telemetry-forwarder.values.schema.json'
       - '.github/workflows/helm-release.yml'
       - '.github/actions/verify-signed-tag/**'
+      - '.github/actions/install-kubeconform/**'
 
 permissions:
   contents: read
@@ -36,12 +38,20 @@ jobs:
         scenario:
           - name: default
             args: ""
+          - name: secrets-external-default
+            args: ""
+            asserts: |
+              grep -c '^kind: ExternalSecret$' /tmp/secrets-external-default.yaml | grep -qE '^2$'
+              grep -F 'kind: ClusterSecretStore' /tmp/secrets-external-default.yaml
+              grep -F 'jarvy/telemetry/grafana-otlp-write-token' /tmp/secrets-external-default.yaml
+              grep -F 'jarvy/telemetry/pii-salt' /tmp/secrets-external-default.yaml
           - name: shared-gateway
             args: >-
               --set gatewayApi.gateway.create=false
               --set gatewayApi.httpRoute.parentRefs[0].name=shared-gw
               --set gatewayApi.httpRoute.parentRefs[0].namespace=networking
               --set gatewayApi.httpRoute.parentRefs[0].sectionName=https
+              --set gatewayApi.httpRoute.allowCrossNamespaceParent=true
           - name: secrets-inline
             args: >-
               --set secrets.strategy=inline
@@ -58,6 +68,11 @@ jobs:
             args: --set networkPolicy.cilium.enabled=true
           - name: prometheusrule-disabled
             args: --set prometheusRule.enabled=false
+          - name: debug-exporter
+            args: --set collector.debugExporter.enabled=true
+            asserts: |
+              grep -F 'jarvy.dev/debug-exporter: "ON"' /tmp/debug-exporter.yaml
+              grep -cF '- debug' /tmp/debug-exporter.yaml | grep -qE '^3$'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -70,25 +85,20 @@ jobs:
       - name: helm template
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2086 # matrix.args is already a sequence of --set flags
           helm template ci "${CHART_DIR}" \
             --namespace jarvy-telemetry \
             ${{ matrix.scenario.args }} \
-            > /tmp/${{ matrix.scenario.name }}.yaml
-          test -s /tmp/${{ matrix.scenario.name }}.yaml
+            > "/tmp/${{ matrix.scenario.name }}.yaml"
+          test -s "/tmp/${{ matrix.scenario.name }}.yaml"
 
-      - name: Install kubeconform
+      - name: Per-scenario asserts
+        if: matrix.scenario.asserts != ''
         run: |
           set -euo pipefail
-          KUBECONFORM_VERSION=v0.6.7
-          curl -sSfL -o /tmp/kubeconform.tar.gz \
-            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
-          curl -sSfL -o /tmp/kubeconform-CHECKSUMS \
-            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS"
-          EXPECTED=$(grep 'kubeconform-linux-amd64.tar.gz' /tmp/kubeconform-CHECKSUMS | awk '{print $1}')
-          ACTUAL=$(sha256sum /tmp/kubeconform.tar.gz | awk '{print $1}')
-          [[ "${EXPECTED}" == "${ACTUAL}" ]]
-          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
-          sudo install /tmp/kubeconform /usr/local/bin/
+          ${{ matrix.scenario.asserts }}
+
+      - uses: ./.github/actions/install-kubeconform
 
       - name: Validate manifests
         run: |
@@ -96,7 +106,7 @@ jobs:
             -schema-location default \
             -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{ .Group }}/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json' \
             -ignore-missing-schemas \
-            /tmp/${{ matrix.scenario.name }}.yaml
+            "/tmp/${{ matrix.scenario.name }}.yaml"
 
   negative-renders:
     name: Negative renders (fail() guards must fire)
@@ -109,36 +119,100 @@ jobs:
 
       - name: gateway.create=false without parentRefs must fail
         run: |
-          ! helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
-            --set gatewayApi.gateway.create=false 2>&1 | tee /tmp/out
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set gatewayApi.gateway.create=false 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
           grep -F "parentRefs must be set" /tmp/out
+
+      - name: cross-namespace parentRefs without opt-in must fail
+        run: |
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set gatewayApi.gateway.create=false \
+            --set 'gatewayApi.httpRoute.parentRefs[0].name=foo' \
+            --set 'gatewayApi.httpRoute.parentRefs[0].namespace=other' 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
+          grep -F "Cross-namespace attach is gated" /tmp/out
 
       - name: collector.config without acceptRawConfigUnsafe must fail
         run: |
-          ! helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
-            --set 'collector.config=receivers: {}' 2>&1 | tee /tmp/out
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set 'collector.config=receivers: {}' 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
           grep -F "acceptRawConfigUnsafe" /tmp/out
 
       - name: secrets.strategy=inline without acceptRisk must fail
         run: |
-          ! helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
             --set secrets.strategy=inline \
             --set secrets.inline.grafanaToken=fake \
-            --set secrets.inline.piiSalt=fake 2>&1 | tee /tmp/out
+            --set secrets.inline.piiSalt=fake 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
           grep -F "acceptRisk: true" /tmp/out
 
       - name: secrets.strategy=bogus must fail
         run: |
-          ! helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
-            --set secrets.strategy=bogus 2>&1 | tee /tmp/out
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set secrets.strategy=bogus 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
           grep -F "must be one of" /tmp/out
 
       - name: traefikMiddlewares.enabled=true with non-Traefik class must fail
         run: |
-          ! helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
             --set gatewayApi.gateway.gatewayClassName=envoy \
-            --set gatewayApi.traefikMiddlewares.enabled=true 2>&1 | tee /tmp/out
+            --set gatewayApi.traefikMiddlewares.enabled=true 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
           grep -F "requires gatewayApi.gateway.gatewayClassName=traefik" /tmp/out
+
+      - name: passThroughAttributes ∩ hashedAttributes must fail
+        run: |
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set 'pii.passThroughAttributes[0]=user.email' \
+            --set 'pii.hashedAttributes[0]=user.email' 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
+          grep -F "overlap on keys" /tmp/out
+
+      - name: extraEnv reserved name PII_SALT must fail
+        run: |
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set 'collector.extraEnv[0].name=PII_SALT' \
+            --set 'collector.extraEnv[0].value=zero' 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
+          grep -F "PII_SALT" /tmp/out
+
+      - name: invalid image digest pattern must fail
+        run: |
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set 'collector.image.digest=not-a-valid-digest' 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
+          grep -F "does not match pattern" /tmp/out
+
+      - name: invalid exporter.endpoint (userinfo) must fail
+        run: |
+          if helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
+            --set 'exporter.endpoint=https://attacker@target.example/otlp' 2>/tmp/out; then
+            echo "::error::render unexpectedly succeeded"
+            exit 1
+          fi
+          grep -F "does not match pattern" /tmp/out
 
   values-schema:
     name: values.schema.json invariants
@@ -159,8 +233,6 @@ jobs:
       - name: Schema validates against default values.yaml
         run: |
           set -euo pipefail
-          # Helm validates this on every install/template, but assert it
-          # at PR time so a schema regression doesn't ship to operators.
           yq -o=json '.' "${CHART_DIR}/values.yaml" > /tmp/values.json
           ajv validate \
             -s "${CHART_DIR}/values.schema.json" \
@@ -174,7 +246,7 @@ jobs:
           HASH=$(yq -r '.pii.hashedAttributes[]' "${CHART_DIR}/values.yaml" | sort)
           OVERLAP=$(comm -12 <(echo "${PASS}") <(echo "${HASH}"))
           if [[ -n "${OVERLAP}" ]]; then
-            echo "::error::pii.passThroughAttributes and pii.hashedAttributes overlap (keys are both unhashed AND hashed — ambiguous): ${OVERLAP}"
+            echo "::error::pii.passThroughAttributes and pii.hashedAttributes overlap: ${OVERLAP}"
             exit 1
           fi
 
@@ -184,48 +256,15 @@ jobs:
           EXPECTED='https://jarvy.dev/schema/jarvy-telemetry-forwarder.values.schema.json'
           ACTUAL=$(yq -r '."$id"' "${CHART_DIR}/values.schema.json")
           if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
-            echo "::error::values.schema.json $id is ${ACTUAL}; expected ${EXPECTED}. External systems pinning to the published URL will hit stale schema."
+            echo "::error::values.schema.json \$id is ${ACTUAL}; expected ${EXPECTED}"
             exit 1
           fi
 
-      - name: docs/schema copy is in sync with chart's values.schema.json
-        run: |
-          set -euo pipefail
-          # The chart's values.schema.json is the source of truth.
-          # `docs/schema/jarvy-telemetry-forwarder.values.schema.json`
-          # is the published copy served at jarvy.dev. Both must match
-          # byte-for-byte; external systems pinning to the URL would
-          # get a different schema than Helm enforces otherwise.
-          if ! diff -u "${CHART_DIR}/values.schema.json" docs/schema/jarvy-telemetry-forwarder.values.schema.json; then
-            echo "::error::docs/schema copy is out of sync. Run: cp ${CHART_DIR}/values.schema.json docs/schema/jarvy-telemetry-forwarder.values.schema.json"
-            exit 1
-          fi
-
-      - name: helm template renders cleanly with schema enforced
-        run: |
-          # helm template auto-validates against values.schema.json
-          # for every render. If the schema is wrong (overly strict
-          # or wrong type), every render fails — catch here at PR time.
-          helm template ci "${CHART_DIR}" --namespace jarvy-telemetry >/dev/null
-
-      - name: Negative test — schema rejects malformed input
-        run: |
-          set -euo pipefail
-          # Schema must reject obvious mistakes. If it doesn't, the
-          # schema is too lax and gives operators a false sense of
-          # safety.
-          set +e
-          helm template ci "${CHART_DIR}" --namespace jarvy-telemetry \
-            --set 'collector.image.digest=not-a-valid-digest' \
-            2>/tmp/err.txt
-          RC=$?
-          set -e
-          if [[ $RC -eq 0 ]]; then
-            echo "::error::schema accepted an invalid digest pattern"
-            cat /tmp/err.txt
-            exit 1
-          fi
-          grep -i "digest" /tmp/err.txt || (echo "::error::schema failed but not for the expected reason"; cat /tmp/err.txt; exit 1)
+      # docs/schema/jarvy-telemetry-forwarder.values.schema.json is
+      # NOT tracked in git anymore. The chart's values.schema.json is
+      # the source of truth; .github/workflows/docs.yml copies it into
+      # docs/schema/ before mkdocs build. No diff check needed —
+      # the file cannot drift from a place it doesn't exist in.
 
   anonymize-invariants:
     name: Anonymize-pipeline invariants
@@ -236,36 +275,86 @@ jobs:
       - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with: { version: v3.16.1 }
 
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
       - name: Render default
         run: helm template ci "${CHART_DIR}" --namespace jarvy-telemetry > /tmp/render.yaml
 
-      - name: transform/anonymize must be in every pipeline
-        run: |
-          grep -F "transform/anonymize" /tmp/render.yaml
+      - name: transform/anonymize is in the pipeline
+        run: grep -F "transform/anonymize" /tmp/render.yaml
 
-      - name: filter/keep_allowlist must be in every pipeline
+      - name: transform/keep_allowlist_attrs is in the pipeline (keep_keys, not filter)
         run: |
-          # Without keep_allowlist, attacker-controlled attribute keys
-          # land in the backend plaintext. Regression guard for the
-          # F3 enhancement plan finding.
-          grep -F "filter/keep_allowlist" /tmp/render.yaml
+          # Regression guard for the v0.2.0 finding: the original
+          # filter/keep_allowlist did NOT actually drop unknown
+          # attribute keys. The keep_keys() OTTL function does.
+          grep -F "transform/keep_allowlist_attrs" /tmp/render.yaml
+          grep -F "keep_keys(attributes," /tmp/render.yaml
 
-      - name: Concat ordering must be value-then-salt (length-extension safety)
+      - name: Concat ordering is value-then-salt (length-extension safety)
         run: |
-          # SHA256(Concat([value, salt])) is safe; reversed is not.
-          # This grep catches copy-paste reversals where someone puts
-          # the salt env var first.
-          if grep -E 'SHA256\(Concat\(\[\"\$\{env:PII_SALT\}\"' /tmp/render.yaml >/dev/null; then
+          if grep -E 'SHA256\(Concat\(\["\$\{env:PII_SALT\}"' /tmp/render.yaml >/dev/null; then
             echo "::error::transform/anonymize has reversed Concat order (salt-first). Use value-first to preserve length-extension safety."
             exit 1
           fi
 
-      - name: error_mode must be propagate (not ignore)
+      - name: error_mode is propagate everywhere
         run: |
           if grep -F "error_mode: ignore" /tmp/render.yaml; then
-            echo "::error::transform processor has error_mode: ignore — silent failures bypass anonymization. Switch to propagate."
+            echo "::error::transform processor has error_mode: ignore — silent failures bypass anonymization."
             exit 1
           fi
+
+      - name: Validate Collector config parses
+        run: |
+          set -euo pipefail
+          # Pull the rendered Collector config out of the ConfigMap
+          # and ask the Collector itself to validate it. Catches OTTL
+          # typos and YAML indentation bugs the chart's lint cannot.
+          yq '.data."config.yaml"' /tmp/render.yaml > /tmp/collector.yaml
+          # The Collector image: pinned to the same tag values.yaml uses.
+          IMG=$(yq -r '.collector.image.repository' "${CHART_DIR}/values.yaml"):$(yq -r '.collector.image.tag' "${CHART_DIR}/values.yaml")
+          docker run --rm -v /tmp:/cfg "${IMG}" validate --config=/cfg/collector.yaml
+
+  composite-action-smoke:
+    name: verify-signed-tag composite action smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run composite action against a synthetic signed tag
+        run: |
+          set -euo pipefail
+          # Build a throwaway signed tag in the current repo, then
+          # invoke the composite action against it. Failure modes
+          # caught: bash typo, fetch-tags missing, signature parse
+          # broken, allowed-signers path wrong.
+          ssh-keygen -t ed25519 -f /tmp/ci-key -N "" -q
+          PUB=$(cat /tmp/ci-key.pub)
+          # Preserve existing allowed_signers and add our test key
+          cp .github/allowed_signers /tmp/orig-signers
+          echo "ci-smoke@test ${PUB}" >> .github/allowed_signers
+          git config user.email "ci-smoke@test"
+          git config user.name "ci-smoke"
+          git config gpg.format ssh
+          git config user.signingkey /tmp/ci-key.pub
+          git tag -s ci-smoke-v0.0.0 -m "smoke test tag"
+
+      - uses: ./.github/actions/verify-signed-tag
+        with:
+          tag-prefix: "ci-smoke-v"
+          check-release-exists: "false"
+        env:
+          GITHUB_REF: refs/tags/ci-smoke-v0.0.0
+
+      - name: Cleanup
+        if: always()
+        run: |
+          mv /tmp/orig-signers .github/allowed_signers || true
+          git tag -d ci-smoke-v0.0.0 || true
 
   workflow-meta-checks:
     name: Workflow meta checks (regression guards for 0.1.0 release-day bugs)
@@ -273,49 +362,48 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: tag-verify path uses fetch-tags + annotated refetch
+      - name: tag-verify path uses fetch-tags + composite action
         run: |
-          # The 0.1.0 release first failed because actions/checkout did
-          # not fetch annotated tag objects. Composite action exists
-          # to enforce; assert it's referenced from helm-release.yml.
           grep -F "uses: ./.github/actions/verify-signed-tag" .github/workflows/helm-release.yml
+          grep -F "uses: ./.github/actions/verify-signed-tag" .github/workflows/release.yml
           grep -F "fetch-tags: true" .github/workflows/helm-release.yml
-          grep -F "refs/tags/" .github/actions/verify-signed-tag/action.yml
 
       - name: helm + cosign both authenticate
         run: |
-          # The 0.1.0 release also failed because cosign had no
-          # credentials separate from helm. Assert both logins.
           grep -E "helm registry login.*--password-stdin" .github/workflows/helm-release.yml
           grep -E "cosign login.*--password-stdin" .github/workflows/helm-release.yml
 
-      - name: cosign verify uses anchored identity, not unanchored regex
+      - name: cosign verify uses anchored identity
         run: |
-          # Unanchored --certificate-identity-regexp lets a fork named
-          # bearbinary/jarvy-anything spoof identity. Assert exact
-          # --certificate-identity in published verify commands.
-          if grep -E -- '--certificate-identity-regexp.*"\^?https://github\.com/\$\{\{ github.repository \}\}/"?$' .github/workflows/helm-release.yml; then
-            echo "::error::cosign verify uses unanchored regex; switch to exact --certificate-identity."
+          set -euo pipefail
+          # No unanchored regex in any workflow
+          if grep -E -- '--certificate-identity-regexp' .github/workflows/*.yml; then
+            echo "::error::cosign --certificate-identity-regexp found; use --certificate-identity for exact match"
             exit 1
           fi
           grep -F -- "--certificate-identity \"https://github.com/" .github/workflows/helm-release.yml
 
       - name: publish-packages tag-name gate is present
-        run: |
-          # Chart releases (helm-vX.Y.Z) must NOT trigger CLI
-          # publishing. Assert publish-packages.yml gates on
-          # tag_name starting with v.
-          grep -F "startsWith(github.event.release.tag_name, 'v')" .github/workflows/publish-packages.yml
+        run: grep -F "startsWith(github.event.release.tag_name, 'v')" .github/workflows/publish-packages.yml
 
       - name: Install actionlint
         run: |
           set -euo pipefail
-          # Direct binary install — raven-actions/actionlint has had
-          # Node-module breakage that flapped CI; the upstream binary
-          # release is stable. Pin to a known-good actionlint version.
+          # Pin actionlint with SHA256 checksum verification — mirrors
+          # the kubeconform install posture.
           ACTIONLINT_VERSION=1.7.7
           curl -sSfL -o /tmp/actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          # Upstream publishes a per-asset SHA file alongside the release.
+          # Fetch it and verify before extraction.
+          curl -sSfL -o /tmp/actionlint.sha \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          EXPECTED=$(grep "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" /tmp/actionlint.sha | awk '{print $1}')
+          ACTUAL=$(sha256sum /tmp/actionlint.tar.gz | awk '{print $1}')
+          if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+            echo "::error::actionlint tarball SHA mismatch — expected ${EXPECTED}, got ${ACTUAL}"
+            exit 1
+          fi
           tar -xzf /tmp/actionlint.tar.gz -C /tmp
           sudo install /tmp/actionlint /usr/local/bin/
 

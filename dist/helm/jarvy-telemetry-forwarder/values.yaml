@@ -67,7 +67,17 @@ collector:
       enabled: false
       metricName: otelcol_exporter_queue_size
       averageValue: "500"
+    # Asymmetric scale-up vs scale-down: respond fast to bursts
+    # (memory_limiter trips within seconds; HPA must react in tens
+    # of seconds, not minutes) but scale-down conservatively so a
+    # one-minute lull doesn't bounce the replica count.
     behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 30
+        policies:
+          - { type: Percent, value: 100, periodSeconds: 15 }
+          - { type: Pods, value: 2, periodSeconds: 15 }
+        selectPolicy: Max
       scaleDown:
         stabilizationWindowSeconds: 300
   # -- Topology spread across nodes; safe default.
@@ -143,7 +153,12 @@ collector:
   # anonymized correctly?" debugging; never leave on in production.
   debugExporter:
     enabled: false
-    verbosity: detailed
+    # Verbosity default `normal` not `detailed` — `detailed` writes
+    # full record bodies to stdout (kubectl logs); `normal` writes
+    # only a summary. Combined with the `JarvyForwarderDebugExporterEnabled`
+    # alert in the PrometheusRule, this bounds the PII-readable-via-
+    # pods/log surface even when an operator forgets to disable it.
+    verbosity: normal
     samplingInitial: 5
     samplingThereafter: 200
   # -- Extra environment variables for the Collector pod.
@@ -341,6 +356,13 @@ gatewayApi:
     # set this to your existing Gateway. When `gateway.create: true`,
     # the template auto-fills with the chart's own Gateway.
     parentRefs: []
+    # -- Allow attaching to a Gateway in a different namespace than
+    # the release. Cross-namespace attaches require a `ReferenceGrant`
+    # on the target Gateway's side; failing to set up that grant is
+    # the path to "your HTTPRoute silently doesn't route anywhere."
+    # Default false; chart fails install when a parentRef's namespace
+    # differs from the release unless this is true.
+    allowCrossNamespaceParent: false
     #  - name: my-existing-gateway
     #    namespace: networking
     #    sectionName: https
@@ -420,8 +442,14 @@ networkPolicy:
   # When enabled, replaces the wide `to: []` egress on 443 with a
   # CiliumNetworkPolicy that restricts egress to the parsed hostname
   # of `exporter.endpoint` only. Requires Cilium as the CNI.
+  #
+  # `fqdn`: explicit override of the auto-parsed FQDN. The auto-parse
+  # is best-effort (strips scheme, port, path, and userinfo); set
+  # this when the endpoint shape is unusual (split horizon, custom
+  # domains, etc.) rather than relying on the parser.
   cilium:
     enabled: false
+    fqdn: ""
 
 # -----------------------------------------------------------------------------
 # Monitoring
@@ -432,12 +460,17 @@ serviceMonitor:
   labels:
     release: kube-prometheus-stack
   interval: 30s
+  # -- honorLabels MUST stay false. With it true, OTLP-supplied
+  # resource attributes (which originate outside our trust boundary)
+  # could overwrite Prometheus's namespace/pod identification.
+  honorLabels: false
   # -- Allowlist of self-metrics to keep. Empty list = scrape everything
-  # (high cardinality). The default keeps only the metrics referenced
-  # in the operational doc + PrometheusRule.
+  # (high cardinality). The default keeps the metrics referenced
+  # in the operational doc + PrometheusRule, including the new
+  # `transform`-processor metrics that surface allowlist drops.
   metricRelabelings:
     - sourceLabels: [__name__]
-      regex: "otelcol_receiver_(accepted|refused)_.*|otelcol_exporter_(sent|send_failed|queue_size).*|otelcol_processor_(dropped|tail_sampling_count).*|process_resident_memory_bytes|process_cpu_seconds_total|otelcol_process_uptime"
+      regex: "otelcol_receiver_(accepted|refused)_.*|otelcol_exporter_(sent|send_failed|queue_size).*|otelcol_processor_(dropped|tail_sampling_count|transform).*|process_resident_memory_bytes|process_cpu_seconds_total|otelcol_process_uptime"
       action: keep
 
 # -----------------------------------------------------------------------------
@@ -448,6 +481,19 @@ prometheusRule:
   # -- Matches the Prometheus instance's `ruleSelector`.
   labels:
     release: kube-prometheus-stack
+  # -- Base URL for `runbook_url` annotation on every alert. The
+  # operational doc anchors must match the alert-named hashes used
+  # below (e.g. `#alert-refused-records`).
+  runbookBaseUrl: https://jarvy.dev/operations/telemetry-forwarder/
+  # -- Labels merged into every alert. Use to integrate with your
+  # Alertmanager routing taxonomy (team, slo_owner, etc.). The
+  # `severity:` label is set per-alert and not overridable here.
+  alertLabels: {}
+  # -- Caller-supplied extra rules appended to the chart's built-ins.
+  # Each entry is a standard PrometheusRule rule object
+  # ({alert, expr, for, labels, annotations}). Lets operators add
+  # site-specific alerts without forking the chart.
+  extraRules: []
   # -- Per-alert toggles + thresholds. All defaults are conservative;
   # tune for your traffic shape.
   alerts:
@@ -462,12 +508,45 @@ prometheusRule:
       enabled: true
       thresholdBytes: 629145600  # 600 MiB
       for: 10m
+    # Salt-staleness alert reads kube-state-metrics' `kube_secret_info`
+    # join (no chart-side exporter needed). Default off because the
+    # `kube_secret_created` metric needs kube-state-metrics ≥ v2.5;
+    # enable when you've confirmed the metric exists.
     saltStale:
-      enabled: true
+      enabled: false
       thresholdDays: 100  # quarterly rotation +10d grace
     tailSamplingLow:
       enabled: true
       thresholdPercent: 0.005  # alert below 0.5% effective sample rate
+    # Allowlist-drop alert: fires when the keep_keys processor drops
+    # unknown attribute keys. Leading indicator of either an attack
+    # or a Jarvy CLI release shipping a new attribute that needs to
+    # be added to pii.passThroughAttributes / pii.hashedAttributes.
+    allowlistDroppingKeys:
+      enabled: true
+      for: 15m
+    # Reloader-missing alert: fires when stakater/reloader is absent,
+    # making salt rotation silently no-op. The chart relies on
+    # Reloader picking up Secret content changes via the
+    # `reloader.stakater.com/auto` pod annotation.
+    reloaderMissing:
+      enabled: true
+      for: 30m
+    # Debug-exporter-enabled alert: fires when an operator forgets to
+    # disable `collector.debugExporter.enabled` in production.
+    # Debug exporter writes payload summaries to stdout — readable
+    # by anyone with `pods/log` RBAC in the namespace.
+    debugExporterEnabled:
+      enabled: true
+      for: 1h
+    # cert-manager Certificate not-Ready / expiring alerts. Only
+    # active when tls.certManager.enabled.
+    certNotReady:
+      enabled: true
+      for: 30m
+    certExpiringSoon:
+      enabled: true
+      daysBeforeExpiry: 14
 
 # -----------------------------------------------------------------------------
 # Pod Disruption Budget — keep at least one replica during voluntary

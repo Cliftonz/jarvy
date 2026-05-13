@@ -33,3 +33,9 @@ evals/**/claude-code-results.json
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Generated at docs build time from the chart's source-of-truth
+# (`dist/helm/jarvy-telemetry-forwarder/values.schema.json`).
+# Sync happens in `.github/workflows/docs.yml`. Tracking both in git
+# is duplication for no benefit (see maintainability review v2 F3).
+docs/schema/jarvy-telemetry-forwarder.values.schema.json

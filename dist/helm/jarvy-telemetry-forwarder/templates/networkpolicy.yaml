@@ -62,9 +62,23 @@ spec:
   or `:`. This is brittle if the endpoint includes a port; document
   override via `networkPolicy.cilium.fqdn` if needed.
 */ -}}
+{{- /*
+  FQDN resolution: prefer the explicit `networkPolicy.cilium.fqdn`
+  override; fall back to parsing `exporter.endpoint`. The parser
+  strips scheme, userinfo (`user@host`), port, and path — but
+  unusual endpoint shapes (split-horizon DNS, custom domains)
+  should set fqdn explicitly to avoid relying on the regex.
+*/ -}}
+{{- $fqdn := .Values.networkPolicy.cilium.fqdn -}}
+{{- if not $fqdn -}}
 {{- $endpoint := .Values.exporter.endpoint -}}
 {{- $noScheme := regexReplaceAll "^https?://" $endpoint "" -}}
-{{- $fqdn := regexReplaceAll "[/:].*$" $noScheme "" -}}
+{{- $noUserinfo := regexReplaceAll "^[^@/]*@" $noScheme "" -}}
+{{- $fqdn = regexReplaceAll "[/:].*$" $noUserinfo "" -}}
+{{- end -}}
+{{- if not $fqdn -}}
+{{- fail "networkPolicy.cilium.enabled=true requires either a parseable exporter.endpoint or an explicit networkPolicy.cilium.fqdn override." -}}
+{{- end -}}
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:

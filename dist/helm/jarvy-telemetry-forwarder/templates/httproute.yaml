@@ -37,6 +37,21 @@ spec:
     {{- if not .Values.gatewayApi.httpRoute.parentRefs }}
     {{- fail "gatewayApi.httpRoute.parentRefs must be set when gatewayApi.gateway.create is false" }}
     {{- end }}
+    {{- /*
+      Cross-namespace parentRef guard: refuse to attach to a Gateway
+      in a different namespace than the release unless the operator
+      explicitly opts in via `gatewayApi.httpRoute.allowCrossNamespaceParent: true`.
+      Cross-namespace attaches require a ReferenceGrant on the
+      target side; misconfiguration here is the path to "your
+      Gateway is now serving someone else's traffic."
+    */ -}}
+    {{- $release := .Release.Namespace -}}
+    {{- $allowCross := .Values.gatewayApi.httpRoute.allowCrossNamespaceParent | default false -}}
+    {{- range .Values.gatewayApi.httpRoute.parentRefs }}
+    {{- if and .namespace (ne .namespace $release) (not $allowCross) }}
+    {{- fail (printf "gatewayApi.httpRoute.parentRefs[].namespace=%q differs from release namespace %q. Cross-namespace attach is gated; set gatewayApi.httpRoute.allowCrossNamespaceParent: true to confirm you have a ReferenceGrant on the target side." .namespace $release) }}
+    {{- end }}
+    {{- end }}
     {{- toYaml .Values.gatewayApi.httpRoute.parentRefs | nindent 4 }}
     {{- end }}
   hostnames:

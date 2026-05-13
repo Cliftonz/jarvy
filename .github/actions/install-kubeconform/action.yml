@@ -1,0 +1,33 @@
+name: Install kubeconform
+description: |
+  Installs kubeconform with SHA256 verification against the upstream
+  CHECKSUMS file. Shared between helm-release.yml and helm-chart-ci.yml
+  so the install + checksum logic exists in exactly one place. Bumping
+  the pinned version is a one-PR change.
+
+inputs:
+  version:
+    description: 'kubeconform release tag (e.g. v0.6.7)'
+    required: false
+    default: 'v0.6.7'
+
+runs:
+  using: composite
+  steps:
+    - name: Install kubeconform with checksum verification
+      shell: bash
+      run: |
+        set -euo pipefail
+        VER="${{ inputs.version }}"
+        curl -sSfL -o /tmp/kubeconform.tar.gz \
+          "https://github.com/yannh/kubeconform/releases/download/${VER}/kubeconform-linux-amd64.tar.gz"
+        curl -sSfL -o /tmp/kubeconform-CHECKSUMS \
+          "https://github.com/yannh/kubeconform/releases/download/${VER}/CHECKSUMS"
+        EXPECTED=$(grep 'kubeconform-linux-amd64.tar.gz' /tmp/kubeconform-CHECKSUMS | awk '{print $1}')
+        ACTUAL=$(sha256sum /tmp/kubeconform.tar.gz | awk '{print $1}')
+        if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+          echo "::error::kubeconform tarball SHA mismatch — expected ${EXPECTED}, got ${ACTUAL}"
+          exit 1
+        fi
+        tar -xzf /tmp/kubeconform.tar.gz -C /tmp
+        sudo install /tmp/kubeconform /usr/local/bin/
