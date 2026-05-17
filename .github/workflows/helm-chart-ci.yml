@@ -296,11 +296,22 @@ jobs:
             cat /tmp/out
             exit 1
           fi
-          # Precise reason check: the rejection must cite BOTH
-          # `extraEnv` AND `PII_SALT`. Looser greps (e.g. just
-          # "schema") have false-positived on unrelated helm banners.
-          if ! grep -F 'extraEnv' /tmp/out >/dev/null || ! grep -F 'PII_SALT' /tmp/out >/dev/null; then
-            echo "::error::reject did not name extraEnv+PII_SALT; output:"
+          # Precise reason check: rejection must cite `extraEnv` AND
+          # either the reserved name `PII_SALT` (the friendly template
+          # fail() guard wording) OR a schema `not`-violation message.
+          # Helm validates `values.schema.json` BEFORE rendering, so
+          # the schema-style message is what fires in practice; the
+          # PII_SALT branch covers a future world where the schema
+          # rule is loosened and the fail() guard becomes load-bearing.
+          # The `not`-violation phrasing differs across helm versions:
+          # helm 3.18 emits `Must not validate the schema (not)`,
+          # helm 4.x emits `'not' failed`. Match either.
+          # Looser greps (e.g. just "schema") have false-positived on
+          # unrelated helm banners.
+          if ! grep -F 'extraEnv' /tmp/out >/dev/null \
+             || ! { grep -F 'PII_SALT' /tmp/out >/dev/null \
+                    || grep -E "'not' failed|Must not validate the schema" /tmp/out >/dev/null; }; then
+            echo "::error::reject did not name extraEnv+(PII_SALT|schema-not); output:"
             cat /tmp/out
             exit 1
           fi
@@ -746,7 +757,7 @@ jobs:
         with: { version: v3.18.0 }
 
       - name: Create kind cluster
-        uses: helm/kind-action@a1b0e391336a6ee6e6b1cd3c1f59c11dba8c1c70 # v1.10.0
+        uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
         with:
           version: v0.24.0
           node_image: kindest/node:v1.31.0
@@ -849,6 +860,11 @@ jobs:
         run: |
           set -euo pipefail
           helm template ci "${CHART_DIR}" --namespace jarvy-telemetry > /tmp/render.yaml
-          yq 'select(.kind=="PrometheusRule")' /tmp/render.yaml > /tmp/promrule.yaml
+          # promtool consumes a bare RuleGroups document (the contents
+          # of `.spec`), not the wrapping k8s PrometheusRule CR. Extract
+          # the spec before validating — previously the full CR was
+          # piped in and promtool rejected the `apiVersion/kind/metadata`
+          # keys it doesn't know about.
+          yq 'select(.kind=="PrometheusRule").spec' /tmp/render.yaml > /tmp/promrule.yaml
           test -s /tmp/promrule.yaml
           promtool check rules /tmp/promrule.yaml
