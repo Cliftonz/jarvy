@@ -29,6 +29,42 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+## [helm-v0.5.0] — ExternalSecret Argo CD drift fix (2026-05-17)
+
+Rendered ExternalSecrets now emit the two server-side defaults the ESO
+admission webhook fills in (`target.deletionPolicy: Retain`,
+`data[].remoteRef.conversionStrategy: Default`). Without these in the
+chart's desired manifest, Argo CD's compare saw the webhook-injected
+values as drift on every reconcile, leaving every install of this
+chart perpetually `sync=OutOfSync, health=Healthy`. Discovered while
+diagnosing the `jarvy-telemetry` Argo app on the home cluster on
+2026-05-17.
+
+### Added — `jarvy-telemetry-forwarder` Helm chart
+
+- `secrets.externalSecrets.deletionPolicy` (default `Retain`) and
+  `secrets.externalSecrets.conversionStrategy` (default `Default`)
+  values. Both default to the ESO server-side default so existing
+  installs see no semantic change — only that Argo CD diffs now show
+  zero drift after the next `helm upgrade`. Override either if your
+  use case needs `Delete` / `Merge` (deletionPolicy) or `Unicode`
+  (conversionStrategy).
+- `values.schema.json` constraints for both new fields with enum
+  validation.
+
+### Fixed — `jarvy-telemetry-forwarder` Helm chart
+
+- ExternalSecret resources no longer drift in Argo CD when the ESO
+  admission webhook fills server-side defaults. Bump and `helm
+  upgrade` to clear the perpetual OutOfSync state.
+
+### Migration
+
+No action needed beyond `helm upgrade`. Defaults match ESO
+server-side, so rendered output is functionally identical — the diff
+visible on `helm diff upgrade` is purely the two new explicit
+field assignments.
+
 ## [helm-v0.4.0] — Chart enhancement plan v3 (2026-05-14)
 
 Multi-perspective parallel review (perf, security, QA, observability,

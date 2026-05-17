@@ -351,6 +351,18 @@ secrets:
       name: vault-default
       kind: ClusterSecretStore
     refreshInterval: 1h
+    # -- target.deletionPolicy on every rendered ExternalSecret.
+    # Defaulted to the ESO server-side default (`Retain`) so Argo CD
+    # comparison stays clean — without this, ESO admission fills the
+    # field in server-side and Argo flags it as drift on every
+    # reconcile (perpetual sync=OutOfSync, health=Healthy).
+    # Valid values: `Retain`, `Delete`, `Merge`.
+    deletionPolicy: Retain
+    # -- data[].remoteRef.conversionStrategy on every rendered
+    # ExternalSecret. Defaulted to ESO's server-side default
+    # (`Default`); same drift-avoidance reason as `deletionPolicy`.
+    # Valid values: `Default`, `Unicode`.
+    conversionStrategy: Default
     # -- Backend keys for the two secrets. Adjust to your layout.
     grafanaToken:
       remoteRef:

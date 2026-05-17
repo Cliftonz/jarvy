@@ -286,6 +286,16 @@
               }
             },
             "refreshInterval": { "type": "string" },
+            "deletionPolicy": {
+              "type": "string",
+              "enum": ["Retain", "Delete", "Merge"],
+              "description": "target.deletionPolicy on rendered ExternalSecret. Default Retain matches ESO server-side default; keeps Argo CD diffs clean."
+            },
+            "conversionStrategy": {
+              "type": "string",
+              "enum": ["Default", "Unicode"],
+              "description": "data[].remoteRef.conversionStrategy on rendered ExternalSecret. Default matches ESO server-side default; keeps Argo CD diffs clean."
+            },
             "grafanaToken": {
               "type": "object",
               "properties": {
