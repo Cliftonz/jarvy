@@ -794,6 +794,11 @@ jobs:
           kubectl apply -f https://raw.githubusercontent.com/external-secrets/external-secrets/v0.10.0/config/crds/bases/external-secrets.io_clustersecretstores.yaml
           kubectl apply -f https://raw.githubusercontent.com/prometheus-community/helm-charts/main/charts/kube-prometheus-stack/charts/crds/crds/crd-servicemonitors.yaml
           kubectl apply -f https://raw.githubusercontent.com/prometheus-community/helm-charts/main/charts/kube-prometheus-stack/charts/crds/crds/crd-prometheusrules.yaml
+          # Traefik CRDs (chart defaults to traefikMiddlewares.enabled=true,
+          # which renders `Middleware` resources in `traefik.io/v1alpha1`).
+          # Bundle ships every traefik.io CRD; we need `middlewares` but
+          # apply the lot for forward-compat.
+          kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.2/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
 
       - name: Fresh install (current chart)
         run: |
