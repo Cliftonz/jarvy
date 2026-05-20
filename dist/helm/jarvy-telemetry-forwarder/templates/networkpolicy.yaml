@@ -38,6 +38,20 @@ spec:
       ports:
         - { protocol: TCP, port: 8888 }
     {{- end }}
+    {{- /*
+      In-namespace `helm test` smoke pods. Gated by BOTH the
+      chart-test component label and the release's instance label
+      so unrelated workloads can't piggyback. Pods are ephemeral
+      (created by `helm test`, deleted on `helm test --cleanup`),
+      so the always-on rule has no standing blast-radius cost.
+    */}}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "jarvy-telemetry-forwarder.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: chart-test
+      ports:
+        - { protocol: TCP, port: 4318 }
   egress:
     - to:
         - namespaceSelector: {}

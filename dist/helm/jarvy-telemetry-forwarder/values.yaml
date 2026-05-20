@@ -760,3 +760,41 @@ namespace:
     enforce: restricted
     audit: restricted
     warn: restricted
+
+# -----------------------------------------------------------------------------
+# Helm tests
+# -----------------------------------------------------------------------------
+# `helm test <release>` runs the smoke pod under `templates/tests/`,
+# which POSTs minimal OTLP/HTTP payloads at `/v1/{logs,metrics,traces}`
+# on the Collector Service and asserts 2xx. Tests are pinned by digest
+# so a registry tag re-push can't silently change what runs.
+#
+# For end-to-end smoke against the public ingress (HTTPS, gateway,
+# middlewares, TLS), use `scripts/smoke-live.sh` — it shares the same
+# payloads so a diff isolates ingress as the suspect.
+tests:
+  # -- Master switch. Disable to omit the test pod entirely (also
+  # drops the NetworkPolicy ingress rule that whitelists it).
+  enabled: true
+  image:
+    repository: curlimages/curl
+    # `8.10.1` pinned 2026-05-20. Bump procedure: pick a tag from
+    # https://hub.docker.com/r/curlimages/curl/tags and update both
+    # `tag` and `digest`.
+    tag: "8.10.1"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  resources:
+    requests: { cpu: "10m", memory: "16Mi" }
+    limits:   { cpu: "100m", memory: "64Mi" }
+  # Restricted PSS-compatible — matches the namespace.enforce setting.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault

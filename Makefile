@@ -4,7 +4,7 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-.PHONY: help setup bootstrap doctor drift fmt lint test test-sandbox test-install-pipeline e2e-pull-images build clean
+.PHONY: help setup bootstrap doctor drift fmt lint test test-sandbox test-install-pipeline e2e-pull-images build clean helm-smoke-live helm-test-kind
 
 # Cross-build target the container integration tests mount into linux
 # containers. arm64 chosen so Apple Silicon hosts run containers
@@ -118,3 +118,16 @@ build:  ## Release build
 
 clean:  ## Clean build artifacts
 	@cargo clean
+
+# Live HTTPS smoke against the public telemetry-forwarder ingress.
+# Defaults to `jarvyotel.clifton.quest`; override with HOST=...
+helm-smoke-live:  ## Curl the live telemetry-forwarder HTTPS endpoint end-to-end
+	@./scripts/smoke-live.sh
+
+# Run the chart's `helm test` smoke pod against a release in the
+# currently-pointed kube context. RELEASE / NAMESPACE overridable.
+helm-test-kind:  ## Run `helm test` smoke against an installed chart release
+	@RELEASE="$${RELEASE:-jarvy-telemetry}" ; \
+	NAMESPACE="$${NAMESPACE:-jarvy-telemetry}" ; \
+	echo "running helm test $${RELEASE} -n $${NAMESPACE}" ; \
+	helm test "$${RELEASE}" -n "$${NAMESPACE}" --logs --filter "name=$${RELEASE}-jarvy-telemetry-forwarder-test-otlp-smoke"

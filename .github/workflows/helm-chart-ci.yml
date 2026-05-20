@@ -813,6 +813,16 @@ jobs:
             --wait --timeout 5m
           kubectl rollout status deploy/jarvy-telemetry-jarvy-telemetry-forwarder -n jarvy-telemetry --timeout=5m
 
+      - name: helm test smoke (OTLP /v1/{logs,metrics,traces})
+        run: |
+          set -euo pipefail
+          # Exercises the receiver pipeline in-cluster via the chart's
+          # smoke pod under `templates/tests/`. Failure here means the
+          # Collector accepted the chart-rendered config but isn't
+          # answering OTLP/HTTP — most often a config-pipeline wiring
+          # bug or a NetworkPolicy regression.
+          helm test jarvy-telemetry -n jarvy-telemetry --logs --timeout 2m
+
       - name: Upgrade leg — only if a prior tag exists
         if: steps.prev.outputs.previous_tag != ''
         run: |

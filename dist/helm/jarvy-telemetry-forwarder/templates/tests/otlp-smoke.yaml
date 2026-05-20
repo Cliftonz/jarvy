@@ -1,0 +1,80 @@
+{{- /*
+  Helm test pod: in-cluster OTLP smoke. Runs on `helm test <release>`,
+  is removed on `helm test --logs --cleanup`.
+
+  Goal: validate the receiver pipeline is reachable, accepting OTLP/HTTP,
+  and not silently 4xx-ing on the three pipeline kinds the chart wires.
+
+  This is the in-cluster counterpart to `scripts/smoke-live.sh` (which
+  exercises the public hostname end-to-end). Both share the same
+  minimal-payload approach so a diff between live and in-cluster
+  isolates ingress/middleware as the suspect.
+
+  Skip with `--set tests.enabled=false`.
+*/ -}}
+{{- if .Values.tests.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "jarvy-telemetry-forwarder.fullname" . }}-test-otlp-smoke
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "jarvy-telemetry-forwarder.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chart-test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  {{- with .Values.tests.image.pullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: smoke
+      image: "{{ .Values.tests.image.repository }}:{{ .Values.tests.image.tag }}"
+      imagePullPolicy: {{ .Values.tests.image.pullPolicy }}
+      command: ["/bin/sh", "-eu", "-c"]
+      args:
+        - |
+          set -eu
+          ENDPOINT="http://{{ include "jarvy-telemetry-forwarder.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4318"
+          echo "Probing ${ENDPOINT}"
+
+          # Minimal OTLP/HTTP payloads — one resource, one record per signal.
+          # Schema: opentelemetry-proto v1.x JSON shape. Fields stripped to
+          # the bare minimum the receiver requires; expanding doesn't add
+          # smoke value.
+          LOG_BODY='{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"helm-test"}}]},"scopeLogs":[{"scope":{"name":"helm-test"},"logRecords":[{"timeUnixNano":"0","severityNumber":9,"severityText":"INFO","body":{"stringValue":"helm test smoke"}}]}]}]}'
+          METRIC_BODY='{"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"helm-test"}}]},"scopeMetrics":[{"scope":{"name":"helm-test"},"metrics":[{"name":"helm.test.smoke","sum":{"aggregationTemporality":2,"isMonotonic":true,"dataPoints":[{"asInt":"1","timeUnixNano":"0"}]}}]}]}]}'
+          TRACE_BODY='{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"helm-test"}}]},"scopeSpans":[{"scope":{"name":"helm-test"},"spans":[{"traceId":"5b8aa5a2d2c872e8321cf37308d69df2","spanId":"051581bf3cb55c13","name":"helm.test.smoke","kind":1,"startTimeUnixNano":"0","endTimeUnixNano":"1"}]}]}]}'
+
+          fail=0
+          for pair in "logs:${LOG_BODY}" "metrics:${METRIC_BODY}" "traces:${TRACE_BODY}"; do
+            signal="${pair%%:*}"
+            body="${pair#*:}"
+            url="${ENDPOINT}/v1/${signal}"
+            echo "POST ${url}"
+            # `--fail-with-body` makes curl exit non-zero on 4xx/5xx
+            # while still printing the body for diagnostics. `-sS`
+            # hides progress but surfaces errors. `-w '%{http_code}'`
+            # tail-prints the final status for the case grep.
+            if ! out=$(curl -sS --fail-with-body --max-time 10 \
+              -H 'Content-Type: application/json' \
+              -X POST \
+              --data-raw "${body}" \
+              -w '\nHTTP_STATUS:%{http_code}\n' \
+              "${url}"); then
+              echo "  FAIL ${signal}: ${out}"
+              fail=1
+              continue
+            fi
+            code=$(echo "${out}" | awk -F: '/^HTTP_STATUS:/{print $2}')
+            echo "  ok ${signal}: ${code}"
+          done
+          exit "${fail}"
+      securityContext:
+        {{- toYaml .Values.tests.securityContext | nindent 8 }}
+      resources:
+        {{- toYaml .Values.tests.resources | nindent 8 }}
+{{- end }}

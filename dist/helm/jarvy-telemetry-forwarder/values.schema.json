@@ -629,6 +629,30 @@
           }
         }
       }
+    },
+    "tests": {
+      "type": "object",
+      "description": "Configuration for `helm test` smoke pods under `templates/tests/`. The test pod POSTs minimal OTLP/HTTP payloads at /v1/{logs,metrics,traces} and asserts 2xx.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "tag"],
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1 },
+            "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+            "pullSecrets": {
+              "type": "array",
+              "items": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } } }
+            }
+          }
+        },
+        "resources": { "type": "object" },
+        "securityContext": { "type": "object" }
+      }
     }
   }
 }

@@ -29,6 +29,39 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+## [helm-v0.5.2] — `helm test` smoke pod + live HTTPS smoke script (2026-05-20)
+
+### Added — `jarvy-telemetry-forwarder` Helm chart
+
+- `templates/tests/otlp-smoke.yaml` — `helm test` hook pod that POSTs
+  minimal OTLP/HTTP payloads at `/v1/{logs,metrics,traces}` on the
+  Collector Service and asserts 2xx. Validates the receiver pipeline
+  end-to-end after `helm install` without depending on the public
+  ingress. Image `curlimages/curl:8.10.1` pinned, restricted-PSS
+  compliant.
+- `tests.*` values + schema validation (`enabled`, `image`,
+  `resources`, `securityContext`). Disable with
+  `--set tests.enabled=false`.
+- NetworkPolicy now whitelists pods carrying BOTH the chart-test
+  component label AND the release instance label — required so the
+  `helm test` pod can reach the Collector through the otherwise
+  locked-down ingress.
+- `scripts/smoke-live.sh` — bash script that smokes the public
+  HTTPS endpoint with the same three OTLP payloads. A diff between
+  this and the in-cluster `helm test` isolates ingress (TLS,
+  gateway, middlewares) as the suspect.
+- Makefile targets: `helm-smoke-live` (live HTTPS) and
+  `helm-test-kind` (in-cluster).
+- `helm-chart-ci` kind job now runs `helm test` after the fresh
+  install — receiver-pipeline regressions fail CI alongside the
+  rendering/lint suite.
+
+### Migration
+
+No action needed; new behavior is purely additive. `helm test`
+becomes opt-in once you upgrade — run it whenever you want
+in-cluster validation of the receiver path.
+
 ## [helm-v0.5.1] — HTTPRoute `filters: null` lint fix (2026-05-17)
 
 ### Fixed — `jarvy-telemetry-forwarder` Helm chart
