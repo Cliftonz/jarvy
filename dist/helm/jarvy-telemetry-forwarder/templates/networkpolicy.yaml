@@ -60,6 +60,22 @@ spec:
               k8s-app: kube-dns
       ports:
         - { protocol: UDP, port: 53 }
+    {{- /*
+      Allow return packets to in-namespace `helm test` smoke pods.
+      Production CNIs (Cilium, Calico) auto-permit reply traffic for
+      established INCOMING connections via conntrack, so this rule is
+      a no-op on those clusters. kindnet's NetworkPolicy enforcement
+      does NOT track established state, so without this rule the
+      collector's SYN-ACK back to a test pod's RFC1918 IP is dropped
+      by the `wide-except-rfc1918` egress filter — manifesting as a
+      `helm test` timeout on stock kind. Gated by the same dual-label
+      check as the ingress rule.
+    */}}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "jarvy-telemetry-forwarder.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: chart-test
     {{- if eq $egressMode "wide-except-rfc1918" }}
     - to:
         - ipBlock:
