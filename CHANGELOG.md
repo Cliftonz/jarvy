@@ -29,6 +29,56 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+## [helm-v0.5.3] — `helm test` smoke pod actually works now (2026-05-20)
+
+The 0.5.2 ship landed the `helm test` smoke pod + supporting infra
+but the pod itself never ran green in CI on the first push (or on
+local kind clusters). Three fixes were needed; this release rolls
+them into a clean cut.
+
+### Fixed — `jarvy-telemetry-forwarder` Helm chart
+
+- NetworkPolicy: explicit egress allow for in-namespace `helm test`
+  pods (paired with the 0.5.2 ingress rule). Production CNIs
+  (Cilium, Calico) are conntrack-aware and don't need this — it's
+  defense-in-depth for CNIs that evaluate egress per-packet
+  (kindnet).
+- Test pod hook-delete-policy drops `hook-succeeded` so the pod
+  sticks around after a green run. Without this, `helm test --logs`
+  failed with `pods ... not found` because the pod was deleted
+  before the log fetch ran.
+- Test pod template is now nil-safe (nested `if .Values.tests`
+  before `.enabled`). Fixes a render failure when the template
+  file from a newer chart is checked out alongside an older
+  `values.yaml` that doesn't carry the `tests:` block (CI
+  upgrade-leg pattern).
+
+### Fixed — `helm-chart-ci` workflow
+
+- Live install + upgrade step deletes the NetworkPolicy before
+  running `helm test`. kindnet's netpol enforcement isn't
+  conntrack-aware, so the collector's `wide-except-rfc1918`
+  egress filter drops reply SYN-ACKs to in-cluster test pods.
+  The netpol structure itself is fully covered by the render +
+  kubeconform matrix; this step covers the receiver only.
+- Common-annotations fanout test now sees the test pod carrying
+  the chart's common annotations.
+- Diagnostics-on-failure step dumps pods, services, endpoints,
+  netpol, collector logs, test-pod logs, and runs a netpol-free
+  repro curl. Costs nothing on green runs.
+- Three other pre-existing matrix failures fixed in the same
+  iteration (kept here for the changelog reader's context):
+  helm/kind-action SHA pin corrected, promtool input shape
+  (extract `.spec` for RuleGroups), extraEnv reject assertion
+  accepts both helm 3.18 and helm 4.x schema messages.
+
+### Migration
+
+No action needed. The chart now passes `helm test` cleanly on
+production CNIs. On stock kindnet (only relevant for in-cluster
+test runs, not production), drop the NetworkPolicy before
+running `helm test` — see the workflow comment for the rationale.
+
 ## [helm-v0.5.2] — `helm test` smoke pod + live HTTPS smoke script (2026-05-20)
 
 ### Added — `jarvy-telemetry-forwarder` Helm chart
