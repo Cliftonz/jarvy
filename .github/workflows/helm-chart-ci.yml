@@ -828,6 +828,9 @@ jobs:
         if: failure() && steps.helm_test_smoke.conclusion == 'failure'
         run: |
           set +e
+          echo "::group::cni pods (identify whether kindnet/calico/cilium is enforcing netpol)"
+          kubectl get pods -A -o wide | grep -Ei 'kindnet|calico|cilium|flannel|kube-router|antrea' || true
+          echo "::endgroup::"
           echo "::group::pods"; kubectl get pods -n jarvy-telemetry -o wide; echo "::endgroup::"
           echo "::group::services"; kubectl get svc -n jarvy-telemetry -o wide; echo "::endgroup::"
           echo "::group::endpoints"; kubectl get endpoints -n jarvy-telemetry -o yaml; echo "::endgroup::"
@@ -843,6 +846,19 @@ jobs:
           echo "::endgroup::"
           echo "::group::test pod logs"
           kubectl logs pod/jarvy-telemetry-jarvy-telemetry-forwarder-test-otlp-smoke -n jarvy-telemetry || true
+          echo "::endgroup::"
+
+          # Hypothesis test: if removing the NetworkPolicy lets a fresh
+          # curl pod reach the receiver, the issue is netpol enforcement
+          # (and our `from.podSelector` rule didn't match the helm-test
+          # pod for some reason). If curl still times out, the issue is
+          # CNI / kube-proxy, not the chart's netpol.
+          echo "::group::repro: delete netpol + fresh curl"
+          kubectl delete networkpolicy -n jarvy-telemetry --all || true
+          sleep 2
+          kubectl run repro-curl -n jarvy-telemetry --image=curlimages/curl:8.10.1 --restart=Never -i --rm --command -- \
+            sh -c "set -x; curl -sS --max-time 8 -w 'HTTP:%{http_code}\n' -X POST -H 'Content-Type: application/json' --data-raw '{}' http://jarvy-telemetry-jarvy-telemetry-forwarder.jarvy-telemetry.svc.cluster.local:4318/v1/logs" \
+            2>&1 | tail -20 || true
           echo "::endgroup::"
 
       - name: Upgrade leg — only if a prior tag exists
