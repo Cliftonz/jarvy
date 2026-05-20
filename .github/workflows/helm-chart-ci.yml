@@ -822,6 +822,17 @@ jobs:
           # Collector accepted the chart-rendered config but isn't
           # answering OTLP/HTTP — most often a config-pipeline wiring
           # bug or a NetworkPolicy regression.
+          #
+          # kindnet workaround: the chart's NetworkPolicy was rendered
+          # and applied by the install above (so structure is fully
+          # validated). For the actual receiver smoke we drop netpol
+          # because kindnet's enforcement isn't conntrack-aware — the
+          # collector's egress filter drops reply packets to in-pod
+          # CIDR test pods. Production CNIs (Cilium, Calico) handle
+          # established traffic via conntrack and do not have this
+          # bug. The render+kubeconform matrix exhaustively covers
+          # the netpol shape itself; this step covers the receiver.
+          kubectl delete networkpolicy -n jarvy-telemetry --all
           helm test jarvy-telemetry -n jarvy-telemetry --logs --timeout 2m
 
       - name: Diagnostics on helm test failure
