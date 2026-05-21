@@ -199,6 +199,7 @@ pub fn run_setup(
                     .collect();
                 capture_drift_baseline_borrowed(
                     project_dir,
+                    std::path::Path::new(file),
                     &known_tools_for_baseline,
                     &[],
                     /* auto = */ true,
@@ -735,6 +736,7 @@ pub fn run_setup(
         if drift_config.enabled || auto_baseline_eligible {
             capture_drift_baseline(
                 project_dir,
+                std::path::Path::new(file),
                 &known_tools,
                 &drift_config.track_files,
                 auto_baseline_eligible,
@@ -945,13 +947,14 @@ fn detect_install_method(tool: &str) -> String {
 /// the same on-disk state file.
 fn capture_drift_baseline(
     project_dir: &std::path::Path,
+    config_path: &std::path::Path,
     known_tools: &[(String, crate::config::Tool)],
     track_files: &[String],
     auto: bool,
 ) {
     let borrowed: Vec<(&String, &crate::config::Tool)> =
         known_tools.iter().map(|(k, v)| (k, v)).collect();
-    capture_drift_baseline_borrowed(project_dir, &borrowed, track_files, auto)
+    capture_drift_baseline_borrowed(project_dir, config_path, &borrowed, track_files, auto)
 }
 
 /// Borrow-based variant of `capture_drift_baseline` — lets the
@@ -959,6 +962,7 @@ fn capture_drift_baseline(
 /// deep-cloning every entry. Same on-disk output shape.
 fn capture_drift_baseline_borrowed(
     project_dir: &std::path::Path,
+    config_path: &std::path::Path,
     known_tools: &[(&String, &crate::config::Tool)],
     track_files: &[String],
     auto: bool,
@@ -982,9 +986,8 @@ fn capture_drift_baseline_borrowed(
             state.set_file_hash(file_path, &hash);
         }
     }
-    let config_path = project_dir.join("jarvy.toml");
     if config_path.exists()
-        && let Ok(hash) = crate::drift::state::hash_file(&config_path)
+        && let Ok(hash) = crate::drift::state::hash_file(config_path)
     {
         state.set_config_hash(&hash);
     }
