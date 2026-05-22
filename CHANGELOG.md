@@ -29,6 +29,26 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+### Upgrading from v0.0.5
+
+`jarvy update --channel beta` (and `jarvy update` in general) is broken in
+v0.0.5 — it exits 0 without actually upgrading. Two pre-existing bugs in
+v0.0.5: a hardcoded `version = "0.2"` clap string that makes v0.0.5 think
+it is newer than v0.1.0, plus an update path that never triggers an
+artifact download. Both are fixed in v0.1.0 but cannot be patched
+retroactively. **v0.0.5 users must upgrade by reinstalling via their
+package manager**, not via `jarvy update`:
+
+- macOS (Homebrew tap restored): `brew upgrade jarvy`
+- Debian/Ubuntu: `sudo apt install ./jarvy_0.1.0_amd64.deb`
+- Fedora/RHEL: `sudo dnf install ./jarvy-0.1.0-1.x86_64.rpm`
+- Arch (AUR): `yay -Syu jarvy-bin`
+- Windows (winget): `winget upgrade Jarvy.Jarvy`
+- Cargo: `cargo install jarvy --force`
+
+From v0.1.0 onward, `jarvy update --channel beta` and `jarvy update`
+work as documented.
+
 ## [helm-v0.5.3] — `helm test` smoke pod actually works now (2026-05-20)
 
 The 0.5.2 ship landed the `helm test` smoke pod + supporting infra
