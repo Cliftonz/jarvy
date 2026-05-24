@@ -243,12 +243,18 @@ fn dispatch_command(cli: &Cli, global_config: &init::CliConfig) -> i32 {
         Some(Commands::Tools {
             index,
             default_hooks,
+            request,
+            open,
             output_format,
             output,
-        }) => {
-            commands::run_tools(*index, *default_hooks, *output_format, output.as_deref());
-            0
-        }
+        }) => commands::run_tools(
+            *index,
+            *default_hooks,
+            request.as_deref(),
+            *open,
+            *output_format,
+            output.as_deref(),
+        ),
         Some(Commands::Env {
             file,
             dotenv,

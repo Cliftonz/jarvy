@@ -1,6 +1,7 @@
 // Re-export public modules for use by integration tests and external crates
 pub mod ci;
 pub mod drift;
+pub mod error_codes;
 pub mod git;
 pub mod logging;
 pub mod net;

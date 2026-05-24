@@ -204,6 +204,11 @@ pub enum Source {
     Mcp,
     /// From CLI argument
     Cli,
+    /// User explicitly invoked `jarvy tools --request <name>`. Treated
+    /// as direct consent — telemetry opt-in is bypassed because this
+    /// command's whole purpose is to file a request. The GitHub issue
+    /// URL printed alongside remains the canonical channel.
+    Request,
 }
 
 impl std::fmt::Display for Source {
@@ -212,6 +217,7 @@ impl std::fmt::Display for Source {
             Source::Config => write!(f, "config"),
             Source::Mcp => write!(f, "mcp"),
             Source::Cli => write!(f, "cli"),
+            Source::Request => write!(f, "request"),
         }
     }
 }
@@ -523,6 +529,39 @@ pub fn tool_not_supported(tool: &str, version: Option<&str>, source: Source) {
                 &[
                     KeyValue::new("tool", tool.to_string()),
                     KeyValue::new("source", source.to_string()),
+                    KeyValue::new("platform", env::consts::OS.to_string()),
+                ],
+            );
+        }
+    }
+}
+
+/// Record an explicit user request via `jarvy tools --request <name>`.
+///
+/// Unlike [`tool_not_supported`], this bypasses the [`is_enabled`]
+/// opt-in guard: the user typed the command, so consent is implicit.
+/// The GitHub issue URL printed by the caller remains the canonical
+/// channel — telemetry here is best-effort signal aggregation. If no
+/// OTLP endpoint is configured the metric increment is a no-op, but
+/// the `tracing::warn!` event still lands in `~/.jarvy/logs/jarvy.log`
+/// for local debugging.
+pub fn tool_request_explicit(tool: &str, suggestions: &[String]) {
+    tracing::warn!(
+        event = "tool.request_explicit",
+        tool = %tool,
+        suggestions = ?suggestions,
+        source = %Source::Request,
+        platform = %env::consts::OS,
+        opt_in_bypassed = true,
+    );
+
+    if let Some(state) = TELEMETRY.get() {
+        if let Some(ref metrics) = state.metrics {
+            metrics.tool_not_supported.add(
+                1,
+                &[
+                    KeyValue::new("tool", tool.to_string()),
+                    KeyValue::new("source", Source::Request.to_string()),
                     KeyValue::new("platform", env::consts::OS.to_string()),
                 ],
             );
@@ -1204,6 +1243,7 @@ mod tests {
         assert_eq!(Source::Config.to_string(), "config");
         assert_eq!(Source::Mcp.to_string(), "mcp");
         assert_eq!(Source::Cli.to_string(), "cli");
+        assert_eq!(Source::Request.to_string(), "request");
     }
 
     #[test]

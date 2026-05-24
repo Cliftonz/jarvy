@@ -46,6 +46,18 @@ pub const INCOMPATIBLE_OS_ARCH: i32 = 6;
 /// Typical remediation: Check the hook script for errors or use --no-hooks to skip.
 pub const HOOK_FAILED: i32 = 7;
 
+/// 8 — Tool not supported by Jarvy
+///
+/// Meaning: One or more tools in `jarvy.toml` are not in the registry.
+/// Emitted by `jarvy setup` only when no installable tools remain *and*
+/// at least one unknown tool was requested — that combination means the
+/// run produced zero work and the caller (often an AI agent) needs an
+/// actionable signal. Mixed runs (some known, some unknown) keep the
+/// existing warn-only behavior so partial setups still succeed.
+/// Typical remediation: Run `jarvy tools --request <name>` to file a
+/// request, or scaffold locally with `cargo run -p cargo-jarvy -- new-tool <name>`.
+pub const TOOL_UNSUPPORTED: i32 = 8;
+
 pub struct ErrorCodeInfo {
     pub code: i32,
     pub key: &'static str,
@@ -104,6 +116,13 @@ static ERROR_CODES: &[ErrorCodeInfo] = &[
         remediation: "Check the hook script for errors or use --no-hooks to skip.",
         slug: "hook_failed",
     },
+    ErrorCodeInfo {
+        code: TOOL_UNSUPPORTED,
+        key: "TOOL_UNSUPPORTED",
+        meaning: "Requested tool is not in the Jarvy registry.",
+        remediation: "Run `jarvy tools --request <name>` to file a request, or scaffold locally with `cargo run -p cargo-jarvy -- new-tool <name>`.",
+        slug: "tool_unsupported",
+    },
 ];
 
 pub fn list_error_codes() -> &'static [ErrorCodeInfo] {
@@ -123,6 +142,7 @@ mod tests {
         assert_eq!(PERMISSION_REQUIRED, 5);
         assert_eq!(INCOMPATIBLE_OS_ARCH, 6);
         assert_eq!(HOOK_FAILED, 7);
+        assert_eq!(TOOL_UNSUPPORTED, 8);
     }
 
     #[test]
@@ -136,5 +156,6 @@ mod tests {
         assert!(codes.contains(&PERMISSION_REQUIRED));
         assert!(codes.contains(&INCOMPATIBLE_OS_ARCH));
         assert!(codes.contains(&HOOK_FAILED));
+        assert!(codes.contains(&TOOL_UNSUPPORTED));
     }
 }

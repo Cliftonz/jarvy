@@ -119,6 +119,14 @@ pub enum Commands {
         /// List tools with built-in default hooks
         #[clap(long)]
         default_hooks: bool,
+        /// Generate a pre-filled GitHub issue URL and scaffold snippet
+        /// for requesting support for an unsupported tool.
+        #[clap(long, value_name = "TOOL")]
+        request: Option<String>,
+        /// With --request, open the pre-filled GitHub issue in the
+        /// default browser instead of just printing the URL.
+        #[clap(long, requires = "request")]
+        open: bool,
         /// Output format: json, yaml, toml, pretty (for --index)
         #[clap(short = 'F', long = "format", value_enum, default_value = "pretty")]
         output_format: OutputFormat,

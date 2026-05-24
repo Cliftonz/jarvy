@@ -190,6 +190,7 @@ pub mod tokei;
 pub mod tree;
 pub mod trivy;
 pub mod trufflehog;
+pub mod unsupported;
 pub mod up;
 pub mod usql;
 pub mod vagrant;

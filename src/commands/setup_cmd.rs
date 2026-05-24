@@ -254,24 +254,57 @@ pub fn run_setup(
         );
     }
 
-    // Log unknown tools - critical for MCP feedback loop. Suppress
-    // the telemetry-disabled nag in seamless mode (PRD-053) — those
-    // environments are usually multi-tenant or ephemeral, and the
-    // nag is noise the operator can't act on.
+    // Log unknown tools — telemetry is the canonical request channel
+    // (no GitHub account needed, zero triage on the maintainer side).
+    // The fallback URL is shown only when telemetry is off. Seamless
+    // mode (PRD-053) suppresses the "enable telemetry" hint because
+    // those environments are typically multi-tenant or ephemeral and
+    // the operator can't toggle telemetry per-run.
     let seamless = crate::sandbox::is_seamless();
+    let unsupported_channel = if telemetry::is_enabled() {
+        tools::unsupported::RequestChannel::WillSend
+    } else if seamless {
+        tools::unsupported::RequestChannel::Sent
+    } else {
+        tools::unsupported::RequestChannel::Manual
+    };
+
     for (name, version) in &version_check.unknown {
-        let msg = format!(
-            "We do not currently have support for {} package but we have logged it and will be adding it soon.",
-            name
+        let report = tools::unsupported::build_report(name, Some(version), unsupported_channel);
+        // Human-readable block: name, suggestions, channel status,
+        // scaffold. The renderer hides the GitHub URL when telemetry
+        // covers the request.
+        eprint!(
+            "{}",
+            tools::unsupported::to_human(&report, unsupported_channel)
         );
-        eprintln!("{}", msg);
-        // Emit telemetry for unknown tool (used by MCP feedback)
+        // Structured event for log pipelines and AI parsers — fires
+        // regardless of channel so jarvy.log always records the ask.
+        tracing::warn!(
+            event = "tool.unsupported",
+            tool = %report.tool,
+            version = ?report.version,
+            suggestions = ?report.suggestions,
+            channel = %report.channel,
+            fallback_issue_url = %report.fallback_issue_url,
+            scaffold_cmd = %report.scaffold_cmd,
+            exit_code = report.exit_code,
+            "tool not in registry"
+        );
         telemetry::tool_not_supported(name, Some(version), telemetry::Source::Config);
-        if !telemetry::is_enabled() && !seamless {
-            eprintln!(
-                "Telemetry is disabled. Please consider creating a feature request here: https://github.com/bearbinary/Jarvy/issues/new"
-            );
-        }
+    }
+
+    // If every configured tool was unknown — nothing to install, nothing
+    // already satisfied — the run produced zero work. Signal that with
+    // exit code TOOL_UNSUPPORTED so AI agents driving setup know to act
+    // (file a request, scaffold the tool, or revise the config). Mixed
+    // runs (some known + some unknown) keep returning 0 so partial
+    // setups still succeed.
+    if !version_check.unknown.is_empty()
+        && version_check.needs_install.is_empty()
+        && version_check.satisfied.is_empty()
+    {
+        return error_codes::TOOL_UNSUPPORTED;
     }
 
     // Create list of known tools for hook execution (needed later)
