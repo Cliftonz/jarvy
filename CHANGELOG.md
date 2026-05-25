@@ -49,6 +49,65 @@ package manager**, not via `jarvy update`:
 From v0.1.0 onward, `jarvy update --channel beta` and `jarvy update`
 work as documented.
 
+## [helm-v0.6.1] — Defense-in-depth: anonymize record-level attrs (2026-05-25)
+
+### Fixed — `jarvy-telemetry-forwarder` Helm chart
+
+- `transform/anonymize` now runs at the record level in addition to
+  resource context. The 0.6.0 chart's hash statements were scoped to
+  `context: resource`, so any client SDK that emitted a PII-shaped
+  attribute as a per-event field (e.g. `tracing::info!(hostname = %h)`)
+  bypassed the SHA256 hash and reached the backend in plaintext. The
+  companion SDK fix moves `host.name` to the resource where it belongs;
+  this chart change makes the privacy contract hold even when a future
+  SDK regression mis-slots an attribute.
+- Adds a second OTTL statement context to each pipeline
+  (`log` / `datapoint` / `span`). Same `pii.hashedAttributes` list is
+  reused — single source of truth.
+- `keep_keys` is intentionally NOT applied at record level: event-
+  specific attributes (`event`, `tools`, `duration_ms`) are not PII and
+  must pass through. Resource-context `keep_keys` remains the
+  allowlist enforcement point for per-process identity attrs.
+
+### Migration
+
+No action needed. Patch bump; no values surface change. Consumers can
+no-op-upgrade.
+
+## [helm-v0.6.0] — Grafana Cloud OTLP region default fix (2026-05-25)
+
+### Fixed — `jarvy-telemetry-forwarder` Helm chart
+
+- `exporter.endpoint` default hardcoded `prod-us-east-0`, but
+  Grafana Cloud API keys are region-bound — keys issued for any other
+  region 401 at the gateway and silently drop every export. The home
+  stack lives on `prod-us-east-3`; consumers relying on the chart
+  default had 100% export failure for traces, metrics, and logs.
+
+### Changed — `jarvy-telemetry-forwarder` Helm chart
+
+- Region hoisted to a new top-level value `grafanaCloud.region`
+  (default `prod-us-east-3`). When `exporter.endpoint` is empty the
+  chart now composes
+  `https://otlp-gateway-<region>.grafana.net/otlp` via a single
+  `exporterEndpoint` helper. Explicit `exporter.endpoint` still wins
+  unchanged — operators pointing at Honeycomb / Datadog / in-cluster
+  Tempo keep their override path.
+- Both the Deployment's `BACKEND_OTLP_ENDPOINT` env and the
+  `CiliumNetworkPolicy`'s FQDN derivation flow through the same
+  helper, so a region bump can't desync the egress allow-list from
+  the actual gateway.
+
+### Migration — BREAKING
+
+`exporter.endpoint` default is now empty (was a hardcoded URL).
+Consumers that depended on the chart-default us-east-0 URL must
+either:
+
+- Set `exporter.endpoint` explicitly to keep their previous URL, or
+- Align `grafanaCloud.region` with their stack's region (default
+  `prod-us-east-3` works for home-cluster installs).
+
 ## [helm-v0.5.3] — `helm test` smoke pod actually works now (2026-05-20)
 
 The 0.5.2 ship landed the `helm test` smoke pod + supporting infra
@@ -487,6 +546,26 @@ invariants.
   `NotFound`/`Unknown`). `commands::diagnose`, `commands::drift`,
   and `observability::bundle` all delegate here instead of
   hand-rolling three near-identical detectors.
+- **Unsupported-tool feedback loop with telemetry-first delivery.**
+  When a user (or AI agent) hits a tool Jarvy doesn't support, the
+  run now surfaces a structured request payload — fuzzy Levenshtein
+  suggestions with prefix-match boost, a `define_tool!` scaffold
+  snippet, exit code `TOOL_UNSUPPORTED` (8), and a delivery channel.
+  Telemetry is canonical: no GitHub account needed and zero triage
+  work for the maintainer. The pre-filled `tool_request.yml` issue
+  URL is surfaced only when telemetry is off, with
+  `jarvy telemetry enable` offered as a one-time alternative. New
+  `jarvy tools --request <name> [--open]` flag with pretty / JSON /
+  YAML / TOML output. Setup-path returns exit 8 only when every
+  configured tool was unknown — mixed runs still return 0 so partial
+  setups succeed. Canonical `tool.unsupported` event with uniform
+  field shape across both call sites; OTEL counter
+  `jarvy.tool.unsupported` renamed from `…not_supported` to match.
+- **`crates/jarvy-templates` workspace member** — dep-free crate
+  shipping `validate_tool_name`, `render_tool_template`,
+  `MAX_TOOL_NAME_LEN`, and the embedded `define_tool!` template.
+  `cargo-jarvy` depends only on this crate now; clean-build time
+  drops from minutes (full jarvy lib) to ~7s.
 
 ### Changed
 
@@ -549,6 +628,52 @@ invariants.
 - `update_rc_content` argument order documented; previously the
   test suite caller had `(content, &vars, &ctx, ShellType)` instead
   of the actual `(content, ShellType, &vars, &ctx)`.
+- **OTLP env-only opt-in now actually exports.** Four compounding
+  bugs caused `JARVY_TELEMETRY=1` + `JARVY_OTLP_ENDPOINT=…` to
+  silently produce zero records, and even file-flag opt-in lost
+  every metric point on short-lived commands:
+  (1) `init_logging` gated on the file flag, missing the env
+      override — the OTEL log layer was excluded from the
+      subscriber whenever telemetry was opt-in via env only;
+  (2) `opentelemetry-otlp` 0.31's `with_endpoint()` is the FULL URL
+      not a base — a bare `http://localhost:4318` produced `POST /`
+      and the collector 404'd every batch. New
+      `analytics::resolve_otlp_endpoint(base, signal)` appends
+      `/v1/{logs|metrics|traces}` idempotently;
+  (3) `otlp_logs_endpoint()` ignored the file config's
+      `[telemetry] endpoint` — setting it via
+      `jarvy telemetry set-endpoint` silently failed to reroute
+      logs. The logger builder now reads the merged
+      `TelemetryConfig`;
+  (4) `telemetry::shutdown()` was defined but never called from
+      `main`, so the `SdkMeterProvider`'s 60s `PeriodicReader` had
+      no chance to flush on `jarvy setup`-length runs.
+      Now called alongside `analytics::shutdown_logging()` in
+      the exit path.
+- **`host.name` emitted as resource attribute, not per-event
+  field.** Grafana Cloud was receiving plaintext
+  `hostname=<machine>.local` from the `setup.inventory` event,
+  defeating the chart-side anonymize pipeline (which only operated
+  on resource-context attrs). Build a shared
+  `opentelemetry_sdk::Resource` once at telemetry init with
+  `service.name`, `service.version`, `host.name`, `os.type`,
+  `os.description`; attach to both `SdkLoggerProvider` and
+  `SdkMeterProvider`. Previously `service.name` defaulted to
+  `unknown_service`, which broke stack-level filtering and made
+  "where did this record come from" guesswork. Local file logger
+  and stderr layers still print plaintext (those are operator-
+  owned sinks, not the egress channel).
+- **`emit_telemetry_hint_if_undecided`** now consults
+  `telemetry::is_enabled()` first so a user running with
+  `JARVY_TELEMETRY=1` doesn't see "telemetry is opt-in and
+  currently off" right after a run that just emitted records.
+- **Drift hash respects `--file`.** `jarvy drift` hashed
+  `<project_dir>/jarvy.toml` regardless of the `--file` flag, so
+  drift detection silently used the wrong file when a non-default
+  config path was supplied.
+- **`set_up_os` matches `env::consts::OS` casing.** A capitalization
+  mismatch in the platform-dispatch table caused setup to fall
+  through to the unknown-OS path on some platforms.
 
 ### Tests
 
