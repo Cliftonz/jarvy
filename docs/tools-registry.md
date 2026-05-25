@@ -1,6 +1,6 @@
 ---
 title: "Tool registry (auto-generated) — Jarvy"
-description: "Every tool Jarvy knows how to install — 204 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
+description: "Every tool Jarvy knows how to install — 205 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
 tags:
   - reference
   - tools
@@ -12,7 +12,7 @@ tags:
     This page is generated from `jarvy tools --index` by `scripts/gen-docs.sh`. 
     Run that script after registering new tools.
 
-Jarvy currently ships **204 tools**. Reference one in your `jarvy.toml` by its **name**.
+Jarvy currently ships **205 tools**. Reference one in your `jarvy.toml` by its **name**.
 
 | Name | Command | macOS | Linux | Windows | Default hook | Depends on |
 |---|---|---|---|---|---|---|
@@ -204,6 +204,7 @@ Jarvy currently ships **204 tools**. Reference one in your `jarvy.toml` by its *
 | `trufflehog` | `trufflehog` | `brew: trufflehog` | — | — |  | — |
 | `up` | `up` | `brew: upbound/tap/up` | — | — |  | — |
 | `usql` | `usql` | `brew: usql` | — | `choco: usql` |  | — |
+| `uv` | `uv` | `brew: uv` | apk: `uv` | `winget: astral-sh.uv` |  | — |
 | `vagrant` | `vagrant` | `cask: vagrant` | apt: `vagrant`<br>dnf: `vagrant`<br>pacman: `vagrant`<br>apk: `vagrant` | `winget: Hashicorp.Vagrant`<br>`choco: vagrant` |  | — |
 | `vault` | `vault` | `brew: vault` | apt: `vault`<br>dnf: `vault`<br>pacman: `vault`<br>apk: `vault` | `winget: HashiCorp.Vault` |  | — |
 | `vfox` | `vfox` | `brew: vfox` | — | `winget: vfox` |  | — |

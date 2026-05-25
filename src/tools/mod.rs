@@ -193,6 +193,7 @@ pub mod trufflehog;
 pub mod unsupported;
 pub mod up;
 pub mod usql;
+pub mod uv;
 pub mod vagrant;
 pub mod vault;
 pub mod version;
