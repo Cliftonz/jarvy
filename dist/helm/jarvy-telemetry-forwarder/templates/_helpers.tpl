@@ -185,16 +185,34 @@ receivers:
 processors:
   transform/anonymize:
     error_mode: propagate
+    # Each signal pipeline anonymizes in TWO contexts: the resource
+    # block (per-process identity emitted once by the SDK) AND the
+    # record-level block (log record / metric data point / span
+    # attributes). Without the record-level pass, an SDK that
+    # accidentally emits a PII-shaped attribute as a per-event field
+    # — `tracing::info!(hostname = %h, ...)` — bypasses the resource
+    # hash entirely and the plaintext lands in Grafana. Defense in
+    # depth: the chart's privacy contract holds even if the client
+    # SDK ships an attribute in the wrong slot.
     log_statements:
       - context: resource
+        statements:
+          {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
+      - context: log
         statements:
           {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
     metric_statements:
       - context: resource
         statements:
           {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
+      - context: datapoint
+        statements:
+          {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
     trace_statements:
       - context: resource
+        statements:
+          {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
+      - context: span
         statements:
           {{- include "jarvy-telemetry-forwarder.anonymizeStatements" .Values.pii.hashedAttributes | nindent 10 }}
 

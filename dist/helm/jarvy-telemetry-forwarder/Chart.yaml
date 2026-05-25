@@ -10,7 +10,7 @@ description: |
   annotations / labels / filters are fully customizable so downstream
   systems can adapt to their cluster's ingress conventions.
 type: application
-version: 0.6.0
+version: 0.6.1
 appVersion: "0.1.0"
 home: https://jarvy.dev
 sources:
@@ -31,11 +31,5 @@ annotations:
   artifacthub.io/license: MIT
   artifacthub.io/operator: "false"
   artifacthub.io/changes: |
-    - kind: fixed
-      description: "exporter.endpoint default no longer hardcodes the prod-us-east-0 Grafana Cloud region — API keys are region-scoped and the wrong region returns HTTP 401 and silently drops every export."
-    - kind: added
-      description: "New top-level value `grafanaCloud.region` (default `prod-us-east-3`). When `exporter.endpoint` is empty, the chart composes `https://otlp-gateway-<region>.grafana.net/otlp` from this value."
-    - kind: changed
-      description: "exporter.endpoint default is now empty (was a hardcoded URL). Existing consumers that set exporter.endpoint explicitly still win — override path unchanged."
-    - kind: changed
-      description: "CiliumNetworkPolicy FQDN derivation now goes through the same endpoint resolver as the deployment env, so a region bump flips both atomically."
+    - kind: security
+      description: "transform/anonymize now runs in TWO contexts per signal — resource (per-process identity) AND record (log/datapoint/span attributes). Closes a PII leak where SDKs that emitted hostname/user.email/jarvy.cwd as per-event fields bypassed the resource-only hash and surfaced plaintext in the backend."
