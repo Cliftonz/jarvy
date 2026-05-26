@@ -428,8 +428,11 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
             .with_platform(format!("linux/{docker_platform}"))
             .with_cmd(vec!["sleep", CONTAINER_LIFETIME_SECS])
             .with_mount(
-                Mount::bind_mount(jarvy_path.to_string_lossy().into_owned(), CONTAINER_JARVY_BIN)
-                    .with_access_mode(AccessMode::ReadOnly),
+                Mount::bind_mount(
+                    jarvy_path.to_string_lossy().into_owned(),
+                    CONTAINER_JARVY_BIN,
+                )
+                .with_access_mode(AccessMode::ReadOnly),
             )
             .with_env_var("JARVY_HOME", CONTAINER_JARVY_HOME)
             .with_env_var("HOME", CONTAINER_HOME)
