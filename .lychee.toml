@@ -38,7 +38,10 @@ exclude = [
 # Be patient with rate-limited domains.
 exclude_link_local = true
 exclude_loopback = true
-exclude_mail = true
+# `exclude_mail` was removed in lychee 0.22 — the inverse `include_mail`
+# now controls this behavior. Default is to skip mailtos, so simply
+# omitting the directive matches the prior `exclude_mail = true`.
+include_mail = false
 exclude_path = [
     "site/",
     "target/",
