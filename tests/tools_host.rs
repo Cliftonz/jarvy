@@ -6,7 +6,6 @@
 // We simply invoke `--help` to ensure the binary runs on the host.
 
 use std::env;
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 
