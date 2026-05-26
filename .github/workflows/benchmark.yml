@@ -23,6 +23,11 @@ permissions:
   contents: write
   pull-requests: write
 
+# Cancel previous runs on the same ref (force-push during PR iteration).
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   benchmark:
     name: Run Benchmarks

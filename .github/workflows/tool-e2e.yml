@@ -1,13 +1,23 @@
 name: Tools E2E
 
 on:
-  # Tools E2E exercises the full multi-OS install matrix; running on
-  # every push to every branch was burning ~13 min × N pushes/day.
-  # Restrict to PR validation (pre-merge gate) and release tags
-  # (post-merge integration check). workflow_dispatch covers ad-hoc
-  # validation when working on the tools registry.
+  # Tools E2E exercises the full multi-OS install matrix and was
+  # burning ~13 min × N pushes/day across mac+win+6-distro-linux.
+  # Restrict to PRs that actually touch the tools registry / install
+  # scripts / tools-related tests (everything else can't regress this
+  # surface). Release tags still run the full matrix as the canonical
+  # post-merge integration check. workflow_dispatch covers ad-hoc runs.
   pull_request:
     branches: [main]
+    paths:
+      - 'src/tools/**'
+      - 'crates/jarvy-templates/**'
+      - 'tests/cli_*.rs'
+      - 'tests/e2e_*.rs'
+      - 'tests/tools_*.rs'
+      - 'dist/scripts/install.*'
+      - 'Cargo.toml'
+      - '.github/workflows/tool-e2e.yml'
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
@@ -54,6 +64,12 @@ jobs:
 
   native-host:
     name: Native host (brew on macOS, winget on Windows)
+    # macOS minutes are $0.062/min (10x Linux) and Windows is $0.01/min.
+    # PR-time native-host runs were the second-largest macOS consumer
+    # behind release.yml. PRs get Linux-only (linux-testcontainers above);
+    # native-host fires on release tags + workflow_dispatch so cross-OS
+    # install verification still gates the canonical artifact builds.
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:

@@ -7,6 +7,19 @@ on:
   # not running it on every merge saves significant runner time.
   pull_request:
     branches: [ "main" ]
+    # Positive filter: coverage signal only matters when source / tests /
+    # dep manifests change. Doc-only / config-only / examples-only PRs
+    # don't shift the coverage number, and the workflow takes ~10 min
+    # of Linux quota per run. Keeps the PR-time coverage gate but skips
+    # the runs that would have produced an identical number.
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'tests/**'
+      - 'benches/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - '.github/workflows/coverage.yml'
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
@@ -15,6 +28,11 @@ on:
 
 permissions:
   contents: read
+
+# Cancel previous runs on the same ref (force-push during PR iteration).
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always

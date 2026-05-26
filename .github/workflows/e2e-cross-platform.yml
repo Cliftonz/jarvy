@@ -1,24 +1,29 @@
 # PRD-038: Hybrid Cross-Platform E2E Testing Harness
 #
 # This workflow tests Jarvy tool installations across multiple platforms:
-# - GitHub-hosted runners (FREE): macOS, Ubuntu, Windows
+# - GitHub-hosted runners: Ubuntu (free) + macOS / Windows (paid)
 # - AWS EC2 Spot (future): Fedora, Arch, Alpine, FreeBSD
 #
-# Cost: ~$0/month (GitHub-hosted runners are free for public repos)
+# Correction to a prior comment claim: macOS and Windows runners are NOT
+# free for public repos — only ubuntu-* is. macOS is the priciest at
+# $0.062/min (10x Linux). Nightly cadence × 3 OSes × ~10min/run was
+# burning ~$15-20/month from this workflow alone.
 
 name: E2E Cross-Platform Tests
 
 on:
-  # E2E cross-platform runs are heavy (multi-OS install matrix). The
-  # nightly cron below produces the canonical signal that main is
-  # green; per-push and per-PR runs were redundant and routinely added
-  # ~30 min of runner time without finding bugs the nightly missed.
+  # E2E cross-platform runs are heavy (multi-OS install matrix). Weekly
+  # cadence is sufficient — the registered tools surface changes on the
+  # order of days/weeks, not hours, and the nightly cadence rarely caught
+  # a regression the next weekly run wouldn't have. Tag pushes still get
+  # the full matrix via release.yml + tool-e2e.yml so cuts are validated
+  # at release time regardless of the weekly cron schedule.
   # workflow_dispatch covers ad-hoc validation when a PR touches the
   # tools registry or install scripts and the author wants pre-merge
   # confirmation.
   schedule:
-    # Nightly at 2 AM UTC
-    - cron: '0 2 * * *'
+    # Weekly on Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
   workflow_dispatch:
     inputs:
       tier:

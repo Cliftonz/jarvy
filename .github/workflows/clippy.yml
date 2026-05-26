@@ -7,6 +7,18 @@ on:
   # lints introduced by Rust toolchain updates.
   pull_request:
     branches: [ "main" ]
+    # Positive filter: clippy only matters when Rust source or build
+    # configuration changes. The .yml itself is included so workflow
+    # tweaks still validate. test.yml's lint job also runs clippy as
+    # part of the broader PR gate; this workflow's SARIF upload is the
+    # value-add over that — keep it firing whenever .rs / Cargo.toml /
+    # build.rs / rust-toolchain changes.
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - 'build.rs'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/clippy.yml'
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
@@ -14,6 +26,11 @@ on:
   schedule:
     - cron: '17 20 * * 0'
   workflow_dispatch:
+
+# Cancel previous runs on the same ref (force-push during PR iteration).
+concurrency:
+  group: clippy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   rust-clippy-analyze:

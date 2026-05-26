@@ -1,14 +1,31 @@
 name: Test
 
 on:
-  # Validation runs on PRs (pre-merge gate) and on release tags
-  # (post-merge integration check). The push-to-main trigger was
-  # removed because every PR is already validated and the merge
-  # commit is identical to the validated PR head — re-running the
-  # same suite on the merge duplicates effort. Tag push covers the
-  # integrated state when a release is cut.
+  # PR gate: Linux only. Public-repo Linux minutes are free; macOS + Windows
+  # are not (macOS is 10x Linux per-minute). Cross-OS validation lives on
+  # the release-tag matrix below + the nightly e2e-cross-platform run.
+  # Doc-only / CI-only / examples-only PRs skipped via paths-ignore so a
+  # README tweak doesn't fire the test suite.
+  #
+  # Tag push: full matrix (Linux + macOS + Windows). Release-cut is the
+  # canonical integration check — full cross-OS validation here catches
+  # regressions before the artifact build runs in release.yml.
   pull_request:
     branches: [ "main" ]
+    # Positive filter: PR test runs only fire when source / tests / dep
+    # manifests / build config change. Excludes doc-only, CI-only,
+    # example-only, lint-config PRs that can't shift the test outcome.
+    # Inverted from paths-ignore for predictability — easier to reason
+    # about "what triggers a run" than "what does NOT trigger".
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'tests/**'
+      - 'benches/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/test.yml'
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
@@ -17,6 +34,14 @@ on:
 
 permissions:
   contents: read
+
+# Cancel previous runs on the same ref. Force-pushes during PR iteration
+# previously stacked 2-3 in-flight matrix runs per branch — each one
+# burned its macOS + Windows slot before being cancelled by branch
+# protection.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -49,7 +74,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # PR runs (free Linux minutes) get ubuntu-latest only.
+        # Tag pushes add macos-latest + windows-latest for the
+        # integration check. github.event_name is evaluated at
+        # matrix-expansion time so this composes cleanly.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["macos-latest", "ubuntu-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v4
 
