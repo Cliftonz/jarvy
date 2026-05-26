@@ -57,12 +57,28 @@ const BUILDPACK_DEPS_BOOKWORM_SCM_DIGEST: &str =
 // skip rules add a CI loud-fail and a libc check that don't belong in
 // the sandbox flow.
 
-/// Skip if Docker is unreachable OR the resolved binary is not a
-/// Linux ELF. Returns a short reason string for the skip log so
-/// CI surfaces *why* a test was a no-op.
+/// Skip if Docker is unreachable, the resolved binary is not a Linux
+/// ELF, OR `JARVY_TEST_BIN` was not explicitly set. The last check is
+/// the one that catches the Tool E2E workflow case: it does
+/// `cargo build --release --bin jarvy` on a glibc-2.39 ubuntu-latest
+/// runner, then runs `cargo test --tests` which picks up *all* test
+/// binaries — including this one. The host-built jarvy exec'd inside
+/// the older-glibc testcontainers fails with
+/// `libc.so.6: version GLIBC_2.39 not found` and these sandbox tests
+/// red the whole job. The dedicated `make test-sandbox` target sets
+/// `JARVY_TEST_BIN` to a cross-built linux-gnu jarvy that exec's
+/// cleanly; anything else skips with a clear message.
 fn skip_reason() -> Option<String> {
     if !docker_available() {
         return Some("docker daemon not reachable".to_string());
+    }
+    if std::env::var_os("JARVY_TEST_BIN").is_none() {
+        return Some(
+            "JARVY_TEST_BIN not set — sandbox tests require a cross-built linux-gnu \
+             jarvy (try `make test-sandbox`). Skipping to avoid GLIBC mismatch when \
+             exec'd inside an older testcontainer."
+                .to_string(),
+        );
     }
     let bin = host_jarvy_path();
     if !bin.exists() {
