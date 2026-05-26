@@ -6,6 +6,11 @@
 // We simply invoke `--help` to ensure the binary runs on the host.
 
 use std::env;
+// `Write` is used by the macOS-gated test below (writeln! on a File);
+// the Linux build path doesn't compile that test so the import would
+// be flagged as unused — gate the import to match.
+#[cfg(target_os = "macos")]
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 

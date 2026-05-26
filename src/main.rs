@@ -73,6 +73,30 @@ fn main() {
         return;
     }
 
+    // CI-flag forwarding to env BEFORE any cached ci::detect()/is_ci()
+    // call. The `Setup { ci, no_ci, .. }` flags were forwarded into
+    // `JARVY_CI` / `JARVY_NO_CI` only inside `run_setup` — but
+    // `telemetry::init` (and `update::config`) call
+    // `sandbox::is_seamless_auto()` → `crate::ci::is_ci()` →
+    // `cached_detect()` long before `run_setup` runs. The cache locks
+    // in `None` from the no-env baseline, so the subsequent
+    // `set_var("JARVY_CI", "1")` inside `run_setup` is invisible to the
+    // cached state and the `Running in CI mode` notice never fires.
+    // Hoist the forwarding here so both early-init callers and the
+    // setup-command path see the same forced-CI state.
+    //
+    // SAFETY: env vars set at startup before any threads are spawned.
+    #[allow(unsafe_code)]
+    {
+        if let Some(Commands::Setup { ci, no_ci, .. }) = &cli.command {
+            if *ci {
+                unsafe { std::env::set_var("JARVY_CI", "1") };
+            } else if *no_ci {
+                unsafe { std::env::set_var("JARVY_NO_CI", "1") };
+            }
+        }
+    }
+
     // Initialize after parsing arguments
     let global_config = initialize();
 
