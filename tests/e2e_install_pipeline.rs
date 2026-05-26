@@ -140,8 +140,7 @@ fn compute_skip_reason() -> Option<String> {
     // behind an explicit `JARVY_E2E_INSTALL_REQUIRED=1` marker so the
     // generic Test job skips silently while a future dedicated
     // workflow can still demand the matrix actually run.
-    let required =
-        std::env::var("JARVY_E2E_INSTALL_REQUIRED").ok().as_deref() == Some("1");
+    let required = std::env::var("JARVY_E2E_INSTALL_REQUIRED").ok().as_deref() == Some("1");
 
     if !opted_in {
         if required {
