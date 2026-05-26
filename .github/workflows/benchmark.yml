@@ -45,7 +45,7 @@ jobs:
         run: cargo bench --bench config_parsing --bench registry_lookup --bench version_comparison -- --noplot
 
       - name: Store benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results
           path: target/criterion/
