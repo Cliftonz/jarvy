@@ -232,10 +232,11 @@ chart CI time, see `.github/workflows/helm-chart-ci.yml`):
 - `collector.image.digest` must be `sha256:` + 64 hex chars or empty
 - `exporter.endpoint` matches `^(|https://[a-z0-9.-]+(?::[0-9]+)?(?:/[^\s]*)?)$`
   — empty (chart composes from `grafanaCloud.region`) OR **https only**
-  (http rejected), no userinfo (`user@host` rejected), no uppercase
-  host (rejected). The strictness is deliberate: the
-  CiliumNetworkPolicy FQDN parser would silently strip userinfo, and
-  uppercase hostnames defeat lowercase-only FQDN matching.
+  (URL must start with `^https://`; http rejected), no userinfo
+  (`user@host` rejected), no uppercase host (rejected). The strictness
+  is deliberate: the CiliumNetworkPolicy FQDN parser would silently
+  strip userinfo, and uppercase hostnames defeat lowercase-only FQDN
+  matching.
 - `grafanaCloud.region` matches `^[a-z0-9]+(?:-[a-z0-9]+)+$` (e.g.
   `prod-us-east-3`). API keys in `grafana-otlp-token` are bound to one
   stack which lives in one region — wrong-region presentation returns
