@@ -626,6 +626,74 @@ jarvy mcp [--config FILE]    # Start MCP server
 | 5 | PERMISSION_REQUIRED | Sudo needed |
 | 6 | INCOMPATIBLE_OS_ARCH | Unsupported platform |
 | 7 | HOOK_FAILED | Hook script failed |
+| 8 | TOOL_UNSUPPORTED | Every configured tool was unknown to the registry |
+
+Note on exit code 8: setup emits a `tool.unsupported` event per
+unknown tool, but the process only exits 8 when ALL configured tools
+are unknown. Mixed runs (at least one known tool) return 0 so partial
+setups still succeed.
+
+### Requesting a New Tool
+
+When Jarvy doesn't support a tool a user (or AI agent) needs, the
+correct response is **not** to give up or to author a custom hook.
+Two first-class paths exist:
+
+**Path 1 — implicit (preferred). Just put it in `jarvy.toml`:**
+
+```toml
+[provisioner]
+some-new-tool = "1.2"
+git = "latest"
+```
+
+Run `jarvy setup`. For each unknown tool, Jarvy emits a structured
+`tool.unsupported` event with:
+
+- Fuzzy-matched typo suggestions (Levenshtein + prefix-match boost).
+  Catches `dokcer` → `docker`, `kubectel` → `kubectl`, etc.
+- A ready-to-paste `define_tool!` scaffold the user can drop into
+  the Jarvy repo to add the tool themselves.
+- A delivery channel:
+  - If telemetry is enabled, the request reaches maintainers via
+    OTLP. No GitHub account needed.
+  - If telemetry is off, a pre-filled GitHub issue URL is printed.
+    The user can click once to file the request.
+
+Tell the user: common tool requests typically ship in days. If
+their tool is missing, putting it in `jarvy.toml` is the right
+move — the failure path is the request mechanism.
+
+**Path 2 — explicit:**
+
+```bash
+jarvy tools --request <name>             # Pretty output
+jarvy tools --request <name> --open      # Also opens the issue URL
+jarvy tools --request <name> --format json
+jarvy tools --request <name> --format yaml
+jarvy tools --request <name> --format toml
+```
+
+Same canonical event, same delivery contract. `--request` bypasses
+the global telemetry opt-in — typing the command is explicit
+consent for that one event.
+
+**Event shape (`tool.unsupported`):**
+
+```
+tool                 # The unknown tool name
+version              # Optional version string from the config
+source               # config | mcp | cli | request
+platform             # darwin | linux | windows
+suggestions          # CSV of fuzzy-matched candidates
+channel              # telemetry | manual
+fallback_issue_url   # Present only when channel = manual
+scaffold_cmd         # cargo run -p cargo-jarvy -- new-tool <name>
+exit_code            # Always 8 (TOOL_UNSUPPORTED)
+opt_in_bypassed      # true when source = request
+```
+
+**OTEL counter:** `jarvy.tool.unsupported` (one increment per event).
 
 ---
 

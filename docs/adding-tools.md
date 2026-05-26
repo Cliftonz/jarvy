@@ -543,3 +543,59 @@ cargo run -p cargo-jarvy -- new-tool mytool
 ```
 
 This creates the directory structure and files with sensible defaults.
+
+## How User Requests Reach Maintainers
+
+When a user (or AI agent) runs `jarvy setup` with a tool name that
+isn't in the registry — or invokes `jarvy tools --request <name>`
+explicitly — Jarvy emits a canonical `tool.unsupported` event. As a
+maintainer, this is your primary inbound signal for "add tool X next."
+
+**Two delivery channels:**
+
+1. **Telemetry (preferred)** — when the user has opted in via
+   `jarvy telemetry enable` (or implicit consent on the `--request`
+   path), the event ships via OTLP to the project's collector. Query
+   the `jarvy.tool.unsupported` counter / event stream for ranked
+   requests. No GitHub account required for the user, no triage
+   friction for you.
+2. **GitHub fallback** — when telemetry is off, Jarvy prints a
+   pre-filled issue URL pointing at
+   [`tool_request.yml`](https://github.com/bearbinary/jarvy/issues/new?template=tool_request.yml).
+   The form arrives with the tool name, platform, version, and
+   `define_tool!` scaffold already populated.
+
+**Event payload shape** (uniform across `setup` and `--request`
+call sites; see [CLAUDE.md Event Taxonomy](https://github.com/bearbinary/jarvy/blob/main/CLAUDE.md#telemetry)
+for the canonical contract):
+
+| Field | Notes |
+|-------|-------|
+| `tool` | Unknown tool name |
+| `version` | Optional version string from the config |
+| `source` | `config` \| `mcp` \| `cli` \| `request` |
+| `platform` | `darwin` \| `linux` \| `windows` |
+| `suggestions` | CSV of fuzzy-matched candidates |
+| `channel` | `telemetry` \| `manual` |
+| `fallback_issue_url` | Present only when `channel = manual` |
+| `scaffold_cmd` | `cargo run -p cargo-jarvy -- new-tool <name>` |
+| `exit_code` | Always `8` (`TOOL_UNSUPPORTED`) |
+| `opt_in_bypassed` | `true` when `source = request` |
+
+**Triage workflow:**
+
+1. Rank by `jarvy.tool.unsupported` counter — high-frequency requests
+   ship first.
+2. Pull `suggestions` to spot typos that aren't real new tools
+   (e.g. `dokcer` is just `docker`).
+3. Run the suggested `scaffold_cmd` and follow the
+   [Quick Start](#quick-start) above. Most additions are ~15 lines
+   plus a small test.
+4. Tag the PR with `add-tool/<name>` and mention the originating
+   issue (or telemetry record ID) so the requesting user gets a
+   notification when it ships.
+
+Common asks should ship within days — that's the user-facing promise
+the `tool.unsupported` loop is designed to deliver on. See
+[`for-ai-agents.md` › When a tool isn't supported](for-ai-agents.md#when-a-tool-isnt-supported)
+for the user / AI-agent side of the contract.

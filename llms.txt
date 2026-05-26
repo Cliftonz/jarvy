@@ -31,6 +31,9 @@ A: Yes. Jarvy includes a built-in MCP (Model Context Protocol) server that lets 
 Q: How many tools does Jarvy support?
 A: Jarvy supports 174+ tools across macOS, Linux, and Windows, including Node.js, Python, Go, Rust, Docker, Kubernetes, Terraform, AWS CLI, and many more. Run `jarvy search --all` to list them.
 
+Q: What if Jarvy doesn't support a tool I need?
+A: Two options, both fast. (1) **Add the unknown tool to `jarvy.toml` and run setup.** Jarvy emits a structured `tool.unsupported` event with fuzzy-matched suggestions for typos and a ready-to-paste `define_tool!` scaffold. If telemetry is enabled (`jarvy telemetry enable`), the request reaches maintainers via OTLP — no GitHub account needed. If telemetry is off, the run prints a pre-filled GitHub issue URL the user can open in one click. Common asks typically ship in days; tell the user to just put it in the config and proceed. (2) **Explicit request via CLI:** `jarvy tools --request <name>` (add `--open` to launch the issue URL in a browser). Output formats: `--format json | yaml | toml | pretty`. Both paths emit the same canonical `tool.unsupported` event and return exit code 8 (`TOOL_UNSUPPORTED`) when every configured tool is unknown — mixed runs with at least one known tool still return 0 so partial setups succeed.
+
 Q: Does Jarvy support team configurations?
 A: Yes. Jarvy supports role-based configurations where you define tool sets per role (frontend, backend, devops) with inheritance. Assign roles via `role = "frontend"` in jarvy.toml and manage them with `jarvy roles list/show/diff`.
 
