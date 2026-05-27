@@ -44,46 +44,97 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Read the workspace version once so each downstream step uses a
+      # consistent value (env.VERSION is the tag name `vX.Y.Z` form;
+      # cargo needs the unprefixed semver `X.Y.Z`). Reading from
+      # Cargo.toml keeps the source of truth in one place.
+      - name: Read workspace version
+        id: workspace
+        shell: bash
+        run: |
+          V=$(awk -F'"' '/^version = / {print $2; exit}' Cargo.toml)
+          echo "Workspace version: $V"
+          echo "version=$V" >> $GITHUB_OUTPUT
+
       # Publish workspace deps before the consumer. `jarvy` depends on
       # `jarvy-templates` via a `{ version = "X", path = "..." }`
       # declaration; `cargo publish` of the parent crate fetches the
       # dep from crates.io (the `path` is stripped on publish), so the
-      # dep must already be there. `--no-verify` is intentional on the
-      # parent since the workspace verify already happened at tag-build
-      # time; the post-publish re-verify pulls jarvy-templates from
-      # crates.io, which 404s for ~1-2 minutes after publish until the
-      # index refreshes.
-      - name: Publish jarvy-templates to crates.io
-        run: cargo publish -p jarvy-templates --token ${{ secrets.CRATES_IO_TOKEN }}
+      # dep must already be there. Tolerate the rerun case where the
+      # dep version was already uploaded in a prior partial run (e.g.
+      # the workflow's first attempt failed at the index-poll step,
+      # leaving jarvy-templates published but jarvy unpublished). The
+      # sparse-index probe is the source of truth — if the version is
+      # already there, we skip; otherwise we publish.
+      - name: Publish jarvy-templates to crates.io (skip if already there)
+        shell: bash
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-
-      - name: Wait for crates.io index to surface jarvy-templates
+          VERSION: ${{ steps.workspace.outputs.version }}
         run: |
-          # Crates.io index takes a few seconds to propagate after publish.
-          # Poll with a hard ceiling so a stuck index doesn't hang CI.
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            if cargo search jarvy-templates --limit 1 2>/dev/null | grep -q '^jarvy-templates ='; then
-              echo "jarvy-templates visible in index"
+          set -euo pipefail
+          # Sparse-index path for a 14-char crate name `jarvy-templates`
+          # is /ja/rv/jarvy-templates per the sparse-index naming rules.
+          IDX_URL="https://index.crates.io/ja/rv/jarvy-templates"
+          if curl -fsSL "$IDX_URL" 2>/dev/null | grep -q "\"vers\":\"${VERSION}\""; then
+            echo "jarvy-templates@${VERSION} already on crates.io — skipping publish"
+            exit 0
+          fi
+          cargo publish -p jarvy-templates --token "$CARGO_REGISTRY_TOKEN"
+
+      # Poll for index propagation. The sparse-index URL is the same
+      # source the parent's `cargo publish` will consult to resolve the
+      # dep, so a positive match here means the next step will succeed.
+      # 5-minute ceiling — observed propagation up to ~3 minutes for
+      # brand-new crates; existing-crate updates surface in seconds.
+      - name: Wait for crates.io index to surface jarvy-templates
+        shell: bash
+        env:
+          VERSION: ${{ steps.workspace.outputs.version }}
+        run: |
+          set -euo pipefail
+          IDX_URL="https://index.crates.io/ja/rv/jarvy-templates"
+          for i in $(seq 1 20); do
+            if curl -fsSL "$IDX_URL" 2>/dev/null | grep -q "\"vers\":\"${VERSION}\""; then
+              echo "jarvy-templates@${VERSION} visible in sparse index"
               exit 0
             fi
             echo "attempt $i: not yet visible, sleeping 15s"
             sleep 15
           done
-          echo "jarvy-templates did not surface within 150s; aborting"
+          echo "jarvy-templates@${VERSION} did not surface within 300s; aborting"
           exit 1
 
-      - name: Publish jarvy to crates.io
-        run: cargo publish -p jarvy --no-verify --token ${{ secrets.CRATES_IO_TOKEN }}
+      # `--no-verify` is intentional: the workspace verify already
+      # happened at tag-build time, and the post-publish re-verify
+      # pulls jarvy-templates from crates.io which can race the
+      # final index refresh. Tolerate the rerun case (same shape as
+      # jarvy-templates) — if jarvy@VERSION is already there, skip.
+      - name: Publish jarvy to crates.io (skip if already there)
+        shell: bash
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+          VERSION: ${{ steps.workspace.outputs.version }}
+        run: |
+          set -euo pipefail
+          IDX_URL="https://index.crates.io/ja/rv/jarvy"
+          if curl -fsSL "$IDX_URL" 2>/dev/null | grep -q "\"vers\":\"${VERSION}\""; then
+            echo "jarvy@${VERSION} already on crates.io — skipping publish"
+            exit 0
+          fi
+          cargo publish -p jarvy --no-verify --token "$CARGO_REGISTRY_TOKEN"
 
   update-homebrew:
     name: Update Homebrew Formula
+    # Independent of `publish-crates-io`. The Homebrew formula consumes
+    # tarballs from the GitHub release, not crates.io — a crates.io
+    # publish failure (like the v0.1.0 manifest-verification regression)
+    # must not block channels that don't depend on crates.io.
+    #
     # Gate twofold:
     #   1. Skip prereleases (rc / beta / alpha) so a soak release
-    #      does not push the stable Cargo.toml version to crates.io
-    #      as `latest`.
+    #      does not push the stable version to the Homebrew tap as
+    #      `latest`.
     #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
     #      release (e.g. `helm-vX.Y.Z`) does not trigger CLI
     #      publishing. workflow_dispatch (empty event.release)
@@ -95,7 +146,6 @@ jobs:
          startsWith(github.event.release.tag_name, 'v'))
       }}
     runs-on: ubuntu-latest
-    needs: [publish-crates-io]
     steps:
       - uses: actions/checkout@v4
 
@@ -166,10 +216,19 @@ jobs:
 
   update-aur:
     name: Update AUR Package
+    # Independent of `publish-crates-io`. AUR-bin consumes the
+    # GitHub-release binary tarballs, not crates.io. Status of the
+    # underlying tarball production: BROKEN until release.yml is
+    # extended to produce `jarvy-v<version>-<arch>-<os>.tar.gz`
+    # artifacts (see docs/release-quirks-jarvy.md). When that lands,
+    # this job will start succeeding for users who run `yay -S
+    # jarvy-bin` — the AUR push itself only writes the PKGBUILD; the
+    # user-side `makepkg` is what hits the tarball URL.
+    #
     # Gate twofold:
     #   1. Skip prereleases (rc / beta / alpha) so a soak release
-    #      does not push the stable Cargo.toml version to crates.io
-    #      as `latest`.
+    #      does not push the stable version to AUR as the user-facing
+    #      latest.
     #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
     #      release (e.g. `helm-vX.Y.Z`) does not trigger CLI
     #      publishing. workflow_dispatch (empty event.release)
@@ -181,7 +240,6 @@ jobs:
          startsWith(github.event.release.tag_name, 'v'))
       }}
     runs-on: ubuntu-latest
-    needs: [publish-crates-io]
     steps:
       - uses: actions/checkout@v4
 
@@ -192,12 +250,58 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      # Skip when AUR credentials aren't configured. Mirror the
+      # Homebrew secret-presence gate so missing setup surfaces as a
+      # workflow warning instead of a release-breaking failure. The
+      # three secrets ship together (username + email + ssh key) and
+      # all three are required by the AUR action.
+      - name: Check AUR credentials
+        id: aur_secret
+        run: |
+          if [ -z "${{ secrets.AUR_SSH_PRIVATE_KEY }}" ] \
+             || [ -z "${{ secrets.AUR_USERNAME }}" ] \
+             || [ -z "${{ secrets.AUR_EMAIL }}" ]; then
+            echo "::warning::AUR credentials not configured; skipping AUR push. Set AUR_SSH_PRIVATE_KEY + AUR_USERNAME + AUR_EMAIL secrets to enable AUR distribution."
+            echo "have_secret=false" >> $GITHUB_OUTPUT
+          else
+            echo "have_secret=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Update PKGBUILD
+        if: steps.aur_secret.outputs.have_secret == 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" dist/aur/PKGBUILD-bin
 
+      # Compute real sha256sums from SHA256SUMS.txt. The PKGBUILD
+      # ships with `SHA256_PLACEHOLDER_X86` / `SHA256_PLACEHOLDER_ARM`
+      # tokens that previously were never substituted — the AUR push
+      # would land a broken PKGBUILD that fails `makepkg` integrity
+      # check on user `yay -S jarvy-bin`. Pull the real sha256s from
+      # the published checksum file; if the tarball assets aren't
+      # there yet (pre-tarball-production gap), this step fails loud
+      # so the AUR push doesn't quietly write garbage.
+      - name: Substitute sha256sums from release checksums
+        if: steps.aur_secret.outputs.have_secret == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          curl -fsSL \
+            "https://github.com/bearbinary/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
+            -o /tmp/sha256sums.txt
+          X86_SHA=$(awk -v p="jarvy-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            '$2 ~ p { print $1; exit }' /tmp/sha256sums.txt)
+          ARM_SHA=$(awk -v p="jarvy-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
+            '$2 ~ p { print $1; exit }' /tmp/sha256sums.txt)
+          if [ -z "$X86_SHA" ] || [ -z "$ARM_SHA" ]; then
+            echo "::error::AUR linux-gnu tarballs not present in release. release.yml does not yet produce `jarvy-v<version>-<arch>-unknown-linux-gnu.tar.gz` (see docs/release-quirks-jarvy.md tarball pipeline gap). Skip AUR push until tarball production lands."
+            exit 1
+          fi
+          sed -i "s/SHA256_PLACEHOLDER_X86/$X86_SHA/g" dist/aur/PKGBUILD-bin
+          sed -i "s/SHA256_PLACEHOLDER_ARM/$ARM_SHA/g" dist/aur/PKGBUILD-bin
+
       - name: Publish to AUR
+        if: steps.aur_secret.outputs.have_secret == 'true'
         uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
         with:
           pkgname: jarvy-bin
@@ -206,18 +310,22 @@ jobs:
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to ${{ steps.version.outputs.version }}"
-        continue-on-error: true  # AUR publish may require manual setup
 
   update-winget:
     name: Submit to winget
+    # Independent of `publish-crates-io`. winget consumes the .msi
+    # from the GitHub release; crates.io publish state is irrelevant.
+    #
+    # winget submissions open a PR to microsoft/winget-pkgs which
+    # Microsoft maintainers review/merge. `wingetcreate --submit` (the
+    # API the action uses) is the canonical user-facing flow — see
+    # docs/release-quirks-jarvy.md for the `public-pr-guard` skill
+    # carve-out covering this case.
+    #
     # Gate twofold:
-    #   1. Skip prereleases (rc / beta / alpha) so a soak release
-    #      does not push the stable Cargo.toml version to crates.io
-    #      as `latest`.
+    #   1. Skip prereleases (rc / beta / alpha).
     #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
-    #      release (e.g. `helm-vX.Y.Z`) does not trigger CLI
-    #      publishing. workflow_dispatch (empty event.release)
-    #      remains unaffected — manual reruns still publish.
+    #      release (e.g. `helm-vX.Y.Z`) does not trigger.
     if: >-
       ${{
         !github.event.release.prerelease &&
@@ -225,7 +333,6 @@ jobs:
          startsWith(github.event.release.tag_name, 'v'))
       }}
     runs-on: windows-latest
-    needs: [publish-crates-io]
     steps:
       - uses: actions/checkout@v4
 
@@ -237,30 +344,50 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      # Skip when WINGET_TOKEN isn't configured. The token is a fine-
+      # grained GitHub PAT with `public_repo` scope; the action uses
+      # it to fork microsoft/winget-pkgs and open the submission PR.
+      - name: Check winget token
+        id: winget_secret
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.WINGET_TOKEN }}" ]; then
+            echo "::warning::WINGET_TOKEN not configured; skipping winget submission. Generate a fine-grained PAT with public_repo scope on your account, add as WINGET_TOKEN secret to enable winget distribution."
+            echo "have_secret=false" >> $GITHUB_OUTPUT
+          else
+            echo "have_secret=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Update winget manifest
+        if: steps.winget_secret.outputs.have_secret == 'true'
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" dist/windows/winget.yaml
 
+      # installers-regex matches the actual asset name pattern produced
+      # by cargo-packager on Windows: `jarvy_<v>_x64_en-US.msi`. The
+      # previous regex (`jarvy-.*-x86_64-pc-windows-.*\.zip$`) was a
+      # leftover from a cargo-dist plan never wired up — the release
+      # matrix has only ever produced `.msi`, so the regex matched
+      # zero assets and the action silently no-op'd.
       - name: Submit to winget-pkgs
+        if: steps.winget_secret.outputs.have_secret == 'true'
         uses: vedantmgoyal2009/winget-releaser@v2
         with:
           identifier: Jarvy.Jarvy
-          installers-regex: 'jarvy-.*-x86_64-pc-windows-.*\.zip$'
+          installers-regex: '^jarvy_\d+\.\d+\.\d+_x64_en-US\.msi$'
           token: ${{ secrets.WINGET_TOKEN }}
-        continue-on-error: true  # May require manual approval
 
   update-chocolatey:
     name: Publish to Chocolatey
+    # Independent of `publish-crates-io`. Chocolatey consumes the .msi
+    # from the GitHub release; crates.io publish state is irrelevant.
+    #
     # Gate twofold:
-    #   1. Skip prereleases (rc / beta / alpha) so a soak release
-    #      does not push the stable Cargo.toml version to crates.io
-    #      as `latest`.
+    #   1. Skip prereleases (rc / beta / alpha).
     #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
-    #      release (e.g. `helm-vX.Y.Z`) does not trigger CLI
-    #      publishing. workflow_dispatch (empty event.release)
-    #      remains unaffected — manual reruns still publish.
+    #      release (e.g. `helm-vX.Y.Z`) does not trigger.
     if: >-
       ${{
         !github.event.release.prerelease &&
@@ -268,7 +395,6 @@ jobs:
          startsWith(github.event.release.tag_name, 'v'))
       }}
     runs-on: windows-latest
-    needs: [publish-crates-io]
     steps:
       - uses: actions/checkout@v4
 
@@ -280,7 +406,22 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      # Skip when CHOCOLATEY_API_KEY isn't configured. Get one at
+      # https://community.chocolatey.org/account/profile/api after
+      # signing up and getting your maintainer account approved.
+      - name: Check Chocolatey API key
+        id: choco_secret
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.CHOCOLATEY_API_KEY }}" ]; then
+            echo "::warning::CHOCOLATEY_API_KEY not configured; skipping Chocolatey push. Get your API key at https://community.chocolatey.org/account/profile/api and add as CHOCOLATEY_API_KEY secret to enable Chocolatey distribution."
+            echo "have_secret=false" >> $GITHUB_OUTPUT
+          else
+            echo "have_secret=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Update nuspec + install script (substitute placeholders)
+        if: steps.choco_secret.outputs.have_secret == 'true'
         # The Chocolatey package ships TWO templated files:
         #   - jarvy.nuspec: VERSION_PLACEHOLDER (the package version)
         #   - tools/chocolateyinstall.ps1: VERSION_PLACEHOLDER (URL path)
@@ -320,9 +461,9 @@ jobs:
           echo "Substituted version=$VERSION sha256=$MSI_SHA_UPPER into both files."
 
       - name: Pack and push to Chocolatey
+        if: steps.choco_secret.outputs.have_secret == 'true'
         shell: powershell
         run: |
           cd dist/windows/chocolatey
           choco pack
           choco push jarvy.${{ steps.version.outputs.version }}.nupkg --source https://push.chocolatey.org/ --api-key ${{ secrets.CHOCOLATEY_API_KEY }}
-        continue-on-error: true  # May require manual setup
