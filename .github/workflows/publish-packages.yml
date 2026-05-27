@@ -44,8 +44,37 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+      # Publish workspace deps before the consumer. `jarvy` depends on
+      # `jarvy-templates` via a `{ version = "X", path = "..." }`
+      # declaration; `cargo publish` of the parent crate fetches the
+      # dep from crates.io (the `path` is stripped on publish), so the
+      # dep must already be there. `--no-verify` is intentional on the
+      # parent since the workspace verify already happened at tag-build
+      # time; the post-publish re-verify pulls jarvy-templates from
+      # crates.io, which 404s for ~1-2 minutes after publish until the
+      # index refreshes.
+      - name: Publish jarvy-templates to crates.io
+        run: cargo publish -p jarvy-templates --token ${{ secrets.CRATES_IO_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Wait for crates.io index to surface jarvy-templates
+        run: |
+          # Crates.io index takes a few seconds to propagate after publish.
+          # Poll with a hard ceiling so a stuck index doesn't hang CI.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if cargo search jarvy-templates --limit 1 2>/dev/null | grep -q '^jarvy-templates ='; then
+              echo "jarvy-templates visible in index"
+              exit 0
+            fi
+            echo "attempt $i: not yet visible, sleeping 15s"
+            sleep 15
+          done
+          echo "jarvy-templates did not surface within 150s; aborting"
+          exit 1
+
+      - name: Publish jarvy to crates.io
+        run: cargo publish -p jarvy --no-verify --token ${{ secrets.CRATES_IO_TOKEN }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 

@@ -10,4 +10,4 @@ anyhow = "1"
 # a sub-second compile. Previously this depended on the full jarvy
 # crate, which dragged in tokio/serde/OTEL just to call two pure
 # functions.
-jarvy-templates = { path = "../jarvy-templates" }
+jarvy-templates = { version = "0.1.0", path = "../jarvy-templates" }
