@@ -60,6 +60,15 @@ jobs:
     needs: [verify_tag]
     # verify_tag is skipped on workflow_dispatch; allow that to count as success.
     if: always() && (needs.verify_tag.result == 'success' || needs.verify_tag.result == 'skipped')
+    # Cap matrix legs at 60 min. Healthy runs are <10 min (Linux/Windows)
+    # and <15 min (macos-latest arm64). Without a cap, a queue-starved
+    # leg silently waits up to GitHub's hard 24 h job timeout — happened
+    # twice on the dropped macos-13 Intel slot during v0.1.0-rc.1 / rc.2
+    # (runs 25340850348 + 25342271485), where each job sat at "Waiting
+    # for a runner to pick up this job..." for the full 24 h before
+    # GitHub killed it. Re-adding macos-13 or hitting any other
+    # runner-pool exhaustion now dies in 60 min instead.
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:
