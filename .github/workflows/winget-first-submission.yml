@@ -68,9 +68,15 @@ jobs:
       - name: Install wingetcreate
         shell: pwsh
         run: |
+          # `winget install` exit code: 0 even when the subprocess
+          # invocation that follows fails to find wingetcreate on PATH,
+          # so make this step's pass/fail reflect actual usability.
           winget install --id Microsoft.WingetCreate --silent `
             --accept-package-agreements --accept-source-agreements
-          wingetcreate --version
+          # wingetcreate uses `version` as a subcommand (not `--version`
+          # flag). The previous form printed help + exited 1, killing
+          # this step before the manifest generation ran.
+          wingetcreate version
 
       # Generate the manifest into ./out/manifests/<j>/<...>/<version>/
       # Always runs (dry-run or real-run). For the very first run set
