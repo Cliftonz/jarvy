@@ -146,6 +146,13 @@ fn check_zsh() {
             }
         } else {
             println!("Oh My Zsh! is already installed.");
+            telemetry::tool_already_installed(
+                "oh-my-zsh",
+                &ohmyzsh_dir,
+                "path_exists",
+                "check_zsh",
+                true,
+            );
         }
     }
 }

@@ -552,6 +552,64 @@ pub fn tool_installed(tool: &str, version: &str, package_manager: &str, duration
     }
 }
 
+/// Record that a tool was already installed (install skipped).
+///
+/// Emitted when `jarvy setup` discovers a tool is already present and
+/// skips the install path. Used to measure how often interactive
+/// prompts (e.g. "Do you want to install Oh My Zsh?") lead to no-op
+/// outcomes so the flow can be optimized.
+///
+/// Fields carry enough context for an automated remediation system to
+/// locate the wasteful check and propose a fix:
+/// - `install_path`: where the tool was detected (e.g. `~/.oh-my-zsh`)
+/// - `detection_method`: how presence was confirmed (`path_exists`,
+///   `command_check`, `version_query`)
+/// - `source`: call site identifier so fixes can be routed to the right
+///   module (e.g. `check_zsh`, `install_homebrew`)
+/// - `prompted_user`: whether the user was asked before the skip — the
+///   primary signal for "stop nagging" remediation
+///
+/// Bumps the `jarvy.tool.installs` counter with `status="already_installed"`
+/// rather than introducing a new counter — keeps tool-install volume
+/// queryable from one metric.
+pub fn tool_already_installed(
+    tool: &str,
+    install_path: &str,
+    detection_method: &str,
+    source: &str,
+    prompted_user: bool,
+) {
+    if !is_enabled() {
+        return;
+    }
+
+    tracing::info!(
+        event = "tool.already_installed",
+        tool = %tool,
+        install_path = %install_path,
+        detection_method = %detection_method,
+        source = %source,
+        prompted_user = %prompted_user,
+        platform = %env::consts::OS,
+    );
+
+    if let Some(state) = TELEMETRY.get() {
+        if let Some(ref metrics) = state.metrics {
+            metrics.tool_installs.add(
+                1,
+                &[
+                    KeyValue::new("tool", tool.to_string()),
+                    KeyValue::new("platform", env::consts::OS.to_string()),
+                    KeyValue::new("status", "already_installed"),
+                    KeyValue::new("detection_method", detection_method.to_string()),
+                    KeyValue::new("source", source.to_string()),
+                    KeyValue::new("prompted_user", prompted_user),
+                ],
+            );
+        }
+    }
+}
+
 /// Record a failed tool installation
 pub fn tool_failed(tool: &str, version: &str, error: &str) {
     if !is_enabled() {
