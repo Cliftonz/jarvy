@@ -6,6 +6,7 @@
 use clap::{CommandFactory, Parser};
 use std::fs;
 
+mod ai_hooks;
 mod analytics;
 mod bootstrap;
 mod ci;
@@ -410,6 +411,7 @@ fn dispatch_command(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             output_format,
         }) => handle_migrate(file, *apply, output_format),
         Some(Commands::Schema { output }) => handle_schema(output),
+        Some(Commands::AiHooks { action, file }) => commands::run_ai_hooks(action, file),
         None => {
             interactive::user_select();
             0

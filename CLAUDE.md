@@ -302,6 +302,92 @@ lg = "log --oneline --graph --decorate"
 
 **Integration**: Git configuration runs after package installation and before environment setup in `jarvy setup`.
 
+### AI Agent Hooks
+
+Distributes guardrail hooks (e.g. `block-rm-rf`, `block-secrets-commit`) to every developer's AI coding agent — Claude Code, Cursor, Codex CLI, Windsurf, Cline, and Continue — from a single `[ai_hooks]` block.
+
+**Module**: `src/ai_hooks/` — AI agent hook provisioning.
+
+**Key Files**:
+- `config.rs` — `AiHooksConfig`, `HookEntry`, `AgentTarget`, `HookScope`, `ConfigOrigin` (Local|Remote — drives the trust boundary)
+- `event.rs` — Canonical `HookEvent` taxonomy (`pre_tool_use`, `post_tool_use`, ...) with per-agent mapping
+- `library.rs` — 16 curated `LibraryHook` entries with both Bash and PowerShell script bodies
+- `platform.rs` — Bash → PowerShell auto-translator for custom commands without a `command_windows` field
+- `runner.rs` — Top-level `apply` / `check` / `remove` orchestration plus library lookup + custom-command audit
+- `error.rs` — `AiHookError` (`UnknownLibraryHook`, `UnsupportedEvent`, `UnsupportedPlatform`, ...)
+- `agents/mod.rs` — `AgentProvisioner` trait + `ResolvedEntry<'a>` (Cow-borrowed library bodies) + static dispatch table
+- `agents/markers.rs` — `_jarvy_managed`, `_jarvy_sha256`, YAML fences, filename infix — consolidated
+- `agents/json_merge.rs` — Shared `retain_non_jarvy_named` / `collect_marker_names` / `entry_hash` for the 4 JSON provisioners
+- `agents/io.rs` — Atomic JSON / text / executable write (PID + nanos tempfile, refuses symlinks, mode 0o644/0o755)
+- `agents/claude_code.rs` — Writes `~/.claude/settings.json` (user) or `.claude/settings.json` (project)
+- `agents/cursor.rs` — Writes `~/.cursor/hooks.json` (user) or `.cursor/hooks.json` (project); shims Bash via `bash -c '...'`
+- `agents/codex.rs` — Writes `~/.codex/hooks.json` with `commandWindows` field for cross-platform
+- `agents/windsurf.rs` — Writes `~/.codeium/windsurf/hooks.json` with `command` + `powershell` fields
+- `agents/cline.rs` — Writes executable fragments + dispatcher script under `~/Documents/Cline/Rules/Hooks/`; macOS/Linux only
+- `agents/continue_dev.rs` — Writes declarative `~/.continue/permissions.yaml` glob deny list
+- `commands/ai_hooks_cmd.rs` — `jarvy ai-hooks {list|apply|check|remove|test}` handlers
+
+**Configuration** (`jarvy.toml`):
+```toml
+[ai_hooks]
+agents = ["claude-code", "cursor", "codex", "windsurf", "cline", "continue"]
+scope = "user"                          # user | project
+allow_custom_commands = false           # gate raw `command = "..."` entries
+
+[[ai_hooks.hook]]
+use = "block-rm-rf"
+
+[[ai_hooks.hook]]
+use = "block-force-push"
+agents = ["claude-code", "cursor"]      # optional: narrow to subset
+```
+
+**Curated library** (16 hooks):
+- **Safety**: `block-rm-rf`, `block-git-reset-hard`, `block-force-push`, `block-protected-branch-commit`, `block-kubectl-delete`, `block-docker-prune`, `block-drop-table`, `block-prod-db-write`
+- **Security**: `block-secrets-commit`, `block-edit-env-files`, `block-read-secret-files`, `block-cat-env-files`, `block-curl-bash-pipe`, `block-malware-install`
+- **Compliance**: `audit-log` (writes `~/.jarvy/logs/ai-hooks-audit.jsonl`)
+- **Policy**: `commit-message-format-guard`
+
+Each ships a Bash and PowerShell variant; Jarvy emits the right one per agent + OS.
+
+**CLI**:
+```bash
+jarvy ai-hooks list                  # show what's configured
+jarvy ai-hooks list --library        # show all 16 library hooks
+jarvy ai-hooks apply [--scope user|project]
+jarvy ai-hooks check                 # detect drift (exit 1 if drift)
+jarvy ai-hooks remove                # strip _jarvy_managed entries
+jarvy ai-hooks test <name>           # inspect a library hook's scripts
+```
+
+**Trust model**:
+- Library hooks (`use = "..."`) always allowed — vetted Jarvy source.
+- Raw `command = "..."` entries refused unless `allow_custom_commands = true` AND `ConfigOrigin::Local`.
+- Refusals emit `ai_hook.custom_refused_summary` telemetry (counts only — no names, no command bodies).
+- Remote configs (loaded via `jarvy setup --from <url>`) are tagged `ConfigOrigin::Remote` and the runner refuses every raw `command` entry from them, regardless of the `allow_custom_commands` flag. The CLI flag is the only override.
+
+**Idempotency**: Every Jarvy-managed entry carries a `_jarvy_managed` JSON marker. `apply` removes prior entries with the same name; `remove` strips every marker but preserves user-authored hooks.
+
+**Cross-platform**:
+- Claude Code / Cursor on Windows: bash hook wrapped in `powershell -NoProfile -Command "..."` shim.
+- Codex / Windsurf: ship both variants in the same JSON entry; agent picks at runtime.
+- Cline: Unix only — Windows targets skipped with warning.
+- Continue: declarative globs, platform-independent.
+
+**Telemetry events** (domain `ai_hook`, snake_case actions):
+- `ai_hook.phase_started` — `agents`, `hooks_count`, `scope`, `dry_run`
+- `ai_hook.phase_completed` — `applied`, `agents_touched`, `refused_local`, `refused_remote`, `failures`, `duration_ms`
+- `ai_hook.agent_applied` — `agent`, `applied`, `warnings`, `settings_path` (redacted)
+- `ai_hook.agent_failed` — `agent`, `error_type` (stable `AiHookError::kind()`). The formatted error message is NOT emitted — user-controlled hook names/reasons never leak to OTLP
+- `ai_hook.provisioned` — `agent`, `hook_name`, `library_source`
+- `ai_hook.custom_refused_summary` — `local_count`, `remote_count` (single INFO line per phase, not WARN per entry)
+- `ai_hook.check_completed` — `agents_checked`, `drifted_agents`
+- `ai_hook.windows_auto_translated` — `agent`, `hook_name`
+
+**Integration**: AI hook provisioning runs after Git config and before environment setup in `jarvy setup`. Failures surface as warnings — setup continues.
+
+**Docs**: `docs/ai-hooks.md`. **Example**: `examples/ai-hooks/jarvy.toml`.
+
 ### Configuration Drift Detection
 
 Jarvy can detect when a developer's environment has drifted from the expected configuration after setup.

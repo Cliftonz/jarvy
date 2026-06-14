@@ -245,6 +245,7 @@ jarvy completions --instructions
 | `jarvy completions` | Generate shell completions |
 | `jarvy diagnose` | Create a diagnostic bundle for support |
 | `jarvy mcp` | Start the MCP server for AI agent integration |
+| `jarvy ai-hooks apply` | Distribute AI agent guardrails (Claude Code / Cursor / Codex / Windsurf / Cline / Continue) |
 
 Run `jarvy --help` for the full command reference.
 

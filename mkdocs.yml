@@ -176,6 +176,7 @@ nav:
   - Guides:
     - Roles guide: roles.md
     - Hooks guide: hooks.md
+    - AI hooks: ai-hooks.md
     - Tool dependencies: tool-dependencies.md
     - Language packages: packages.md
     - Git configuration: git-config.md

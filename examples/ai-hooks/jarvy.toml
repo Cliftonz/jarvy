@@ -1,0 +1,104 @@
+# AI Agent Hooks — distribute guardrails to every developer's AI agent.
+#
+# After `jarvy setup`, each configured agent (Claude Code, Cursor, Codex,
+# Windsurf, Cline, Continue) will refuse `rm -rf`, force-pushes,
+# secret-bearing commits, env-file reads, and more — without anyone on the
+# team needing to hand-roll a single shell hook.
+#
+# Run:
+#   jarvy setup --file ./jarvy.toml      # provisions tools + AI hooks
+#   jarvy ai-hooks list --library        # see what's in the curated set
+#   jarvy ai-hooks check                 # diff desired vs. on-disk state
+#   jarvy ai-hooks apply                 # re-apply without rerunning setup
+#   jarvy ai-hooks remove                # strip jarvy-managed entries
+
+[provisioner]
+git = "latest"
+
+[ai_hooks]
+# Every agent your team uses. Add or remove freely — Jarvy writes to each
+# agent's native settings path:
+#   claude-code → ~/.claude/settings.json
+#   cursor      → ~/.cursor/hooks.json
+#   codex       → ~/.codex/hooks.json
+#   windsurf    → ~/.codeium/windsurf/hooks.json
+#   cline       → ~/Documents/Cline/Rules/Hooks/   (macOS/Linux only)
+#   continue    → ~/.continue/permissions.yaml     (declarative deny list)
+agents = ["claude-code", "cursor", "codex", "windsurf", "cline", "continue"]
+
+# `user` writes to the developer's home directory; `project` writes into
+# this repo's `.claude/`, `.cursor/`, etc. so the hook ships in source.
+scope = "user"
+
+# Refuse raw `command = "..."` entries unless explicitly allowed. Library
+# hooks (`use = "..."`) are always allowed because they're audited Jarvy
+# source. Set true only for trusted, signed-off custom commands.
+allow_custom_commands = false
+
+# ---------------------------------------------------------------------
+# SAFETY — block destructive operations the agent might run
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+use = "block-rm-rf"
+
+[[ai_hooks.hook]]
+use = "block-git-reset-hard"
+
+[[ai_hooks.hook]]
+use = "block-force-push"
+
+[[ai_hooks.hook]]
+use = "block-protected-branch-commit"
+
+[[ai_hooks.hook]]
+use = "block-kubectl-delete"
+
+[[ai_hooks.hook]]
+use = "block-docker-prune"
+
+[[ai_hooks.hook]]
+use = "block-drop-table"
+
+# ---------------------------------------------------------------------
+# SECURITY — block secret exfiltration and untrusted execution
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+use = "block-secrets-commit"
+
+[[ai_hooks.hook]]
+use = "block-edit-env-files"
+
+[[ai_hooks.hook]]
+use = "block-read-secret-files"
+
+[[ai_hooks.hook]]
+use = "block-cat-env-files"
+
+[[ai_hooks.hook]]
+use = "block-curl-bash-pipe"
+
+[[ai_hooks.hook]]
+use = "block-malware-install"
+
+[[ai_hooks.hook]]
+use = "block-prod-db-write"
+
+# ---------------------------------------------------------------------
+# COMPLIANCE — tamper-evident audit trail (SOC2/HIPAA evidence)
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+use = "audit-log"
+
+# ---------------------------------------------------------------------
+# POLICY — enforce team conventions
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+use = "commit-message-format-guard"
+
+# ---------------------------------------------------------------------
+# Narrow a hook to specific agents only:
+#
+# [[ai_hooks.hook]]
+# use = "block-rm-rf"
+# agents = ["claude-code", "cursor"]   # skip the rest
+# ---------------------------------------------------------------------

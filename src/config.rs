@@ -312,6 +312,12 @@ pub struct Config {
     #[serde(default)]
     #[allow(dead_code)] // Used by workspace module for config inheritance
     pub workspace: Option<crate::workspace::WorkspaceConfig>,
+    /// AI agent hook provisioning (`[ai_hooks]` section). Distributes
+    /// guardrails like `block-rm-rf` or `block-edit-env-files` across
+    /// Claude Code, Cursor, Codex, Windsurf, Cline, and Continue from a
+    /// single config block.
+    #[serde(default, rename = "ai_hooks")]
+    pub ai_hooks: Option<crate::ai_hooks::AiHooksConfig>,
 }
 
 /// Custom project commands that override the interactive menu defaults.
@@ -406,6 +412,16 @@ impl Config {
     #[allow(dead_code)] // Test-only seam
     pub fn from_toml_str(toml_text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str::<Config>(toml_text)
+    }
+
+    /// Tag the config's AI hooks block as remote-origin. Called by
+    /// `setup --from <url>` after loading the cached config so that
+    /// `runner::resolve` can refuse raw `command = "..."` entries from
+    /// untrusted sources.
+    pub fn mark_ai_hooks_remote(&mut self) {
+        if let Some(ref mut cfg) = self.ai_hooks {
+            cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
+        }
     }
 
     pub fn new(config_path: &str) -> Self {

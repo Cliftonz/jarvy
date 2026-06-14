@@ -5,6 +5,37 @@
 use clap::Subcommand;
 
 #[derive(Subcommand)]
+pub enum AiHooksAction {
+    /// List provisioned hooks or the built-in library
+    List {
+        /// Show the built-in hook library instead of project config
+        #[clap(long)]
+        library: bool,
+    },
+    /// Write hook configs to every targeted AI agent
+    Apply {
+        /// Override scope: `user` or `project`
+        #[clap(long)]
+        scope: Option<String>,
+    },
+    /// Diff desired vs. on-disk state (exit 1 if drift)
+    Check {
+        #[clap(long)]
+        scope: Option<String>,
+    },
+    /// Strip jarvy-managed entries from every targeted agent
+    Remove {
+        #[clap(long)]
+        scope: Option<String>,
+    },
+    /// Inspect a single library hook (event, matcher, script bodies)
+    Test {
+        /// Library hook name (e.g. block-rm-rf)
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum TemplatesSubcommand {
     /// List all available templates
     List {},

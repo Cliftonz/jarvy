@@ -1,0 +1,188 @@
+# AI Hooks — Custom Hook Template
+#
+# Copy this file as a starting point for writing your own hooks. Four
+# patterns are shown, each with both bash and PowerShell variants:
+#
+#   1. command-string deny    (refuse a Bash command matching a pattern)
+#   2. file-path deny         (refuse Edit/Read of a path pattern)
+#   3. context injection      (inject text into the agent's context)
+#   4. network policy call    (hand the decision to an internal API)
+#
+# Quick start:
+#   1. Set `allow_custom_commands = true` below.
+#   2. Pick the pattern(s) you want; delete the rest.
+#   3. Replace the placeholder regex / API URL with your team's specifics.
+#   4. Run `jarvy ai-hooks apply` to provision.
+#
+# Debugging: pipe a sample payload directly to your script body, e.g.:
+#   echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf x"}}' \
+#     | bash -c "$(printf '%s' "$YOUR_SCRIPT")"
+#   echo "exit code: $?"        # 2 = block, 0 = allow
+
+[ai_hooks]
+agents = ["claude-code", "cursor", "codex", "windsurf"]
+scope = "user"
+
+# REQUIRED: opt-in to raw `command = "..."` entries.
+# Team configs pulled from a remote source should leave this `false` and
+# let individual developers opt in locally.
+allow_custom_commands = true
+
+
+# ---------------------------------------------------------------------
+# Pattern 1 — command-string deny
+#
+# Blocks any Bash command matching a regex. Use this for:
+#   * commands your team has standardized off of
+#   * internal tools that should only run in CI
+#   * legacy scripts that the AI shouldn't invoke directly
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+name = "block-legacy-deploy-script"
+event = "pre_tool_use"
+matcher = "Bash"
+timeout_ms = 5000
+command = '''
+#!/usr/bin/env bash
+set -u
+payload="$(cat)"
+cmd="$(printf '%s' "$payload" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+if printf '%s' "$cmd" | grep -Eq './legacy/deploy\.sh|bin/old-deploy'; then
+  echo "team policy: legacy deploy script is CI-only; use the new pipeline" >&2
+  exit 2
+fi
+exit 0
+'''
+command_windows = '''
+$payload = [Console]::In.ReadToEnd()
+$cmd = ''
+if ($payload -match '"command"\s*:\s*"([^"]*)"') { $cmd = $Matches[1] }
+if ($cmd -match './legacy/deploy\.sh|bin/old-deploy') {
+  [Console]::Error.WriteLine('team policy: legacy deploy script is CI-only')
+  exit 2
+}
+exit 0
+'''
+
+
+# ---------------------------------------------------------------------
+# Pattern 2 — file-path deny
+#
+# Refuses Edit / Write / Read of a path pattern. Use this for:
+#   * generated files the AI shouldn't hand-edit
+#   * lockfiles, vendored dirs, build artifacts
+#   * compliance-protected paths (PHI directories, audit logs, etc.)
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+name = "block-generated-file-edits"
+event = "pre_tool_use"
+matcher = "Edit"
+timeout_ms = 5000
+command = '''
+#!/usr/bin/env bash
+set -u
+payload="$(cat)"
+path="$(printf '%s' "$payload" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+case "$path" in
+  */generated/*|*.pb.go|*.generated.ts|*/dist/*|*/build/*)
+    echo "team policy: do not hand-edit generated files ($path)" >&2
+    exit 2 ;;
+esac
+exit 0
+'''
+command_windows = '''
+$payload = [Console]::In.ReadToEnd()
+$path = ''
+if ($payload -match '"file_path"\s*:\s*"([^"]*)"') { $path = $Matches[1] }
+if ($path -match '(/generated/|\.pb\.go$|\.generated\.ts$|/dist/|/build/)') {
+  [Console]::Error.WriteLine("team policy: do not hand-edit generated files ($path)")
+  exit 2
+}
+exit 0
+'''
+
+
+# ---------------------------------------------------------------------
+# Pattern 3 — context injection
+#
+# Adds a reminder or piece of context to the agent's view of the world.
+# Exit 0 (allow), print the context to stdout. Most reliable on the
+# `user_prompt_submit` event.
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+name = "inject-team-conventions"
+event = "user_prompt_submit"
+timeout_ms = 3000
+command = '''
+#!/usr/bin/env bash
+set -u
+# Read the payload but don't modify behavior — just inject context.
+cat > /dev/null
+cat <<'EOF'
+Team conventions:
+- Commits must use Conventional Commits prefixes (feat:/fix:/chore:/...).
+- All public APIs must have rustdoc with # Errors and # Examples sections.
+- Database migrations live in /migrations and require PR review.
+EOF
+exit 0
+'''
+command_windows = '''
+[Console]::In.ReadToEnd() | Out-Null
+Write-Output "Team conventions:"
+Write-Output "- Commits must use Conventional Commits prefixes (feat:/fix:/chore:/...)."
+Write-Output "- All public APIs must have rustdoc with # Errors and # Examples sections."
+Write-Output "- Database migrations live in /migrations and require PR review."
+exit 0
+'''
+
+
+# ---------------------------------------------------------------------
+# Pattern 4 — network policy call
+#
+# Hand the decision to an internal policy API. Useful when the
+# allow / deny logic is centralized (OPA, Cerbos, an internal Lambda).
+# Keep the timeout tight — agents wait synchronously on the hook.
+# ---------------------------------------------------------------------
+[[ai_hooks.hook]]
+name = "policy-server-gate"
+event = "pre_tool_use"
+matcher = "Bash"
+timeout_ms = 4000      # leave headroom; default is 5s and curl can be slow
+command = '''
+#!/usr/bin/env bash
+set -u
+payload="$(cat)"
+# Adjust the URL and auth header for your environment.
+verdict="$(
+  curl -s --max-time 3 \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TEAM_POLICY_TOKEN:-}" \
+    --data-binary "$payload" \
+    https://policy.internal/agent-check \
+    2>/dev/null
+)"
+case "$verdict" in
+  allow|"") exit 0 ;;
+  deny)     echo "team policy server denied this action" >&2; exit 2 ;;
+  *)        # On any unexpected response, fail-open with a warning.
+            echo "warn: policy server returned: $verdict" >&2
+            exit 0 ;;
+esac
+'''
+command_windows = '''
+$payload = [Console]::In.ReadToEnd()
+$token = $env:TEAM_POLICY_TOKEN
+$headers = @{ "Content-Type" = "application/json"; "Authorization" = "Bearer $token" }
+try {
+  $verdict = Invoke-RestMethod -Uri "https://policy.internal/agent-check" `
+    -Method Post -Headers $headers -Body $payload -TimeoutSec 3
+} catch {
+  Write-Error "warn: policy server unreachable"
+  exit 0
+}
+if ($verdict -eq "deny") {
+  [Console]::Error.WriteLine("team policy server denied this action")
+  exit 2
+}
+exit 0
+'''

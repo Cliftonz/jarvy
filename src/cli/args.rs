@@ -462,6 +462,14 @@ pub enum Commands {
         #[clap(short, long)]
         output: Option<String>,
     },
+    /// Manage AI agent hooks (Claude Code / Cursor / Codex / Windsurf / Cline / Continue)
+    AiHooks {
+        #[clap(subcommand)]
+        action: AiHooksAction,
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+    },
     /// Catch-all for unknown subcommands and their args
     #[clap(external_subcommand)]
     External(Vec<String>),

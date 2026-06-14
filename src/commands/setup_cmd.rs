@@ -117,7 +117,14 @@ pub fn run_setup(
         dry_run = dry_run,
     );
 
-    let config = Config::new_with_workspace(&config_path);
+    let mut config = Config::new_with_workspace(&config_path);
+    // Tag the AI hooks block as remote-origin when the user supplied
+    // `--from <url>`. The runner refuses raw `command = "..."` entries
+    // from remote configs even if `allow_custom_commands = true` —
+    // remote configs can narrow but not broaden policy.
+    if from.is_some() {
+        config.mark_ai_hooks_remote();
+    }
     let hooks_config = config.get_hooks();
     let hook_settings = HookConfig::from(&hooks_config.config);
 
@@ -673,6 +680,9 @@ pub fn run_setup(
     // Git configuration
     run_git_phase(&config, dry_run);
 
+    // AI agent hook provisioning (Claude Code, Cursor, Codex, Windsurf, ...)
+    run_ai_hooks_phase(&config, dry_run);
+
     // Environment variable setup
     let env_config = config.get_env();
     let env_settings = &env_config.config;
@@ -970,6 +980,114 @@ fn run_git_phase(config: &Config, dry_run: bool) {
     }
 }
 
+/// Apply `[ai_hooks]` configuration: write Claude Code / Cursor / Codex /
+/// Windsurf / Cline / Continue hook settings. Library hooks always
+/// apply; raw `command = "..."` entries are refused unless
+/// `allow_custom_commands = true` AND the config came from a local file
+/// (the remote-origin trust boundary).
+///
+/// Per-agent failures DO NOT abort the phase — every agent gets a chance
+/// to apply. Each success / failure produces its own telemetry event so
+/// on-call can distinguish "Cline broke on Windows" from "AI hooks
+/// broke" without reading source.
+fn run_ai_hooks_phase(config: &Config, dry_run: bool) {
+    let Some(ref ai_cfg) = config.ai_hooks else {
+        return;
+    };
+    if ai_cfg.is_empty() {
+        return;
+    }
+    let agent_count = ai_cfg.unique_agents().len();
+    let hooks_count = ai_cfg.hooks.len();
+    let scope_label = match ai_cfg.scope {
+        crate::ai_hooks::HookScope::User => "user",
+        crate::ai_hooks::HookScope::Project => "project",
+    };
+
+    let _span = tracing::info_span!(
+        "ai_hooks",
+        agents = %agent_count,
+        scope = %scope_label,
+        dry_run = %dry_run,
+    )
+    .entered();
+
+    if dry_run {
+        println!("\n=== AI Hooks (dry-run) ===");
+        println!(
+            "[DRY-RUN] Would provision {} hook(s) for: {:?}",
+            hooks_count,
+            ai_cfg.unique_agents()
+        );
+        crate::telemetry::ai_hook_phase_started(agent_count, hooks_count, scope_label, true);
+        return;
+    }
+
+    println!("\n=== AI Hooks ===");
+    let started = std::time::Instant::now();
+    crate::telemetry::ai_hook_phase_started(agent_count, hooks_count, scope_label, false);
+
+    match crate::ai_hooks::apply(ai_cfg) {
+        Ok(report) => {
+            println!(
+                "  Applied {} hook(s) across {} agent(s)",
+                report.total_applied(),
+                report.successes.len()
+            );
+            for outcome in &report.successes {
+                println!("    {:<13} {}", outcome.agent, outcome.path.display());
+                for w in &outcome.warnings {
+                    println!("      warning: {w}");
+                }
+                crate::telemetry::ai_hook_agent_applied(
+                    outcome.agent,
+                    outcome.applied,
+                    outcome.warnings.len(),
+                    &outcome.path,
+                );
+            }
+            for (target, e) in &report.failures {
+                eprintln!(
+                    "    {:<13} FAILED ({}): {} — other agents still applied",
+                    target.slug(),
+                    e.kind(),
+                    e
+                );
+                crate::telemetry::ai_hook_agent_failed(target.slug(), e.kind());
+            }
+            if !report.refused_custom.is_empty() {
+                println!(
+                    "  Refused {} custom hook(s) (set allow_custom_commands = true to apply)",
+                    report.refused_custom.len()
+                );
+            }
+            if !report.remote_refused_custom.is_empty() {
+                println!(
+                    "  Refused {} custom hook(s) from remote-fetched config (trust boundary)",
+                    report.remote_refused_custom.len()
+                );
+            }
+            crate::telemetry::ai_hook_custom_refused_summary(
+                report.refused_custom.len(),
+                report.remote_refused_custom.len(),
+            );
+            crate::telemetry::ai_hook_phase_completed(
+                report.total_applied(),
+                report.agents_touched(),
+                report.refused_custom.len(),
+                report.remote_refused_custom.len(),
+                report.failures.len(),
+                started.elapsed(),
+            );
+        }
+        Err(e) => {
+            eprintln!("  Warning: AI hook provisioning failed: {e}");
+            crate::telemetry::ai_hook_agent_failed("global", e.kind());
+            crate::telemetry::ai_hook_phase_completed(0, 0, 0, 0, 1, started.elapsed());
+        }
+    }
+}
+
 /// Auto-start services (`docker compose` / `tilt`) if `[services]` is
 /// configured to do so for this environment. Containment-checked path
 /// resolution lives in `services::detect_backend_with_config`.
@@ -1199,5 +1317,58 @@ mod tests {
             "#,
         );
         run_services_phase(&cfg, "jarvy.toml", false, true);
+    }
+
+    // ---- AI hooks phase coverage -------------------------------------
+
+    #[test]
+    fn run_ai_hooks_phase_skips_when_section_missing() {
+        // No [ai_hooks] section at all → silent no-op, no panic, no
+        // disk writes. dry_run = false to exercise the early return.
+        let cfg = config_from(
+            r#"
+            [provisioner]
+            git = "latest"
+            "#,
+        );
+        run_ai_hooks_phase(&cfg, false);
+    }
+
+    #[test]
+    fn run_ai_hooks_phase_skips_when_empty() {
+        // `agents = []` produces is_empty() == true → also a no-op.
+        let cfg = config_from(
+            r#"
+            [provisioner]
+            git = "latest"
+
+            [ai_hooks]
+            agents = []
+            "#,
+        );
+        run_ai_hooks_phase(&cfg, false);
+    }
+
+    #[test]
+    fn run_ai_hooks_phase_dry_run_does_not_write_disk() {
+        // dry_run = true must NOT touch ~/.claude or any agent settings.
+        let cfg = config_from(
+            r#"
+            [provisioner]
+            git = "latest"
+
+            [ai_hooks]
+            agents = ["claude-code"]
+
+            [[ai_hooks.hook]]
+            use = "block-rm-rf"
+            "#,
+        );
+        // We can't easily assert the negative without a HomeGuard here,
+        // but the phase must complete without panicking. Coupled with
+        // the explicit dry-run integration test in
+        // tests/ai_hooks_integration.rs that asserts no settings file
+        // is created, the contract is covered.
+        run_ai_hooks_phase(&cfg, true);
     }
 }

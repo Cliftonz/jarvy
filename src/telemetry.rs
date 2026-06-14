@@ -25,6 +25,7 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
+use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -1304,6 +1305,142 @@ pub fn now() -> Instant {
 /// Convert duration to milliseconds
 pub fn ms(d: Duration) -> u128 {
     d.as_millis()
+}
+
+// ============================================================================
+// AI Hooks events
+//
+// Event taxonomy: domain `ai_hook` (singular, matches `hook.completed`),
+// action snake_case. Every event passes structured fields — never user
+// hook names or raw error messages — so OTLP receivers don't store
+// user-controlled strings that may carry secrets.
+// ============================================================================
+
+/// Record the start of the AI hooks provisioning phase. Pairs with
+/// `ai_hook.phase_completed` so an SRE can compute "what fraction of
+/// setups ran AI hooks" and "p95 phase duration".
+pub fn ai_hook_phase_started(agents: usize, hooks_count: usize, scope: &str, dry_run: bool) {
+    if !is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "ai_hook.phase_started",
+        agents = %agents,
+        hooks_count = %hooks_count,
+        scope = %scope,
+        dry_run = %dry_run,
+    );
+}
+
+/// Record the end of the AI hooks provisioning phase across every
+/// targeted agent.
+pub fn ai_hook_phase_completed(
+    applied: usize,
+    agents_touched: usize,
+    refused_local: usize,
+    refused_remote: usize,
+    failures: usize,
+    duration: Duration,
+) {
+    if !is_enabled() {
+        return;
+    }
+    let duration_ms = duration.as_millis() as u64;
+    tracing::info!(
+        event = "ai_hook.phase_completed",
+        applied = %applied,
+        agents_touched = %agents_touched,
+        refused_local = %refused_local,
+        refused_remote = %refused_remote,
+        failures = %failures,
+        duration_ms = %duration_ms,
+    );
+}
+
+/// Record a single agent's successful provisioning. Carries the agent
+/// slug so dashboards can split by target.
+pub fn ai_hook_agent_applied(agent: &str, applied: usize, warnings: usize, settings_path: &Path) {
+    if !is_enabled() {
+        return;
+    }
+    let redacted_path = redact_path(&settings_path.to_string_lossy());
+    tracing::info!(
+        event = "ai_hook.agent_applied",
+        agent = %agent,
+        applied = %applied,
+        warnings = %warnings,
+        settings_path = %redacted_path,
+    );
+}
+
+/// Record a single agent's provisioning failure. `error_type` is the
+/// stable `AiHookError::kind()` tag — the formatted message is NOT
+/// emitted so user-controlled hook names can't leak to OTLP.
+pub fn ai_hook_agent_failed(agent: &str, error_type: &str) {
+    if !is_enabled() {
+        return;
+    }
+    tracing::warn!(
+        event = "ai_hook.agent_failed",
+        agent = %agent,
+        error_type = %error_type,
+    );
+}
+
+/// Record a single Jarvy-managed entry landing on disk. Lets auditors
+/// answer "did this developer have `audit-log` provisioned on
+/// 2026-05-01?" without recomputing from setup logs.
+pub fn ai_hook_provisioned(agent: &str, hook_name: &str, library_source: Option<&str>) {
+    if !is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "ai_hook.provisioned",
+        agent = %agent,
+        hook_name = %hook_name,
+        library_source = %library_source.unwrap_or("custom"),
+    );
+}
+
+/// Roll-up event for custom-command refusals. Single INFO line per
+/// phase instead of one WARN per refused entry — refusal is configured
+/// behavior, not an incident, so don't page on it.
+pub fn ai_hook_custom_refused_summary(local_count: usize, remote_count: usize) {
+    if !is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "ai_hook.custom_refused_summary",
+        local_count = %local_count,
+        remote_count = %remote_count,
+    );
+}
+
+/// Record a `jarvy ai-hooks check` invocation's outcome. Lets CI compute
+/// drift rate over time.
+pub fn ai_hook_check_completed(agents_checked: usize, drifted_agents: usize) {
+    if !is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "ai_hook.check_completed",
+        agents_checked = %agents_checked,
+        drifted_agents = %drifted_agents,
+    );
+}
+
+/// Record a Windows auto-translation fallback for a custom hook.
+/// Bounded cardinality (library size + custom name set) so safe to
+/// emit per-fire.
+pub fn ai_hook_windows_auto_translated(agent: &str, hook_name: &str) {
+    if !is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "ai_hook.windows_auto_translated",
+        agent = %agent,
+        hook_name = %hook_name,
+    );
 }
 
 // ============================================================================
