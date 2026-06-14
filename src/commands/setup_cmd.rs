@@ -905,31 +905,66 @@ fn emit_telemetry_hint_if_undecided() {
     );
 }
 
-/// Install language-specific packages (npm, pip, cargo) configured under
-/// the `[npm]` / `[pip]` / `[cargo]` sections of `jarvy.toml`. Extracted
-/// from `run_setup` (review item 21) — runs after tool install and before
-/// git/env configuration.
+/// Install language-specific packages (npm, pip, cargo, nuget) configured
+/// under the `[npm]` / `[pip]` / `[cargo]` / `[nuget]` sections of
+/// `jarvy.toml`. Extracted from `run_setup` (review item 21) — runs after
+/// tool install and before git/env configuration.
+///
+/// Wraps the phase in a `tracing::info_span!` carrying `dry_run` and
+/// per-backend booleans so file-logging captures the path the user took,
+/// and emits `packages.phase_started` / `packages.phase_completed`
+/// structured events so `jarvy ticket` bundles show whether dry-run was
+/// honored even when stdout was redirected.
 fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
     if !config.has_packages() {
         return;
     }
-    let packages_config = config.get_packages_config();
+    let packages_ref = config.packages_ref();
     let project_dir = std::path::Path::new(file)
         .parent()
         .unwrap_or(std::path::Path::new("."));
 
+    let has_npm = packages_ref.npm.is_some();
+    let has_pip = packages_ref.pip.is_some();
+    let has_cargo = packages_ref.cargo.is_some();
+    let has_nuget = packages_ref.nuget.is_some();
+    let backend_count =
+        (has_npm as u32) + (has_pip as u32) + (has_cargo as u32) + (has_nuget as u32);
+
+    let _span = tracing::info_span!(
+        "packages",
+        dry_run = %dry_run,
+        npm = %has_npm,
+        pip = %has_pip,
+        cargo = %has_cargo,
+        nuget = %has_nuget,
+    )
+    .entered();
+
+    tracing::info!(
+        event = "packages.phase_started",
+        dry_run,
+        backend_count,
+        npm = has_npm,
+        pip = has_pip,
+        cargo = has_cargo,
+        nuget = has_nuget,
+    );
+
+    let started = std::time::Instant::now();
+
     if dry_run {
         println!("\n=== Package Dependencies (dry-run) ===");
-        if packages_config.npm.is_some() {
+        if has_npm {
             println!("[DRY-RUN] Would install npm packages");
         }
-        if packages_config.pip.is_some() {
+        if has_pip {
             println!("[DRY-RUN] Would install pip packages");
         }
-        if packages_config.cargo.is_some() {
+        if has_cargo {
             println!("[DRY-RUN] Would install cargo binaries");
         }
-        if let Some(ref nuget) = packages_config.nuget {
+        if let Some(nuget) = packages_ref.nuget {
             let tool_count = nuget.packages.len();
             println!(
                 "[DRY-RUN] Would install {} .NET global tool(s) via `dotnet tool update -g` (machine-global)",
@@ -937,7 +972,8 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
             );
             // List the tool names so the operator can review what would land
             // in `~/.dotnet/tools/` before approving the real run.
-            let mut names: Vec<&str> = nuget.packages.keys().map(|k| k.as_str()).collect();
+            let mut names: Vec<&str> = Vec::with_capacity(nuget.packages.len());
+            names.extend(nuget.packages.keys().map(String::as_str));
             names.sort_unstable();
             for name in names {
                 println!("[DRY-RUN]   - {}", name);
@@ -945,10 +981,21 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
         }
     } else {
         println!("\n=== Installing Package Dependencies ===");
-        if let Err(e) = packages::install_packages(&packages_config, project_dir) {
+        if let Err(e) = packages::install_packages(packages_ref, project_dir) {
+            tracing::warn!(
+                event = "packages.install_failed",
+                error = %e,
+            );
             eprintln!("Warning: Package installation failed: {}", e);
         }
     }
+
+    tracing::info!(
+        event = "packages.phase_completed",
+        dry_run,
+        backend_count,
+        duration_ms = started.elapsed().as_millis() as u64,
+    );
 }
 
 /// Apply `[git]` configuration (user identity, signing, aliases, line

@@ -43,7 +43,9 @@ mod nuget;
 mod pip;
 
 pub use common::PackageError;
-pub use config::{CargoConfig, NpmConfig, NugetConfig, PackagesConfig, PipConfig};
+pub use config::{
+    CargoConfig, NpmConfig, NugetConfig, PackagesConfig, PackagesConfigRef, PipConfig,
+};
 
 use cargo_pkg::CargoHandler;
 use npm::NpmHandler;
@@ -51,40 +53,51 @@ use nuget::NugetHandler;
 use pip::PipHandler;
 use std::path::Path;
 
-/// Install all configured packages for a project
-pub fn install_packages(config: &PackagesConfig, project_dir: &Path) -> Result<(), PackageError> {
+/// Install all configured packages for a project. Accepts a borrowed
+/// view (`PackagesConfigRef`) so callers don't pay 4 deep HashMap
+/// clones just to read which ecosystems are configured — the handler
+/// constructors still clone what they own, but that's one clone per
+/// ecosystem instead of two.
+pub fn install_packages(
+    config: PackagesConfigRef<'_>,
+    project_dir: &Path,
+) -> Result<(), PackageError> {
     // Install npm packages
-    if let Some(ref npm_config) = config.npm {
+    if let Some(npm_config) = config.npm {
         println!("\n  Installing npm packages...");
         let handler = NpmHandler::new(npm_config.clone(), project_dir.to_path_buf());
         if let Err(e) = handler.install() {
+            tracing::warn!(event = "packages.install_failed", ecosystem = "npm", error = %e);
             eprintln!("  Warning: npm install failed: {}", e);
         }
     }
 
     // Install pip packages
-    if let Some(ref pip_config) = config.pip {
+    if let Some(pip_config) = config.pip {
         println!("\n  Installing pip packages...");
         let handler = PipHandler::new(pip_config.clone(), project_dir.to_path_buf());
         if let Err(e) = handler.install() {
+            tracing::warn!(event = "packages.install_failed", ecosystem = "pip", error = %e);
             eprintln!("  Warning: pip install failed: {}", e);
         }
     }
 
     // Install cargo packages
-    if let Some(ref cargo_config) = config.cargo {
+    if let Some(cargo_config) = config.cargo {
         println!("\n  Installing cargo binaries...");
         let handler = CargoHandler::new(cargo_config.clone());
         if let Err(e) = handler.install() {
+            tracing::warn!(event = "packages.install_failed", ecosystem = "cargo", error = %e);
             eprintln!("  Warning: cargo install failed: {}", e);
         }
     }
 
     // Install .NET global tools
-    if let Some(ref nuget_config) = config.nuget {
+    if let Some(nuget_config) = config.nuget {
         println!("\n  Installing .NET global tools...");
         let handler = NugetHandler::new(nuget_config.clone());
         if let Err(e) = handler.install() {
+            tracing::warn!(event = "packages.install_failed", ecosystem = "nuget", error = %e);
             eprintln!("  Warning: nuget install failed: {}", e);
         }
     }

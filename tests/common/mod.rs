@@ -16,6 +16,17 @@ pub fn jarvy_cmd() -> Command {
     c
 }
 
+/// Create a jarvy Command in fast-test mode: `JARVY_TEST_MODE=1` plus
+/// `JARVY_FAST_TEST=1`. Use for integration tests that exercise the CLI
+/// surface but should skip external command execution (network, package
+/// managers, subprocess installs). Adopted by `examples_validation.rs`
+/// and `new_commands.rs`.
+pub fn jarvy_fast_cmd() -> Command {
+    let mut c = jarvy_cmd();
+    c.env("JARVY_FAST_TEST", "1");
+    c
+}
+
 // ---------------------------------------------------------------------
 // Container-test helpers shared by `sandbox_integration.rs` and
 // `e2e_install_pipeline.rs`. The two test families have divergent

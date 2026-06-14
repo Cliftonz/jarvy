@@ -199,6 +199,22 @@ pub fn validate_config(path: &str, strict: bool) -> ValidationResult {
         }
     }
 
+    // Validate package sections — runs the same name/version guards that
+    // `jarvy setup` would apply at install time, so `jarvy validate`
+    // catches control-byte / flag-like / URL-scheme hostile entries
+    // BEFORE the user gets a "configuration is valid" green light on a
+    // file they're about to feed to setup.
+    for (section, purpose) in [
+        ("nuget", "[nuget]"),
+        ("npm", "[npm]"),
+        ("pip", "[pip]"),
+        ("cargo", "[cargo]"),
+    ] {
+        if let Some(table) = parsed.get(section).and_then(|v| v.as_table()) {
+            validate_package_section(table, section, purpose, &mut issues);
+        }
+    }
+
     let result = build_result(path, issues, strict);
 
     // Emit telemetry
@@ -257,51 +273,23 @@ fn validate_structure(parsed: &toml::Value, content: &str, issues: &mut Vec<Vali
         });
     }
 
-    // Check for unknown top-level keys. Keep this list in lockstep with the
-    // top-level sections actually parsed by `Config` and friends — the
-    // templates in `examples/` exercise the full surface, so a missing entry
-    // here produces a noisy false-positive warning.
-    let known_keys = [
-        "provisioner",
-        "privileges",
-        "hooks",
-        "env",
-        "services",
-        "roles",
-        "role",
-        "extends",
-        // Language package sections (PRD-039)
-        "npm",
-        "pip",
-        "cargo",
-        "nuget",
-        // Project commands surfaced via `jarvy run` / docs
-        "commands",
-        // Drift detection (PRD-038)
-        "drift",
-        // Git configuration
-        "git",
-        // Network/proxy configuration
-        "network",
-        // Logging configuration
-        "logging",
-        // Telemetry / OTEL configuration (project-level narrow-only override)
-        "telemetry",
-        // Workspace configuration for monorepos
-        "workspace",
-        // AI agent hooks (Claude Code, Cursor, Codex, Windsurf, Cline, Continue)
-        "ai_hooks",
-        // MCP server registration block
-        "mcp_register",
-    ];
+    // Check for unknown top-level keys. The allowlist lives on
+    // `crate::config::TOP_LEVEL_SECTIONS` — a single source of truth shared
+    // with `Config`'s field set and pinned by a regression test
+    // (`config::tests::top_level_sections_matches_config_fields`). Adding a
+    // top-level section in one place without the other will fail to build.
+    let known_keys = crate::config::TOP_LEVEL_SECTIONS;
     if let Some(table) = parsed.as_table() {
+        // Build the "Valid sections" suggestion once outside the loop —
+        // even if many keys are unknown, the suggestion text is constant.
+        let valid_sections = known_keys.join(", ");
         for key in table.keys() {
             if !known_keys.contains(&key.as_str()) {
                 issues.push(ValidationIssue {
                     severity: Severity::Warning,
                     message: format!("Unknown configuration section: [{}]", key),
                     line: find_key_line(content, key),
-                    suggestion: Some(format!("Valid sections: {}", known_keys.join(", "))),
+                    suggestion: Some(format!("Valid sections: {}", valid_sections)),
                 });
             }
         }
@@ -565,6 +553,87 @@ fn validate_services(
     }
 }
 
+/// Validate every entry in a `[npm]/[pip]/[cargo]/[nuget]` table against
+/// the same `validate_package_name` / `validate_package_version` guards
+/// that `jarvy setup` applies at install time. Without this pass,
+/// `jarvy validate` would print "Configuration is valid!" on a TOML
+/// that ships ANSI control bytes in a package name — defeating the
+/// safety check operators run on untrusted configs.
+///
+/// Section-level keys like `package_manager`, `from_lockfile`,
+/// `install_dev`, `venv`, `create_venv`, `lockfile`, `activate_hint`,
+/// `system_site_packages`, `python_version`, `locked` are NOT package
+/// names — they're config knobs flattened into the table by serde.
+/// Skip them by exact match.
+fn validate_package_section(
+    table: &toml::map::Map<String, toml::Value>,
+    section: &str,
+    purpose: &'static str,
+    issues: &mut Vec<ValidationIssue>,
+) {
+    use crate::packages::common::{validate_package_name, validate_package_version};
+
+    // Reserved knob names per section. Keep in lockstep with the
+    // non-`#[serde(flatten)]` fields on each *Config struct.
+    const NPM_KNOBS: &[&str] = &["package_manager", "from_lockfile", "install_dev"];
+    const PIP_KNOBS: &[&str] = &[
+        "venv",
+        "create_venv",
+        "from_lockfile",
+        "lockfile",
+        "activate_hint",
+        "system_site_packages",
+        "python_version",
+    ];
+    const CARGO_KNOBS: &[&str] = &["locked"];
+    const NUGET_KNOBS: &[&str] = &[];
+
+    let knobs: &[&str] = match section {
+        "npm" => NPM_KNOBS,
+        "pip" => PIP_KNOBS,
+        "cargo" => CARGO_KNOBS,
+        "nuget" => NUGET_KNOBS,
+        _ => &[],
+    };
+
+    for (key, value) in table {
+        if knobs.contains(&key.as_str()) {
+            continue;
+        }
+        if let Err(e) = validate_package_name(key, purpose) {
+            issues.push(ValidationIssue {
+                severity: Severity::Error,
+                message: format!("Refused {} entry: {}", purpose, e),
+                line: None,
+                suggestion: Some(
+                    "Remove the entry or use a name matching the allowed character set."
+                        .to_string(),
+                ),
+            });
+            // Skip version check — the name is already poisoned, no
+            // point compounding the error message.
+            continue;
+        }
+        // Versions live either as a bare string `name = "1.0"` or as
+        // a `{version = "1.0", ...}` inline table.
+        let version_str = match value {
+            toml::Value::String(s) => Some(s.as_str()),
+            toml::Value::Table(t) => t.get("version").and_then(|v| v.as_str()),
+            _ => None,
+        };
+        if let Some(v) = version_str
+            && let Err(e) = validate_package_version(v, purpose)
+        {
+            issues.push(ValidationIssue {
+                severity: Severity::Error,
+                message: format!("Refused {} version for `{}`: {}", purpose, key, e),
+                line: None,
+                suggestion: None,
+            });
+        }
+    }
+}
+
 fn find_similar_tool(name: &str, known_tools: &[String]) -> Option<String> {
     let mut best_match: Option<(&str, f64)> = None;
 
@@ -738,5 +807,83 @@ mod tests {
             }],
         };
         assert_eq!(result_error.exit_code(), ExitCode::Error);
+    }
+
+    #[test]
+    fn validate_rejects_control_bytes_in_nuget_name() {
+        // A hostile jarvy.toml with a control byte in a [nuget] key
+        // must be flagged as an Error — not silently accepted with a
+        // green "Configuration is valid!" envelope. TOML's basic string
+        // syntax requires escape sequences for control bytes; that's
+        // what an attacker would actually write.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[nuget]\n\"\\u001b[2J\\u001b[H\" = \"latest\"\n",
+        )
+        .unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert!(
+            result.issues.iter().any(|i| {
+                matches!(i.severity, Severity::Error) && i.message.contains("control bytes")
+            }),
+            "expected control-byte refusal, got: {:?}",
+            result.issues
+        );
+        assert!(
+            result.error_count >= 1,
+            "expected non-zero error count, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn validate_rejects_flag_like_npm_name() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[npm]\n\"--registry=http://attacker\" = \"latest\"\n",
+        ).unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|i| matches!(i.severity, Severity::Error)),
+            "expected error severity for flag-like npm name: {:?}",
+            result.issues
+        );
+    }
+
+    #[test]
+    fn validate_accepts_legitimate_nuget_section() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[nuget]\ndotnet-ef = \"latest\"\ncsharpier = \"0.30.0\"\n",
+        ).unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert_eq!(
+            result.error_count, 0,
+            "legitimate nuget entries rejected: {:?}",
+            result.issues
+        );
+    }
+
+    #[test]
+    fn validate_skips_pip_section_knobs_like_venv() {
+        // Reserved knobs (venv, create_venv, …) are NOT package names.
+        // Don't run validate_package_name on them.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[pip]\npytest = \">=7.0\"\nvenv = \".venv\"\ncreate_venv = true\n",
+        ).unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert_eq!(
+            result.error_count, 0,
+            "pip knobs rejected: {:?}",
+            result.issues
+        );
     }
 }

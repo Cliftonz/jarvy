@@ -29,8 +29,8 @@ echo 'Worker ready: `dotnet run` starts the host; deploy as a systemd unit or co
 
 [env.vars]
 DOTNET_ENVIRONMENT = "Development"
-DOTNET_CLI_TELEMETRY_OPTOUT = "1"
-DOTNET_NOLOGO = "1"
+# DOTNET_CLI_TELEMETRY_OPTOUT + DOTNET_NOLOGO are set globally by the
+# `dotnet` tool's default_hook.
 # Worker logging tends to be structured/JSON — wire your hosted services up via Serilog.
 Logging__Console__FormatterName = "json"
 

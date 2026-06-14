@@ -65,6 +65,28 @@ pub fn validate_package_name(name: &str, purpose: &'static str) -> Result<(), Pa
             format!("{purpose} package name is empty"),
         ));
     }
+    // Reject control bytes (including ESC `\x1b`) and DEL up front. These
+    // never appear in legitimate package names but TOML quoted keys
+    // preserve them — a hostile `jarvy.toml` lands ANSI / OSC sequences
+    // in the operator's terminal during `--dry-run` preview, which is
+    // exactly the path operators trust as "safe to inspect untrusted
+    // configs." Refuse before the name reaches println!.
+    if name
+        .chars()
+        .any(|c| c.is_control() || c == '\x1b' || c == '\x7f')
+    {
+        tracing::warn!(
+            event = "packages.refused_control_bytes",
+            purpose = %purpose,
+            // Don't log the name itself — could still contain control
+            // bytes redirected at the log viewer. Log only the length.
+            name_len = name.chars().count(),
+        );
+        return Err(PackageError::RefusedUnsafeSpec(
+            "<redacted: contained control bytes>".to_string(),
+            format!("{purpose} package name contains control bytes (terminal-control injection)"),
+        ));
+    }
     if name.starts_with('-') {
         tracing::warn!(
             event = "packages.refused_flag_like_name",
@@ -118,6 +140,23 @@ pub fn validate_package_version(version: &str, purpose: &'static str) -> Result<
         return Err(PackageError::RefusedUnsafeSpec(
             version.to_string(),
             format!("{purpose} version is empty"),
+        ));
+    }
+    // Reject control bytes here too — same terminal-injection concern as
+    // validate_package_name. Versions get printed via the dry-run preview
+    // and `Running: dotnet tool update -g <name> --version <ver>` line.
+    if version
+        .chars()
+        .any(|c| c.is_control() || c == '\x1b' || c == '\x7f')
+    {
+        tracing::warn!(
+            event = "packages.refused_control_bytes_version",
+            purpose = %purpose,
+            version_len = version.chars().count(),
+        );
+        return Err(PackageError::RefusedUnsafeSpec(
+            "<redacted: contained control bytes>".to_string(),
+            format!("{purpose} version contains control bytes (terminal-control injection)"),
         ));
     }
     if version.starts_with('-') {
@@ -240,6 +279,42 @@ mod tests {
                 validate_package_name(hostile, "[cargo]"),
                 Err(PackageError::RefusedUnsafeSpec(_, _))
             ));
+        }
+    }
+
+    #[test]
+    fn validate_name_rejects_control_bytes() {
+        // The motivating attack: a hostile jarvy.toml lands an ANSI
+        // sequence in the dry-run preview. Refuse before it reaches
+        // any println!.
+        for hostile in [
+            "\u{1b}[2J\u{1b}[H",     // CSI clear screen + home
+            "dotnet-\u{1b}[31mEVIL", // CSI SGR in the middle
+            "name\u{07}",            // BEL
+            "name\u{7f}",            // DEL
+            "name\u{0}rest",         // NUL split
+            "name\n",                // bare newline
+        ] {
+            assert!(
+                matches!(
+                    validate_package_name(hostile, "[nuget]"),
+                    Err(PackageError::RefusedUnsafeSpec(_, _))
+                ),
+                "expected control-byte refusal for {hostile:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_version_rejects_control_bytes() {
+        for hostile in ["1.0.0\u{1b}[31m", "\u{7}1.0.0", "1.0\n0", "\u{1b}[2J"] {
+            assert!(
+                matches!(
+                    validate_package_version(hostile, "[nuget]"),
+                    Err(PackageError::RefusedUnsafeSpec(_, _))
+                ),
+                "expected control-byte refusal for version {hostile:?}"
+            );
         }
     }
 

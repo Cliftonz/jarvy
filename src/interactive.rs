@@ -81,14 +81,30 @@ pub fn user_select() {
 
     println!("\t\tHi, I'm Jarvy! I'm here to help you get your development environment set up.");
 
-    let options = vec![
-        "Run the project",
-        "Test the project",
-        "Development environment setup",
+    // Build options. The three well-known slots come first; any extra
+    // `[commands]` keys (e.g. `format`, `migrate`, `publish`) are
+    // surfaced as "Run <name>" entries so a `dotnet-api` jarvy.toml's
+    // `format = "dotnet csharpier ."` is actually invokable instead of
+    // silently dropped by the parser.
+    let mut options: Vec<String> = vec![
+        "Run the project".to_string(),
+        "Test the project".to_string(),
+        "Development environment setup".to_string(),
     ];
+    let mut extra_keys: Vec<&str> = commands_config
+        .extras
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !matches!(*k, "run" | "test" | "setup"))
+        .collect();
+    extra_keys.sort_unstable();
+    for k in &extra_keys {
+        options.push(format!("Run `{}`", k));
+    }
 
+    let display_options: Vec<&str> = options.iter().map(String::as_str).collect();
     let selection: Result<&str, InquireError> =
-        Select::new("What would you like to do today?", options).prompt();
+        Select::new("What would you like to do today?", display_options).prompt();
 
     match selection {
         Ok(choice) => match choice {
@@ -108,7 +124,17 @@ pub fn user_select() {
                     setup();
                 }
             }
-            _ => {}
+            other => {
+                // "Run `<name>`" — look up the extra by stripping the
+                // wrapper. Falls through to no-op if the user backed out.
+                if let Some(name) = other
+                    .strip_prefix("Run `")
+                    .and_then(|s| s.strip_suffix('`'))
+                    && let Some(cmd) = commands_config.extras.get(name)
+                {
+                    run_shell_command(cmd, name);
+                }
+            }
         },
         Err(_) => {
             println!("No choice was made")

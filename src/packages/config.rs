@@ -23,6 +23,28 @@ pub struct PackagesConfig {
     pub go: Option<GoConfig>,
 }
 
+/// Borrowed view of every `[npm]/[pip]/[cargo]/[nuget]` block on a
+/// `Config`. Use this when you only need to *read* the package
+/// sections — typically `install_packages` and `run_packages_phase`
+/// in setup. Constructing this is zero-allocation; the previous
+/// `Config::get_packages_config` path deep-cloned every HashMap.
+#[derive(Debug, Clone, Copy)]
+pub struct PackagesConfigRef<'a> {
+    pub npm: Option<&'a NpmConfig>,
+    pub pip: Option<&'a PipConfig>,
+    pub cargo: Option<&'a CargoConfig>,
+    pub nuget: Option<&'a NugetConfig>,
+}
+
+impl<'a> PackagesConfigRef<'a> {
+    /// True if any package section is configured. Mirrors
+    /// `Config::has_packages` for ref-only contexts.
+    #[allow(dead_code)] // Public API for borrowed-packages-config callers
+    pub fn any_configured(&self) -> bool {
+        self.npm.is_some() || self.pip.is_some() || self.cargo.is_some() || self.nuget.is_some()
+    }
+}
+
 /// Package specification - either a simple version string or detailed config
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]

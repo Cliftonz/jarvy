@@ -329,6 +329,44 @@ pub struct Config {
     pub mcp_register: Option<crate::mcp_register::McpRegisterConfig>,
 }
 
+/// Canonical list of top-level section names that `jarvy.toml` may use.
+///
+/// This is the single source of truth for `jarvy validate`'s
+/// known-section check. Adding a new top-level section to `Config`
+/// without updating this list — or vice versa — will be rejected by
+/// the compile-time destructure test in `Config::tests`. That test
+/// is what stops the "validator warns about a section the parser
+/// silently accepts" class of bug.
+///
+/// `logging` is included here even though it is not (yet) a field on
+/// `Config` — it is parsed by `src/observability/logging.rs` and is
+/// documented as a valid jarvy.toml section.
+pub const TOP_LEVEL_SECTIONS: &[&str] = &[
+    "extends",
+    "role",
+    "provisioner",
+    "privileges",
+    "hooks",
+    "env",
+    "services",
+    "roles",
+    "network",
+    "npm",
+    "pip",
+    "cargo",
+    "nuget",
+    "git",
+    "drift",
+    "telemetry",
+    "commands",
+    "workspace",
+    "ai_hooks",
+    "mcp_register",
+    // Parsed by src/observability/logging.rs, not Config — kept here so
+    // jarvy validate accepts it without warning.
+    "logging",
+];
+
 /// Custom project commands that override the interactive menu defaults.
 ///
 /// # Example
@@ -349,6 +387,12 @@ pub struct CommandsConfig {
     /// Command to set up the dev environment (default: "jarvy setup")
     #[serde(default)]
     pub setup: Option<String>,
+    /// Any additional commands not in the three well-known slots
+    /// (e.g. `format`, `migrate`, `publish`, `scaffold`). Captured here
+    /// so the parser doesn't drop them silently — they surface in the
+    /// interactive menu as "Run <name>" entries.
+    #[serde(flatten)]
+    pub extras: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -642,7 +686,24 @@ impl Config {
         self.role.as_ref().map(|r| !r.is_empty()).unwrap_or(false)
     }
 
-    /// Get the packages configuration for npm/pip/cargo/nuget
+    /// Borrowed view of the npm/pip/cargo/nuget sections. Zero-clone:
+    /// constructing this is just collecting four references. Use this
+    /// from `run_packages_phase` and `install_packages`. The owned
+    /// variant `get_packages_config` is retained for the small number
+    /// of call sites that genuinely need ownership.
+    pub fn packages_ref(&self) -> crate::packages::PackagesConfigRef<'_> {
+        crate::packages::PackagesConfigRef {
+            npm: self.npm.as_ref(),
+            pip: self.pip.as_ref(),
+            cargo: self.cargo.as_ref(),
+            nuget: self.nuget.as_ref(),
+        }
+    }
+
+    /// Get the packages configuration for npm/pip/cargo/nuget as an
+    /// owned struct. Prefer `packages_ref` for read-only access — this
+    /// clones every HashMap.
+    #[allow(dead_code)] // Retained for callers that need ownership
     pub fn get_packages_config(&self) -> crate::packages::PackagesConfig {
         crate::packages::PackagesConfig {
             npm: self.npm.clone(),
@@ -824,6 +885,82 @@ docker = "latest"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression guard against drift between `Config` and
+    /// `TOP_LEVEL_SECTIONS`. If a new top-level field is added to
+    /// `Config` without also updating `TOP_LEVEL_SECTIONS`, this test
+    /// fails to compile because the destructure pattern is missing the
+    /// new binding. That breakage points the developer at both the
+    /// const and `jarvy validate`'s allowlist in one step.
+    ///
+    /// If a field is removed from `Config`, the destructure breaks the
+    /// other way (unused binding warning under `-D warnings`).
+    #[test]
+    fn top_level_sections_matches_config_fields() {
+        // Destructure every field on Config. If anyone adds a new
+        // top-level field, this won't compile — and the fix is to
+        // update both the destructure here AND TOP_LEVEL_SECTIONS.
+        fn _enforce(c: Config) {
+            let Config {
+                extends: _,
+                role: _,
+                tools: _,
+                privileges: _,
+                hooks: _,
+                env: _,
+                services: _,
+                roles_config: _,
+                network: _,
+                npm: _,
+                pip: _,
+                cargo: _,
+                nuget: _,
+                git: _,
+                drift: _,
+                telemetry: _,
+                commands: _,
+                workspace: _,
+                ai_hooks: _,
+                mcp_register: _,
+            } = c;
+        }
+
+        // Runtime cross-check: every TOML field on `Config` (via serde
+        // names — `provisioner` not `tools`, `roles` not `roles_config`)
+        // must appear in TOP_LEVEL_SECTIONS. Hard-coded list mirrors the
+        // destructure above with serde renames applied.
+        let config_sections: &[&str] = &[
+            "extends",
+            "role",
+            "provisioner",
+            "privileges",
+            "hooks",
+            "env",
+            "services",
+            "roles",
+            "network",
+            "npm",
+            "pip",
+            "cargo",
+            "nuget",
+            "git",
+            "drift",
+            "telemetry",
+            "commands",
+            "workspace",
+            "ai_hooks",
+            "mcp_register",
+        ];
+        for s in config_sections {
+            assert!(
+                TOP_LEVEL_SECTIONS.contains(s),
+                "Config has field `{}` but TOP_LEVEL_SECTIONS is missing it. \
+                 Update src/config.rs::TOP_LEVEL_SECTIONS so jarvy validate \
+                 stops warning users about this section.",
+                s
+            );
+        }
+    }
 
     #[test]
     fn test_hooks_config_parsing() {

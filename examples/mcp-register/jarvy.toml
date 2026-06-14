@@ -14,7 +14,10 @@
 #   jarvy mcp-register remove               # strip jarvy-managed entries
 
 [provisioner]
-jarvy = "latest"
+# This example doesn't install any external tools — `[mcp_register]`
+# only needs the locally-installed `jarvy` binary plus whatever the
+# user's AI agents already have. Add tools here if your project also
+# needs them (e.g. `git = "latest"`).
 
 [mcp_register]
 # Each agent's MCP config file gets a `jarvy` entry pointing at this

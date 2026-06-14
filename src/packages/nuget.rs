@@ -38,11 +38,24 @@ impl NugetHandler {
             return Ok(());
         }
 
+        // `dotnet tool update -g` is fully machine-global; cwd is
+        // semantically irrelevant. Resolve once at the top of the loop
+        // so we don't pay a getcwd(3) syscall + PathBuf allocation per
+        // tool — and so a deleted-cwd condition doesn't surface as a
+        // mid-loop install failure unrelated to the package itself.
+        let current_dir = std::env::current_dir().map_err(PackageError::Io)?;
+
         for (name, spec) in &self.config.packages {
             if spec.is_optional() {
                 continue;
             }
-            if let Err(e) = self.install_tool(name, spec) {
+            if let Err(e) = self.install_tool(name, spec, &current_dir) {
+                tracing::warn!(
+                    event = "package.install_failed",
+                    ecosystem = "nuget",
+                    package = %name,
+                    error = %e,
+                );
                 eprintln!("    Warning: Failed to install {}: {}", name, e);
             }
         }
@@ -54,22 +67,35 @@ impl NugetHandler {
     /// so re-runs are idempotent — `dotnet tool install -g` exits non-zero
     /// when the tool is already present, but `dotnet tool update -g` is the
     /// idempotent path we actually want.
-    fn install_tool(&self, name: &str, spec: &PackageSpec) -> Result<(), PackageError> {
+    fn install_tool(
+        &self,
+        name: &str,
+        spec: &PackageSpec,
+        working_dir: &std::path::Path,
+    ) -> Result<(), PackageError> {
         validate_package_name(name, "[nuget]")?;
         validate_package_version(spec.version(), "[nuget]")?;
 
         println!("    Installing {}...", name);
 
-        let version = spec.version();
-        let mut args: Vec<&str> = vec!["tool", "update", "-g", name];
-        if version != "latest" {
-            args.push("--version");
-            args.push(version);
-        }
-
-        let current_dir = std::env::current_dir().map_err(PackageError::Io)?;
-        run_package_command("dotnet", &args, &current_dir)
+        let args = build_install_args(name, spec.version());
+        run_package_command("dotnet", &args, working_dir)
     }
+}
+
+/// Build the argv passed to `dotnet`. Extracted so the contract — `tool
+/// update -g <name>` (idempotent — `install -g` errors when present, so
+/// we use `update` instead), with `--version <ver>` only when not
+/// "latest" — can be pinned by a unit test independently of subprocess
+/// dispatch.
+pub(crate) fn build_install_args<'a>(name: &'a str, version: &'a str) -> Vec<&'a str> {
+    let mut args: Vec<&str> = Vec::with_capacity(6);
+    args.extend_from_slice(&["tool", "update", "-g", name]);
+    if version != "latest" {
+        args.push("--version");
+        args.push(version);
+    }
+    args
 }
 
 #[cfg(test)]
@@ -100,8 +126,55 @@ mod tests {
         assert_eq!(handler.config.packages.len(), 2);
     }
 
+    /// Pin the argv contract — flipping `update` → `install` or dropping
+    /// `-g` would change semantics catastrophically (loses idempotency,
+    /// or installs per-project instead of machine-global). This test
+    /// makes those regressions impossible to ship silently.
+    #[test]
+    fn build_install_args_table() {
+        let cases = [
+            (
+                "dotnet-ef",
+                "latest",
+                vec!["tool", "update", "-g", "dotnet-ef"],
+            ),
+            (
+                "csharpier",
+                "0.30.0",
+                vec!["tool", "update", "-g", "csharpier", "--version", "0.30.0"],
+            ),
+            (
+                "dotnet-aspnet-codegenerator",
+                "8.0.0",
+                vec![
+                    "tool",
+                    "update",
+                    "-g",
+                    "dotnet-aspnet-codegenerator",
+                    "--version",
+                    "8.0.0",
+                ],
+            ),
+        ];
+        for (name, version, expected) in cases {
+            let actual = build_install_args(name, version);
+            assert_eq!(actual, expected, "argv mismatch for {} = {}", name, version);
+            // Invariants the argv must always satisfy
+            assert_eq!(actual[0], "tool", "first arg must be `tool`");
+            assert_eq!(actual[1], "update", "must use `update` for idempotency");
+            assert_eq!(actual[2], "-g", "must be global install");
+            assert_ne!(actual[1], "install", "`install` errors when present");
+        }
+    }
+
+    /// `NugetHandler::install` must reject a flag-like name via the
+    /// shared validator BEFORE it reaches `dotnet`. Tests the error
+    /// variant explicitly, not the tautology that `Result` is a result.
     #[test]
     fn nuget_rejects_flag_like_tool_names() {
+        // Build the args directly so we exercise the validator in
+        // `install_tool` without depending on whether `dotnet` is
+        // installed on the test host.
         let mut packages = HashMap::new();
         packages.insert(
             "--source".to_string(),
@@ -109,10 +182,26 @@ mod tests {
         );
         let config = NugetConfig { packages };
         let handler = NugetHandler::new(config);
-        // dotnet may or may not be installed in the test env. If it is, the
-        // validation guard fires first. If it isn't, the package-manager
-        // check fires. Either way, no flag-like name reaches `dotnet tool`.
+        // If dotnet is not on PATH, the outer guard fires first
+        // (PackageManagerNotInstalled). Otherwise the per-tool
+        // validation rejects with RefusedUnsafeSpec. Both prove the
+        // attack surface is closed.
         let result = handler.install();
-        assert!(result.is_ok() || result.is_err());
+        match &result {
+            Ok(()) | Err(PackageError::PackageManagerNotInstalled(_)) => {
+                // Outer guard fired (no dotnet on PATH). The per-tool
+                // path is tested directly below.
+            }
+            Err(other) => panic!("unexpected outer error: {other:?}"),
+        }
+        // Per-tool guard, exercised directly:
+        let spec = PackageSpec::Version("latest".to_string());
+        let err = handler
+            .install_tool("--source", &spec, std::path::Path::new("."))
+            .expect_err("flag-like name must be refused");
+        assert!(
+            matches!(err, PackageError::RefusedUnsafeSpec(_, _)),
+            "expected RefusedUnsafeSpec, got {err:?}"
+        );
     }
 }

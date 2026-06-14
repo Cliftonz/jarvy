@@ -1,23 +1,22 @@
 //! Examples regression — every `examples/**/jarvy.toml` must validate
-//! cleanly against `jarvy validate` (no Unknown-section warnings) and the
-//! `[nuget]` examples must surface in `jarvy setup --dry-run`.
+//! cleanly against `jarvy validate` (no Errors, no Unknown-section
+//! warnings) and every dotnet example with a `[nuget]` block must
+//! surface the full preview in `jarvy setup --dry-run`.
 //!
-//! Catches the class of bug where a new top-level config section
-//! (`[nuget]` here) is added to the parser + setup pipeline but missed in
-//! `src/commands/validate.rs::known_keys` or in the dry-run preview —
-//! exactly the two findings the Codex adversarial review raised against
-//! commit ec82f49.
+//! Catches three classes of bug:
+//! 1. A new top-level config section is added to `Config` but missed
+//!    in `validate::TOP_LEVEL_SECTIONS` (covered by `error_count`
+//!    assertion plus the Unknown-section message check).
+//! 2. A typo in an example references an unknown tool (`gitt`,
+//!    `grpculr`) — the validator emits `Severity::Error`, which
+//!    bumps `error_count`.
+//! 3. The dry-run NuGet branch silently drops a tool from the
+//!    preview (covered by the count + per-name assertion).
 
-use assert_cmd::cargo::cargo_bin;
 use std::path::PathBuf;
-use std::process::Command;
 
-fn jarvy() -> Command {
-    let mut c = Command::new(cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_FAST_TEST", "1");
-    c
-}
+mod common;
+use common::jarvy_fast_cmd as jarvy;
 
 fn examples_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples")
@@ -39,6 +38,21 @@ fn discover_example_configs() -> Vec<PathBuf> {
     }
     out.sort();
     out
+}
+
+/// Discover every dotnet example with a `[nuget]` table. Used to
+/// parametrize the dry-run NuGet assertion over all 5 dotnet examples
+/// (not just `dotnet-api`).
+fn discover_dotnet_examples() -> Vec<PathBuf> {
+    discover_example_configs()
+        .into_iter()
+        .filter(|p| {
+            p.parent()
+                .and_then(|d| d.file_name())
+                .map(|f| f.to_string_lossy().starts_with("dotnet-"))
+                .unwrap_or(false)
+        })
+        .collect()
 }
 
 #[test]
@@ -63,8 +77,6 @@ fn every_example_validates_without_unknown_section_warnings() {
             .expect("run jarvy validate");
 
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-        // `jarvy validate -F json` prints the ValidationResult as JSON on
-        // stdout, even when issues are present (exit code reflects severity).
         let parsed: serde_json::Value = match serde_json::from_str(&stdout) {
             Ok(v) => v,
             Err(e) => {
@@ -78,12 +90,43 @@ fn every_example_validates_without_unknown_section_warnings() {
             }
         };
 
+        // Defense layer 1: zero Severity::Error issues. This catches
+        // Unknown-tool ("gitt"), Refused-package-spec ("\x1b[2J"), and
+        // anything else the validator escalates to Error.
+        let error_count = parsed
+            .get("error_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        if error_count > 0 {
+            let messages: Vec<String> = parsed
+                .get("issues")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter(|i| i.get("severity").and_then(|s| s.as_str()) == Some("error"))
+                .filter_map(|i| {
+                    i.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(str::to_string)
+                })
+                .collect();
+            failures.push(format!(
+                "{}: {} validator error(s):\n      - {}",
+                config.display(),
+                error_count,
+                messages.join("\n      - ")
+            ));
+        }
+
+        // Defense layer 2: still surface Unknown-section warnings as
+        // failures even though they're Warnings (not Errors) by default.
+        // The whole point of this test is to prevent the validator
+        // shadow-list from drifting against `Config`.
         let issues = parsed
             .get("issues")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-
         for issue in &issues {
             let message = issue
                 .get("message")
@@ -101,48 +144,67 @@ fn every_example_validates_without_unknown_section_warnings() {
 
     assert!(
         failures.is_empty(),
-        "examples produced Unknown-section warnings:\n  - {}",
+        "examples produced validator issues:\n  - {}",
         failures.join("\n  - ")
     );
 }
 
 #[test]
-fn dry_run_surfaces_nuget_phase_for_dotnet_example() {
-    let example = examples_dir().join("dotnet-api").join("jarvy.toml");
-    assert!(
-        example.is_file(),
-        "expected examples/dotnet-api/jarvy.toml to exist"
+fn dry_run_surfaces_full_nuget_phase_for_every_dotnet_example() {
+    let examples = discover_dotnet_examples();
+    assert_eq!(
+        examples.len(),
+        5,
+        "expected 5 dotnet-* examples, found {}: {:?}",
+        examples.len(),
+        examples
     );
 
-    let out = jarvy()
-        .args(["setup", "--dry-run", "--file", example.to_str().unwrap()])
-        .output()
-        .expect("run jarvy setup --dry-run");
+    for example in &examples {
+        // Parse the example's [nuget] table directly so we can pin the
+        // exact tool count and tool names — no approximate `contains`
+        // checks on overlapping branches.
+        let toml_text = std::fs::read_to_string(example).expect("read example");
+        let parsed: toml::Value = toml::from_str(&toml_text).expect("parse example");
+        let nuget_table = parsed
+            .get("nuget")
+            .and_then(|v| v.as_table())
+            .unwrap_or_else(|| panic!("{}: expected [nuget] table", example.display()));
+        let expected_count = nuget_table.len();
+        let expected_names: Vec<&str> = nuget_table.keys().map(String::as_str).collect();
 
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    let combined = format!("{stdout}\n---STDERR---\n{stderr}");
+        let out = jarvy()
+            .args(["setup", "--dry-run", "--file", example.to_str().unwrap()])
+            .output()
+            .expect("run jarvy setup --dry-run");
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
 
-    // The dry-run should announce the .NET global tools phase so the
-    // operator knows machine-global `dotnet tool update -g` calls will
-    // run. Without this branch, the .NET examples silently hid a real
-    // machine mutation behind a clean preview.
-    assert!(
-        combined.contains(".NET global tool")
-            || combined.contains("dotnet tool update")
-            || combined.contains("Would install") && combined.contains("global tool"),
-        "dry-run output missing NuGet phase announcement.\n{combined}"
-    );
+        // Pin the canonical announcement verbatim (substring match
+        // because surrounding output may include other phases).
+        let expected_announcement = format!(
+            "[DRY-RUN] Would install {} .NET global tool(s) via `dotnet tool update -g` (machine-global)",
+            expected_count
+        );
+        assert!(
+            stdout.contains(&expected_announcement),
+            "{}: dry-run missing announcement `{}`.\n--- stdout ---\n{}",
+            example.display(),
+            expected_announcement,
+            stdout
+        );
 
-    // And the tool names from the example config should appear in the
-    // preview so the operator can review what would land in
-    // `~/.dotnet/tools/`.
-    assert!(
-        combined.contains("dotnet-ef"),
-        "dry-run output missing dotnet-ef line.\n{combined}"
-    );
-    assert!(
-        combined.contains("csharpier"),
-        "dry-run output missing csharpier line.\n{combined}"
-    );
+        // Every key in [nuget] must appear on its own indented preview
+        // line. Catches the silent-drop case (HashMap collision, serde
+        // rename bug, future "skip duplicates" pass).
+        for name in &expected_names {
+            let expected_line = format!("[DRY-RUN]   - {}", name);
+            assert!(
+                stdout.contains(&expected_line),
+                "{}: dry-run missing tool line `{}`.\n--- stdout ---\n{}",
+                example.display(),
+                expected_line,
+                stdout
+            );
+        }
+    }
 }

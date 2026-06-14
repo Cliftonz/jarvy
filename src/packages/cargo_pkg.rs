@@ -34,12 +34,23 @@ impl CargoHandler {
             return Ok(());
         }
 
+        // `cargo install` is global. Resolve cwd once instead of paying
+        // a getcwd(3) syscall per crate; also surfaces a deleted-cwd
+        // error up front rather than mid-loop.
+        let current_dir = std::env::current_dir().map_err(PackageError::Io)?;
+
         for (name, spec) in &self.config.packages {
             if spec.is_optional() {
                 continue;
             }
 
-            if let Err(e) = self.install_crate(name, spec) {
+            if let Err(e) = self.install_crate(name, spec, &current_dir) {
+                tracing::warn!(
+                    event = "package.install_failed",
+                    ecosystem = "cargo",
+                    package = %name,
+                    error = %e,
+                );
                 eprintln!("    Warning: Failed to install {}: {}", name, e);
             }
         }
@@ -48,7 +59,12 @@ impl CargoHandler {
     }
 
     /// Install a single crate
-    fn install_crate(&self, name: &str, spec: &PackageSpec) -> Result<(), PackageError> {
+    fn install_crate(
+        &self,
+        name: &str,
+        spec: &PackageSpec,
+        working_dir: &std::path::Path,
+    ) -> Result<(), PackageError> {
         // Reject names that look like cargo flags (`--git`, `--root`) or
         // direct-URL deps (`git+https://attacker/x.git`) before they hit
         // `cargo install`. cargo would happily honor these.
@@ -83,9 +99,7 @@ impl CargoHandler {
             args.push("--locked");
         }
 
-        // Use current directory (cargo install is global)
-        let current_dir = std::env::current_dir().map_err(PackageError::Io)?;
-        run_package_command("cargo", &args, &current_dir)
+        run_package_command("cargo", &args, working_dir)
     }
 }
 

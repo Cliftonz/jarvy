@@ -5,17 +5,11 @@
 //! path, key argument parsing, and exit-code/stdout contract — not the
 //! external scanner subprocesses, which are unavailable in CI.
 
-use assert_cmd::cargo::cargo_bin;
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
-use std::process::Command;
 
-fn jarvy() -> Command {
-    let mut c = Command::new(cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_FAST_TEST", "1");
-    c
-}
+mod common;
+use common::jarvy_fast_cmd as jarvy;
 
 #[test]
 fn schema_outputs_valid_json_to_stdout() {

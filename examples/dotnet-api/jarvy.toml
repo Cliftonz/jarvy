@@ -35,8 +35,9 @@ echo '.NET API ready: `dotnet run`, then GET http://localhost:5000/healthz'
 
 [env.vars]
 ASPNETCORE_ENVIRONMENT = "Development"
-DOTNET_CLI_TELEMETRY_OPTOUT = "1"
-DOTNET_NOLOGO = "1"
+# DOTNET_CLI_TELEMETRY_OPTOUT + DOTNET_NOLOGO are set globally by the
+# `dotnet` tool's default_hook; override here only if your project wants
+# different behavior.
 
 [commands]
 run = "dotnet run"

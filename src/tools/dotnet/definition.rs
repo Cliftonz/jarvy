@@ -46,6 +46,20 @@ export PATH=\"\$PATH:\$HOME/.dotnet/tools\"
     fi
 fi
 
+# Opt out of the dotnet CLI telemetry stream and the first-run banner.
+# These are Jarvy's defaults for `dotnet`; per-project jarvy.toml files
+# can still override via [env.vars]. Idempotent — each rc gets the line
+# at most once.
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -f "$rc" ] || continue
+    if ! grep -q 'DOTNET_CLI_TELEMETRY_OPTOUT' "$rc"; then
+        echo 'export DOTNET_CLI_TELEMETRY_OPTOUT=1' >> "$rc"
+    fi
+    if ! grep -q 'DOTNET_NOLOGO' "$rc"; then
+        echo 'export DOTNET_NOLOGO=1' >> "$rc"
+    fi
+done
+
 # Create tools directory if it doesn't exist
 mkdir -p "$HOME/.dotnet/tools"
 "#

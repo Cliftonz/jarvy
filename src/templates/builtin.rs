@@ -491,6 +491,40 @@ mod tests {
         assert!(web_templates.iter().any(|t| t.name == "react"));
     }
 
+    /// Every (tool name) entry in a builtin template MUST be a name
+    /// the tool registry knows about. A typo at the template-definition
+    /// site (`("dontet", "latest")` or `("grpculr", "latest")`) would
+    /// otherwise ship a template that runs `jarvy setup` and silently
+    /// does nothing — `setup` emits `tool.unsupported` for the unknown
+    /// name and continues. The validator catches this for user-authored
+    /// configs; this test gives the same protection to the templates
+    /// the team ships.
+    #[test]
+    fn every_builtin_template_tool_is_registered() {
+        use std::collections::HashSet;
+        crate::tools::register_all();
+        let known: HashSet<String> = crate::tools::registered_tool_names()
+            .into_iter()
+            .map(|n| n.to_lowercase())
+            .collect();
+        let mut failures: Vec<String> = Vec::new();
+        for t in BUILTIN_TEMPLATES {
+            for (name, _) in t.tools {
+                if !known.contains(&name.to_lowercase()) {
+                    failures.push(format!(
+                        "template `{}` references unregistered tool `{}`",
+                        t.name, name
+                    ));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "builtin templates reference tools not in registry:\n  - {}",
+            failures.join("\n  - ")
+        );
+    }
+
     #[test]
     fn test_all_categories() {
         let categories = all_categories();
