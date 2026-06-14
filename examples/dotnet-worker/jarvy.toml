@@ -1,0 +1,46 @@
+# .NET Worker Service (BackgroundService)
+# Run: jarvy setup
+#
+# Template for a long-running .NET worker — queue consumer, scheduler,
+# or daemon hosted via the generic host (`Microsoft.Extensions.Hosting`).
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+dotnet = "latest"
+docker = "latest"
+jq = "latest"
+ripgrep = "latest"
+gh = "latest"
+redis = "latest"
+
+[nuget]
+dotnet-outdated-tool = "latest"
+csharpier = "latest"
+dotnet-format = "latest"
+
+[hooks]
+post_setup = """
+dotnet restore
+echo 'Worker ready: `dotnet run` starts the host; deploy as a systemd unit or container.'
+"""
+
+[env.vars]
+DOTNET_ENVIRONMENT = "Development"
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+DOTNET_NOLOGO = "1"
+# Worker logging tends to be structured/JSON — wire your hosted services up via Serilog.
+Logging__Console__FormatterName = "json"
+
+[commands]
+run = "dotnet run"
+test = "dotnet test"
+build = "dotnet build -c Release"
+format = "dotnet csharpier ."
+
+[drift]
+enabled = true
+version_policy = "minor"
+track_files = ["global.json", "*.csproj"]

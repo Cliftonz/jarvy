@@ -72,6 +72,7 @@ pub mod govulncheck;
 pub mod gping;
 pub mod grafanactl;
 pub mod grex;
+pub mod grpcurl;
 pub mod grype;
 pub mod hadolint;
 pub mod haskell;

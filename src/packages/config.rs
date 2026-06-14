@@ -1,7 +1,7 @@
 //! Configuration types for package management
 //!
 //! Defines the configuration structures for the `[npm]`, `[pip]`, `[cargo]`,
-//! `[gem]`, and `[go]` sections in jarvy.toml.
+//! `[nuget]`, `[gem]`, and `[go]` sections in jarvy.toml.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -15,6 +15,8 @@ pub struct PackagesConfig {
     pub pip: Option<PipConfig>,
     /// cargo binary installation configuration
     pub cargo: Option<CargoConfig>,
+    /// .NET global tool installation configuration
+    pub nuget: Option<NugetConfig>,
     /// gem/bundler configuration (future)
     pub gem: Option<GemConfig>,
     /// go modules configuration (future)
@@ -158,6 +160,19 @@ pub struct CargoConfig {
     pub locked: bool,
 }
 
+/// .NET global tool configuration (`dotnet tool install -g`).
+///
+/// "NuGet" here covers the .NET tool ecosystem — CLI binaries published as
+/// NuGet packages. Project-level NuGet PackageReferences (the dependencies
+/// of a `.csproj`) are NOT managed here; they belong in the project file and
+/// are restored by `dotnet restore` during build.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct NugetConfig {
+    /// Individual global tools with versions
+    #[serde(flatten)]
+    pub packages: HashMap<String, PackageSpec>,
+}
+
 /// gem/bundler Ruby package configuration (future)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct GemConfig {
@@ -220,6 +235,20 @@ mod tests {
         assert_eq!(config.venv, Some(".venv".to_string()));
         assert!(config.create_venv);
         assert!(config.packages.contains_key("pytest"));
+    }
+
+    #[test]
+    fn test_parse_nuget_config() {
+        let toml_str = r#"
+            dotnet-ef = "latest"
+            csharpier = "0.30.0"
+        "#;
+        let config: NugetConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.packages.len(), 2);
+        assert!(matches!(
+            config.packages.get("dotnet-ef"),
+            Some(PackageSpec::Version(v)) if v == "latest"
+        ));
     }
 
     #[test]

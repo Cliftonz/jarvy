@@ -1,0 +1,42 @@
+# .NET console application
+# Run: jarvy setup
+#
+# Minimal toolkit for a .NET console app — CLI tool, cron-style one-shot
+# job, or a script that ships as a self-contained binary.
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+dotnet = "latest"
+jq = "latest"
+ripgrep = "latest"
+gh = "latest"
+
+[nuget]
+csharpier = "latest"          # formatter
+dotnet-format = "latest"      # style gate
+dotnet-script = "latest"      # `dotnet script` for .csx scratch files
+
+[hooks]
+post_setup = """
+dotnet restore
+echo 'Console app ready: `dotnet run` to execute, `dotnet publish -c Release -r osx-arm64 --self-contained` for a single-file binary.'
+"""
+
+[env.vars]
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+DOTNET_NOLOGO = "1"
+
+[commands]
+run = "dotnet run"
+test = "dotnet test"
+build = "dotnet build -c Release"
+format = "dotnet csharpier ."
+publish = "dotnet publish -c Release --self-contained -p:PublishSingleFile=true"
+
+[drift]
+enabled = true
+version_policy = "minor"
+track_files = ["global.json", "*.csproj"]

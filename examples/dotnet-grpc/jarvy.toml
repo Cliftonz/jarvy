@@ -1,0 +1,50 @@
+# ASP.NET Core gRPC service
+# Run: jarvy setup
+#
+# Template for a gRPC service hosted in ASP.NET Core. Includes grpcurl
+# for ad-hoc reflection / call invocation against the running service.
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+dotnet = "latest"
+docker = "latest"
+jq = "latest"
+ripgrep = "latest"
+httpie = "latest"
+gh = "latest"
+grpcurl = "latest"
+
+[nuget]
+dotnet-ef = "latest"
+csharpier = "latest"
+dotnet-format = "latest"
+protobuf-net-protogen = "latest"
+
+[hooks]
+post_setup = """
+dotnet restore
+dotnet dev-certs https --trust 2>/dev/null || true
+echo 'gRPC service ready: `dotnet run`, then `grpcurl -plaintext localhost:5000 list` to enumerate services.'
+"""
+
+[env.vars]
+ASPNETCORE_ENVIRONMENT = "Development"
+# gRPC needs HTTP/2; the default Kestrel config in a gRPC project template enables this already.
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+DOTNET_NOLOGO = "1"
+
+[commands]
+run = "dotnet run"
+test = "dotnet test"
+build = "dotnet build -c Release"
+format = "dotnet csharpier ."
+# Reflection-based call — requires `Grpc.AspNetCore.Server.Reflection` enabled.
+list-services = "grpcurl -plaintext localhost:5000 list"
+
+[drift]
+enabled = true
+version_policy = "minor"
+track_files = ["global.json", "*.csproj", "Protos/*.proto"]

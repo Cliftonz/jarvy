@@ -187,17 +187,18 @@ jarvy setup --role <name>           # Override role for single run
 
 ### Language Package Dependencies
 
-Jarvy supports installing language-specific packages alongside CLI tools via `[npm]`, `[pip]`, and `[cargo]` sections.
+Jarvy supports installing language-specific packages alongside CLI tools via `[npm]`, `[pip]`, `[cargo]`, and `[nuget]` sections.
 
 **Module**: `src/packages/` - Language package dependency management.
 
 **Key Files**:
 - `mod.rs` - `install_packages()` orchestration function
-- `config.rs` - PackagesConfig, NpmConfig, PipConfig, CargoConfig, PackageSpec
-- `common.rs` - PackageError, run_package_command(), command_exists()
+- `config.rs` - PackagesConfig, NpmConfig, PipConfig, CargoConfig, NugetConfig, PackageSpec
+- `common.rs` - PackageError, run_package_command(), command_exists(), validate_package_name(), validate_package_version()
 - `npm.rs` - NpmHandler with package manager auto-detection
 - `pip.rs` - PipHandler with virtual environment support
 - `cargo_pkg.rs` - CargoHandler for cargo install
+- `nuget.rs` - NugetHandler for `dotnet tool update -g` (idempotent global tool install)
 
 **Configuration** (`jarvy.toml`):
 ```toml
@@ -218,6 +219,11 @@ from_lockfile = false       # Install from requirements.txt instead
 cargo-watch = "latest"
 cargo-nextest = "0.9"
 locked = true               # Use --locked flag
+
+[nuget]
+dotnet-ef = "latest"        # EF Core CLI
+csharpier = "0.30.0"        # C# formatter
+dotnet-format = "latest"
 ```
 
 **Package Spec Variants**:
@@ -233,7 +239,12 @@ locked = true               # Use --locked flag
 - Shows activation hint after setup
 - Supports `--system-site-packages`
 
-**Integration**: Package installation runs after tool hooks and before environment setup in `jarvy setup`.
+**.NET global tools** (`[nuget]`):
+- Installs CLI binaries via `dotnet tool update -g <name>` (the `update` verb is idempotent — `install -g` errors when the tool is already present).
+- Scope is .NET global tools only. Project-level NuGet PackageReferences (the deps in a `.csproj` / `Directory.Packages.props`) are NOT managed here — those are restored by `dotnet restore` during build.
+- Same `validate_package_name` / `validate_package_version` guards as other ecosystems: refuses leading-`-` names (cargo / npm / dotnet would honor them as flags), URL schemes, and shell-meta chars.
+
+**Integration**: Package installation runs after tool hooks and before environment setup in `jarvy setup`. Order: npm → pip → cargo → nuget.
 
 ### Git Configuration
 

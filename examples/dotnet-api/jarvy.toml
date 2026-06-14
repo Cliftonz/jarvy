@@ -1,0 +1,51 @@
+# ASP.NET Core Web API
+# Run: jarvy setup
+#
+# Template for an ASP.NET Core Web API project with EF Core migrations,
+# Docker for the local DB, and the standard .NET CLI tooling.
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+dotnet = "latest"
+docker = "latest"
+jq = "latest"
+ripgrep = "latest"
+httpie = "latest"
+gh = "latest"
+
+# .NET global tools — installed via `dotnet tool install -g`.
+# These are CLI binaries, NOT project-level NuGet PackageReferences
+# (those belong in your .csproj and are restored by `dotnet restore`).
+[nuget]
+dotnet-ef = "latest"             # EF Core migrations CLI
+dotnet-outdated-tool = "latest"  # Find outdated NuGet packages
+csharpier = "latest"             # Opinionated C# formatter
+dotnet-format = "latest"         # `dotnet format` style enforcement
+
+[hooks]
+post_setup = """
+# Restore packages, generate the dev TLS cert, and create the local DB.
+dotnet restore
+dotnet dev-certs https --trust 2>/dev/null || true
+echo '.NET API ready: `dotnet run`, then GET http://localhost:5000/healthz'
+"""
+
+[env.vars]
+ASPNETCORE_ENVIRONMENT = "Development"
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+DOTNET_NOLOGO = "1"
+
+[commands]
+run = "dotnet run"
+test = "dotnet test"
+build = "dotnet build -c Release"
+format = "dotnet csharpier ."
+migrate = "dotnet ef database update"
+
+[drift]
+enabled = true
+version_policy = "minor"
+track_files = ["global.json", "Directory.Packages.props", "*.csproj"]

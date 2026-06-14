@@ -36,6 +36,11 @@ cp examples/<template>/jarvy.toml /path/to/your/project/
 | [`rust-workspace/`](rust-workspace/jarvy.toml) | Multi-crate Cargo workspace |
 | [`ruby-rails/`](ruby-rails/jarvy.toml) | Ruby on Rails with Postgres + Redis |
 | [`java-spring/`](java-spring/jarvy.toml) | Java + Spring Boot (Maven or Gradle) |
+| [`dotnet-api/`](dotnet-api/jarvy.toml) | ASP.NET Core Web API with EF Core |
+| [`dotnet-console/`](dotnet-console/jarvy.toml) | .NET console app / CLI / one-shot job |
+| [`dotnet-worker/`](dotnet-worker/jarvy.toml) | .NET Worker Service (queue / scheduler / daemon) |
+| [`dotnet-grpc/`](dotnet-grpc/jarvy.toml) | ASP.NET Core gRPC service (with grpcurl) |
+| [`dotnet-mvc/`](dotnet-mvc/jarvy.toml) | ASP.NET Core MVC web app (Razor views + EF Core) |
 
 ### Multi-Service
 
@@ -48,7 +53,7 @@ cp examples/<template>/jarvy.toml /path/to/your/project/
 ## Each Template Includes
 
 - `[provisioner]` — language runtime + universal CLI tools
-- `[<lang-pkg>]` — language-specific packages (`[npm]`, `[pip]`, `[cargo]`)
+- `[<lang-pkg>]` — language-specific packages (`[npm]`, `[pip]`, `[cargo]`, `[nuget]`)
 - `[hooks]` — language-specific post-install setup (lockfile sync, completions, etc.)
 - `[env.vars]` — sensible defaults for the language
 - `[commands]` — `run` / `test` / `build` / `lint` aliases for `jarvy` interactive menu

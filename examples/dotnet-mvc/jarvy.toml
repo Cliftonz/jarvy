@@ -1,0 +1,49 @@
+# ASP.NET Core MVC web app
+# Run: jarvy setup
+#
+# Template for a server-rendered ASP.NET Core MVC app — Razor views,
+# EF Core for persistence, identity for auth.
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+dotnet = "latest"
+docker = "latest"
+jq = "latest"
+ripgrep = "latest"
+httpie = "latest"
+gh = "latest"
+
+[nuget]
+dotnet-ef = "latest"
+dotnet-aspnet-codegenerator = "latest"   # scaffold controllers/views
+csharpier = "latest"
+dotnet-format = "latest"
+
+[hooks]
+post_setup = """
+dotnet restore
+dotnet dev-certs https --trust 2>/dev/null || true
+echo 'MVC app ready: `dotnet run`, then open https://localhost:5001.'
+"""
+
+[env.vars]
+ASPNETCORE_ENVIRONMENT = "Development"
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+DOTNET_NOLOGO = "1"
+
+[commands]
+run = "dotnet run"
+test = "dotnet test"
+build = "dotnet build -c Release"
+format = "dotnet csharpier ."
+migrate = "dotnet ef database update"
+# Scaffold a CRUD controller against an EF Core model.
+scaffold = "dotnet aspnet-codegenerator controller -name TodosController -m Todo -dc AppDbContext --useDefaultLayout"
+
+[drift]
+enabled = true
+version_policy = "minor"
+track_files = ["global.json", "Directory.Packages.props", "*.csproj"]
