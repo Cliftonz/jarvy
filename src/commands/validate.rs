@@ -274,6 +274,7 @@ fn validate_structure(parsed: &toml::Value, content: &str, issues: &mut Vec<Vali
         "npm",
         "pip",
         "cargo",
+        "nuget",
         // Project commands surfaced via `jarvy run` / docs
         "commands",
         // Drift detection (PRD-038)
@@ -284,6 +285,14 @@ fn validate_structure(parsed: &toml::Value, content: &str, issues: &mut Vec<Vali
         "network",
         // Logging configuration
         "logging",
+        // Telemetry / OTEL configuration (project-level narrow-only override)
+        "telemetry",
+        // Workspace configuration for monorepos
+        "workspace",
+        // AI agent hooks (Claude Code, Cursor, Codex, Windsurf, Cline, Continue)
+        "ai_hooks",
+        // MCP server registration block
+        "mcp_register",
     ];
     if let Some(table) = parsed.as_table() {
         for key in table.keys() {

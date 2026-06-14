@@ -929,6 +929,20 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
         if packages_config.cargo.is_some() {
             println!("[DRY-RUN] Would install cargo binaries");
         }
+        if let Some(ref nuget) = packages_config.nuget {
+            let tool_count = nuget.packages.len();
+            println!(
+                "[DRY-RUN] Would install {} .NET global tool(s) via `dotnet tool update -g` (machine-global)",
+                tool_count
+            );
+            // List the tool names so the operator can review what would land
+            // in `~/.dotnet/tools/` before approving the real run.
+            let mut names: Vec<&str> = nuget.packages.keys().map(|k| k.as_str()).collect();
+            names.sort_unstable();
+            for name in names {
+                println!("[DRY-RUN]   - {}", name);
+            }
+        }
     } else {
         println!("\n=== Installing Package Dependencies ===");
         if let Err(e) = packages::install_packages(&packages_config, project_dir) {
