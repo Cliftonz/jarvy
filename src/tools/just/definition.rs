@@ -37,8 +37,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_just_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn just_registration_shape() {
+        assert_eq!(JUST.command, "just");
+        let mac = JUST.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("just"));
+        let win = JUST.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Casey.Just"));
     }
 }

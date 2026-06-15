@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_gotestsum_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn gotestsum_registration_shape() {
+        assert_eq!(GOTESTSUM.command, "gotestsum");
+        let mac = GOTESTSUM.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("gotestsum"));
+        let win = GOTESTSUM.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("gotestyourself.gotestsum"));
     }
 }

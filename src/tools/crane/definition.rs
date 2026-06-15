@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_crane_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn crane_registration_shape() {
+        assert_eq!(CRANE.command, "crane");
+        let mac = CRANE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("crane"));
     }
 }

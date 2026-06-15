@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_golangci_lint_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn golangci_lint_registration_shape() {
+        assert_eq!(GOLANGCI_LINT.command, "golangci-lint");
+        let mac = GOLANGCI_LINT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("golangci-lint"));
+        let win = GOLANGCI_LINT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("GolangCI.golangci-lint"));
     }
 }

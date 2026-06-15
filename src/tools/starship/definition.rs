@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_starship_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn starship_registration_shape() {
+        assert_eq!(STARSHIP.command, "starship");
+        let mac = STARSHIP.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("starship"));
+        let win = STARSHIP.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Starship.Starship"));
     }
 }

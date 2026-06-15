@@ -36,8 +36,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_eksctl_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn eksctl_registration_shape() {
+        assert_eq!(EKSCTL.command, "eksctl");
+        let mac = EKSCTL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("eksctl"));
+        let win = EKSCTL.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("weaveworks.eksctl"));
     }
 }

@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_tokei_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn tokei_registration_shape() {
+        assert_eq!(TOKEI.command, "tokei");
+        let mac = TOKEI.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("tokei"));
+        let win = TOKEI.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("XAMPPRocky.tokei"));
     }
 }

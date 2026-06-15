@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_deno_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn deno_registration_shape() {
+        assert_eq!(DENO.command, "deno");
+        let mac = DENO.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("deno"));
+        let win = DENO.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("DenoLand.Deno"));
     }
 }

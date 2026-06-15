@@ -30,8 +30,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_docker_desktop_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn docker_desktop_registration_shape() {
+        assert_eq!(DOCKER_DESKTOP.command, "docker");
+        let mac = DOCKER_DESKTOP.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("docker"));
+        let win = DOCKER_DESKTOP.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Docker.DockerDesktop"));
     }
 }

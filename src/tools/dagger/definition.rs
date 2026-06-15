@@ -21,8 +21,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_dagger_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn dagger_registration_shape() {
+        assert_eq!(DAGGER.command, "dagger");
+        let mac = DAGGER.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("dagger/tap/dagger"));
+        let win = DAGGER.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Dagger.Dagger"));
     }
 }

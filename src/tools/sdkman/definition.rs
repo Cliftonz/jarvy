@@ -40,8 +40,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_sdkman_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn sdkman_registration_shape() {
+        assert_eq!(SDKMAN.command, "sdk");
+        let mac = SDKMAN.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("sdkman-cli"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_nvim_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn nvim_registration_shape() {
+        assert_eq!(NVIM.command, "nvim");
+        let mac = NVIM.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("neovim"));
+        let win = NVIM.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Neovim.Neovim"));
     }
 }

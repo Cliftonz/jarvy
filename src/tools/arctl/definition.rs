@@ -56,8 +56,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_arctl_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn arctl_registration_shape() {
+        assert_eq!(ARCTL.command, "arctl");
     }
 }

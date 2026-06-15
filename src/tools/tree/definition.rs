@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_tree_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn tree_registration_shape() {
+        assert_eq!(TREE.command, "tree");
+        let mac = TREE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("tree"));
     }
 }

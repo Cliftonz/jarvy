@@ -19,8 +19,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_dbmate_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn dbmate_registration_shape() {
+        assert_eq!(DBMATE.command, "dbmate");
+        let mac = DBMATE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("dbmate"));
     }
 }

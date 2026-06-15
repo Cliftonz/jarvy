@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_kubescape_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn kubescape_registration_shape() {
+        assert_eq!(KUBESCAPE.command, "kubescape");
+        let mac = KUBESCAPE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("kubescape"));
+        let win = KUBESCAPE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("kubescape.kubescape"));
     }
 }

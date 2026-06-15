@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_helix_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn helix_registration_shape() {
+        assert_eq!(HELIX.command, "hx");
+        let mac = HELIX.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("helix"));
+        let win = HELIX.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Helix.Helix"));
     }
 }

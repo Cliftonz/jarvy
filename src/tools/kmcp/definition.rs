@@ -56,8 +56,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_kmcp_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn kmcp_registration_shape() {
+        assert_eq!(KMCP.command, "kmcp");
     }
 }

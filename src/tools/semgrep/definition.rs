@@ -19,8 +19,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_semgrep_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn semgrep_registration_shape() {
+        assert_eq!(SEMGREP.command, "semgrep");
+        let mac = SEMGREP.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("semgrep"));
     }
 }

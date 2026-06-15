@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_httpie_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn httpie_registration_shape() {
+        assert_eq!(HTTPIE.command, "http");
+        let mac = HTTPIE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("httpie"));
+        let win = HTTPIE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("HTTPie.HTTPie"));
     }
 }

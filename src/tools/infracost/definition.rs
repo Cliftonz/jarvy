@@ -21,8 +21,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_infracost_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn infracost_registration_shape() {
+        assert_eq!(INFRACOST.command, "infracost");
+        let mac = INFRACOST.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("infracost"));
+        let win = INFRACOST.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Infracost.Infracost"));
     }
 }

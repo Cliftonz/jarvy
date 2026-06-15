@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_zed_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn zed_registration_shape() {
+        assert_eq!(ZED.command, "zed");
+        let mac = ZED.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("zed"));
     }
 }

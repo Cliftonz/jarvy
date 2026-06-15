@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_oras_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn oras_registration_shape() {
+        assert_eq!(ORAS.command, "oras");
+        let mac = ORAS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("oras"));
+        let win = ORAS.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("oras-project.oras"));
     }
 }

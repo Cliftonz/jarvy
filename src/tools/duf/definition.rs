@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_duf_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn duf_registration_shape() {
+        assert_eq!(DUF.command, "duf");
+        let mac = DUF.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("duf"));
+        let win = DUF.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("muesli.duf"));
     }
 }

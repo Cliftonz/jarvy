@@ -20,8 +20,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_dog_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn dog_registration_shape() {
+        assert_eq!(DOG.command, "dog");
+        let mac = DOG.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("dog"));
     }
 }

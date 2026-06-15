@@ -50,10 +50,12 @@ mod tests {
     // Generic test: ensure calling Git installer path does not panic.
     // Actual OS-specific installation success is covered by e2e tests.
     #[test]
-    fn ensure_git_no_panic() {
-        let res = ensure("");
-        // Do not assert success; environments may lack permissions or prerequisites.
-        assert!(res.is_ok() || res.is_err());
+    fn git_registration_shape() {
+        assert_eq!(GIT.command, "git");
+        let mac = GIT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("git"));
+        let win = GIT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Git.Git"));
     }
 
     // Platform-specific expectations for Git installer behavior.

@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_detect_secrets_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn detect_secrets_registration_shape() {
+        assert_eq!(DETECT_SECRETS.command, "detect-secrets");
+        let mac = DETECT_SECRETS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("detect-secrets"));
     }
 }

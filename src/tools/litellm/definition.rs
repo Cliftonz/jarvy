@@ -51,8 +51,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_litellm_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn litellm_registration_shape() {
+        assert_eq!(LITELLM.command, "litellm");
     }
 }

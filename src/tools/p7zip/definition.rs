@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_p7zip_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn p7zip_registration_shape() {
+        assert_eq!(P7ZIP.command, "7z");
+        let mac = P7ZIP.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("p7zip"));
+        let win = P7ZIP.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("7zip.7zip"));
     }
 }

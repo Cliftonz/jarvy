@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_micro_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn micro_registration_shape() {
+        assert_eq!(MICRO.command, "micro");
+        let mac = MICRO.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("micro"));
+        let win = MICRO.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("zyedidia.micro"));
     }
 }

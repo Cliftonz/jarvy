@@ -47,8 +47,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_vllm_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn vllm_registration_shape() {
+        assert_eq!(VLLM.command, "vllm");
     }
 }

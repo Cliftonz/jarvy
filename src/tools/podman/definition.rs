@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_podman_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn podman_registration_shape() {
+        assert_eq!(PODMAN.command, "podman");
+        let mac = PODMAN.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("podman"));
+        let win = PODMAN.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("RedHat.Podman"));
     }
 }

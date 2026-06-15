@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ngrok_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ngrok_registration_shape() {
+        assert_eq!(NGROK.command, "ngrok");
+        let mac = NGROK.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ngrok"));
+        let win = NGROK.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Ngrok.Ngrok"));
     }
 }

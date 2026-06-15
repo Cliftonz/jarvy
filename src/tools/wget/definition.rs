@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_wget_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn wget_registration_shape() {
+        assert_eq!(WGET.command, "wget");
+        let mac = WGET.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("wget"));
+        let win = WGET.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("GnuWin32.Wget"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_k6_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn k6_registration_shape() {
+        assert_eq!(K6.command, "k6");
+        let mac = K6.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("k6"));
+        let win = K6.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Grafana.k6"));
     }
 }

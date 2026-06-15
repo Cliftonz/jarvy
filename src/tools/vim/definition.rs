@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_vim_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn vim_registration_shape() {
+        assert_eq!(VIM.command, "vim");
+        let mac = VIM.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("vim"));
+        let win = VIM.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("vim.vim"));
     }
 }

@@ -36,8 +36,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_glab_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn glab_registration_shape() {
+        assert_eq!(GLAB.command, "glab");
+        let mac = GLAB.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("glab"));
+        let win = GLAB.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("GLab.GLab"));
     }
 }

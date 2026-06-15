@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_up_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn up_registration_shape() {
+        assert_eq!(UP.command, "up");
+        let mac = UP.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("upbound/tap/up"));
     }
 }

@@ -37,8 +37,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_flux_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn flux_registration_shape() {
+        assert_eq!(FLUX.command, "flux");
+        let mac = FLUX.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("fluxcd/tap/flux"));
+        let win = FLUX.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Fluxcd.Flux"));
     }
 }

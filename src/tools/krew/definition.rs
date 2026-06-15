@@ -39,8 +39,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_krew_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn krew_registration_shape() {
+        assert_eq!(KREW.command, "kubectl-krew");
+        let mac = KREW.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("krew"));
     }
 }

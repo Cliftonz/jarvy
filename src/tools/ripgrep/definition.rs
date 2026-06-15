@@ -37,8 +37,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ripgrep_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ripgrep_registration_shape() {
+        assert_eq!(RIPGREP.command, "rg");
+        let mac = RIPGREP.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ripgrep"));
+        let win = RIPGREP.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("BurntSushi.ripgrep.MSVC"));
     }
 }

@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_nushell_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn nushell_registration_shape() {
+        assert_eq!(NUSHELL.command, "nu");
+        let mac = NUSHELL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("nushell"));
+        let win = NUSHELL.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Nushell.Nushell"));
     }
 }

@@ -32,8 +32,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_helm_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn helm_registration_shape() {
+        assert_eq!(HELM.command, "helm");
+        let mac = HELM.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("helm"));
+        let win = HELM.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Helm.Helm"));
     }
 }

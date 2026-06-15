@@ -92,8 +92,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ollama_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ollama_registration_shape() {
+        assert_eq!(OLLAMA.command, "ollama");
+        let mac = OLLAMA.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ollama"));
+        let win = OLLAMA.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Ollama.Ollama"));
     }
 }

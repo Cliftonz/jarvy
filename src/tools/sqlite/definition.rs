@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_sqlite_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn sqlite_registration_shape() {
+        assert_eq!(SQLITE.command, "sqlite3");
+        let mac = SQLITE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("sqlite"));
+        let win = SQLITE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("SQLite.SQLite"));
     }
 }

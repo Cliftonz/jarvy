@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_php_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn php_registration_shape() {
+        assert_eq!(PHP.command, "php");
+        let mac = PHP.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("php"));
+        let win = PHP.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("PHP.PHP"));
     }
 }

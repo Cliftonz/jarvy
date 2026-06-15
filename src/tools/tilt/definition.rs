@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_tilt_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn tilt_registration_shape() {
+        assert_eq!(TILT.command, "tilt");
+        let mac = TILT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("tilt"));
     }
 }

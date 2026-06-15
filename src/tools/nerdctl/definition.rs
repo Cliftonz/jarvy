@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_nerdctl_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn nerdctl_registration_shape() {
+        assert_eq!(NERDCTL.command, "nerdctl");
+        let mac = NERDCTL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("nerdctl"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ruff_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ruff_registration_shape() {
+        assert_eq!(RUFF.command, "ruff");
+        let mac = RUFF.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ruff"));
+        let win = RUFF.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("astral-sh.ruff"));
     }
 }

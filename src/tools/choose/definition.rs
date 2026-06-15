@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_choose_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn choose_registration_shape() {
+        assert_eq!(CHOOSE.command, "choose");
+        let mac = CHOOSE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("choose-rust"));
+        let win = CHOOSE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("choose.choose"));
     }
 }

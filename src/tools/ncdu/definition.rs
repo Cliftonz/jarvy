@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ncdu_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ncdu_registration_shape() {
+        assert_eq!(NCDU.command, "ncdu");
+        let mac = NCDU.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ncdu"));
     }
 }

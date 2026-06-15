@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_git_lfs_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn git_lfs_registration_shape() {
+        assert_eq!(GIT_LFS.command, "git-lfs");
+        let mac = GIT_LFS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("git-lfs"));
+        let win = GIT_LFS.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("GitHub.GitLFS"));
     }
 }

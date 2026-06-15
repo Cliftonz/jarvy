@@ -29,8 +29,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_docker_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn docker_registration_shape() {
+        assert_eq!(DOCKER.command, "docker");
+        let mac = DOCKER.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("docker"));
+        let win = DOCKER.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Docker.DockerDesktop"));
     }
 }

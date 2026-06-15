@@ -16,8 +16,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_rancher_desktop_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn rancher_desktop_registration_shape() {
+        assert_eq!(RANCHER_DESKTOP.command, "rdctl");
+        let mac = RANCHER_DESKTOP.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("rancher"));
+        let win = RANCHER_DESKTOP.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("suse.RancherDesktop"));
     }
 }

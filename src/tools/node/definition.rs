@@ -39,8 +39,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_node_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn node_registration_shape() {
+        assert_eq!(NODE.command, "node");
+        let mac = NODE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("node"));
+        let win = NODE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("OpenJS.NodeJS.LTS"));
     }
 }

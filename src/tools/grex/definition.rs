@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_grex_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn grex_registration_shape() {
+        assert_eq!(GREX.command, "grex");
+        let mac = GREX.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("grex"));
+        let win = GREX.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("pemistahl.grex"));
     }
 }

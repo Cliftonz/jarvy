@@ -46,8 +46,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_betterleaks_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn betterleaks_registration_shape() {
+        assert_eq!(BETTERLEAKS.command, "betterleaks");
+        let mac = BETTERLEAKS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("betterleaks"));
     }
 }

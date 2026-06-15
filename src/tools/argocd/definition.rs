@@ -39,8 +39,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_argocd_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn argocd_registration_shape() {
+        assert_eq!(ARGOCD.command, "argocd");
+        let mac = ARGOCD.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("argocd"));
+        let win = ARGOCD.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Argoproj.ArgoCD"));
     }
 }

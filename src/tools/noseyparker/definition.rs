@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_noseyparker_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn noseyparker_registration_shape() {
+        assert_eq!(NOSEYPARKER.command, "noseyparker");
+        let mac = NOSEYPARKER.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("noseyparker"));
     }
 }

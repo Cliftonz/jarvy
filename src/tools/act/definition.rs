@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_act_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn act_registration_shape() {
+        assert_eq!(ACT.command, "act");
+        let mac = ACT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("act"));
+        let win = ACT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("nektos.act"));
     }
 }

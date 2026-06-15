@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_k3d_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn k3d_registration_shape() {
+        assert_eq!(K3D.command, "k3d");
+        let mac = K3D.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("k3d"));
+        let win = K3D.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("k3d-io.k3d"));
     }
 }

@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_lynis_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn lynis_registration_shape() {
+        assert_eq!(LYNIS.command, "lynis");
+        let mac = LYNIS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("lynis"));
     }
 }

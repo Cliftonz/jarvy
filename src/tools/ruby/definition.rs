@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ruby_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ruby_registration_shape() {
+        assert_eq!(RUBY.command, "ruby");
+        let mac = RUBY.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ruby"));
+        let win = RUBY.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("RubyInstallerTeam.Ruby"));
     }
 }

@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_pre_commit_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn pre_commit_registration_shape() {
+        assert_eq!(PRE_COMMIT.command, "pre-commit");
+        let mac = PRE_COMMIT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("pre-commit"));
     }
 }

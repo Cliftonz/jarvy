@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_cursor_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn cursor_registration_shape() {
+        assert_eq!(CURSOR.command, "cursor");
+        let mac = CURSOR.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("cursor"));
+        let win = CURSOR.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Cursor.Cursor"));
     }
 }

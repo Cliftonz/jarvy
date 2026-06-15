@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_emacs_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn emacs_registration_shape() {
+        assert_eq!(EMACS.command, "emacs");
+        let mac = EMACS.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("emacs"));
+        let win = EMACS.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("GNU.Emacs"));
     }
 }

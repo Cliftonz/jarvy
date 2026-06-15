@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_podman_desktop_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn podman_desktop_registration_shape() {
+        assert_eq!(PODMAN_DESKTOP.command, "podman-desktop");
+        let mac = PODMAN_DESKTOP.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("podman-desktop"));
+        let win = PODMAN_DESKTOP.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("RedHat.Podman-Desktop"));
     }
 }

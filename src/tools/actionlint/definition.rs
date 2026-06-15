@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_actionlint_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn actionlint_registration_shape() {
+        assert_eq!(ACTIONLINT.command, "actionlint");
+        let mac = ACTIONLINT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("actionlint"));
+        let win = ACTIONLINT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("rhysd.actionlint"));
     }
 }

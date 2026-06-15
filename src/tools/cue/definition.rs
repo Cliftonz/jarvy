@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_cue_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn cue_registration_shape() {
+        assert_eq!(CUE.command, "cue");
+        let mac = CUE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("cue"));
     }
 }

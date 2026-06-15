@@ -35,8 +35,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_delta_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn delta_registration_shape() {
+        assert_eq!(DELTA.command, "delta");
+        let mac = DELTA.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("git-delta"));
+        let win = DELTA.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("dandavison.delta"));
     }
 }

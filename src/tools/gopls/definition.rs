@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_gopls_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn gopls_registration_shape() {
+        assert_eq!(GOPLS.command, "gopls");
+        let mac = GOPLS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("gopls"));
+        let win = GOPLS.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Google.Gopls"));
     }
 }

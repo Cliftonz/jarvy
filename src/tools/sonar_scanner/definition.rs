@@ -15,8 +15,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_sonar_scanner_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn sonar_scanner_registration_shape() {
+        assert_eq!(SONAR_SCANNER.command, "sonar-scanner");
+        let mac = SONAR_SCANNER.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("sonar-scanner"));
     }
 }

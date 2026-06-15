@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_zoxide_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn zoxide_registration_shape() {
+        assert_eq!(ZOXIDE.command, "zoxide");
+        let mac = ZOXIDE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("zoxide"));
+        let win = ZOXIDE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("ajeetdsouza.zoxide"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_trivy_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn trivy_registration_shape() {
+        assert_eq!(TRIVY.command, "trivy");
+        let mac = TRIVY.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("trivy"));
+        let win = TRIVY.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("aquasecurity.trivy"));
     }
 }

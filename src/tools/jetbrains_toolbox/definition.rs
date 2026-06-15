@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_jetbrains_toolbox_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn jetbrains_toolbox_registration_shape() {
+        assert_eq!(JETBRAINS_TOOLBOX.command, "jetbrains-toolbox");
+        let mac = JETBRAINS_TOOLBOX.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("jetbrains-toolbox"));
+        let win = JETBRAINS_TOOLBOX.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("JetBrains.Toolbox"));
     }
 }

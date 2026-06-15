@@ -21,8 +21,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_atuin_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn atuin_registration_shape() {
+        assert_eq!(ATUIN.command, "atuin");
+        let mac = ATUIN.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("atuin"));
+        let win = ATUIN.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("atuinsh.atuin"));
     }
 }

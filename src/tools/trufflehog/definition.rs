@@ -19,8 +19,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_trufflehog_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn trufflehog_registration_shape() {
+        assert_eq!(TRUFFLEHOG.command, "trufflehog");
+        let mac = TRUFFLEHOG.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("trufflehog"));
     }
 }

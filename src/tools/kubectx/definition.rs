@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_kubectx_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn kubectx_registration_shape() {
+        assert_eq!(KUBECTX.command, "kubectx");
+        let mac = KUBECTX.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("kubectx"));
+        let win = KUBECTX.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("ahmetb.kubectx"));
     }
 }

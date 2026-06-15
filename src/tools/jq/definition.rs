@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_jq_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn jq_registration_shape() {
+        assert_eq!(JQ.command, "jq");
+        let mac = JQ.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("jq"));
+        let win = JQ.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("jqlang.jq"));
     }
 }

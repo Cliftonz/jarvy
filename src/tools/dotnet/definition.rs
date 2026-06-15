@@ -71,8 +71,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_dotnet_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn dotnet_registration_shape() {
+        assert_eq!(DOTNET.command, "dotnet");
+        let mac = DOTNET.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("dotnet-sdk"));
+        let win = DOTNET.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Microsoft.DotNet.SDK.8"));
     }
 }

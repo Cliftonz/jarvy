@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_vagrant_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn vagrant_registration_shape() {
+        assert_eq!(VAGRANT.command, "vagrant");
+        let mac = VAGRANT.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("vagrant"));
+        let win = VAGRANT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Hashicorp.Vagrant"));
     }
 }

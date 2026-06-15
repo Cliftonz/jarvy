@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_duckdb_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn duckdb_registration_shape() {
+        assert_eq!(DUCKDB.command, "duckdb");
+        let mac = DUCKDB.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("duckdb"));
+        let win = DUCKDB.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("DuckDB.cli"));
     }
 }

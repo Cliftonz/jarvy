@@ -20,8 +20,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_pgcli_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn pgcli_registration_shape() {
+        assert_eq!(PGCLI.command, "pgcli");
+        let mac = PGCLI.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("pgcli"));
     }
 }

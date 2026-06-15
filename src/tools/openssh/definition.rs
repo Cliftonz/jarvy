@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_openssh_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn openssh_registration_shape() {
+        assert_eq!(OPENSSH.command, "ssh");
+        let mac = OPENSSH.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("openssh"));
+        let win = OPENSSH.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Microsoft.OpenSSH.Beta"));
     }
 }

@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_watchexec_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn watchexec_registration_shape() {
+        assert_eq!(WATCHEXEC.command, "watchexec");
+        let mac = WATCHEXEC.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("watchexec"));
+        let win = WATCHEXEC.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("watchexec.watchexec"));
     }
 }

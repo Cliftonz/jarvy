@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_rclone_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn rclone_registration_shape() {
+        assert_eq!(RCLONE.command, "rclone");
+        let mac = RCLONE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("rclone"));
+        let win = RCLONE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Rclone.Rclone"));
     }
 }

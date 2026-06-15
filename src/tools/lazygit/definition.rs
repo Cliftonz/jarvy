@@ -33,8 +33,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_lazygit_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn lazygit_registration_shape() {
+        assert_eq!(LAZYGIT.command, "lazygit");
+        let mac = LAZYGIT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("lazygit"));
+        let win = LAZYGIT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("JesseDuffield.lazygit"));
     }
 }

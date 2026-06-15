@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_buf_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn buf_registration_shape() {
+        assert_eq!(BUF.command, "buf");
+        let mac = BUF.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("bufbuild/buf/buf"));
+        let win = BUF.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Bufbuild.Buf"));
     }
 }

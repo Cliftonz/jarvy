@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_powershell_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn powershell_registration_shape() {
+        assert_eq!(POWERSHELL.command, "pwsh");
+        let mac = POWERSHELL.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("powershell"));
+        let win = POWERSHELL.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Microsoft.PowerShell"));
     }
 }

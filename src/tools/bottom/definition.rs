@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_bottom_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn bottom_registration_shape() {
+        assert_eq!(BOTTOM.command, "btm");
+        let mac = BOTTOM.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("bottom"));
+        let win = BOTTOM.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Clement.bottom"));
     }
 }

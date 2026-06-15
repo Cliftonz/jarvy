@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_kotlin_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn kotlin_registration_shape() {
+        assert_eq!(KOTLIN.command, "kotlin");
+        let mac = KOTLIN.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("kotlin"));
+        let win = KOTLIN.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("JetBrains.Kotlin.Compiler"));
     }
 }

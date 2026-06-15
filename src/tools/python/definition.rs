@@ -41,8 +41,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_python_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn python_registration_shape() {
+        assert_eq!(PYTHON.command, "python3");
+        let mac = PYTHON.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("python"));
+        let win = PYTHON.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Python.Python.3"));
     }
 }

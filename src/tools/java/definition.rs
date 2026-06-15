@@ -49,8 +49,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_java_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn java_registration_shape() {
+        assert_eq!(JAVA.command, "java");
+        let mac = JAVA.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("openjdk"));
+        let win = JAVA.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Microsoft.OpenJDK.21"));
     }
 }

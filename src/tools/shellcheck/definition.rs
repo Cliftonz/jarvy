@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_shellcheck_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn shellcheck_registration_shape() {
+        assert_eq!(SHELLCHECK.command, "shellcheck");
+        let mac = SHELLCHECK.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("shellcheck"));
+        let win = SHELLCHECK.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("koalaman.shellcheck"));
     }
 }

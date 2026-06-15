@@ -20,8 +20,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_litecli_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn litecli_registration_shape() {
+        assert_eq!(LITECLI.command, "litecli");
+        let mac = LITECLI.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("litecli"));
     }
 }

@@ -21,8 +21,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_mise_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn mise_registration_shape() {
+        assert_eq!(MISE.command, "mise");
+        let mac = MISE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("mise"));
+        let win = MISE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("jdx.mise"));
     }
 }

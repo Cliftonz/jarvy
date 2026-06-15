@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_haskell_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn haskell_registration_shape() {
+        assert_eq!(HASKELL.command, "ghc");
+        let mac = HASKELL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ghc"));
+        let win = HASKELL.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Haskell.GHCup"));
     }
 }

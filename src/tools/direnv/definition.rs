@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_direnv_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn direnv_registration_shape() {
+        assert_eq!(DIRENV.command, "direnv");
+        let mac = DIRENV.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("direnv"));
+        let win = DIRENV.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("direnv.direnv"));
     }
 }

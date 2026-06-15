@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_tfsec_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn tfsec_registration_shape() {
+        assert_eq!(TFSEC.command, "tfsec");
+        let mac = TFSEC.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("tfsec"));
+        let win = TFSEC.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("aquasecurity.tfsec"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_gleam_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn gleam_registration_shape() {
+        assert_eq!(GLEAM.command, "gleam");
+        let mac = GLEAM.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("gleam"));
+        let win = GLEAM.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Gleam.Gleam"));
     }
 }

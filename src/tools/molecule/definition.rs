@@ -21,8 +21,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_molecule_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn molecule_registration_shape() {
+        assert_eq!(MOLECULE.command, "molecule");
+        let mac = MOLECULE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("molecule"));
     }
 }

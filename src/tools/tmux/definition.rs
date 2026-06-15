@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_tmux_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn tmux_registration_shape() {
+        assert_eq!(TMUX.command, "tmux");
+        let mac = TMUX.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("tmux"));
     }
 }

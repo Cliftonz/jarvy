@@ -21,8 +21,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ocaml_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ocaml_registration_shape() {
+        assert_eq!(OCAML.command, "ocaml");
+        let mac = OCAML.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ocaml"));
+        let win = OCAML.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("OCaml.OCaml"));
     }
 }

@@ -20,8 +20,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_ansible_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn ansible_registration_shape() {
+        assert_eq!(ANSIBLE.command, "ansible");
+        let mac = ANSIBLE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("ansible"));
     }
 }

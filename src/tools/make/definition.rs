@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_make_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn make_registration_shape() {
+        assert_eq!(MAKE.command, "make");
+        let mac = MAKE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("make"));
+        let win = MAKE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("GnuWin32.Make"));
     }
 }

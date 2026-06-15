@@ -20,8 +20,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_kagent_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn kagent_registration_shape() {
+        assert_eq!(KAGENT.command, "kagent");
+        let mac = KAGENT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("kagent"));
     }
 }

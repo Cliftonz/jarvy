@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_dust_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn dust_registration_shape() {
+        assert_eq!(DUST.command, "dust");
+        let mac = DUST.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("dust"));
+        let win = DUST.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("bootandy.dust"));
     }
 }

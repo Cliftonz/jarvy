@@ -35,8 +35,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_k9s_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn k9s_registration_shape() {
+        assert_eq!(K9S.command, "k9s");
+        let mac = K9S.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("derailed/k9s/k9s"));
+        let win = K9S.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Derailed.k9s"));
     }
 }

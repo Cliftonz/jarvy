@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_shfmt_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn shfmt_registration_shape() {
+        assert_eq!(SHFMT.command, "shfmt");
+        let mac = SHFMT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("shfmt"));
+        let win = SHFMT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("mvdan.shfmt"));
     }
 }

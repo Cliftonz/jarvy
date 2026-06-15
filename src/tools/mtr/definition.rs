@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_mtr_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn mtr_registration_shape() {
+        assert_eq!(MTR.command, "mtr");
+        let mac = MTR.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("mtr"));
     }
 }

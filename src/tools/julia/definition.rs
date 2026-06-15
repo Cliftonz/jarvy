@@ -21,8 +21,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_julia_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn julia_registration_shape() {
+        assert_eq!(JULIA.command, "julia");
+        let mac = JULIA.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("julia"));
+        let win = JULIA.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Julialang.Julia"));
     }
 }

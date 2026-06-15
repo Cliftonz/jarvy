@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_terragrunt_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn terragrunt_registration_shape() {
+        assert_eq!(TERRAGRUNT.command, "terragrunt");
+        let mac = TERRAGRUNT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("terragrunt"));
+        let win = TERRAGRUNT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Gruntwork.Terragrunt"));
     }
 }

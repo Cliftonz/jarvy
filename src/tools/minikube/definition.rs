@@ -39,8 +39,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_minikube_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn minikube_registration_shape() {
+        assert_eq!(MINIKUBE.command, "minikube");
+        let mac = MINIKUBE.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("minikube"));
+        let win = MINIKUBE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Kubernetes.minikube"));
     }
 }

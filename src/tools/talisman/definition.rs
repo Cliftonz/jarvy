@@ -19,8 +19,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_talisman_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn talisman_registration_shape() {
+        assert_eq!(TALISMAN.command, "talisman");
+        let mac = TALISMAN.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("talisman"));
     }
 }

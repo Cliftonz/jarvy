@@ -33,8 +33,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_gh_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn gh_registration_shape() {
+        assert_eq!(GH.command, "gh");
+        let mac = GH.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("gh"));
+        let win = GH.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("GitHub.cli"));
     }
 }

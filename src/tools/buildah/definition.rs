@@ -19,8 +19,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_buildah_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn buildah_registration_shape() {
+        assert_eq!(BUILDAH.command, "buildah");
+        let mac = BUILDAH.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("buildah"));
     }
 }

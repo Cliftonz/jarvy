@@ -21,8 +21,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_luarocks_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn luarocks_registration_shape() {
+        assert_eq!(LUAROCKS.command, "luarocks");
+        let mac = LUAROCKS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("luarocks"));
+        let win = LUAROCKS.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("LuaRocks.LuaRocks"));
     }
 }

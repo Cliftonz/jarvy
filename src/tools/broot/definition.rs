@@ -49,8 +49,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_broot_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn broot_registration_shape() {
+        assert_eq!(BROOT.command, "broot");
+        let mac = BROOT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("broot"));
+        let win = BROOT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Dystroy.broot"));
     }
 }

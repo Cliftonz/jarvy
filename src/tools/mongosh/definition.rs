@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_mongosh_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn mongosh_registration_shape() {
+        assert_eq!(MONGOSH.command, "mongosh");
+        let mac = MONGOSH.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("mongosh"));
+        let win = MONGOSH.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("MongoDB.Shell"));
     }
 }

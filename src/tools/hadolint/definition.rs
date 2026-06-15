@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_hadolint_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn hadolint_registration_shape() {
+        assert_eq!(HADOLINT.command, "hadolint");
+        let mac = HADOLINT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("hadolint"));
+        let win = HADOLINT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("hadolint.hadolint"));
     }
 }

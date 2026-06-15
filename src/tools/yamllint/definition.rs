@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_yamllint_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn yamllint_registration_shape() {
+        assert_eq!(YAMLLINT.command, "yamllint");
+        let mac = YAMLLINT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("yamllint"));
+        let win = YAMLLINT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("adrienverge.yamllint"));
     }
 }

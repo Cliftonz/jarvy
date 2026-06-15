@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_sops_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn sops_registration_shape() {
+        assert_eq!(SOPS.command, "sops");
+        let mac = SOPS.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("sops"));
+        let win = SOPS.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Mozilla.sops"));
     }
 }

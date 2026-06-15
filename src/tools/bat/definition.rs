@@ -33,8 +33,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_bat_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn bat_registration_shape() {
+        assert_eq!(BAT.command, "bat");
+        let mac = BAT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("bat"));
+        let win = BAT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("sharkdp.bat"));
     }
 }

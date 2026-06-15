@@ -20,8 +20,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_mycli_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn mycli_registration_shape() {
+        assert_eq!(MYCLI.command, "mycli");
+        let mac = MYCLI.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("mycli"));
     }
 }

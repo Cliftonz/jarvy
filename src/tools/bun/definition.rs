@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_bun_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn bun_registration_shape() {
+        assert_eq!(BUN.command, "bun");
+        let mac = BUN.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("oven-sh/bun/bun"));
+        let win = BUN.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Oven-sh.Bun"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_talosctl_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn talosctl_registration_shape() {
+        assert_eq!(TALOSCTL.command, "talosctl");
+        let mac = TALOSCTL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("siderolabs/tap/talosctl"));
+        let win = TALOSCTL.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("SideroLabs.talosctl"));
     }
 }

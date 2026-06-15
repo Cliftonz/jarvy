@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_govulncheck_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn govulncheck_registration_shape() {
+        assert_eq!(GOVULNCHECK.command, "govulncheck");
+        let mac = GOVULNCHECK.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("govulncheck"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_aria2_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn aria2_registration_shape() {
+        assert_eq!(ARIA2.command, "aria2c");
+        let mac = ARIA2.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("aria2"));
+        let win = ARIA2.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("aria2.aria2"));
     }
 }

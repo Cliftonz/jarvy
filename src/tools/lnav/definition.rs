@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_lnav_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn lnav_registration_shape() {
+        assert_eq!(LNAV.command, "lnav");
+        let mac = LNAV.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("lnav"));
     }
 }

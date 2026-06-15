@@ -18,8 +18,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_gofumpt_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn gofumpt_registration_shape() {
+        assert_eq!(GOFUMPT.command, "gofumpt");
+        let mac = GOFUMPT.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("gofumpt"));
+        let win = GOFUMPT.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("mvdan.gofumpt"));
     }
 }

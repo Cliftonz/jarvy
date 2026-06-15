@@ -47,8 +47,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_eza_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn eza_registration_shape() {
+        assert_eq!(EZA.command, "eza");
+        let mac = EZA.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("eza"));
+        let win = EZA.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("eza-community.eza"));
     }
 }

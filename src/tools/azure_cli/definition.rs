@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_azure_cli_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn azure_cli_registration_shape() {
+        assert_eq!(AZURE_CLI.command, "az");
+        let mac = AZURE_CLI.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("azure-cli"));
+        let win = AZURE_CLI.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Microsoft.AzureCLI"));
     }
 }

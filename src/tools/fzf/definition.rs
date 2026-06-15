@@ -66,8 +66,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_fzf_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn fzf_registration_shape() {
+        assert_eq!(FZF.command, "fzf");
+        let mac = FZF.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("fzf"));
+        let win = FZF.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("junegunn.fzf"));
     }
 }

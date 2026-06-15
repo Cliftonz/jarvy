@@ -18,8 +18,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_zsh_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn zsh_registration_shape() {
+        assert_eq!(ZSH.command, "zsh");
+        let mac = ZSH.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("zsh"));
     }
 }

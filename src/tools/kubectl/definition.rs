@@ -50,8 +50,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_kubectl_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn kubectl_registration_shape() {
+        assert_eq!(KUBECTL.command, "kubectl");
+        let mac = KUBECTL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("kubectl"));
+        let win = KUBECTL.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Kubernetes.kubectl"));
     }
 }

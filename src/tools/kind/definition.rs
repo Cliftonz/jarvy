@@ -38,8 +38,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_kind_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn kind_registration_shape() {
+        assert_eq!(KIND.command, "kind");
+        let mac = KIND.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("kind"));
+        let win = KIND.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Kubernetes.kind"));
     }
 }

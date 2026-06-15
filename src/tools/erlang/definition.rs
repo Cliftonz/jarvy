@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_erlang_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn erlang_registration_shape() {
+        assert_eq!(ERLANG.command, "erl");
+        let mac = ERLANG.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("erlang"));
+        let win = ERLANG.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Erlang.ErlangOTP"));
     }
 }

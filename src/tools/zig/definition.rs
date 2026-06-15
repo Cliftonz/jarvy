@@ -19,8 +19,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_zig_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn zig_registration_shape() {
+        assert_eq!(ZIG.command, "zig");
+        let mac = ZIG.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("zig"));
+        let win = ZIG.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("zig.zig"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_pulumi_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn pulumi_registration_shape() {
+        assert_eq!(PULUMI.command, "pulumi");
+        let mac = PULUMI.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("pulumi"));
+        let win = PULUMI.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Pulumi.Pulumi"));
     }
 }

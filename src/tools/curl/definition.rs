@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_curl_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn curl_registration_shape() {
+        assert_eq!(CURL.command, "curl");
+        let mac = CURL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("curl"));
+        let win = CURL.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("cURL.cURL"));
     }
 }

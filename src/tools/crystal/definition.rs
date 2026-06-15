@@ -21,8 +21,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_crystal_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn crystal_registration_shape() {
+        assert_eq!(CRYSTAL.command, "crystal");
+        let mac = CRYSTAL.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("crystal"));
     }
 }

@@ -22,8 +22,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_earthly_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn earthly_registration_shape() {
+        assert_eq!(EARTHLY.command, "earthly");
+        let mac = EARTHLY.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("earthly/earthly/earthly"));
+        let win = EARTHLY.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Earthly.Earthly"));
     }
 }

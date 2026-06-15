@@ -17,8 +17,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_btop_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn btop_registration_shape() {
+        assert_eq!(BTOP.command, "btop");
+        let mac = BTOP.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("btop"));
     }
 }

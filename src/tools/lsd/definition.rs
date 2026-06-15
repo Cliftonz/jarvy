@@ -20,8 +20,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_lsd_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn lsd_registration_shape() {
+        assert_eq!(LSD.command, "lsd");
+        let mac = LSD.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("lsd"));
+        let win = LSD.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("lsd-rs.lsd"));
     }
 }

@@ -17,8 +17,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_air_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn air_registration_shape() {
+        assert_eq!(AIR.command, "air");
+        let mac = AIR.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("air"));
+        let win = AIR.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("cosmtrek.air"));
     }
 }

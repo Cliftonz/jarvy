@@ -19,8 +19,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_sd_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn sd_registration_shape() {
+        assert_eq!(SD.command, "sd");
+        let mac = SD.macos.expect("must support macOS");
+        assert_eq!(mac.brew, Some("sd"));
     }
 }

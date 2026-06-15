@@ -16,8 +16,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_vscode_no_panic() {
-        let res = ensure("");
-        assert!(res.is_ok() || res.is_err());
+    fn vscode_registration_shape() {
+        assert_eq!(VSCODE.command, "code");
+        let mac = VSCODE.macos.expect("must support macOS");
+        assert_eq!(mac.cask, Some("visual-studio-code"));
+        let win = VSCODE.windows.expect("must support Windows");
+        assert_eq!(win.winget, Some("Microsoft.VisualStudioCode"));
     }
 }
