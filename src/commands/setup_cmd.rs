@@ -454,11 +454,45 @@ pub fn run_setup(
                     }
                 }
                 Err(e) => {
-                    // Batch install failed entirely - log all as failed
-                    for (tool_name, _, version) in packages {
-                        let msg = format!("Failed to install {} ({}): {:?}", tool_name, version, e);
-                        eprintln!("{}", msg);
-                        telemetry::tool_failed(tool_name, version, &format!("{:?}", e));
+                    // Batch install failed entirely.
+                    // Discriminate `Unsupported` (no platform install
+                    // method — emit `tool.unsupported` not
+                    // `tool.failed`) from real install failures
+                    // (Observability F1).
+                    let kind = e.kind();
+                    if e.is_no_platform_installer() {
+                        for (tool_name, _, version) in packages {
+                            tracing::info!(
+                                event = "tool.unsupported",
+                                tool = %tool_name,
+                                version = %version,
+                                source = "config",
+                                channel = "registered_no_platform_installer",
+                                platform = std::env::consts::OS,
+                                exit_code = error_codes::TOOL_UNSUPPORTED,
+                            );
+                            telemetry::tool_not_supported(
+                                tool_name,
+                                Some(version),
+                                telemetry::Source::Config,
+                            );
+                            eprintln!(
+                                "  {} has no installer on this platform; skipping.",
+                                tool_name
+                            );
+                        }
+                    } else {
+                        for (tool_name, _, version) in packages {
+                            let msg =
+                                format!("Failed to install {} ({}): {:?}", tool_name, version, e);
+                            eprintln!("{}", msg);
+                            telemetry::tool_failed_with_kind(
+                                tool_name,
+                                version,
+                                kind,
+                                &format!("{:?}", e),
+                            );
+                        }
                     }
                 }
             }
@@ -588,9 +622,41 @@ pub fn run_setup(
                             successfully_installed.push((name.clone(), version.clone()));
                         }
                         Err(e) => {
-                            let msg = format!("Failed to install {} ({}): {:?}", name, version, e);
-                            eprintln!("{}", msg);
-                            telemetry::tool_failed(name, version, &format!("{:?}", e));
+                            // Same discrimination as the batch path:
+                            // route `Unsupported` to `tool.unsupported`
+                            // so it doesn't pollute the failed-installs
+                            // counter on Windows when a tool ships with
+                            // no winget manifest (Observability F1).
+                            if e.is_no_platform_installer() {
+                                tracing::info!(
+                                    event = "tool.unsupported",
+                                    tool = %name,
+                                    version = %version,
+                                    source = "config",
+                                    channel = "registered_no_platform_installer",
+                                    platform = std::env::consts::OS,
+                                    exit_code = error_codes::TOOL_UNSUPPORTED,
+                                );
+                                telemetry::tool_not_supported(
+                                    name,
+                                    Some(version),
+                                    telemetry::Source::Config,
+                                );
+                                eprintln!(
+                                    "  {} has no installer on this platform; skipping.",
+                                    name
+                                );
+                            } else {
+                                let msg =
+                                    format!("Failed to install {} ({}): {:?}", name, version, e);
+                                eprintln!("{}", msg);
+                                telemetry::tool_failed_with_kind(
+                                    name,
+                                    version,
+                                    e.kind(),
+                                    &format!("{:?}", e),
+                                );
+                            }
                         }
                     }
                 }

@@ -40,12 +40,36 @@ pub fn register_tool(name: &str, handler: ToolAdder) -> bool {
 }
 
 /// Retrieve a registered tool handler by name, if present.
-/// Lookup is case-insensitive.
+///
+/// Lookup is case-insensitive AND tolerates the user typing either
+/// hyphen or underscore — `nats-server` and `nats_server` both
+/// resolve to the same tool. This closes the gap from the messaging
+/// review (QA F4): `define_tool!(NATS_SERVER, ...)` stringifies as
+/// `"nats_server"`, but every upstream doc and command shows
+/// `nats-server`. The natural user mistake is to write the hyphen
+/// form, which would otherwise produce "Unknown tool" with a fuzzy
+/// suggestion.
 #[inline]
 pub fn get_tool(name: &str) -> Option<ToolAdder> {
     let key = name.to_ascii_lowercase();
     let map = registry().read().expect("registry rwlock poisoned");
-    map.get(&key).copied()
+    if let Some(handler) = map.get(&key).copied() {
+        return Some(handler);
+    }
+    // Fall back to dash↔underscore aliasing.
+    if key.contains('-') {
+        let alias = key.replace('-', "_");
+        if let Some(handler) = map.get(&alias).copied() {
+            return Some(handler);
+        }
+    }
+    if key.contains('_') {
+        let alias = key.replace('_', "-");
+        if let Some(handler) = map.get(&alias).copied() {
+            return Some(handler);
+        }
+    }
+    None
 }
 
 /// List all registered tool names (lowercased), sorted for determinism.
@@ -75,13 +99,12 @@ pub fn add(name: &str, version: &str) -> Result<(), InstallError> {
         Err(e) => return Err(e),
     }
 
-    let key = name.to_ascii_lowercase();
-    let map = registry().read().expect("registry rwlock poisoned");
-    if let Some(handler) = map.get(&key) {
-        // clone the function pointer out while holding read lock
-        let f = *handler;
-        drop(map);
-        f(version)
+    // Route through `get_tool` so the dash↔underscore aliasing
+    // applied to lookups also applies to install dispatch — without
+    // this, `jarvy validate` accepts `nats-server` (alias) but
+    // `jarvy setup` fails to install it.
+    if let Some(handler) = get_tool(name) {
+        handler(version)
     } else {
         Err(InstallError::Parse("unknown tool"))
     }
@@ -103,6 +126,26 @@ mod tests {
         assert!(h.is_some());
         let f = h.unwrap();
         assert!(f("any").is_ok());
+    }
+
+    #[test]
+    fn get_tool_resolves_hyphen_when_registered_with_underscore() {
+        // The motivating case: define_tool!(NATS_SERVER, ...) stringifies
+        // to "nats_server", but every upstream doc shows "nats-server".
+        let name = "nats_server_alias_test";
+        let _ = register_tool(name, dummy_handler);
+        // Underscore form works (canonical).
+        assert!(get_tool("nats_server_alias_test").is_some());
+        // Hyphen form works (the alias).
+        assert!(get_tool("nats-server-alias-test").is_some());
+    }
+
+    #[test]
+    fn get_tool_resolves_underscore_when_registered_with_hyphen() {
+        let name = "some-dashed-tool";
+        let _ = register_tool(name, dummy_handler);
+        assert!(get_tool("some-dashed-tool").is_some());
+        assert!(get_tool("some_dashed_tool").is_some());
     }
 
     #[test]

@@ -26,6 +26,46 @@ pub enum InstallError {
     Parse(&'static str),
 }
 
+impl InstallError {
+    /// Stable discriminant for telemetry / dashboard queries. The
+    /// `Display` form may embed user-controlled stderr or package
+    /// names; this returns a fixed string so dashboards can group
+    /// without parsing free text. Mirrors `PackageError::kind()` and
+    /// `AiHookError::kind()`.
+    ///
+    /// `CommandFailed` is further classified by inspecting stderr —
+    /// `tap_fetch_failed` for a brew tap network/permission failure,
+    /// `permission_required` for a sudo prompt, otherwise the
+    /// generic `install_command_failed`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            InstallError::Unsupported => "no_platform_installer",
+            InstallError::Prereq(_) => "prereq_missing",
+            InstallError::InvalidPermissions(_) => "permission_required",
+            InstallError::CommandFailed { stderr, .. } => {
+                let lower = stderr.to_ascii_lowercase();
+                if lower.contains("tapping") && lower.contains("fatal:") {
+                    "tap_fetch_failed"
+                } else if lower.contains("permission denied") {
+                    "permission_required"
+                } else {
+                    "install_command_failed"
+                }
+            }
+            InstallError::Io(_) => "io",
+            InstallError::Parse(_) => "parse",
+        }
+    }
+
+    /// True for variants that mean "this tool has no install method
+    /// on this platform" — distinct from a real install crash. The
+    /// dispatch path routes these to `tool.unsupported` (a separate
+    /// counter) rather than `tool.failed`.
+    pub fn is_no_platform_installer(&self) -> bool {
+        matches!(self, InstallError::Unsupported)
+    }
+}
+
 // OS enum for config keys and runtime resolution
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -442,6 +482,55 @@ mod sudo_plan_tests {
     fn plan_none_without_sudo_available() {
         let v = plan_sudo_attempts(None, false);
         assert_eq!(v, vec![false]);
+    }
+}
+
+#[cfg(test)]
+mod install_error_kind_tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_is_classified_as_no_platform_installer() {
+        let e = InstallError::Unsupported;
+        assert_eq!(e.kind(), "no_platform_installer");
+        assert!(e.is_no_platform_installer());
+    }
+
+    #[test]
+    fn prereq_is_classified_as_prereq_missing() {
+        let e = InstallError::Prereq("Homebrew not found");
+        assert_eq!(e.kind(), "prereq_missing");
+        assert!(!e.is_no_platform_installer());
+    }
+
+    #[test]
+    fn command_failed_with_tap_fatal_classifies_as_tap_fetch() {
+        let e = InstallError::CommandFailed {
+            cmd: "brew".to_string(),
+            code: Some(1),
+            stderr: "==> Tapping nats-io/nats-tools\nfatal: unable to access".to_string(),
+        };
+        assert_eq!(e.kind(), "tap_fetch_failed");
+    }
+
+    #[test]
+    fn command_failed_with_permission_denied_classifies_correctly() {
+        let e = InstallError::CommandFailed {
+            cmd: "apt".to_string(),
+            code: Some(13),
+            stderr: "E: Permission denied (13)".to_string(),
+        };
+        assert_eq!(e.kind(), "permission_required");
+    }
+
+    #[test]
+    fn command_failed_generic_classifies_as_install_command_failed() {
+        let e = InstallError::CommandFailed {
+            cmd: "brew".to_string(),
+            code: Some(1),
+            stderr: "Error: formula not found".to_string(),
+        };
+        assert_eq!(e.kind(), "install_command_failed");
     }
 }
 

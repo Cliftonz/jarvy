@@ -620,21 +620,26 @@ pub fn tool_already_installed(
 
 /// Record a failed tool installation
 pub fn tool_failed(tool: &str, version: &str, error: &str) {
+    tool_failed_with_kind(tool, version, "install_command_failed", error);
+}
+
+/// Record a failed tool installation with a stable `error_kind`
+/// discriminant. Use this from call sites that have an `InstallError`
+/// in scope (`InstallError::kind()`) so dashboards can group "tap
+/// fetch failed" vs "permission required" vs the generic
+/// "install_command_failed" without parsing free-text error strings.
+pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error: &str) {
     if !is_enabled() {
         return;
     }
 
-    // Redact potentially sensitive info from error
     let redacted_error = redact_sensitive(error);
 
-    // Promoted to error! (round-2 obs P1): the analytics console-split
-    // layer routes `level < ERROR` to stdout. CI scrapers using `2>`
-    // miss install failures unless they land on stderr. Also surfaces
-    // under quiet mode and OTLP-error-only filters.
     tracing::error!(
         event = "tool.failed",
         tool = %tool,
         version = %version,
+        error_kind = %error_kind,
         error = %redacted_error,
         platform = %env::consts::OS,
     );
@@ -647,6 +652,7 @@ pub fn tool_failed(tool: &str, version: &str, error: &str) {
                     KeyValue::new("tool", tool.to_string()),
                     KeyValue::new("platform", env::consts::OS.to_string()),
                     KeyValue::new("status", "failed"),
+                    KeyValue::new("error_kind", error_kind.to_string()),
                 ],
             );
             metrics

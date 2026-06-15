@@ -308,8 +308,15 @@ fn validate_tools(tools: &toml::map::Map<String, toml::Value>, issues: &mut Vec<
     for (tool_name, value) in tools {
         let tool_lower = tool_name.to_lowercase();
 
-        // Check if tool is known
-        if !known_tools.iter().any(|t| t.to_lowercase() == tool_lower) {
+        // Check if tool is known. Tolerate dash↔underscore aliasing —
+        // `nats-server` and `nats_server` both resolve. Mirrors the
+        // resolution in `registry::get_tool` so `jarvy validate` and
+        // `jarvy setup` agree on what's known. (QA F4 fix.)
+        let matches_known = |t: &String| {
+            let lower = t.to_lowercase();
+            lower == tool_lower || lower.replace('-', "_") == tool_lower.replace('-', "_")
+        };
+        if !known_tools.iter().any(matches_known) {
             let suggestion = find_similar_tool(&tool_lower, &known_tools);
             issues.push(ValidationIssue {
                 severity: Severity::Error,
@@ -759,6 +766,32 @@ mod tests {
         let suggestion = find_similar_tool("kuberntes", &tools);
         assert!(suggestion.is_some());
         assert!(suggestion.unwrap().contains("kubernetes"));
+    }
+
+    /// Pin Jaro-Winkler suggestions for the short tool names added by
+    /// the messaging batch (`kn`, `kaf`, `nsc`, `rpk`). Adding more
+    /// short names later could silently flip the suggestion tie-break;
+    /// this test forces the conversation when that happens. (QA F9.)
+    #[test]
+    fn short_tool_name_suggestions_are_stable() {
+        crate::tools::register_all();
+        let known = list_tool_names();
+        // Typo → expected suggestion.
+        for (typo, expected) in [
+            ("nat", "nats"),
+            ("kn-", "kn"),
+            ("nsc-", "nsc"),
+            ("rpk-", "rpk"),
+        ] {
+            let suggestion = find_similar_tool(typo, &known);
+            assert!(
+                suggestion
+                    .as_ref()
+                    .map(|s| s.contains(expected))
+                    .unwrap_or(false),
+                "typo `{typo}` should suggest `{expected}` — got {suggestion:?}"
+            );
+        }
     }
 
     #[test]

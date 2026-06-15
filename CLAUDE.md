@@ -75,6 +75,18 @@ Each tool lives in `src/tools/{name}/` with two files:
 
 Tools are registered in `src/tools/mod.rs` via `register_all()`.
 
+**Omitting platform install methods.** If a tool has no first-party `winget` / `choco` package on Windows, or no native distro package on Linux, OMIT the platform's block from `define_tool!` rather than registering a placeholder identifier. Placeholder ids (e.g. `Pivotal.RabbitMQ` against an unclaimed publisher namespace) create supply-chain exposure: anyone can claim that namespace and ship a malicious installer that `winget install -e --id` will pin to. The runtime emits `tool.unsupported` when an install is attempted on the unsupported platform (routed via `InstallError::is_no_platform_installer()`); this is the documented "no Windows installer" UX. Add a one-line comment per the `kaf`, `kafkactl`, `emqx`, `kn` examples:
+
+```rust
+// No first-party winget manifest as of YYYY-MM; install from <upstream-url>.
+```
+
+**Dash ↔ underscore aliasing.** `define_tool!(NATS_SERVER, ...)` stringifies as `"nats_server"` for registry lookup. The natural user form `nats-server = "latest"` in `[provisioner]` also resolves — `registry::get_tool()` falls back to a `-` ↔ `_` swap when the canonical name doesn't match, and `commands::validate::validate_tools` mirrors the same logic. Pin per-tool whichever the upstream docs use; users get the other form for free.
+
+**Tool categories.** Set `category: "messaging" | "workflow" | ...` on `ToolSpec` so the `tool.installed` event carries a category label. Operators can then graph "what fraction of NATS rollouts succeeded?" without pivoting on individual tool names. The 16 messaging tools (NATS family, Kafka stack, brokers, workflow engines) all set this; older tools may not yet — backfill opportunistically. New categories should be introduced when at least 3 tools qualify.
+
+**Brew tap auto-tap.** When `macos.brew` (or Linux fallback `linux.brew`) contains a tap-form identifier (`org/tap/formula` — exactly two slashes), the install path runs `brew tap org/tap` once before `brew install` so a fresh box doesn't surface a confusing "untrusted tap" error on recent Homebrew versions. Soft-fail; an already-added tap doesn't block the install.
+
 ### Default Hooks
 
 Tools can define built-in post-install hooks that configure the tool after installation. Default hooks are:
