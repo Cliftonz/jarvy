@@ -25,9 +25,6 @@ dotnet restore
 echo 'Console app ready: `dotnet run` to execute, `dotnet publish -c Release -r osx-arm64 --self-contained` for a single-file binary.'
 """
 
-# DOTNET_CLI_TELEMETRY_OPTOUT + DOTNET_NOLOGO are set globally by the
-# `dotnet` tool's default_hook — no per-project overrides needed.
-
 [commands]
 run = "dotnet run"
 test = "dotnet test"

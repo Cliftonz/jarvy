@@ -9,8 +9,10 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::io::Write;
-use std::process::Command;
 use tempfile::NamedTempFile;
+
+mod common;
+use common::{jarvy_cmd, jarvy_fast_cmd};
 
 /// Create a config with tools that have dependencies
 fn make_config_with_deps() -> NamedTempFile {
@@ -70,8 +72,7 @@ curl = "latest"
 fn validate_warns_about_missing_strict_dependencies() {
     let cfg = make_config_with_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
+    let mut c = jarvy_cmd();
     c.args(["validate", "--file"]).arg(cfg.path());
 
     // Should warn about lazydocker requiring docker (exit 1 = warnings present).
@@ -88,8 +89,7 @@ fn validate_warns_about_missing_strict_dependencies() {
 fn validate_informs_about_missing_flexible_dependencies() {
     let cfg = make_config_with_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
+    let mut c = jarvy_cmd();
     c.args(["validate", "--file"]).arg(cfg.path());
 
     // Should mention kubectl and its flexible dep options (exit 1 = warnings present).
@@ -103,8 +103,7 @@ fn validate_informs_about_missing_flexible_dependencies() {
 fn validate_no_warnings_when_dependencies_satisfied() {
     let cfg = make_config_with_satisfied_flex_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
+    let mut c = jarvy_cmd();
     c.args(["validate", "--file"]).arg(cfg.path());
 
     // Should not have dependency warnings for lazydocker since docker is in config
@@ -117,9 +116,7 @@ fn validate_no_warnings_when_dependencies_satisfied() {
 fn diff_shows_dependency_resolution() {
     let cfg = make_config_with_satisfied_flex_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_FAST_TEST", "1"); // Skip actual command execution
+    let mut c = jarvy_fast_cmd();
     c.args(["diff", "--file"]).arg(cfg.path());
 
     // The diff command should complete successfully
@@ -130,9 +127,7 @@ fn diff_shows_dependency_resolution() {
 fn diff_shows_missing_dependency_warnings() {
     let cfg = make_config_with_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_FAST_TEST", "1");
+    let mut c = jarvy_fast_cmd();
     c.args(["diff", "--file"]).arg(cfg.path());
 
     // Should show dependency warnings for lazydocker
@@ -144,9 +139,7 @@ fn ignore_missing_deps_flag_suppresses_warnings() {
     let cfg = make_config_with_deps();
 
     // With --ignore-missing-deps, should not show dependency warnings in setup
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_FAST_TEST", "1");
+    let mut c = jarvy_fast_cmd();
     c.env("JARVY_IGNORE_MISSING_DEPS", "1"); // Simulate the flag
     c.args(["diff", "--file"]).arg(cfg.path());
 
@@ -160,8 +153,7 @@ fn ignore_missing_deps_flag_suppresses_warnings() {
 fn doctor_shows_dependency_information() {
     let cfg = make_config_with_satisfied_flex_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
+    let mut c = jarvy_cmd();
     c.args(["doctor", "--file"]).arg(cfg.path());
 
     // Doctor should show tool health (may exit non-zero if tools are missing)
@@ -174,8 +166,7 @@ fn doctor_shows_dependency_information() {
 fn simple_config_has_no_dependency_issues() {
     let cfg = make_simple_config();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
+    let mut c = jarvy_cmd();
     c.args(["validate", "--file"]).arg(cfg.path());
 
     // Simple tools (git, curl) have no dependencies - validation should pass cleanly
@@ -188,8 +179,7 @@ fn simple_config_has_no_dependency_issues() {
 fn validate_json_output_includes_dependency_info() {
     let cfg = make_config_with_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
+    let mut c = jarvy_cmd();
     c.args(["validate", "--file"])
         .arg(cfg.path())
         .args(["--format", "json"]);
@@ -204,8 +194,7 @@ fn validate_json_output_includes_dependency_info() {
 fn doctor_json_output_includes_dependency_field() {
     let cfg = make_config_with_satisfied_flex_deps();
 
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
+    let mut c = jarvy_cmd();
     c.args(["doctor", "--file"])
         .arg(cfg.path())
         .args(["--format", "json"]);

@@ -885,4 +885,83 @@ mod tests {
             result.issues
         );
     }
+
+    /// `PackageSpec::Detailed` — the inline-table form
+    /// `dotnet-ef = { version = "1.0", optional = false }`. The
+    /// validator must also pull the version off this branch (not just
+    /// the bare-string form) and apply the same control-byte / scheme
+    /// guards.
+    #[test]
+    fn validate_runs_version_check_on_detailed_package_spec() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[nuget]\ndotnet-ef = { version = \"\\u001b[2J\", optional = false }\n",
+        ).unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|i| matches!(i.severity, Severity::Error)
+                    && i.message.contains("control bytes")),
+            "expected version-control-byte refusal on Detailed form, got: {:?}",
+            result.issues
+        );
+    }
+
+    /// C1 controls (U+0080–U+009F) are CSI introducers on some
+    /// terminals. The package-name validator must reject them in
+    /// addition to C0 controls / ESC.
+    #[test]
+    fn validate_package_name_rejects_c1_control_bytes() {
+        use crate::packages::common::validate_package_name;
+        // U+0085 NEL, U+009B CSI single byte, U+0080 PAD.
+        for codepoint in [0x85u32, 0x9B, 0x80] {
+            let c = char::from_u32(codepoint).unwrap();
+            let hostile = format!("name{}rest", c);
+            let result = validate_package_name(&hostile, "[nuget]");
+            assert!(
+                result.is_err(),
+                "expected refusal for C1 U+{:04X}",
+                codepoint
+            );
+        }
+    }
+
+    /// `validate_package_section` walks the `[npm]` `install_dev`
+    /// knob as a config field, not as a package. Pin so a knob
+    /// rename in `NpmConfig` surfaces in the test suite.
+    #[test]
+    fn validate_skips_npm_install_dev_knob() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[npm]\ntypescript = \"^5.0\"\ninstall_dev = false\n",
+        )
+        .unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert_eq!(
+            result.error_count, 0,
+            "install_dev knob misidentified as hostile package: {:?}",
+            result.issues
+        );
+    }
+
+    /// Same for `[cargo] locked`.
+    #[test]
+    fn validate_skips_cargo_locked_knob() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[cargo]\ncargo-watch = \"latest\"\nlocked = true\n",
+        )
+        .unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert_eq!(
+            result.error_count, 0,
+            "locked knob misidentified as hostile package: {:?}",
+            result.issues
+        );
+    }
 }

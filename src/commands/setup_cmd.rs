@@ -123,7 +123,7 @@ pub fn run_setup(
     // from remote configs even if `allow_custom_commands = true` —
     // remote configs can narrow but not broaden policy.
     if from.is_some() {
-        config.mark_ai_hooks_remote();
+        config.mark_remote();
     }
     let hooks_config = config.get_hooks();
     let hook_settings = HookConfig::from(&hooks_config.config);
@@ -920,6 +920,17 @@ fn preview_packages<'a, I>(ecosystem: &str, scope_label: &str, names: I)
 where
     I: IntoIterator<Item = &'a str>,
 {
+    print!("{}", render_package_preview(ecosystem, scope_label, names));
+}
+
+/// Pure-function version of the dry-run preview body — returns the
+/// formatted output as a `String` so unit tests can pin the empty /
+/// single / plural / `.NET global tool` branches without capturing
+/// stdout. The wrapping `preview_packages` simply prints the result.
+pub(crate) fn render_package_preview<'a, I>(ecosystem: &str, scope_label: &str, names: I) -> String
+where
+    I: IntoIterator<Item = &'a str>,
+{
     let mut names: Vec<&str> = names.into_iter().collect();
     names.sort_unstable();
     let count = names.len();
@@ -933,7 +944,10 @@ where
             format!(" via `{} install`", other),
         ),
     };
-    println!(
+    let mut out = String::with_capacity(64 + count * 32);
+    use std::fmt::Write;
+    let _ = writeln!(
+        out,
         "[DRY-RUN] Would install {} {}{} ({})",
         count, label, command_hint, scope_label
     );
@@ -943,11 +957,13 @@ where
     // inspect untrusted configs," so this is the trust boundary, not
     // the install loop.
     for name in names {
-        println!(
+        let _ = writeln!(
+            out,
             "[DRY-RUN]   - {}",
             crate::observability::redact_for_display(name)
         );
     }
+    out
 }
 
 /// Install language-specific packages (npm, pip, cargo, nuget) configured
@@ -1479,6 +1495,76 @@ mod tests {
     //! signature drift and panics — not the full install behavior.
 
     use super::*;
+
+    // -------------------------------------------------------------
+    // `render_package_preview` — pure-function variant of the dry-run
+    // preview body. These pin the announcement string verbatim so the
+    // documented "stable contract" doesn't drift silently.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn render_package_preview_zero_count() {
+        let out: String = render_package_preview("npm", "project-local", std::iter::empty());
+        assert!(
+            out.starts_with("[DRY-RUN] Would install 0 packages via `npm install` (project-local)"),
+            "got: {out:?}"
+        );
+        // No package-name lines for empty input.
+        assert_eq!(out.lines().count(), 1, "got: {out:?}");
+    }
+
+    #[test]
+    fn render_package_preview_singular() {
+        let out = render_package_preview("cargo", "user-global", ["cargo-watch"]);
+        assert!(
+            out.contains("Would install 1 package via `cargo install` (user-global)"),
+            "expected singular 'package', got: {out:?}"
+        );
+        assert!(out.contains("[DRY-RUN]   - cargo-watch"));
+    }
+
+    #[test]
+    fn render_package_preview_plural() {
+        let out = render_package_preview("npm", "project-local", ["b", "a", "c"]);
+        assert!(out.contains("Would install 3 packages via `npm install` (project-local)"));
+        // Sorted output.
+        let body: Vec<&str> = out
+            .lines()
+            .filter(|l| l.starts_with("[DRY-RUN]   - "))
+            .collect();
+        assert_eq!(
+            body,
+            ["[DRY-RUN]   - a", "[DRY-RUN]   - b", "[DRY-RUN]   - c"]
+        );
+    }
+
+    #[test]
+    fn render_package_preview_dotnet_label_uses_canonical_string() {
+        // The dotnet branch is what `examples_validation` pins verbatim.
+        let out = render_package_preview(
+            ".NET global tool",
+            "machine-global",
+            ["dotnet-ef", "csharpier"],
+        );
+        assert!(
+            out.contains(
+                "[DRY-RUN] Would install 2 .NET global tool(s) via `dotnet tool update -g` (machine-global)"
+            ),
+            "got: {out:?}"
+        );
+    }
+
+    #[test]
+    fn render_package_preview_redacts_control_bytes() {
+        // A hostile `[nuget]` key with ESC must not reach the output.
+        let out = render_package_preview(".NET global tool", "machine-global", ["\u{1b}[2J"]);
+        assert!(
+            !out.contains('\u{1b}'),
+            "control byte leaked through preview: {out:?}"
+        );
+        // The redaction yields `?` per control char.
+        assert!(out.contains("[DRY-RUN]   - ?"));
+    }
 
     fn config_from(toml: &str) -> Config {
         Config::from_toml_str(toml).expect("test toml must parse")

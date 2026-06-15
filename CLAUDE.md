@@ -266,7 +266,11 @@ dotnet-format = "latest"
 
 **Validation parity**: `jarvy validate` runs `validate_package_name` / `validate_package_version` on every `[npm]/[pip]/[cargo]/[nuget]` entry (`validate.rs::validate_package_section`). Reserved section knobs (`venv`, `package_manager`, `from_lockfile`, `locked`, ...) are skipped — only entries that would become `<pkg-manager> install <name>` arguments are checked.
 
-**Borrowed access**: `Config::packages_ref() -> PackagesConfigRef<'_>` is the read-only path (`run_packages_phase` uses this). `Config::get_packages_config()` returns an owned, fully-cloned `PackagesConfig` and is retained only for callers that need ownership.
+**Borrowed access**: `Config::packages_ref() -> PackagesConfigRef<'_>` is the read-only path (`run_packages_phase` uses this). The owned `PackagesConfig` is retained for the public lib re-export but no internal caller uses it; prefer the ref. The ref-struct's field set is pinned to the owned-struct's field set by `config::tests::packages_ref_field_set_intentionally_skips_gem_and_go`.
+
+**Trust gate** (`[packages] allow_remote = true`): a remote-fetched `jarvy.toml` (loaded via `jarvy setup --from <url>`) CANNOT install `[npm]/[pip]/[cargo]/[nuget]` entries by default. The runner refuses with a clear stderr message; setting `[packages] allow_remote = true` in the source config opts in. Local configs ignore the flag. Mirrors the `[ai_hooks] allow_custom_commands` and `[mcp_register] allow_custom_servers` pattern: remote configs may NARROW trust but cannot BROADEN it. `Config::mark_remote()` (formerly `mark_ai_hooks_remote`) tags the whole `Config` plus `ai_hooks` + `mcp_register` blocks.
+
+**Telemetry opt-in**: every `package.*` / `packages.*` / `package_command.failed` event reads `observability::telemetry_gate::is_enabled()` before emitting. The gate is populated by `telemetry::init` at startup. Without this gate the prior implementation leaked package events to OTLP for users who had `telemetry.enabled = false` but configured an endpoint for some other purpose — broke the documented opt-in contract.
 
 **Integration**: Package installation runs after tool hooks and before environment setup in `jarvy setup`. Order: npm → pip → cargo → nuget. The whole phase is wrapped in `tracing::info_span!("packages", ...)` and emits `packages.phase_started` / `packages.phase_completed` structured events; each handler emits `package.requested` / `package.installed` / `package.failed` per tool (see Telemetry → Event Taxonomy).
 
@@ -670,7 +674,10 @@ jarvy telemetry preview       # Show what events would be sent
 | `setup.started` / `setup.completed` | run lifecycle        | Carries duration, counts                     |
 | `hook.started` / `hook.completed` / `hook.failed` / `hook.timeout` | per hook | |
 | `packages.phase_started` / `packages.phase_completed` | run_packages_phase | Carries `dry_run`, `npm`, `pip`, `cargo`, `nuget` booleans, `duration_ms` |
-| `packages.dry_run` | dry-run preview entry             | Carries per-ecosystem `*_count` |
+| `packages.phase_skipped` | run_packages_phase early-return | Carries `reason`, `dry_run` |
+| `packages.phase_previewed` | dry-run preview entry         | Carries per-ecosystem `*_count` (renamed from `packages.dry_run`) |
+| `packages.remote_refused` | trust gate refusal               | Carries `reason` (e.g. `allow_remote_packages_not_set`) |
+| `commands.extras_refused_keys` | interactive menu key sanitizer | Carries `count` (control-byte / Trojan-Source keys dropped) |
 | `packages.install_failed` | install_packages outer error  | One per ecosystem on failure |
 | `package.requested` | per-package install entry (cargo, nuget) | Fields: `ecosystem`, `package`, `version`, `platform` |
 | `package.installed` | per-package install success         | Adds `duration_ms` |

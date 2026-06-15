@@ -64,6 +64,31 @@ pub fn install_packages(
     config: PackagesConfigRef<'_>,
     project_dir: &Path,
 ) -> Result<(), PackageError> {
+    // Trust gate: a remote-fetched config (`jarvy setup --from <url>`)
+    // CANNOT install language-package entries without an explicit
+    // opt-in (`[packages] allow_remote = true`). Mirrors the
+    // `[ai_hooks] allow_custom_commands` and `[mcp_register]
+    // allow_custom_servers` patterns — remote configs may NARROW
+    // trust but cannot BROADEN it.
+    if config.origin == crate::ai_hooks::ConfigOrigin::Remote && !config.allow_remote_packages {
+        let any_configured = config.npm.is_some()
+            || config.pip.is_some()
+            || config.cargo.is_some()
+            || config.nuget.is_some();
+        if any_configured {
+            tracing::warn!(
+                event = "packages.remote_refused",
+                reason = "allow_remote_packages_not_set",
+            );
+            eprintln!(
+                "\n  Refusing to install packages from a remote config (`jarvy setup --from <url>`).\n  \
+                 Set `[packages] allow_remote = true` in the source config — or copy it locally —\n  \
+                 to authorize npm/pip/cargo/nuget installations from this origin."
+            );
+            return Ok(());
+        }
+    }
+
     // Telemetry gate read once at the top — used by every per-ecosystem
     // branch below. Honors the user's opt-in.
     let telemetry_on = crate::observability::telemetry_gate::is_enabled();
@@ -143,4 +168,57 @@ pub fn install_packages(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai_hooks::ConfigOrigin;
+
+    fn ref_with_nuget_only(
+        nuget: &NugetConfig,
+        origin: ConfigOrigin,
+        allow_remote_packages: bool,
+    ) -> PackagesConfigRef<'_> {
+        PackagesConfigRef {
+            npm: None,
+            pip: None,
+            cargo: None,
+            nuget: Some(nuget),
+            origin,
+            allow_remote_packages,
+        }
+    }
+
+    #[test]
+    fn remote_config_refused_without_opt_in() {
+        let nuget = NugetConfig::default();
+        let config = ref_with_nuget_only(&nuget, ConfigOrigin::Remote, false);
+        let tmp = tempfile::tempdir().unwrap();
+        // Should return Ok (advisory, not fatal) without invoking dotnet.
+        let result = install_packages(config, tmp.path());
+        assert!(result.is_ok(), "trust gate should refuse silently");
+    }
+
+    #[test]
+    fn remote_config_allowed_with_opt_in_proceeds() {
+        // With the opt-in set, the gate passes. We don't actually
+        // install anything (empty packages list), but the call should
+        // not be refused at the trust-gate boundary.
+        let nuget = NugetConfig::default();
+        let config = ref_with_nuget_only(&nuget, ConfigOrigin::Remote, true);
+        let tmp = tempfile::tempdir().unwrap();
+        let result = install_packages(config, tmp.path());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn local_config_always_allowed() {
+        // Local configs ignore allow_remote_packages.
+        let nuget = NugetConfig::default();
+        let config = ref_with_nuget_only(&nuget, ConfigOrigin::Local, false);
+        let tmp = tempfile::tempdir().unwrap();
+        let result = install_packages(config, tmp.path());
+        assert!(result.is_ok());
+    }
 }

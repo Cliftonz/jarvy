@@ -30,16 +30,23 @@ pub struct PackagesConfig {
 }
 
 /// Borrowed view of every `[npm]/[pip]/[cargo]/[nuget]` block on a
-/// `Config`. Use this when you only need to *read* the package
-/// sections — typically `install_packages` and `run_packages_phase`
-/// in setup. Constructing this is zero-allocation; the previous
-/// `Config::get_packages_config` path deep-cloned every HashMap.
+/// `Config`, plus the trust gate that decides whether remote-fetched
+/// configs may install packages. Use this when you only need to *read*
+/// the package sections — typically `install_packages` and
+/// `run_packages_phase` in setup. Constructing this is zero-allocation.
 #[derive(Debug, Clone, Copy)]
 pub struct PackagesConfigRef<'a> {
     pub npm: Option<&'a NpmConfig>,
     pub pip: Option<&'a PipConfig>,
     pub cargo: Option<&'a CargoConfig>,
     pub nuget: Option<&'a NugetConfig>,
+    /// Where the parent `Config` came from. `Remote` configs are
+    /// refused at install time unless `allow_remote_packages` is true.
+    pub origin: crate::ai_hooks::ConfigOrigin,
+    /// `[packages] allow_remote` opt-in. False by default — a remote
+    /// config CANNOT install `[npm]/[pip]/[cargo]/[nuget]` entries
+    /// without the user explicitly setting this true.
+    pub allow_remote_packages: bool,
 }
 
 /// Package specification - either a simple version string or detailed config
@@ -284,6 +291,8 @@ mod tests {
                 pip: _,
                 cargo: _,
                 nuget: _,
+                origin: _,
+                allow_remote_packages: _,
             } = r;
         }
     }

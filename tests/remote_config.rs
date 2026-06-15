@@ -7,6 +7,9 @@ use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
+mod common;
+use common::jarvy_fast_cmd;
+
 fn make_valid_config() -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
     writeln!(
@@ -142,9 +145,7 @@ fn validate_accepts_header_flag() {
 fn setup_accepts_header_flag() {
     // Test that --header flag is accepted on setup command
     let cfg = make_valid_config();
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    cmd.env("JARVY_TEST_MODE", "1");
-    cmd.env("JARVY_FAST_TEST", "1");
+    let mut cmd = jarvy_fast_cmd();
     cmd.args(["setup", "--file"])
         .arg(cfg.path())
         .args(["--dry-run", "--header", "X-Test: value"]);

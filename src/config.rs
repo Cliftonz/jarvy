@@ -327,6 +327,36 @@ pub struct Config {
     /// without manual setup. Same trust boundary as `[ai_hooks]`.
     #[serde(default, rename = "mcp_register")]
     pub mcp_register: Option<crate::mcp_register::McpRegisterConfig>,
+    /// Top-level `[packages]` trust knob. Mirrors `[ai_hooks]
+    /// allow_custom_commands` and `[mcp_register] allow_custom_servers`
+    /// for the package ecosystems. When `Config` is tagged
+    /// `ConfigOrigin::Remote` (loaded via `jarvy setup --from <url>`),
+    /// the package handlers refuse every `[npm]/[pip]/[cargo]/[nuget]`
+    /// entry unless this flag is explicitly set true. Defaults to
+    /// false — a remote config CANNOT broaden trust on its own.
+    #[serde(default)]
+    pub packages: PackagesTrustConfig,
+    /// Where this `Config` came from. Populated by `mark_remote()`
+    /// when the user supplies `--from <url>`. Drives the trust gate
+    /// for `[packages] allow_remote` and (legacy)
+    /// `mark_ai_hooks_remote`. Not serialized; `#[serde(skip)]`.
+    #[serde(skip)]
+    pub origin: crate::ai_hooks::ConfigOrigin,
+}
+
+/// Top-level `[packages]` block. Currently only carries the
+/// `allow_remote` opt-in trust knob; package-manager-specific config
+/// lives in `[npm]/[pip]/[cargo]/[nuget]` per the existing taxonomy.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct PackagesTrustConfig {
+    /// When true, allow `[npm]/[pip]/[cargo]/[nuget]` entries to flow
+    /// through from a remote-fetched config (`jarvy setup --from
+    /// <url>`). Defaults to false so a hostile / unvetted remote
+    /// config cannot install arbitrary global tools on the operator's
+    /// machine. Local configs ignore this flag — they're already
+    /// under the user's control.
+    #[serde(default)]
+    pub allow_remote: bool,
 }
 
 /// Canonical list of top-level section names that `jarvy.toml` may use.
@@ -355,6 +385,7 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "pip",
     "cargo",
     "nuget",
+    "packages",
     "git",
     "drift",
     "telemetry",
@@ -467,11 +498,16 @@ impl Config {
         toml::from_str::<Config>(toml_text)
     }
 
-    /// Tag the config's AI hooks block as remote-origin. Called by
-    /// `setup --from <url>` after loading the cached config so that
-    /// `runner::resolve` can refuse raw `command = "..."` entries from
-    /// untrusted sources.
-    pub fn mark_ai_hooks_remote(&mut self) {
+    /// Tag the config as remote-origin. Called by `setup --from <url>`
+    /// after loading the cached config so the runtime can refuse
+    /// privileged operations (raw `command = "..."` entries on AI
+    /// hooks, custom MCP servers, AND now `[npm]/[pip]/[cargo]/
+    /// [nuget]` entries unless `[packages] allow_remote = true`) from
+    /// untrusted sources. Remote configs can NARROW trust but cannot
+    /// BROADEN it — `allow_remote` is the only opt-in switch and it
+    /// must be set explicitly.
+    pub fn mark_remote(&mut self) {
+        self.origin = crate::ai_hooks::ConfigOrigin::Remote;
         if let Some(ref mut cfg) = self.ai_hooks {
             cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
         }
@@ -697,6 +733,8 @@ impl Config {
             pip: self.pip.as_ref(),
             cargo: self.cargo.as_ref(),
             nuget: self.nuget.as_ref(),
+            origin: self.origin,
+            allow_remote_packages: self.packages.allow_remote,
         }
     }
 
@@ -907,6 +945,8 @@ mod tests {
                 workspace: _,
                 ai_hooks: _,
                 mcp_register: _,
+                packages: _,
+                origin: _,
             } = c;
         }
 
@@ -928,6 +968,7 @@ mod tests {
             "pip",
             "cargo",
             "nuget",
+            "packages",
             "git",
             "drift",
             "telemetry",
