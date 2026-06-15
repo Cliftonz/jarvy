@@ -43,8 +43,10 @@ mod nuget;
 mod pip;
 
 pub use common::PackageError;
+#[allow(unused_imports)] // PackagesConfig retained for public lib re-export
 pub use config::{
-    CargoConfig, NpmConfig, NugetConfig, PackagesConfig, PackagesConfigRef, PipConfig,
+    CARGO_KNOBS, CargoConfig, NPM_KNOBS, NUGET_KNOBS, NpmConfig, NugetConfig, PIP_KNOBS,
+    PackagesConfig, PackagesConfigRef, PipConfig,
 };
 
 use cargo_pkg::CargoHandler;
@@ -62,13 +64,30 @@ pub fn install_packages(
     config: PackagesConfigRef<'_>,
     project_dir: &Path,
 ) -> Result<(), PackageError> {
+    // Telemetry gate read once at the top — used by every per-ecosystem
+    // branch below. Honors the user's opt-in.
+    let telemetry_on = crate::observability::telemetry_gate::is_enabled();
+
     // Install npm packages
     if let Some(npm_config) = config.npm {
         println!("\n  Installing npm packages...");
         let handler = NpmHandler::new(npm_config.clone(), project_dir.to_path_buf());
         if let Err(e) = handler.install() {
-            tracing::warn!(event = "packages.install_failed", ecosystem = "npm", error = %e);
-            eprintln!("  Warning: npm install failed: {}", e);
+            if telemetry_on {
+                tracing::warn!(
+                    event = "packages.install_failed",
+                    ecosystem = "npm",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
+            // Compact warning — the subprocess output already streamed
+            // live through `run_package_command`'s tee, and the error
+            // envelope itself carries the redacted tail. Don't re-print
+            // the tail through `e`'s Display because that's now the
+            // full envelope and would duplicate 4KB on the user's
+            // terminal.
+            eprintln!("  Warning: npm install failed (see output above)");
         }
     }
 
@@ -77,8 +96,15 @@ pub fn install_packages(
         println!("\n  Installing pip packages...");
         let handler = PipHandler::new(pip_config.clone(), project_dir.to_path_buf());
         if let Err(e) = handler.install() {
-            tracing::warn!(event = "packages.install_failed", ecosystem = "pip", error = %e);
-            eprintln!("  Warning: pip install failed: {}", e);
+            if telemetry_on {
+                tracing::warn!(
+                    event = "packages.install_failed",
+                    ecosystem = "pip",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
+            eprintln!("  Warning: pip install failed (see output above)");
         }
     }
 
@@ -87,8 +113,15 @@ pub fn install_packages(
         println!("\n  Installing cargo binaries...");
         let handler = CargoHandler::new(cargo_config.clone());
         if let Err(e) = handler.install() {
-            tracing::warn!(event = "packages.install_failed", ecosystem = "cargo", error = %e);
-            eprintln!("  Warning: cargo install failed: {}", e);
+            if telemetry_on {
+                tracing::warn!(
+                    event = "packages.install_failed",
+                    ecosystem = "cargo",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
+            eprintln!("  Warning: cargo install failed (see output above)");
         }
     }
 
@@ -97,8 +130,15 @@ pub fn install_packages(
         println!("\n  Installing .NET global tools...");
         let handler = NugetHandler::new(nuget_config.clone());
         if let Err(e) = handler.install() {
-            tracing::warn!(event = "packages.install_failed", ecosystem = "nuget", error = %e);
-            eprintln!("  Warning: nuget install failed: {}", e);
+            if telemetry_on {
+                tracing::warn!(
+                    event = "packages.install_failed",
+                    ecosystem = "nuget",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
+            eprintln!("  Warning: nuget install failed (see output above)");
         }
     }
 

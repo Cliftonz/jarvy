@@ -75,14 +75,26 @@ impl CargoHandler {
         }
 
         println!("    Installing {}...", name);
-        // Per-package telemetry — see nuget.rs for the rationale.
-        tracing::info!(
-            event = "package.requested",
+        // Per-package telemetry, gated on the opt-in. See nuget.rs
+        // for the gate rationale.
+        let telemetry_on = crate::observability::telemetry_gate::is_enabled();
+        if telemetry_on {
+            tracing::info!(
+                event = "package.requested",
+                ecosystem = "cargo",
+                package = %name,
+                version = %spec.version(),
+                source = "config",
+                platform = std::env::consts::OS,
+            );
+        }
+        let _pkg_span = tracing::info_span!(
+            "package",
             ecosystem = "cargo",
-            package = %name,
+            name = %name,
             version = %spec.version(),
-            platform = std::env::consts::OS,
-        );
+        )
+        .entered();
         let started = std::time::Instant::now();
 
         let mut args = vec!["install", name];
@@ -110,25 +122,36 @@ impl CargoHandler {
 
         match run_package_command("cargo", &args, working_dir) {
             Ok(()) => {
-                tracing::info!(
-                    event = "package.installed",
-                    ecosystem = "cargo",
-                    package = %name,
-                    version = %version,
-                    duration_ms = started.elapsed().as_millis() as u64,
-                    platform = std::env::consts::OS,
-                );
+                if telemetry_on {
+                    tracing::info!(
+                        event = "package.installed",
+                        ecosystem = "cargo",
+                        package = %name,
+                        version = %version,
+                        source = "config",
+                        duration_ms = started.elapsed().as_millis() as u64,
+                        platform = std::env::consts::OS,
+                    );
+                }
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(
-                    event = "package.failed",
-                    ecosystem = "cargo",
-                    package = %name,
-                    version = %version,
-                    error = %e,
-                    platform = std::env::consts::OS,
-                );
+                if telemetry_on {
+                    // warn! (advisory) — per-package failure does not
+                    // fail the run; the ecosystem-level event in
+                    // `install_packages` upgrades to `error!` when the
+                    // whole phase is broken.
+                    tracing::warn!(
+                        event = "package.failed",
+                        ecosystem = "cargo",
+                        package = %name,
+                        version = %version,
+                        source = "config",
+                        error_kind = e.kind(),
+                        error = %e,
+                        platform = std::env::consts::OS,
+                    );
+                }
                 Err(e)
             }
         }

@@ -6,8 +6,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Top-level packages configuration containing all package manager configs
+/// Top-level packages configuration containing all package manager configs.
+///
+/// Retained for the public lib re-export (`jarvy::PackagesConfig`) and
+/// for the `gem` / `go` ecosystems that don't have install handlers
+/// yet — the owned struct still carries them. Internal call sites
+/// should prefer `PackagesConfigRef<'_>` plus `Config::packages_ref()`.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[allow(dead_code)] // Public-lib API + placeholder for gem/go
 pub struct PackagesConfig {
     /// npm/yarn/pnpm package configuration
     pub npm: Option<NpmConfig>,
@@ -34,15 +40,6 @@ pub struct PackagesConfigRef<'a> {
     pub pip: Option<&'a PipConfig>,
     pub cargo: Option<&'a CargoConfig>,
     pub nuget: Option<&'a NugetConfig>,
-}
-
-impl<'a> PackagesConfigRef<'a> {
-    /// True if any package section is configured. Mirrors
-    /// `Config::has_packages` for ref-only contexts.
-    #[allow(dead_code)] // Public API for borrowed-packages-config callers
-    pub fn any_configured(&self) -> bool {
-        self.npm.is_some() || self.pip.is_some() || self.cargo.is_some() || self.nuget.is_some()
-    }
 }
 
 /// Package specification - either a simple version string or detailed config
@@ -182,6 +179,35 @@ pub struct CargoConfig {
     pub locked: bool,
 }
 
+// Canonical knob lists for `validate_package_section` — these are the
+// keys inside a `[npm]/[pip]/[cargo]/[nuget]` table that are config
+// options, NOT package names. Adding a new field to a `*Config` struct
+// without adding it here will be rejected at compile time by the
+// destructure tests below — the validator would otherwise refuse the
+// new knob as a hostile package name.
+
+/// Non-package keys in `[npm]`.
+pub const NPM_KNOBS: &[&str] = &["package_manager", "from_lockfile", "install_dev"];
+
+/// Non-package keys in `[pip]`.
+pub const PIP_KNOBS: &[&str] = &[
+    "venv",
+    "create_venv",
+    "from_lockfile",
+    "lockfile",
+    "activate_hint",
+    "system_site_packages",
+    "python_version",
+];
+
+/// Non-package keys in `[cargo]`.
+pub const CARGO_KNOBS: &[&str] = &["locked"];
+
+/// Non-package keys in `[nuget]`. Empty today — adding a knob to
+/// `NugetConfig` requires updating this slice too (the destructure
+/// test below catches the miss).
+pub const NUGET_KNOBS: &[&str] = &[];
+
 /// .NET global tool configuration (`dotnet tool install -g`).
 ///
 /// "NuGet" here covers the .NET tool ecosystem — CLI binaries published as
@@ -197,6 +223,7 @@ pub struct NugetConfig {
 
 /// gem/bundler Ruby package configuration (future)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[allow(dead_code)] // Reserved for future Ruby gem support; placeholder
 pub struct GemConfig {
     /// Individual gems with versions
     #[serde(flatten)]
@@ -205,6 +232,7 @@ pub struct GemConfig {
 
 /// go modules configuration (future)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[allow(dead_code)] // Reserved for future Go binary support; placeholder
 pub struct GoConfig {
     /// Individual go binaries to install
     #[serde(flatten)]
@@ -218,6 +246,122 @@ fn default_true() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ===== knob-list drift guards =====
+    //
+    // Mirror the `TOP_LEVEL_SECTIONS` destructure pattern in `config.rs`.
+    // If anyone adds a non-`#[serde(flatten)]` field to a `*Config`
+    // without updating the matching `*_KNOBS` slice, these tests fail
+    // to compile because the destructure is missing the new binding.
+    // The fix points the developer at both the struct AND the slice
+    // in one step, preventing the "validator rejects legitimate knob
+    // as hostile package name" class of bug.
+
+    /// `PackagesConfigRef` deliberately borrows only the four ecosystems
+    /// that have working install handlers today (`npm/pip/cargo/nuget`).
+    /// `PackagesConfig` also carries `gem` and `go` for future use. This
+    /// test asserts the asymmetry is intentional — if a sixth ecosystem
+    /// gets a handler, both destructures must be updated together (the
+    /// owned-struct one will simply fail to compile because it gains
+    /// a new field). The ref-struct destructure failing to compile
+    /// signals "you added a ref field but forgot to wire it from
+    /// `Config::packages_ref()`."
+    #[test]
+    fn packages_ref_field_set_intentionally_skips_gem_and_go() {
+        fn _enforce_owned(c: PackagesConfig) {
+            let PackagesConfig {
+                npm: _,
+                pip: _,
+                cargo: _,
+                nuget: _,
+                gem: _,
+                go: _,
+            } = c;
+        }
+        fn _enforce_ref(r: PackagesConfigRef<'_>) {
+            let PackagesConfigRef {
+                npm: _,
+                pip: _,
+                cargo: _,
+                nuget: _,
+            } = r;
+        }
+    }
+
+    #[test]
+    fn npm_knobs_match_npm_config_fields() {
+        fn _enforce(c: NpmConfig) {
+            let NpmConfig {
+                packages: _,
+                package_manager: _,
+                from_lockfile: _,
+                install_dev: _,
+            } = c;
+        }
+        for k in ["package_manager", "from_lockfile", "install_dev"] {
+            assert!(
+                NPM_KNOBS.contains(&k),
+                "NpmConfig has knob `{}` but NPM_KNOBS is missing it",
+                k
+            );
+        }
+    }
+
+    #[test]
+    fn pip_knobs_match_pip_config_fields() {
+        fn _enforce(c: PipConfig) {
+            let PipConfig {
+                packages: _,
+                venv: _,
+                create_venv: _,
+                from_lockfile: _,
+                lockfile: _,
+                activate_hint: _,
+                system_site_packages: _,
+                python_version: _,
+            } = c;
+        }
+        for k in [
+            "venv",
+            "create_venv",
+            "from_lockfile",
+            "lockfile",
+            "activate_hint",
+            "system_site_packages",
+            "python_version",
+        ] {
+            assert!(
+                PIP_KNOBS.contains(&k),
+                "PipConfig has knob `{}` but PIP_KNOBS is missing it",
+                k
+            );
+        }
+    }
+
+    #[test]
+    fn cargo_knobs_match_cargo_config_fields() {
+        fn _enforce(c: CargoConfig) {
+            let CargoConfig {
+                packages: _,
+                locked: _,
+            } = c;
+        }
+        assert!(
+            CARGO_KNOBS.contains(&"locked"),
+            "CargoConfig has knob `locked` but CARGO_KNOBS is missing it"
+        );
+    }
+
+    #[test]
+    fn nuget_knobs_match_nuget_config_fields() {
+        fn _enforce(c: NugetConfig) {
+            let NugetConfig { packages: _ } = c;
+        }
+        // NUGET_KNOBS is intentionally empty today. When/if a knob is
+        // added, both the destructure above AND NUGET_KNOBS must be
+        // updated together.
+        assert!(NUGET_KNOBS.is_empty(), "NugetConfig has no knobs yet");
+    }
 
     #[test]
     fn test_parse_simple_npm_config() {

@@ -46,6 +46,25 @@ pub enum PackageError {
     RefusedUnsafeSpec(String, String),
 }
 
+impl PackageError {
+    /// Stable discriminant for telemetry. The `Display` form may
+    /// embed user-controlled content (package names, file paths,
+    /// subprocess stderr); this returns a fixed string so dashboards
+    /// can group by error class without parsing free text. Mirrors
+    /// the pattern set by `AiHookError::kind()`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            PackageError::PackageManagerNotInstalled(_) => "package_manager_not_installed",
+            PackageError::LockfileNotFound(_) => "lockfile_not_found",
+            PackageError::CommandFailed(_) => "command_failed",
+            PackageError::Io(_) => "io",
+            PackageError::VenvCreationFailed(_) => "venv_creation_failed",
+            PackageError::InstallFailed(_) => "install_failed",
+            PackageError::RefusedUnsafeSpec(_, _) => "refused_unsafe_spec",
+        }
+    }
+}
+
 /// Validate a package name (`[npm]/[pip]/[cargo]` key) before passing it as
 /// a positional arg. Rejects:
 /// - empty
@@ -179,31 +198,40 @@ pub fn validate_package_version(version: &str, purpose: &'static str) -> Result<
 
 /// Run a package manager command with the given arguments.
 ///
-/// Captures both stdout and stderr so failure messages carry the tail
-/// of what the underlying tool actually said — without that, a user
-/// support ticket for "setup hung" or "setup failed" arrives with
-/// nothing more than an exit code, and the operator has to ask the
-/// user to re-run with `--verbose`. Stdout still streams to the user's
-/// terminal in real-time via the inherited handle below; the captured
-/// copy is only used to build the error envelope.
+/// Pipes the subprocess's stdout and stderr through reader threads so
+/// the operator sees output in real time (cargo install dep-graph
+/// resolution, npm peer-dep warnings, etc.) without buffering the
+/// whole subprocess output in memory. Each reader tees its stream to
+/// the parent handle AND into a bounded 4KB ring buffer; on non-zero
+/// exit the stderr ring is sanitized via `redact_for_display` and
+/// surfaced both in the `PackageError::CommandFailed` envelope and a
+/// `package_command.failed` tracing event.
 ///
-/// `STDERR_TAIL_BYTES` is small enough that hostile output (a
-/// runaway compiler dumping MB) can't OOM the process or pollute logs
-/// indefinitely.
+/// Memory is bounded by `STDERR_TAIL_BYTES * 2` regardless of how
+/// chatty the subprocess is. Redaction protects against (a) hostile
+/// post-install scripts dumping ANSI / OSC into the operator's logs,
+/// and (b) a compromised registry mirror leaking control bytes
+/// through the deferred error path.
 pub fn run_package_command(
     cmd: &str,
     args: &[&str],
     working_dir: &Path,
 ) -> Result<(), PackageError> {
+    use std::io::{BufReader, Read, Write};
+    use std::process::Stdio;
+    use std::sync::Mutex;
+
     const STDERR_TAIL_BYTES: usize = 4 * 1024;
 
     let display_cmd = format!("{} {}", cmd, args.join(" "));
     println!("    Running: {}", display_cmd);
 
-    let output = Command::new(cmd)
+    let mut child = Command::new(cmd)
         .args(args)
         .current_dir(working_dir)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 PackageError::PackageManagerNotInstalled(cmd.to_string())
@@ -212,55 +240,130 @@ pub fn run_package_command(
             }
         })?;
 
-    // Stream the captured stdout/stderr back through so the operator
-    // still sees what the package manager said in real time. Order
-    // matches what `inherit` would have shown.
-    if !output.stdout.is_empty() {
-        use std::io::Write;
-        let _ = std::io::stdout().write_all(&output.stdout);
-    }
-    if !output.stderr.is_empty() {
-        use std::io::Write;
-        let _ = std::io::stderr().write_all(&output.stderr);
-    }
+    let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
 
-    if !output.status.success() {
-        // Tail the last N bytes of stderr (or stdout if stderr is
-        // empty) for the error envelope. Trims trailing newlines so
-        // the formatted message stays single-paragraph.
-        let raw = if output.stderr.is_empty() {
-            &output.stdout
-        } else {
-            &output.stderr
-        };
-        let start = raw.len().saturating_sub(STDERR_TAIL_BYTES);
-        let tail = String::from_utf8_lossy(&raw[start..]).trim().to_string();
+    // Shared ring buffer for stderr. The stdout ring is purely
+    // pass-through (we don't surface stdout in the error envelope —
+    // tools like cargo/npm route real errors to stderr).
+    let stderr_ring: Mutex<RingTail> = Mutex::new(RingTail::new(STDERR_TAIL_BYTES));
 
-        tracing::warn!(
-            event = "package_command.failed",
-            cmd = %cmd,
-            exit_code = output.status.code().unwrap_or(-1),
-            stderr_tail = %tail,
-        );
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            let mut reader = BufReader::new(stdout);
+            let mut sink = std::io::stdout().lock();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                let _ = sink.write_all(&buf[..n]);
+            }
+        });
+        s.spawn(|| {
+            let mut reader = BufReader::new(stderr);
+            let mut sink = std::io::stderr().lock();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                let _ = sink.write_all(&buf[..n]);
+                if let Ok(mut ring) = stderr_ring.lock() {
+                    ring.extend(&buf[..n]);
+                }
+            }
+        });
+    });
 
-        let message = if tail.is_empty() {
+    let status = child.wait().map_err(PackageError::Io)?;
+
+    if !status.success() {
+        let tail_bytes = stderr_ring
+            .into_inner()
+            .unwrap_or_else(|e| e.into_inner())
+            .into_bytes();
+        let raw_tail = String::from_utf8_lossy(&tail_bytes);
+        let trimmed = raw_tail.trim();
+        let safe_tail = crate::observability::sanitizer::redact_for_display(trimmed);
+
+        // Emit the structured event only when telemetry is opted in;
+        // the captured tail can otherwise carry user-sensitive
+        // package-manager output to OTLP without consent.
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "package_command.failed",
+                cmd = %cmd,
+                exit_code = status.code().unwrap_or(-1),
+                stderr_tail = %safe_tail,
+            );
+        }
+
+        let message = if safe_tail.is_empty() {
             format!(
                 "'{}' exited with status {}",
                 display_cmd,
-                output.status.code().unwrap_or(-1)
+                status.code().unwrap_or(-1)
             )
         } else {
             format!(
                 "'{}' exited with status {}\n--- last output ---\n{}",
                 display_cmd,
-                output.status.code().unwrap_or(-1),
-                tail
+                status.code().unwrap_or(-1),
+                safe_tail
             )
         };
         return Err(PackageError::CommandFailed(message));
     }
 
     Ok(())
+}
+
+/// Fixed-size byte ring that retains the last `cap` bytes pushed.
+/// Bounded memory regardless of subprocess output size.
+struct RingTail {
+    buf: Vec<u8>,
+    cap: usize,
+    start: usize,
+    len: usize,
+}
+
+impl RingTail {
+    fn new(cap: usize) -> Self {
+        Self {
+            buf: vec![0u8; cap],
+            cap,
+            start: 0,
+            len: 0,
+        }
+    }
+
+    fn extend(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.push(b);
+        }
+    }
+
+    fn push(&mut self, b: u8) {
+        if self.cap == 0 {
+            return;
+        }
+        if self.len < self.cap {
+            self.buf[(self.start + self.len) % self.cap] = b;
+            self.len += 1;
+        } else {
+            self.buf[self.start] = b;
+            self.start = (self.start + 1) % self.cap;
+        }
+    }
+
+    fn into_bytes(self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.len);
+        for i in 0..self.len {
+            out.push(self.buf[(self.start + i) % self.cap]);
+        }
+        out
+    }
 }
 
 /// Check if a command is available in PATH.

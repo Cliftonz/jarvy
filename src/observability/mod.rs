@@ -13,6 +13,7 @@ pub mod logging;
 pub mod network_trace;
 pub mod profiler;
 pub mod sanitizer;
+pub mod telemetry_gate;
 
 // Public API exports - some may not be used internally but are part of the module's interface
 #[allow(unused_imports)]
@@ -30,7 +31,7 @@ pub use logging::{LogConfig, LogFormat, LogLevel};
 pub(crate) use network_trace::{DomainStats, NetworkSummary, NetworkTiming, NetworkTracer};
 #[allow(unused_imports)]
 pub(crate) use profiler::{PhaseTiming, ProfileReport, Profiler};
-pub use sanitizer::Sanitizer;
+pub use sanitizer::{Sanitizer, redact_for_display};
 
 /// Global observability configuration
 #[derive(Debug, Clone, Default)]

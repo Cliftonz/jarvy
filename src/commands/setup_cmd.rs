@@ -937,8 +937,16 @@ where
         "[DRY-RUN] Would install {} {}{} ({})",
         count, label, command_hint, scope_label
     );
+    // Sanitize package names before printing — a hostile `jarvy.toml`
+    // can land ANSI / OSC / Trojan-Source bidi sequences in TOML quoted
+    // keys; the dry-run preview is the path operators trust as "safe to
+    // inspect untrusted configs," so this is the trust boundary, not
+    // the install loop.
     for name in names {
-        println!("[DRY-RUN]   - {}", name);
+        println!(
+            "[DRY-RUN]   - {}",
+            crate::observability::redact_for_display(name)
+        );
     }
 }
 
@@ -953,9 +961,7 @@ where
 /// structured events so `jarvy ticket` bundles show whether dry-run was
 /// honored even when stdout was redirected.
 fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
-    if !config.has_packages() {
-        return;
-    }
+    let telemetry_on = crate::observability::telemetry_gate::is_enabled();
     let packages_ref = config.packages_ref();
     let project_dir = std::path::Path::new(file)
         .parent()
@@ -978,15 +984,33 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
     )
     .entered();
 
-    tracing::info!(
-        event = "packages.phase_started",
-        dry_run,
-        backend_count,
-        npm = has_npm,
-        pip = has_pip,
-        cargo = has_cargo,
-        nuget = has_nuget,
-    );
+    // Emit phase_started BEFORE the early return so an operator
+    // querying "did dry-run reach the packages phase?" can answer from
+    // logs alone (Obs F8) — without this, a config with zero
+    // `[npm]/[pip]/[cargo]/[nuget]` blocks was indistinguishable from
+    // a mid-phase crash.
+    if telemetry_on {
+        tracing::info!(
+            event = "packages.phase_started",
+            dry_run,
+            backend_count,
+            npm = has_npm,
+            pip = has_pip,
+            cargo = has_cargo,
+            nuget = has_nuget,
+        );
+    }
+
+    if !config.has_packages() {
+        if telemetry_on {
+            tracing::info!(
+                event = "packages.phase_skipped",
+                reason = "no_packages_configured",
+                dry_run,
+            );
+        }
+        return;
+    }
 
     let started = std::time::Instant::now();
 
@@ -995,13 +1019,18 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
         // Structured event so CI / log scrapers can verify dry-run was
         // honored without parsing stdout. Carries the package counts
         // per ecosystem so dashboards can graph dry-run preview volume.
-        tracing::info!(
-            event = "packages.dry_run",
-            npm_count = packages_ref.npm.map(|c| c.packages.len()).unwrap_or(0),
-            pip_count = packages_ref.pip.map(|c| c.packages.len()).unwrap_or(0),
-            cargo_count = packages_ref.cargo.map(|c| c.packages.len()).unwrap_or(0),
-            nuget_count = packages_ref.nuget.map(|c| c.packages.len()).unwrap_or(0),
-        );
+        // Renamed from `packages.dry_run` to follow the
+        // `<domain>.<verb_past_tense>` convention used by the rest of
+        // the taxonomy (Obs F5).
+        if telemetry_on {
+            tracing::info!(
+                event = "packages.phase_previewed",
+                npm_count = packages_ref.npm.map(|c| c.packages.len()).unwrap_or(0),
+                pip_count = packages_ref.pip.map(|c| c.packages.len()).unwrap_or(0),
+                cargo_count = packages_ref.cargo.map(|c| c.packages.len()).unwrap_or(0),
+                nuget_count = packages_ref.nuget.map(|c| c.packages.len()).unwrap_or(0),
+            );
+        }
         // Symmetric preview across all four ecosystems: announce the
         // count + scope label, then list each package by name so the
         // operator can review what will land BEFORE the real run.
@@ -1038,20 +1067,30 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
     } else {
         println!("\n=== Installing Package Dependencies ===");
         if let Err(e) = packages::install_packages(packages_ref, project_dir) {
-            tracing::warn!(
-                event = "packages.install_failed",
-                error = %e,
-            );
+            // Ecosystem-level failure is `error!` (the entire phase
+            // is broken — e.g. venv creation failed before any
+            // package was attempted). Per-package failures stay
+            // `warn!` in cargo_pkg/nuget. (Obs F7 — level inversion
+            // fix.)
+            if telemetry_on {
+                tracing::error!(
+                    event = "packages.install_failed",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
             eprintln!("Warning: Package installation failed: {}", e);
         }
     }
 
-    tracing::info!(
-        event = "packages.phase_completed",
-        dry_run,
-        backend_count,
-        duration_ms = started.elapsed().as_millis() as u64,
-    );
+    if telemetry_on {
+        tracing::info!(
+            event = "packages.phase_completed",
+            dry_run,
+            backend_count,
+            duration_ms = started.elapsed().as_millis() as u64,
+        );
+    }
 }
 
 /// Apply `[git]` configuration (user identity, signing, aliases, line

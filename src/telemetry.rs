@@ -320,7 +320,14 @@ struct Metrics {
 
 /// Initialize telemetry with the given configuration
 pub fn init(config: TelemetryConfig) {
+    // Mirror the opt-in state into the lib-visible gate so modules
+    // declared by `lib.rs` (`src/packages/*`, etc.) can check the
+    // consent flag without reaching `crate::telemetry::is_enabled`,
+    // which is bin-only. See `observability::telemetry_gate` for the
+    // visibility-wall rationale.
+    let enabled = config.is_enabled();
     let _ = TELEMETRY.set(build_telemetry_state(config));
+    crate::observability::telemetry_gate::set_enabled(enabled);
 }
 
 /// Initialize telemetry from environment variables

@@ -287,7 +287,10 @@ fn validate_structure(parsed: &toml::Value, content: &str, issues: &mut Vec<Vali
             if !known_keys.contains(&key.as_str()) {
                 issues.push(ValidationIssue {
                     severity: Severity::Warning,
-                    message: format!("Unknown configuration section: [{}]", key),
+                    message: format!(
+                        "Unknown configuration section: [{}]",
+                        crate::observability::redact_for_display(key)
+                    ),
                     line: find_key_line(content, key),
                     suggestion: Some(format!("Valid sections: {}", valid_sections)),
                 });
@@ -572,22 +575,13 @@ fn validate_package_section(
     issues: &mut Vec<ValidationIssue>,
 ) {
     use crate::packages::common::{validate_package_name, validate_package_version};
+    use crate::packages::{CARGO_KNOBS, NPM_KNOBS, NUGET_KNOBS, PIP_KNOBS};
 
-    // Reserved knob names per section. Keep in lockstep with the
-    // non-`#[serde(flatten)]` fields on each *Config struct.
-    const NPM_KNOBS: &[&str] = &["package_manager", "from_lockfile", "install_dev"];
-    const PIP_KNOBS: &[&str] = &[
-        "venv",
-        "create_venv",
-        "from_lockfile",
-        "lockfile",
-        "activate_hint",
-        "system_site_packages",
-        "python_version",
-    ];
-    const CARGO_KNOBS: &[&str] = &["locked"];
-    const NUGET_KNOBS: &[&str] = &[];
-
+    // Knob lists live on `crate::packages::config` and are pinned by
+    // destructure tests against their owning `*Config` struct, so
+    // adding a field to e.g. `NugetConfig` without updating
+    // `NUGET_KNOBS` fails to compile rather than silently making the
+    // validator reject the new knob as a hostile package name.
     let knobs: &[&str] = match section {
         "npm" => NPM_KNOBS,
         "pip" => PIP_KNOBS,
@@ -626,7 +620,12 @@ fn validate_package_section(
         {
             issues.push(ValidationIssue {
                 severity: Severity::Error,
-                message: format!("Refused {} version for `{}`: {}", purpose, key, e),
+                message: format!(
+                    "Refused {} version for `{}`: {}",
+                    purpose,
+                    crate::observability::redact_for_display(key),
+                    e
+                ),
                 line: None,
                 suggestion: None,
             });

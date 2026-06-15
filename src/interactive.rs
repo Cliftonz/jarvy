@@ -91,12 +91,13 @@ pub fn user_select() {
         "Test the project".to_string(),
         "Development environment setup".to_string(),
     ];
-    let mut extra_keys: Vec<&str> = commands_config
-        .extras
-        .keys()
-        .map(String::as_str)
-        .filter(|k| !matches!(*k, "run" | "test" | "setup"))
-        .collect();
+    // `serde(flatten)` routes `run`/`test`/`setup` to the named fields
+    // before `extras` ever sees them, so the previous `.filter(...)`
+    // here was dead defensive code. All entries in `extras` are by
+    // construction "other" keys; sanitization (`sanitize_extras_keys`)
+    // has already removed control bytes / Trojan-Source chars so the
+    // label is safe to embed verbatim.
+    let mut extra_keys: Vec<&str> = commands_config.extras.keys().map(String::as_str).collect();
     extra_keys.sort_unstable();
     for k in &extra_keys {
         options.push(format!("Run `{}`", k));
@@ -157,9 +158,36 @@ fn load_commands_config() -> CommandsConfig {
         #[serde(default)]
         commands: CommandsConfig,
     }
-    toml::from_str::<Partial>(&contents)
+    let mut cfg = toml::from_str::<Partial>(&contents)
         .map(|p| p.commands)
-        .unwrap_or_default()
+        .unwrap_or_default();
+    sanitize_extras_keys(&mut cfg);
+    cfg
+}
+
+/// Refuse `[commands]` extras keys that would compromise the interactive
+/// menu. TOML quoted keys preserve arbitrary Unicode including ANSI
+/// escape sequences, bidi overrides (Trojan Source), and zero-width
+/// characters — a hostile `jarvy.toml` could ship two visually-identical
+/// menu entries (one safe, one `rm -rf $HOME`) and trick the user into
+/// picking the wrong one.
+///
+/// Allowlist: ASCII alphanumeric + `-` `_` `:` `.` — the natural shape
+/// of command-script names like `build`, `migrate`, `format:check`,
+/// `publish.release`. Refused keys are dropped silently (no menu entry
+/// appears) and the count is reported via tracing.
+fn sanitize_extras_keys(cfg: &mut CommandsConfig) {
+    let before = cfg.extras.len();
+    cfg.extras
+        .retain(|k, _| !k.is_empty() && k.chars().all(is_safe_extras_char));
+    let removed = before - cfg.extras.len();
+    if removed > 0 {
+        tracing::warn!(event = "commands.extras_refused_keys", count = removed,);
+    }
+}
+
+fn is_safe_extras_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.')
 }
 
 /// Default `run` command. Single source of truth so the SAFE_DEFAULTS check

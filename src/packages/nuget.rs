@@ -77,41 +77,68 @@ impl NugetHandler {
         validate_package_version(spec.version(), "[nuget]")?;
 
         println!("    Installing {}...", name);
-        // Emit per-package events through tracing directly — the
-        // subscriber decides whether to forward to OTLP, file, console,
-        // or all three. Mirrors the `tool.requested/installed/failed`
-        // taxonomy but scoped to language packages.
-        tracing::info!(
-            event = "package.requested",
-            ecosystem = "nuget",
-            package = %name,
-            version = %spec.version(),
-            platform = std::env::consts::OS,
-        );
+        // Emit per-package events through `tracing` directly, but only
+        // when the user has opted into telemetry. `observability::
+        // telemetry_gate` is populated by `telemetry::init` at startup
+        // and gives lib-side modules a way to honor the opt-in without
+        // reaching the bin-only `crate::telemetry::is_enabled()`. The
+        // gate prevents `package.*` events from leaking to a
+        // user-configured OTLP endpoint when `telemetry.enabled =
+        // false` — the prior round emitted unconditionally and broke
+        // the documented opt-in contract.
+        let telemetry_on = crate::observability::telemetry_gate::is_enabled();
+        if telemetry_on {
+            tracing::info!(
+                event = "package.requested",
+                ecosystem = "nuget",
+                package = %name,
+                version = %spec.version(),
+                source = "config",
+                platform = std::env::consts::OS,
+            );
+        }
         let started = std::time::Instant::now();
 
         let args = build_install_args(name, spec.version());
+        let _pkg_span = tracing::info_span!(
+            "package",
+            ecosystem = "nuget",
+            name = %name,
+            version = %spec.version(),
+        )
+        .entered();
         match run_package_command("dotnet", &args, working_dir) {
             Ok(()) => {
-                tracing::info!(
-                    event = "package.installed",
-                    ecosystem = "nuget",
-                    package = %name,
-                    version = %spec.version(),
-                    duration_ms = started.elapsed().as_millis() as u64,
-                    platform = std::env::consts::OS,
-                );
+                if telemetry_on {
+                    tracing::info!(
+                        event = "package.installed",
+                        ecosystem = "nuget",
+                        package = %name,
+                        version = %spec.version(),
+                        source = "config",
+                        duration_ms = started.elapsed().as_millis() as u64,
+                        platform = std::env::consts::OS,
+                    );
+                }
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(
-                    event = "package.failed",
-                    ecosystem = "nuget",
-                    package = %name,
-                    version = %spec.version(),
-                    error = %e,
-                    platform = std::env::consts::OS,
-                );
+                // Demoted from `error!` to `warn!`: per-package
+                // failures are advisory (setup continues). The whole
+                // ecosystem failing is the actually-pager-worthy
+                // event and that one stays `error!` in `mod.rs`.
+                if telemetry_on {
+                    tracing::warn!(
+                        event = "package.failed",
+                        ecosystem = "nuget",
+                        package = %name,
+                        version = %spec.version(),
+                        source = "config",
+                        error_kind = e.kind(),
+                        error = %e,
+                        platform = std::env::consts::OS,
+                    );
+                }
                 Err(e)
             }
         }

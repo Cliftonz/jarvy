@@ -328,6 +328,60 @@ impl Sanitizer {
     }
 }
 
+/// Strip characters that can alter terminal display or break log
+/// parsers: ASCII control bytes (C0 + DEL), the C1 control range
+/// (U+0080-U+009F — some terminals interpret these as CSI introducers),
+/// bidi overrides and zero-width format chars
+/// (U+200B-U+200F, U+202A-U+202E — the "Trojan Source" CVE-2021-42574
+/// vector and visual-spoofing zero-width chars), and line/paragraph
+/// separators (U+2028/U+2029 — some terminals + log parsers treat as
+/// newlines).
+///
+/// Returns `Cow::Borrowed` on the fast path (no offending chars). The
+/// owned-path replacement is `?` so the output is fixed-width and the
+/// substitution itself is visible in operator output.
+///
+/// Use this anywhere user-controlled (hostile-jarvy.toml-reachable)
+/// strings reach stdout/stderr or a tracing field that may forward to
+/// OTLP — package names, version specs, validator error messages,
+/// subprocess stderr tails, interactive-menu labels.
+pub fn redact_for_display(s: &str) -> Cow<'_, str> {
+    if !s.chars().any(is_display_unsafe) {
+        return Cow::Borrowed(s);
+    }
+    Cow::Owned(s.chars().map(replace_unsafe).collect())
+}
+
+/// True if `c` would alter terminal display or fool a reader.
+fn is_display_unsafe(c: char) -> bool {
+    // ASCII C0 controls except tab (U+0009) — tab is legitimate in
+    // many tool outputs. Newline (U+000A) and carriage return (U+000D)
+    // ARE flagged: they can let an attacker inject fake log lines.
+    if c.is_ascii_control() && c != '\t' {
+        return true;
+    }
+    let code = c as u32;
+    matches!(
+        code,
+        // C1 controls
+        0x80..=0x9F
+        // Zero-width / format chars
+        | 0x200B..=0x200F
+        // Bidi overrides — Trojan Source
+        | 0x202A..=0x202E
+        // Line / paragraph separators
+        | 0x2028 | 0x2029
+        // Word joiner / invisible operators
+        | 0x2060..=0x2064
+        // Byte order mark / function application
+        | 0xFEFF
+    )
+}
+
+fn replace_unsafe(c: char) -> char {
+    if is_display_unsafe(c) { '?' } else { c }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -540,5 +594,94 @@ mod tests {
         let s = Sanitizer::new();
         let out = s.sanitize("/Users/alice/.gnupg/secring.gpg");
         assert!(out.contains("GNUPG_PATH_REDACTED"), "got {out:?}");
+    }
+
+    #[test]
+    fn redact_for_display_fast_path_borrows() {
+        let safe = "dotnet-ef 1.2.3 (latest)";
+        match redact_for_display(safe) {
+            Cow::Borrowed(s) => assert_eq!(s, safe),
+            Cow::Owned(_) => panic!("safe string should borrow, not clone"),
+        }
+    }
+
+    #[test]
+    fn redact_for_display_strips_c0_controls() {
+        // ESC, BEL, NUL, DEL, LF, CR — every C0 control byte except tab.
+        for (input, label) in [
+            ("\u{1b}[2J\u{1b}[Hwiped", "ESC clear-screen"),
+            ("name\u{07}beep", "BEL"),
+            ("name\u{00}rest", "NUL splitter"),
+            ("name\u{7f}", "DEL"),
+            ("line1\nfake-log-line", "LF injection"),
+            ("line1\rfake", "CR overwrite"),
+        ] {
+            let out = redact_for_display(input);
+            assert!(matches!(out, Cow::Owned(_)), "{}: expected owned", label);
+            assert!(
+                !out.chars().any(|c| c.is_ascii_control() && c != '\t'),
+                "{}: result still contains control byte: {:?}",
+                label,
+                out
+            );
+        }
+        // Tab survives — legitimate in lots of CLI output.
+        assert_eq!(redact_for_display("a\tb"), Cow::Borrowed("a\tb"));
+    }
+
+    #[test]
+    fn redact_for_display_strips_c1_controls() {
+        // U+0085 NEL, U+009B CSI, U+0080 PAD.
+        for codepoint in [0x80u32, 0x85, 0x9B, 0x9F] {
+            let c = char::from_u32(codepoint).unwrap();
+            let input = format!("safe{}evil", c);
+            let out = redact_for_display(&input);
+            assert!(
+                matches!(out, Cow::Owned(_)),
+                "C1 U+{:04X} should be redacted",
+                codepoint
+            );
+            assert!(
+                !out.contains(c),
+                "C1 U+{:04X} survived redaction",
+                codepoint
+            );
+        }
+    }
+
+    #[test]
+    fn redact_for_display_strips_trojan_source_chars() {
+        // U+202E RTL override is the CVE-2021-42574 vector. ZWSP /
+        // ZWJ are visual-spoofing chars.
+        for (codepoint, label) in [
+            (0x202Eu32, "RTL override"),
+            (0x202D, "LTR override"),
+            (0x200B, "ZWSP"),
+            (0x200E, "LRM"),
+            (0x2060, "word joiner"),
+            (0xFEFF, "BOM"),
+        ] {
+            let c = char::from_u32(codepoint).unwrap();
+            let input = format!("csharpier{}EVIL", c);
+            let out = redact_for_display(&input);
+            assert!(matches!(out, Cow::Owned(_)), "{} should be redacted", label);
+            assert!(!out.contains(c), "{} survived redaction", label);
+        }
+    }
+
+    #[test]
+    fn redact_for_display_strips_line_separators() {
+        // U+2028 line sep, U+2029 paragraph sep — some terminals + log
+        // parsers treat as newlines.
+        for codepoint in [0x2028u32, 0x2029] {
+            let c = char::from_u32(codepoint).unwrap();
+            let input = format!("safe{}fake-log", c);
+            let out = redact_for_display(&input);
+            assert!(
+                matches!(out, Cow::Owned(_)),
+                "U+{:04X} should be redacted",
+                codepoint
+            );
+        }
     }
 }

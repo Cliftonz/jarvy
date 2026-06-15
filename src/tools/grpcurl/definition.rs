@@ -42,5 +42,22 @@ mod tests {
             Some("fullstorydev.grpcurl"),
             "winget id must be the canonical lowercase fullstorydev.grpcurl, not FullStory.grpcurl"
         );
+        // Linux: pin the uniform package name across every supported
+        // package manager. A distro rename would otherwise silently
+        // break `jarvy setup` on Linux.
+        let linux = GRPCURL.linux.expect("grpcurl must support Linux");
+        for (label, slot) in [
+            ("apt", linux.apt),
+            ("dnf", linux.dnf),
+            ("pacman", linux.pacman),
+            ("apk", linux.apk),
+        ] {
+            assert_eq!(
+                slot,
+                Some("grpcurl"),
+                "linux {} package must remain `grpcurl`",
+                label
+            );
+        }
     }
 }

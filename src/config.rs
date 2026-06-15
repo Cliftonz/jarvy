@@ -700,21 +700,6 @@ impl Config {
         }
     }
 
-    /// Get the packages configuration for npm/pip/cargo/nuget as an
-    /// owned struct. Prefer `packages_ref` for read-only access — this
-    /// clones every HashMap.
-    #[allow(dead_code)] // Retained for callers that need ownership
-    pub fn get_packages_config(&self) -> crate::packages::PackagesConfig {
-        crate::packages::PackagesConfig {
-            npm: self.npm.clone(),
-            pip: self.pip.clone(),
-            cargo: self.cargo.clone(),
-            nuget: self.nuget.clone(),
-            gem: None,
-            go: None,
-        }
-    }
-
     /// Check if any packages are configured
     pub fn has_packages(&self) -> bool {
         self.npm.is_some() || self.pip.is_some() || self.cargo.is_some() || self.nuget.is_some()
