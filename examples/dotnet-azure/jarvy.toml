@@ -1,0 +1,59 @@
+# ASP.NET Core + Azure cloud-native toolkit
+# Run: jarvy setup
+#
+# Template for a .NET app that deploys to Azure: ASP.NET Core API or
+# web app, Bicep for infrastructure, Azure Developer CLI (`azd`) for
+# the provision/deploy workflow, GitVersion for CI semver, plus the
+# standard .NET global tools.
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+dotnet = "latest"
+docker = "latest"
+jq = "latest"
+ripgrep = "latest"
+httpie = "latest"
+gh = "latest"
+azure_cli = "latest"
+azd = "latest"
+bicep = "latest"
+gitversion = "latest"
+
+# .NET global tools — installed via `dotnet tool install -g`.
+[nuget]
+dotnet-ef = "latest"
+csharpier = "latest"
+dotnet-format = "latest"
+dotnet-outdated-tool = "latest"
+
+[hooks]
+post_setup = """
+dotnet restore
+dotnet dev-certs https --trust 2>/dev/null || true
+echo 'Azure-ready: `azd auth login`, then `azd up` to provision + deploy.'
+"""
+
+[env.vars]
+ASPNETCORE_ENVIRONMENT = "Development"
+# DOTNET_CLI_TELEMETRY_OPTOUT + DOTNET_NOLOGO set globally by dotnet default_hook.
+
+[commands]
+run = "dotnet run"
+test = "dotnet test"
+build = "dotnet build -c Release"
+format = "dotnet csharpier ."
+migrate = "dotnet ef database update"
+# Azure Developer CLI canonical flow:
+provision = "azd provision"
+deploy = "azd deploy"
+up = "azd up"
+# Bicep compile (Azure CLI does this too via `az bicep build`):
+bicep-build = "bicep build main.bicep"
+
+[drift]
+enabled = true
+version_policy = "minor"
+track_files = ["global.json", "Directory.Packages.props", "*.csproj", "*.bicep", "azure.yaml"]

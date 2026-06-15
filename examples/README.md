@@ -41,6 +41,8 @@ cp examples/<template>/jarvy.toml /path/to/your/project/
 | [`dotnet-worker/`](dotnet-worker/jarvy.toml) | .NET Worker Service (queue / scheduler / daemon) |
 | [`dotnet-grpc/`](dotnet-grpc/jarvy.toml) | ASP.NET Core gRPC service (with grpcurl) |
 | [`dotnet-mvc/`](dotnet-mvc/jarvy.toml) | ASP.NET Core MVC web app (Razor views + EF Core) |
+| [`dotnet-azure/`](dotnet-azure/jarvy.toml) | ASP.NET Core + Azure cloud-native (`azd`, Bicep, `az`, GitVersion) |
+| [`dotnet-microservices/`](dotnet-microservices/jarvy.toml) | Distributed .NET microservices (Dapr + gRPC + SQL Server + Redis) |
 
 ### Multi-Service
 

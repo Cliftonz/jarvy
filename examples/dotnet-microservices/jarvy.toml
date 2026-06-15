@@ -1,0 +1,60 @@
+# .NET microservices toolkit (Dapr + gRPC + SQL)
+# Run: jarvy setup
+#
+# Template for a distributed .NET microservices project using Dapr for
+# service-to-service comms, gRPC for inter-service contracts, EF Core
+# against SQL Server (mssql-cli for ad-hoc queries), and Redis for
+# state / pub-sub. Docker is required for the Dapr sidecar.
+
+[privileges]
+use_sudo = false
+
+[provisioner]
+git = "latest"
+dotnet = "latest"
+docker = "latest"
+jq = "latest"
+ripgrep = "latest"
+gh = "latest"
+dapr = "latest"
+grpcurl = "latest"
+mssql_cli = "latest"
+redis = "latest"
+
+[nuget]
+dotnet-ef = "latest"
+csharpier = "latest"
+dotnet-format = "latest"
+protobuf-net-protogen = "latest"
+
+[hooks]
+post_setup = """
+dotnet restore
+dapr init 2>/dev/null || echo 'Run `dapr init` once to set up local Dapr sidecars.'
+echo 'Microservices ready: `dapr run --app-id my-service -- dotnet run` to start a service with Dapr.'
+"""
+
+[env.vars]
+ASPNETCORE_ENVIRONMENT = "Development"
+# DOTNET_CLI_TELEMETRY_OPTOUT + DOTNET_NOLOGO set globally by dotnet default_hook.
+# Default Dapr HTTP / gRPC ports — override per service if you run multiple.
+DAPR_HTTP_PORT = "3500"
+DAPR_GRPC_PORT = "50001"
+
+[commands]
+run = "dapr run --app-id app -- dotnet run"
+test = "dotnet test"
+build = "dotnet build -c Release"
+format = "dotnet csharpier ."
+migrate = "dotnet ef database update"
+# Reflection-based gRPC list (requires Grpc.AspNetCore.Server.Reflection).
+list-services = "grpcurl -plaintext localhost:5000 list"
+# Local SQL interactive shell (override server / db per project).
+sql = "mssql-cli -S localhost -d master"
+# Dapr dashboard — runs the local Dapr web UI.
+dashboard = "dapr dashboard"
+
+[drift]
+enabled = true
+version_policy = "minor"
+track_files = ["global.json", "*.csproj", "Protos/*.proto", "components/*.yaml"]

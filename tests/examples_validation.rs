@@ -152,10 +152,9 @@ fn every_example_validates_without_unknown_section_warnings() {
 #[test]
 fn dry_run_surfaces_full_nuget_phase_for_every_dotnet_example() {
     let examples = discover_dotnet_examples();
-    assert_eq!(
-        examples.len(),
-        5,
-        "expected 5 dotnet-* examples, found {}: {:?}",
+    assert!(
+        examples.len() >= 5,
+        "expected at least 5 dotnet-* examples, found {}: {:?}",
         examples.len(),
         examples
     );
