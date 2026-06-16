@@ -303,19 +303,62 @@ pub fn send_otlp_smoke_probe() {
     if env::var("JARVY_TELEMETRY_SMOKE").as_deref() != Ok("1") {
         return;
     }
-    // Best-effort: try IPv4 then IPv6. Ignore errors; this is just a smoke trigger.
+
+    // Resolve the smoke target from the same env-var the OTEL exporter
+    // honors so the test can pass a random port via
+    // `JARVY_OTLP_ENDPOINT=http://127.0.0.1:<port>` instead of fighting
+    // for the hardcoded 4318. Falls back to 4318 when no env is set.
+    let (host, port) = env::var("JARVY_OTLP_LOGS_ENDPOINT")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| {
+            env::var("JARVY_OTLP_ENDPOINT")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+        })
+        .and_then(|url| parse_host_port(&url))
+        .unwrap_or_else(|| ("127.0.0.1".to_string(), 4318));
+
+    // Best-effort: 3 retries with 100ms backoff to absorb test-harness
+    // jitter (cold-start, GC pause, busy CI runner). Each attempt tries
+    // IPv4 then IPv6.
     let req = b"POST /v1/logs HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    // IPv4
-    if let Ok(mut s) = std::net::TcpStream::connect(("127.0.0.1", 4318)) {
-        let _ = s.write_all(req);
-        let _ = s.flush();
-        return;
+    for attempt in 0..3 {
+        if let Ok(mut s) = std::net::TcpStream::connect((host.as_str(), port))
+            && s.write_all(req).is_ok()
+        {
+            let _ = s.flush();
+            return;
+        }
+        // Only try IPv6 if no explicit host was given (the default 4318 path).
+        if host == "127.0.0.1"
+            && let Ok(mut s) = std::net::TcpStream::connect(("::1", port))
+            && s.write_all(req).is_ok()
+        {
+            let _ = s.flush();
+            return;
+        }
+        if attempt < 2 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
     }
-    // IPv6
-    if let Ok(mut s) = std::net::TcpStream::connect(("::1", 4318)) {
-        let _ = s.write_all(req);
-        let _ = s.flush();
-    }
+}
+
+/// Extract `(host, port)` from an OTLP endpoint URL. Returns `None`
+/// when the URL is malformed or the port isn't explicit — the smoke
+/// path needs a precise port to dial and shouldn't guess.
+fn parse_host_port(url: &str) -> Option<(String, u16)> {
+    // Strip scheme.
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    // Strip path (`/v1/logs`, etc.).
+    let host_port = rest.split('/').next().unwrap_or(rest);
+    // Split host:port.
+    let (host, port_str) = host_port.rsplit_once(':')?;
+    let port = port_str.parse().ok()?;
+    Some((host.to_string(), port))
 }
 
 /// Build the shared OTLP resource — emitted as `service.*`/`host.*`
@@ -368,4 +411,49 @@ fn build_otlp_logger_provider(
         logger_builder = logger_builder.with_batch_exporter(exporter);
     }
     Ok(logger_builder.build())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_host_port_handles_canonical_otlp_url() {
+        assert_eq!(
+            parse_host_port("http://127.0.0.1:4318"),
+            Some(("127.0.0.1".to_string(), 4318))
+        );
+        assert_eq!(
+            parse_host_port("https://otel.corp:443"),
+            Some(("otel.corp".to_string(), 443))
+        );
+    }
+
+    #[test]
+    fn parse_host_port_strips_signal_path() {
+        assert_eq!(
+            parse_host_port("http://127.0.0.1:4318/v1/logs"),
+            Some(("127.0.0.1".to_string(), 4318))
+        );
+    }
+
+    #[test]
+    fn parse_host_port_handles_bare_host_port() {
+        // No scheme prefix — still parse.
+        assert_eq!(
+            parse_host_port("127.0.0.1:9999"),
+            Some(("127.0.0.1".to_string(), 9999))
+        );
+    }
+
+    #[test]
+    fn parse_host_port_returns_none_when_port_missing() {
+        assert_eq!(parse_host_port("http://127.0.0.1"), None);
+        assert_eq!(parse_host_port("not a url"), None);
+    }
+
+    #[test]
+    fn parse_host_port_returns_none_when_port_not_numeric() {
+        assert_eq!(parse_host_port("http://127.0.0.1:abc"), None);
+    }
 }
