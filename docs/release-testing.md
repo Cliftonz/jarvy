@@ -31,7 +31,7 @@ Copy and track progress on the soak issue:
 Validation Progress for vX.Y.Z-rc.N:
 - [ ] Step 1: Confirm the trigger matrix actually requires validation
 - [ ] Step 2: Open the soak tracking issue
-- [ ] Step 3: Run pre-soak test matrix (fresh / upgrade / skip / rollback / multi-tool)
+- [ ] Step 3: Run pre-soak test matrix (fresh / upgrade / skip / rollback / multi-tool / asset-sweep)
 - [ ] Step 4: Run major-only matrix (breaking-config + migration replay) [majors only]
 - [ ] Step 5: Open the soak window; record signals as they appear
 - [ ] Step 6: Run fault-injection drills [majors only]
@@ -224,6 +224,56 @@ If any path fails: stop, classify the failure (sev-1 / sev-2 / sev-3 per the
 [Severity Scale](#severity-scale)), comment on the soak issue, and either cut
 `-rc.(N+1)` (restart from the matrix) or abandon the bump.
 
+### Path 8 — Asset Download Sweep
+
+State: any host with `gh`, `cosign`, `jq`, `curl`, `tar`, `ar`, and one of
+`sha256sum` / `shasum -a 256`. Independent of any install path — fetches every
+asset directly from the GitHub release manifest.
+
+The point: install-path coverage (Paths 1–5) only exercises the assets the
+install method happens to pull. A botched upload, a missing checksum entry,
+or an unsigned artifact slipping through can sit invisible until a user
+points an unusual install path at the release. This sweep is the
+defense-in-depth check that the [Promotion Criteria](#promotion-criteria)
+cosign / SBOM lines depend on — those criteria assume the assets were
+fetched and verified, and this is the path that does it.
+
+```bash
+./dist/scripts/verify-release-assets.sh vX.Y.Z-rc.N
+```
+
+The script also runs unattended on every published release via
+[`.github/workflows/verify-release.yml`](../.github/workflows/verify-release.yml).
+A green check run on the rc is the canonical signal; running locally is for
+when CI is unavailable or to reproduce a failure.
+
+Pass criteria:
+
+- Every asset in the release manifest returns HTTP 200 on its
+  `browser_download_url`
+- `SHA256SUMS.txt` is present and lists a checksum for every `jarvy*` artifact
+- Every recomputed sha256 matches the manifest entry
+- Every `jarvy*` artifact has a matching `.sig`, `.pem`, and `.bundle`
+- `cosign verify-blob --bundle <bundle> <file>` succeeds for every artifact,
+  with `--certificate-identity-regexp` pinned to the
+  `bearbinary/Jarvy/.github/workflows/release.yml@refs/tags/` subject and
+  `--certificate-oidc-issuer` pinned to `token.actions.githubusercontent.com`
+- SBOM artifacts (`sbom.spdx.json`, `sbom.cdx.json`) parse as valid JSON and
+  carry the format-distinguishing key (`bomFormat: "CycloneDX"` or
+  `spdxVersion: "SPDX-2.x"`)
+- On a Linux host with `ar` and `tar`: the matching `.deb` extracts cleanly
+  and `jarvy --version` reports a string containing the rc tag (without the
+  leading `v`)
+
+Hosts that cannot match a `.deb` (macOS, Windows, mismatched arch) skip the
+binary `--version` probe with a warning — install-path coverage on those
+platforms is exercised by Paths 1–5.
+
+Failures are sev-1. Do not promote with any unchecked asset.
+
+Skip this path only for documentation-only releases that the trigger matrix
+already excluded from validation.
+
 ## Major-Only Matrix
 
 If the bump is a **major** version, additionally run:
@@ -295,7 +345,10 @@ issue traffic.
 
 When the minimum soak duration has elapsed, **all** must be true to promote:
 
-- [ ] All five pre-soak matrix paths PASS on every required cohort platform
+- [ ] Paths 1–5 PASS on every required cohort platform
+- [ ] Path 8 (asset download sweep) PASS — green check run on the rc tag
+      from `.github/workflows/verify-release.yml`, OR a manual local run
+      attached to the soak issue
 - [ ] [Majors only] Paths 6 and 7 PASS
 - [ ] [Majors only] All four fault-injection drills PASS
 - [ ] No open `release-blocker` or `regression` issues against the rc

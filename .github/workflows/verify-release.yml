@@ -1,0 +1,134 @@
+name: Verify Release Assets
+
+# Path 8 of docs/release-testing.md — defense-in-depth sweep over every asset
+# in a published GitHub release. Fetches each asset, verifies HTTP 200, sha256
+# against SHA256SUMS.txt, Sigstore cosign signature, SBOM well-formedness, and
+# (on Linux) extracts the .deb and asserts `jarvy --version` matches the tag.
+#
+# Triggers:
+#   - release: published  — runs once when a release flips from draft to
+#     published, which is the canonical signal that an rc or stable tag is
+#     ready for soak.
+#   - schedule: weekly    — guards against asset rot (GitHub asset deletion,
+#     cosign cert chain changes, Sigstore Rekor outages). Re-verifies the
+#     most recent prerelease; soft-fail so a scheduled flake doesn't page.
+#   - workflow_dispatch   — manual reverify of any tag.
+
+on:
+  release:
+    types: [published]
+  schedule:
+    # Weekly, Mondays 06:00 UTC. Off-peak to avoid colliding with release cuts.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to verify (e.g. v0.2.0-rc.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify ${{ github.event.release.tag_name || inputs.tag || 'latest prerelease' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the script + nothing else; shallow is fine.
+          fetch-depth: 1
+
+      - name: Resolve tag to verify
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            release)
+              TAG="${{ github.event.release.tag_name }}"
+              SOFT_FAIL=false
+              ;;
+            workflow_dispatch)
+              TAG="${{ inputs.tag }}"
+              SOFT_FAIL=false
+              ;;
+            schedule)
+              # Re-verify the most recent prerelease — that's the rc currently
+              # in soak and most likely to surface rot. Skip if none exist.
+              TAG=$(gh release list \
+                --repo "${{ github.repository }}" \
+                --limit 20 \
+                --json tagName,isPrerelease \
+                --jq '[.[] | select(.isPrerelease)] | .[0].tagName // empty')
+              if [ -z "$TAG" ]; then
+                echo "::notice::No prerelease found; nothing to verify."
+                echo "tag=" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              SOFT_FAIL=true
+              ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "soft_fail=$SOFT_FAIL" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $TAG (soft_fail=$SOFT_FAIL)"
+
+      - name: Install cosign
+        if: steps.resolve.outputs.tag != ''
+        uses: sigstore/cosign-installer@v3
+
+      - name: Install jq and curl (already on ubuntu-latest, belt-and-braces)
+        if: steps.resolve.outputs.tag != ''
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null
+          command -v curl >/dev/null
+          command -v ar >/dev/null
+          command -v tar >/dev/null
+          command -v sha256sum >/dev/null
+
+      - name: Run verify-release-assets.sh
+        if: steps.resolve.outputs.tag != ''
+        id: sweep
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JARVY_REPO: ${{ github.repository }}
+        # Pass `|| true` only on scheduled runs (asset rot is informational,
+        # not a release-blocker). Release / workflow_dispatch runs hard-fail.
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.resolve.outputs.soft_fail }}" = "true" ]; then
+            ./dist/scripts/verify-release-assets.sh "${{ steps.resolve.outputs.tag }}" \
+              || echo "::warning::Scheduled sweep found drift on ${{ steps.resolve.outputs.tag }} — investigate."
+          else
+            ./dist/scripts/verify-release-assets.sh "${{ steps.resolve.outputs.tag }}"
+          fi
+
+      - name: Annotate failure on soak issue
+        if: failure() && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Find the open soak issue for this tag if one exists; if not, just
+          # surface the failure in the workflow run summary. The soak-issue
+          # title convention is `Pre-release soak: ${TAG}` (confirmed via
+          # issues #11, #16, #25 — kept consistent across rcs).
+          ISSUE=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --search "Pre-release soak: ${TAG} in:title" \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" \
+              --repo "${{ github.repository }}" \
+              --body "Path 8 (asset download sweep) FAILED for \`${TAG}\`. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
+            echo "::warning::Path 8 failed for $TAG but no open issue matched 'Pre-release soak: $TAG'. Surface failure manually."
+          fi
