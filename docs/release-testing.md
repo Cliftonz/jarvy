@@ -243,7 +243,7 @@ fetched and verified, and this is the path that does it.
 ```
 
 The script also runs unattended on every published release via
-[`.github/workflows/verify-release.yml`](../.github/workflows/verify-release.yml).
+[`.github/workflows/verify-release.yml`](https://github.com/bearbinary/jarvy/blob/main/.github/workflows/verify-release.yml).
 A green check run on the rc is the canonical signal; running locally is for
 when CI is unavailable or to reproduce a failure.
 
