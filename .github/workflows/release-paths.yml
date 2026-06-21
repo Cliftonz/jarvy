@@ -1,0 +1,476 @@
+name: Release Paths Validation (2/3/4)
+
+# Path 2 (Upgrade From N-1), Path 3 (Skip-Version Upgrade), Path 4
+# (Rollback) of docs/release-testing.md. Exercises `jarvy update --version`
+# + `jarvy rollback` end-to-end on each supported cohort platform.
+#
+# Bootstrap mode: until release.yml ships .tar.gz / .zip binary tarballs
+# as release assets (tracked in #30), the BinaryInstaller path has no
+# artifact to consume and `jarvy update --method binary` cannot run. The
+# workflow detects this — N-1 or target release missing tarballs for the
+# matrix triple — and emits a `::warning::` instead of failing. Once #30
+# lands and the first release ships tarballs, the bootstrap branch is
+# skipped and the gate hard-fails on regression.
+#
+# Triggers:
+#   - release: published      — fires once per rc / stable cut, the canonical
+#                               signal that a tag is in soak
+#   - workflow_dispatch       — manual reverify against any tag
+#
+# Promotion criteria: see docs/release-testing.md#promotion-criteria. This
+# workflow's check run is the canonical signal that Paths 2/3/4 PASS on the
+# rc tag.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: 'Target release tag (e.g. v0.2.0-rc.2)'
+        required: true
+        type: string
+      n_minus_1_tag:
+        description: 'N-1 tag to upgrade from (default: auto-resolve latest non-prerelease)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per (ref, target tag). Don't cancel — concurrent rc cuts on
+  # different tags should all complete.
+  group: release-paths-${{ github.ref }}-${{ inputs.target_tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+env:
+  # Disable telemetry in CI so the test runs don't poison the production
+  # OTLP stream with synthetic update events.
+  JARVY_TELEMETRY: '0'
+
+jobs:
+  # ============================================================================
+  # Path 2 (upgrade N-1 → target) + Path 4 (rollback target → N-1)
+  # Single job per platform: rollback only makes sense after a successful
+  # upgrade, so splitting them across jobs would either duplicate the
+  # upgrade work or require artifact passing between jobs.
+  # ============================================================================
+  paths-2-and-4:
+    name: Path 2+4 (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS arm64
+            target_triple: aarch64-apple-darwin
+            archive_ext: tar.gz
+            binary: jarvy
+          - os: ubuntu-22.04
+            name: Ubuntu 22.04 x86_64
+            target_triple: x86_64-unknown-linux-gnu
+            archive_ext: tar.gz
+            binary: jarvy
+          - os: windows-latest
+            name: Windows x86_64
+            target_triple: x86_64-pc-windows-msvc
+            archive_ext: zip
+            binary: jarvy.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve target + N-1 tags
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            release)
+              TARGET="${{ github.event.release.tag_name }}"
+              ;;
+            workflow_dispatch)
+              TARGET="${{ inputs.target_tag }}"
+              ;;
+            *)
+              echo "::error::Unexpected event ${{ github.event_name }}"
+              exit 1
+              ;;
+          esac
+
+          NM1="${{ inputs.n_minus_1_tag }}"
+          if [ -z "$NM1" ]; then
+            # Auto-resolve: latest stable release that isn't the target. We
+            # walk up to 50 entries so a long string of rcs before a stable
+            # doesn't hide the real N-1.
+            NM1=$(gh release list \
+              --repo "${{ github.repository }}" \
+              --limit 50 \
+              --json tagName,isPrerelease \
+              --jq "[.[] | select(.isPrerelease == false) | select(.tagName != \"$TARGET\")] | .[0].tagName // empty")
+          fi
+
+          if [ -z "$NM1" ]; then
+            echo "::warning::No N-1 stable release found relative to $TARGET; Paths 2+4 cannot run"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=no-n-minus-1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+            echo "n_minus_1=$NM1" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Target: $TARGET / N-1: $NM1"
+
+      - name: Bootstrap check (do both releases have tarballs?)
+        id: bootstrap
+        if: steps.resolve.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIPLE: ${{ matrix.target_triple }}
+          EXT: ${{ matrix.archive_ext }}
+          TARGET: ${{ steps.resolve.outputs.target }}
+          NM1: ${{ steps.resolve.outputs.n_minus_1 }}
+        run: |
+          set -euo pipefail
+          # Any asset whose name contains the target triple and ends in the
+          # platform's archive extension counts. This is intentionally
+          # permissive — release.yml might name them
+          # jarvy-<triple>.<ext>, jarvy_<version>_<triple>.<ext>, or
+          # jarvy_<triple>_<version>.<ext>; all three work.
+          count_for() {
+            local tag="$1"
+            gh release view "$tag" --repo "${{ github.repository }}" \
+              --json assets \
+              --jq "[.assets[].name | select(test(\"${TRIPLE}.*\\\\.${EXT}\\$\"))] | length"
+          }
+          NM1_HAS=$(count_for "$NM1")
+          TARGET_HAS=$(count_for "$TARGET")
+          if [ "$NM1_HAS" = "0" ] || [ "$TARGET_HAS" = "0" ]; then
+            echo "::warning::Bootstrap mode — N-1 ($NM1) has $NM1_HAS tarballs, target ($TARGET) has $TARGET_HAS for triple $TRIPLE. Tracked in #30. Skipping Path 2+4 binary-update test; will hard-fail once tarballs ship."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download + install N-1
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NM1: ${{ steps.resolve.outputs.n_minus_1 }}
+          TRIPLE: ${{ matrix.target_triple }}
+          EXT: ${{ matrix.archive_ext }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          ASSET=$(gh release view "$NM1" --repo "${{ github.repository }}" \
+            --json assets \
+            --jq "[.assets[].name | select(test(\"${TRIPLE}.*\\\\.${EXT}\\$\"))] | .[0]")
+          [ -n "$ASSET" ] || { echo "::error::No N-1 asset matching ${TRIPLE}*.${EXT}"; exit 1; }
+
+          mkdir -p _nm1 && cd _nm1
+          gh release download "$NM1" --repo "${{ github.repository }}" \
+            --pattern "$ASSET" --dir .
+          if [ "$EXT" = "tar.gz" ]; then
+            tar xzf "$ASSET"
+          else
+            unzip -q "$ASSET"
+          fi
+
+          BIN_PATH=$(find . -name "$BINARY" -type f | head -1)
+          [ -n "$BIN_PATH" ] || { echo "::error::$BINARY not found inside $ASSET"; exit 1; }
+
+          # Place under $HOME/.local/bin so InstallMethod::detect_from_path
+          # falls through to Binary (it's neither /opt/homebrew, /usr/bin,
+          # .cargo/bin, nor a Windows package-manager path). That's what we
+          # want — this test specifically exercises the Binary update path.
+          INSTALL_DIR="$HOME/.local/bin"
+          mkdir -p "$INSTALL_DIR"
+          cp "$BIN_PATH" "$INSTALL_DIR/$BINARY"
+          chmod +x "$INSTALL_DIR/$BINARY" 2>/dev/null || true
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+
+      - name: Verify N-1 install reports correct version
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          NM1: ${{ steps.resolve.outputs.n_minus_1 }}
+        run: |
+          set -euo pipefail
+          OBSERVED=$(jarvy --version | awk '{print $2}')
+          EXPECTED_CORE="${NM1#v}"
+          EXPECTED_CORE="${EXPECTED_CORE%%-*}"
+          OBSERVED_CORE="${OBSERVED%%-*}"
+          if [ "$OBSERVED_CORE" != "$EXPECTED_CORE" ]; then
+            echo "::error::N-1 install mismatch: got '$OBSERVED', expected core '$EXPECTED_CORE'"
+            exit 1
+          fi
+          echo "✓ N-1 verified: $OBSERVED"
+
+      - name: Path 2 — jarvy update --version <target> --method binary
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          TARGET: ${{ steps.resolve.outputs.target }}
+          # CI shell is non-interactive; `is_interactive()` returns false in
+          # commands.rs so update proceeds without a Y/N prompt. Belt-and-
+          # braces: set test mode anyway.
+          JARVY_TEST_MODE: '1'
+        run: |
+          set -euo pipefail
+          TARGET_VER="${TARGET#v}"
+          jarvy update --version "$TARGET_VER" --method binary
+
+      - name: Verify upgrade landed on target version
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          TARGET: ${{ steps.resolve.outputs.target }}
+        run: |
+          set -euo pipefail
+          OBSERVED=$(jarvy --version | awk '{print $2}')
+          EXPECTED_CORE="${TARGET#v}"
+          EXPECTED_CORE="${EXPECTED_CORE%%-*}"
+          OBSERVED_CORE="${OBSERVED%%-*}"
+          if [ "$OBSERVED_CORE" != "$EXPECTED_CORE" ]; then
+            echo "::error::Upgrade mismatch: got '$OBSERVED', expected core '$EXPECTED_CORE'"
+            exit 1
+          fi
+          echo "✓ Upgrade verified: $OBSERVED"
+
+      - name: Smoke — jarvy --help and validate --help run cleanly
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jarvy --help > /dev/null
+          jarvy validate --help > /dev/null
+
+      - name: Path 4 — jarvy rollback
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          JARVY_TEST_MODE: '1'
+        run: jarvy rollback
+
+      - name: Verify rollback restored N-1
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          NM1: ${{ steps.resolve.outputs.n_minus_1 }}
+        run: |
+          set -euo pipefail
+          OBSERVED=$(jarvy --version | awk '{print $2}')
+          EXPECTED_CORE="${NM1#v}"
+          EXPECTED_CORE="${EXPECTED_CORE%%-*}"
+          OBSERVED_CORE="${OBSERVED%%-*}"
+          if [ "$OBSERVED_CORE" != "$EXPECTED_CORE" ]; then
+            echo "::error::Rollback mismatch: got '$OBSERVED', expected core '$EXPECTED_CORE'"
+            exit 1
+          fi
+          echo "✓ Rollback verified: $OBSERVED"
+
+  # ============================================================================
+  # Path 3 (skip-version upgrade N-2 → target). Per docs/release-testing.md
+  # only applies to minor and major bumps. We auto-detect: if a stable
+  # release exists with minor = target.minor - 1 (excluding the immediate
+  # N-1), run; otherwise skip.
+  #
+  # For v0.2.0 with N-1=v0.1.1, N-2 would need to be v0.0.x — none exists.
+  # First time this job actually runs is the v0.3.0 cut (N-2 = v0.1.x).
+  # ============================================================================
+  path-3:
+    name: Path 3 (skip-version, ${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS arm64
+            target_triple: aarch64-apple-darwin
+            archive_ext: tar.gz
+            binary: jarvy
+          - os: ubuntu-22.04
+            name: Ubuntu 22.04 x86_64
+            target_triple: x86_64-unknown-linux-gnu
+            archive_ext: tar.gz
+            binary: jarvy
+          - os: windows-latest
+            name: Windows x86_64
+            target_triple: x86_64-pc-windows-msvc
+            archive_ext: zip
+            binary: jarvy.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve target + N-2 tags
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            release)        TARGET="${{ github.event.release.tag_name }}" ;;
+            workflow_dispatch) TARGET="${{ inputs.target_tag }}" ;;
+            *)              echo "::error::Unexpected event"; exit 1 ;;
+          esac
+
+          # Parse target minor. Strip leading 'v' and any prerelease suffix.
+          TARGET_CORE="${TARGET#v}"
+          TARGET_CORE="${TARGET_CORE%%-*}"
+          TARGET_MAJOR="$(echo "$TARGET_CORE" | cut -d. -f1)"
+          TARGET_MINOR="$(echo "$TARGET_CORE" | cut -d. -f2)"
+          TARGET_PATCH="$(echo "$TARGET_CORE" | cut -d. -f3)"
+
+          # Only minor + major bumps need Path 3. Patch bumps skip.
+          if [ "$TARGET_PATCH" != "0" ]; then
+            echo "::notice::Target $TARGET is a patch bump (patch=$TARGET_PATCH); Path 3 N/A"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # N-2 candidate: latest stable with minor == TARGET_MINOR - 2 for
+          # patch... wait, for a minor bump v0.X.0 N-2 means two minors back
+          # — v0.(X-2).y. For a major bump vX.0.0 it means v(X-2).y.z.
+          # Simplify: pick latest stable strictly less than v(TARGET_MAJOR).(TARGET_MINOR - 1).0.
+          if [ "$TARGET_MINOR" = "0" ]; then
+            # Major bump path; N-2 is in major-2 line. Cap at major >= 0.
+            FLOOR_MAJOR=$((TARGET_MAJOR - 2))
+            [ "$FLOOR_MAJOR" -ge 0 ] || FLOOR_MAJOR=0
+            CEIL="v${FLOOR_MAJOR}.999.999"
+          else
+            FLOOR_MINOR=$((TARGET_MINOR - 1))
+            CEIL="v${TARGET_MAJOR}.${FLOOR_MINOR}.0"
+          fi
+
+          # Walk stables newest-first; pick the first whose semver core is < CEIL.
+          # `sort -V` is in coreutils on ubuntu/macOS-14; Windows runners are
+          # only ever Path 3 candidates, and we run this resolver step under
+          # bash on Git for Windows which also has sort -V.
+          NM2=$(gh release list --repo "${{ github.repository }}" \
+            --limit 100 \
+            --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease == false) | .tagName' \
+            | while read tag; do
+                core="${tag#v}"; core="${core%%-*}"
+                ceil_core="${CEIL#v}"
+                if [ "$(printf '%s\n%s\n' "$core" "$ceil_core" | sort -V | head -1)" = "$core" ] \
+                   && [ "$core" != "$ceil_core" ]; then
+                  echo "$tag"; break
+                fi
+              done)
+
+          if [ -z "$NM2" ]; then
+            echo "::notice::No N-2 stable found for target $TARGET (ceiling $CEIL); Path 3 not applicable yet"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+            echo "n_minus_2=$NM2" >> "$GITHUB_OUTPUT"
+            echo "Target: $TARGET / N-2: $NM2"
+          fi
+
+      - name: Bootstrap check (do both releases have tarballs?)
+        id: bootstrap
+        if: steps.resolve.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIPLE: ${{ matrix.target_triple }}
+          EXT: ${{ matrix.archive_ext }}
+          TARGET: ${{ steps.resolve.outputs.target }}
+          NM2: ${{ steps.resolve.outputs.n_minus_2 }}
+        run: |
+          set -euo pipefail
+          count_for() {
+            local tag="$1"
+            gh release view "$tag" --repo "${{ github.repository }}" \
+              --json assets \
+              --jq "[.assets[].name | select(test(\"${TRIPLE}.*\\\\.${EXT}\\$\"))] | length"
+          }
+          NM2_HAS=$(count_for "$NM2")
+          TARGET_HAS=$(count_for "$TARGET")
+          if [ "$NM2_HAS" = "0" ] || [ "$TARGET_HAS" = "0" ]; then
+            echo "::warning::Bootstrap mode — N-2 ($NM2) has $NM2_HAS tarballs, target ($TARGET) has $TARGET_HAS for triple $TRIPLE. Tracked in #30."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download + install N-2
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NM2: ${{ steps.resolve.outputs.n_minus_2 }}
+          TRIPLE: ${{ matrix.target_triple }}
+          EXT: ${{ matrix.archive_ext }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          ASSET=$(gh release view "$NM2" --repo "${{ github.repository }}" \
+            --json assets \
+            --jq "[.assets[].name | select(test(\"${TRIPLE}.*\\\\.${EXT}\\$\"))] | .[0]")
+          mkdir -p _nm2 && cd _nm2
+          gh release download "$NM2" --repo "${{ github.repository }}" \
+            --pattern "$ASSET" --dir .
+          if [ "$EXT" = "tar.gz" ]; then
+            tar xzf "$ASSET"
+          else
+            unzip -q "$ASSET"
+          fi
+          BIN_PATH=$(find . -name "$BINARY" -type f | head -1)
+          INSTALL_DIR="$HOME/.local/bin"
+          mkdir -p "$INSTALL_DIR"
+          cp "$BIN_PATH" "$INSTALL_DIR/$BINARY"
+          chmod +x "$INSTALL_DIR/$BINARY" 2>/dev/null || true
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+
+      - name: Verify N-2 install
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          NM2: ${{ steps.resolve.outputs.n_minus_2 }}
+        run: |
+          set -euo pipefail
+          OBSERVED=$(jarvy --version | awk '{print $2}')
+          EXPECTED_CORE="${NM2#v}"; EXPECTED_CORE="${EXPECTED_CORE%%-*}"
+          OBSERVED_CORE="${OBSERVED%%-*}"
+          [ "$OBSERVED_CORE" = "$EXPECTED_CORE" ] || { echo "::error::N-2 mismatch"; exit 1; }
+          echo "✓ N-2 verified: $OBSERVED"
+
+      - name: Path 3 — jarvy update --version <target> --method binary
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          TARGET: ${{ steps.resolve.outputs.target }}
+          JARVY_TEST_MODE: '1'
+        run: |
+          set -euo pipefail
+          TARGET_VER="${TARGET#v}"
+          jarvy update --version "$TARGET_VER" --method binary
+
+      - name: Verify skip-version upgrade landed on target
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        shell: bash
+        env:
+          TARGET: ${{ steps.resolve.outputs.target }}
+        run: |
+          set -euo pipefail
+          OBSERVED=$(jarvy --version | awk '{print $2}')
+          EXPECTED_CORE="${TARGET#v}"; EXPECTED_CORE="${EXPECTED_CORE%%-*}"
+          OBSERVED_CORE="${OBSERVED%%-*}"
+          [ "$OBSERVED_CORE" = "$EXPECTED_CORE" ] || { echo "::error::Skip-version upgrade mismatch"; exit 1; }
+          echo "✓ Skip-version upgrade verified: $OBSERVED"

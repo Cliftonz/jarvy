@@ -158,6 +158,17 @@ Pass criteria:
 
 State: clean VM with Jarvy at the previous stable version installed.
 
+Automated coverage: `.github/workflows/release-paths.yml` exercises this
+path on macOS arm64, Ubuntu 22.04 x86_64, and Windows x86_64 on every
+`release: published` event. The workflow downloads the N-1 release tarball,
+installs `jarvy` to `~/.local/bin` (which falls through to
+`InstallMethod::Binary`), runs `jarvy update --version <target> --method
+binary`, and asserts the binary reports the target version. **Bootstrap
+caveat**: until [#30](https://github.com/bearbinary/Jarvy/issues/30) ships
+binary tarballs as release assets, the workflow detects the missing artifact
+and emits a `::warning::` instead of failing. The manual procedure below is
+the fallback while the gate is in bootstrap mode.
+
 ```bash
 # Install N-1 first
 JARVY_VERSION=<previous-stable> curl -fsSL \
@@ -183,12 +194,25 @@ State: clean VM with Jarvy at N-2 (two stable versions back) installed.
 
 Skip this path for patch bumps — patch bumps from N-1 cover the same surface.
 
+Automated coverage: same workflow as Path 2 (`release-paths.yml`, job
+`path-3`). The job auto-resolves N-2 as the latest stable strictly below
+`v<major>.<minor-1>.0` (or the major-2 line for major bumps) and skips with
+a `::notice::` when no eligible N-2 exists. For v0.2.0 this is auto-skipped
+(no v0.0.x). First real run will be the v0.3.0 cut, with N-2 = v0.1.x. Same
+bootstrap caveat as Path 2 applies until #30 ships tarballs.
+
 Pass criteria: same as Path 2 plus state file migrates from N-2 directly to rc
 (skipping the N-1 schema if any).
 
 ### Path 4 — Rollback
 
 State: VM that just upgraded from N-1 to rc in Path 2.
+
+Automated coverage: combined with Path 2 in the same `paths-2-and-4` job of
+`release-paths.yml` — rollback only makes sense immediately after an upgrade,
+so the workflow runs `jarvy rollback` as the next step after the Path 2
+upgrade succeeds and asserts the binary reverts to N-1. Same bootstrap
+caveat applies.
 
 ```bash
 jarvy update --rollback
@@ -346,6 +370,15 @@ issue traffic.
 When the minimum soak duration has elapsed, **all** must be true to promote:
 
 - [ ] Paths 1–5 PASS on every required cohort platform
+- [ ] Paths 2/3/4 (upgrade, skip-version, rollback) PASS — green check run
+      on the rc tag from `.github/workflows/release-paths.yml`. The workflow
+      auto-fires on `release: published`. Until binary tarballs ship as
+      release assets ([#30](https://github.com/bearbinary/Jarvy/issues/30)),
+      the workflow runs in **bootstrap mode** — it logs a `::warning::` and
+      passes the check run without actually exercising `jarvy update`. The
+      bootstrap waiver is in force only while #30 is open. Do not promote a
+      stable that triggered bootstrap warnings without an explicit waiver
+      comment on the soak issue.
 - [ ] Path 8 (asset download sweep) PASS — green check run on the rc tag
       from `.github/workflows/verify-release.yml`, OR a manual local run
       attached to the soak issue
