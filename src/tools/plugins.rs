@@ -164,19 +164,21 @@ pub fn load_user_tools() -> usize {
 
     let count = accepted.len();
 
-    // Insert into the plugin registry first so dispatch can find them by name.
-    {
-        let mut map = registry().write().expect("plugin registry rwlock poisoned");
-        for (key, tool) in accepted.iter() {
-            map.insert(key.clone(), tool.clone());
-        }
-    }
-
-    // Register a stub handler in the main registry so existing
+    // Register a stub handler in the main registry first so existing
     // `tools::add(name, version)` lookups find the plugin. The handler
     // never executes — `tools::add` consults the plugin registry first.
     for tool in accepted.values() {
         let _ = register_tool(&tool.name, plugin_install_handler_unreachable);
+    }
+
+    // Then drain into the plugin registry. Drain (not clone) avoids
+    // duplicating every key + PluginTool when populating the lock —
+    // `accepted` is about to drop anyway.
+    {
+        let mut map = registry().write().expect("plugin registry rwlock poisoned");
+        for (key, tool) in accepted.drain() {
+            map.insert(key, tool);
+        }
     }
 
     tracing::info!(event = "plugins.registered", count = count);
@@ -529,5 +531,101 @@ mod tests {
         let found = get_plugin("testplug").expect("plugin should be present case-insensitive");
         assert_eq!(found.name, "TeStPlUg");
         assert_eq!(found.command, "testplug");
+    }
+
+    fn write_plugin(dir: &Path, name: &str, command: &str) {
+        std::fs::write(
+            dir.join(format!("{name}.toml")),
+            format!(
+                r#"name = "{name}"
+command = "{command}"
+"#
+            ),
+        )
+        .expect("write plugin");
+    }
+
+    /// Item 5 part 1 — `load_tools_from_dir` walks a single dir and
+    /// registers everything that passes validation.
+    #[test]
+    fn load_tools_from_dir_registers_each_toml() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_plugin(tmp.path(), "alpha", "alpha");
+        write_plugin(tmp.path(), "beta", "beta");
+
+        let mut accepted = HashMap::new();
+        load_tools_from_dir(tmp.path(), &mut accepted);
+        assert_eq!(accepted.len(), 2);
+        assert!(accepted.contains_key("alpha"));
+        assert!(accepted.contains_key("beta"));
+    }
+
+    /// Item 5 part 2 — collision precedence. The plugin loader walks
+    /// user dir THEN remote cache; a later insert with the same key
+    /// shadows the earlier one (remote wins over user-authored). Pin
+    /// this behavior so a future refactor that reorders the walks
+    /// fails this test.
+    #[test]
+    fn load_tools_from_dir_later_call_overrides_earlier() {
+        let user_dir = tempfile::tempdir().expect("user tempdir");
+        let remote_dir = tempfile::tempdir().expect("remote tempdir");
+
+        std::fs::write(
+            user_dir.path().join("collide.toml"),
+            r#"name = "collide"
+command = "user-version"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            remote_dir.path().join("collide.toml"),
+            r#"name = "collide"
+command = "remote-version"
+"#,
+        )
+        .unwrap();
+
+        let mut accepted = HashMap::new();
+        load_tools_from_dir(user_dir.path(), &mut accepted);
+        load_tools_from_dir(remote_dir.path(), &mut accepted);
+        // Remote-walked-second wins.
+        assert_eq!(
+            accepted.get("collide").map(|t| t.command.as_str()),
+            Some("remote-version")
+        );
+    }
+
+    /// Item 5 part 3 — invalid identifier silently skipped (NOT all-
+    /// or-nothing).
+    #[test]
+    fn load_tools_from_dir_skips_invalid_name_keeps_valid() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Valid one.
+        write_plugin(tmp.path(), "good", "good");
+        // Invalid: command has a shell metacharacter.
+        std::fs::write(
+            tmp.path().join("bad.toml"),
+            r#"name = "bad"
+command = "bad;rm -rf /"
+"#,
+        )
+        .unwrap();
+
+        let mut accepted = HashMap::new();
+        load_tools_from_dir(tmp.path(), &mut accepted);
+        assert!(accepted.contains_key("good"));
+        assert!(!accepted.contains_key("bad"));
+    }
+
+    /// Item 5 part 4 — missing dir is a no-op, not a panic.
+    #[test]
+    fn load_tools_from_dir_missing_dir_is_noop() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let absent = tmp.path().join("does-not-exist");
+        let mut accepted = HashMap::new();
+        // Function exits early via is_path_safe_to_load → false (no
+        // metadata) OR read_dir → err. Either way, accepted stays empty.
+        load_tools_from_dir(&absent, &mut accepted);
+        assert!(accepted.is_empty());
     }
 }

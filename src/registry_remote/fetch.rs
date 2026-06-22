@@ -42,9 +42,11 @@ pub enum FetchError {
     NonHttps(String),
 }
 
-/// Fetch a URL into a bounded byte buffer. Refuses non-HTTPS URLs.
+/// Fetch a URL into a bounded byte buffer. Refuses non-HTTPS URLs
+/// unless the loopback-test bypass is active (see
+/// [`insecure_loopback_allowed`]).
 pub fn fetch_bounded(url: &str, max_bytes: u64) -> Result<Vec<u8>, FetchError> {
-    if !url.starts_with("https://") {
+    if !url.starts_with("https://") && !insecure_loopback_allowed(url) {
         return Err(FetchError::NonHttps(url.to_string()));
     }
 
@@ -87,19 +89,65 @@ pub fn fetch_bounded(url: &str, max_bytes: u64) -> Result<Vec<u8>, FetchError> {
     Ok(buf)
 }
 
+/// Loopback-only escape hatch for integration tests. The CLI ships an
+/// HTTPS-only fetch policy because a typo in `[registry] url` would
+/// otherwise silently downgrade to plaintext. Spinning up a real TLS
+/// listener per test would be heavyweight, so tests opt in via env var
+/// AND restrict to 127.0.0.1 / localhost URLs. Production users have no
+/// way to set this — the env var has no other consumer and the URL
+/// guard means even with the env var set, only loopback fetches are
+/// allowed. Combined this is far weaker than a config flag (which would
+/// be parseable from `~/.jarvy/config.toml`) yet sufficient for the
+/// integration-test harness.
+fn insecure_loopback_allowed(url: &str) -> bool {
+    if std::env::var_os("JARVY_REGISTRY_ALLOW_INSECURE_FETCH").is_none() {
+        return false;
+    }
+    url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
+}
+
 #[cfg(test)]
+#[allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial(registry_env)]
     fn refuses_http_url() {
+        // SAFETY: serial-test gate (`registry_env` group) ensures no other
+        // env-mutating test in this group runs concurrently.
+        unsafe {
+            std::env::remove_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH");
+        }
         let err = fetch_bounded("http://example.com/x", 1024).unwrap_err();
         assert!(matches!(err, FetchError::NonHttps(_)));
     }
 
     #[test]
+    #[serial(registry_env)]
     fn refuses_ftp_url() {
+        // SAFETY: serialized via #[serial(registry_env)].
+        unsafe {
+            std::env::remove_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH");
+        }
         let err = fetch_bounded("ftp://example.com/x", 1024).unwrap_err();
         assert!(matches!(err, FetchError::NonHttps(_)));
+    }
+
+    #[test]
+    #[serial(registry_env)]
+    fn refuses_non_loopback_even_with_env() {
+        // Bypass requires BOTH the env var AND a loopback URL.
+        // SAFETY: serialized via #[serial(registry_env)].
+        unsafe {
+            std::env::set_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH", "1");
+        }
+        let err = fetch_bounded("http://attacker.example/x", 1024).unwrap_err();
+        assert!(matches!(err, FetchError::NonHttps(_)));
+        // SAFETY: same.
+        unsafe {
+            std::env::remove_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH");
+        }
     }
 }

@@ -292,4 +292,49 @@ mod tests {
         let err = Manifest::parse(&body).unwrap_err();
         assert!(matches!(err, ManifestError::InvalidPath { .. }));
     }
+
+    /// Pin current behavior for `./tools/foo.toml`. The validator
+    /// currently accepts a leading `./`. If a future tightening rejects
+    /// it, this test moves the assertion side; either way the call site
+    /// is documented.
+    #[test]
+    fn accepts_leading_dot_slash_path() {
+        let body = format!(
+            r#"{{"schema_version": 1, "tools": [{{"name": "f", "path": "./tools/f.toml", "sha256": "{}"}}]}}"#,
+            valid_sha()
+        );
+        let m = Manifest::parse(&body).expect("./prefix is currently accepted");
+        assert_eq!(m.tools.len(), 1);
+    }
+
+    /// Manifest with two entries sharing the same `name`: parse SUCCEEDS
+    /// (the validator doesn't dedupe). Last-wins is the sync orchestrator's
+    /// problem — the HashMap insert at the loader side resolves. Pin so
+    /// that if a future change rejects duplicates, callers know.
+    #[test]
+    fn accepts_duplicate_tool_names_at_parse_time() {
+        let body = format!(
+            r#"{{"schema_version": 1, "tools": [
+              {{"name": "dup", "path": "tools/dup-a.toml", "sha256": "{}"}},
+              {{"name": "dup", "path": "tools/dup-b.toml", "sha256": "{}"}}
+            ]}}"#,
+            valid_sha(),
+            valid_sha()
+        );
+        let m = Manifest::parse(&body).expect("dedupe is not a parse-layer concern");
+        assert_eq!(m.tools.len(), 2);
+    }
+
+    /// Very long tool name: regex caps at character set, not length.
+    /// Pin that there's no length cap so a future change is intentional.
+    #[test]
+    fn accepts_arbitrarily_long_name() {
+        let long_name = "a".repeat(2048);
+        let body = format!(
+            r#"{{"schema_version": 1, "tools": [{{"name": "{long_name}", "path": "tools/x.toml", "sha256": "{}"}}]}}"#,
+            valid_sha()
+        );
+        let m = Manifest::parse(&body).expect("no length cap on tool name today");
+        assert_eq!(m.tools[0].name.len(), 2048);
+    }
 }

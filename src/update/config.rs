@@ -25,7 +25,10 @@ pub enum Channel {
 }
 
 impl Channel {
-    /// Parse channel from string (case-insensitive)
+    /// Parse channel from string (case-insensitive). Returns `Option`
+    /// for parity with `InstallMethod::from_str`; intentionally not a
+    /// `std::str::FromStr` impl.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "stable" => Some(Channel::Stable),

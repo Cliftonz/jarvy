@@ -64,6 +64,17 @@ fn default_true() -> bool {
     true
 }
 
+/// Mirror of `fetch::insecure_loopback_allowed` for the config-validation
+/// boundary. Both gates apply (config + per-fetch) so even with the env
+/// var set, a misconfigured non-loopback URL still fails at the earlier
+/// validation step.
+fn insecure_loopback_url_allowed(url: &str) -> bool {
+    if std::env::var_os("JARVY_REGISTRY_ALLOW_INSECURE_FETCH").is_none() {
+        return false;
+    }
+    url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
+}
+
 impl Default for RegistryConfig {
     fn default() -> Self {
         Self {
@@ -112,7 +123,7 @@ impl RegistryConfig {
     ///   snippet) can't accept attacker-controlled identities.
     /// - `signature_oidc_issuer` must start with `https://`.
     pub fn validate_safety(&self) -> Result<(), String> {
-        if !self.url.starts_with("https://") {
+        if !self.url.starts_with("https://") && !insecure_loopback_url_allowed(&self.url) {
             return Err(format!("registry.url must be https://, got {:?}", self.url));
         }
         if self.require_signature {
