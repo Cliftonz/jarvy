@@ -144,24 +144,71 @@ pub fn load_user_tools() -> usize {
         }
     }
 
-    let Some(dir) = plugin_dir() else {
-        return 0;
-    };
+    let mut accepted: HashMap<String, PluginTool> = HashMap::new();
 
-    if !dir.exists() {
-        return 0;
+    // 1. User-authored plugins at ~/.jarvy/tools.d/*.toml.
+    if let Some(user_dir) = plugin_dir() {
+        load_tools_from_dir(&user_dir, &mut accepted);
     }
 
-    if !is_path_safe_to_load(&dir) {
+    // 2. Tools synced from a remote registry via `jarvy registry sync`.
+    //    Cached under ~/.jarvy/tools.d/.remote/tools/. Same security gates
+    //    apply — files Jarvy wrote with 0600 perms will pass; anything
+    //    tampered by another local user is rejected.
+    if let Ok(remote_dir) = crate::paths::registry_remote_cache_dir() {
+        let tools_subdir = remote_dir.join("tools");
+        if tools_subdir.exists() {
+            load_tools_from_dir(&tools_subdir, &mut accepted);
+        }
+    }
+
+    let count = accepted.len();
+
+    // Insert into the plugin registry first so dispatch can find them by name.
+    {
+        let mut map = registry().write().expect("plugin registry rwlock poisoned");
+        for (key, tool) in accepted.iter() {
+            map.insert(key.clone(), tool.clone());
+        }
+    }
+
+    // Register a stub handler in the main registry so existing
+    // `tools::add(name, version)` lookups find the plugin. The handler
+    // never executes — `tools::add` consults the plugin registry first.
+    for tool in accepted.values() {
+        let _ = register_tool(&tool.name, plugin_install_handler_unreachable);
+    }
+
+    tracing::info!(event = "plugins.registered", count = count);
+    count
+}
+
+/// Stub handler that should never be invoked because `tools::add` checks the
+/// plugin registry first. Returns `Unsupported` if it ever is reached.
+fn plugin_install_handler_unreachable(_version: &str) -> Result<(), InstallError> {
+    Err(InstallError::Parse(
+        "plugin handler invoked without name dispatch (bug)",
+    ))
+}
+
+/// Walk one directory of TOML plugin files and insert any that pass
+/// validation into `accepted`. Both the user `tools.d/` dir and the
+/// remote-registry cache `tools.d/.remote/tools/` dir flow through here
+/// so the security gates (dir perms, file perms, name validation,
+/// platform validation) are applied uniformly. Conflicts: a later entry
+/// for the same name wins — by call order in `load_user_tools`,
+/// remote-synced tools override user-authored ones if they share a name.
+fn load_tools_from_dir(dir: &std::path::Path, accepted: &mut HashMap<String, PluginTool>) {
+    if !is_path_safe_to_load(dir) {
         tracing::warn!(
             event = "plugins.tools_d_unsafe_perms",
             path = %crate::network::redact_home(&dir.display().to_string()),
-            "tools.d directory has insecure permissions; skipping plugin load"
+            "plugin directory has insecure permissions; skipping load"
         );
-        return 0;
+        return;
     }
 
-    let entries = match std::fs::read_dir(&dir) {
+    let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(
@@ -169,11 +216,9 @@ pub fn load_user_tools() -> usize {
                 path = %crate::network::redact_home(&dir.display().to_string()),
                 error = %e,
             );
-            return 0;
+            return;
         }
     };
-
-    let mut accepted: HashMap<String, PluginTool> = HashMap::new();
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -241,34 +286,6 @@ pub fn load_user_tools() -> usize {
         );
         accepted.insert(key, tool);
     }
-
-    let count = accepted.len();
-
-    // Insert into the plugin registry first so dispatch can find them by name.
-    {
-        let mut map = registry().write().expect("plugin registry rwlock poisoned");
-        for (key, tool) in accepted.iter() {
-            map.insert(key.clone(), tool.clone());
-        }
-    }
-
-    // Register a stub handler in the main registry so existing
-    // `tools::add(name, version)` lookups find the plugin. The handler
-    // never executes — `tools::add` consults the plugin registry first.
-    for tool in accepted.values() {
-        let _ = register_tool(&tool.name, plugin_install_handler_unreachable);
-    }
-
-    tracing::info!(event = "plugins.registered", count = count);
-    count
-}
-
-/// Stub handler that should never be invoked because `tools::add` checks the
-/// plugin registry first. Returns `Unsupported` if it ever is reached.
-fn plugin_install_handler_unreachable(_version: &str) -> Result<(), InstallError> {
-    Err(InstallError::Parse(
-        "plugin handler invoked without name dispatch (bug)",
-    ))
 }
 
 fn validate_platforms(tool: &PluginTool) -> bool {

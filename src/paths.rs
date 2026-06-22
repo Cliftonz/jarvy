@@ -119,6 +119,14 @@ pub fn plugins_dir() -> Result<PathBuf, NoHomeDir> {
     Ok(jarvy_home()?.join("tools.d"))
 }
 
+/// `~/.jarvy/tools.d/.remote/` — cache root for tools pulled from a remote
+/// registry via `jarvy registry sync`. Sits inside `plugins_dir()` so the
+/// existing plugin loader can walk both user-authored TOMLs and remote-
+/// synced ones with the same security gates.
+pub fn registry_remote_cache_dir() -> Result<PathBuf, NoHomeDir> {
+    Ok(plugins_dir()?.join(".remote"))
+}
+
 /// `~/.jarvy/team-sources.toml` — team config source registry.
 pub fn team_sources_toml() -> Result<PathBuf, NoHomeDir> {
     Ok(jarvy_home()?.join("team-sources.toml"))
