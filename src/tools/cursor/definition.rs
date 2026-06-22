@@ -24,17 +24,17 @@
 
 use crate::define_tool;
 use crate::tools::common::{InstallError, has, run};
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use crate::tools::pinned_binary_installer::AppImagePin;
 
 /// Pinned Cursor Linux x86_64 AppImage URL. Includes the build commit sha
 /// in the path so the URL never moves underneath us.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const CURSOR_LINUX_X64_URL: &str = "https://downloads.cursor.com/production/e56ad3440df06d22ca7501e65fd518e905486ef7/linux/x64/Cursor-3.8.11-x86_64.AppImage";
 
 /// Lowercase 64-char hex sha256 of the AppImage at `CURSOR_LINUX_X64_URL`.
 /// Computed locally on 2026-06-22; update in lockstep with the URL.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const CURSOR_LINUX_X64_SHA256: &str =
     "2bc3003ea81ce99a2458101478b15409c4cb8271577bd9cb941e8aaeae8a391a";
 
@@ -119,7 +119,7 @@ mod tests {
         assert!(CURSOR.custom_install.is_some());
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     #[test]
     fn linux_pin_is_well_formed() {
         // Sha must be lowercase 64-char hex

@@ -29,19 +29,19 @@ use crate::tools::common::{InstallError, has, run};
 #[cfg(target_os = "linux")]
 use crate::tools::pinned_binary_installer::TarballAppPin;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const TOOLBOX_LINUX_X64_URL: &str =
     "https://download.jetbrains.com/toolbox/jetbrains-toolbox-3.5.0.84344.tar.gz";
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const TOOLBOX_LINUX_X64_SHA256: &str =
     "1bbc5baa8ab664a83153424eb4831786e86628bfc024c4f5a675f45a534678ef";
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 const TOOLBOX_LINUX_ARM64_URL: &str =
     "https://download.jetbrains.com/toolbox/jetbrains-toolbox-3.5.0.84344-arm64.tar.gz";
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 const TOOLBOX_LINUX_ARM64_SHA256: &str =
     "fa418df9a47e0d638f86f46cbbbc032d7b7bb55937e4ff12308d14fb3fc51307";
 
@@ -129,20 +129,31 @@ mod tests {
         assert!(JETBRAINS_TOOLBOX.custom_install.is_some());
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     #[test]
-    fn linux_pins_are_well_formed() {
-        for sha in [TOOLBOX_LINUX_X64_SHA256, TOOLBOX_LINUX_ARM64_SHA256] {
-            assert_eq!(sha.len(), 64);
-            assert!(
-                sha.chars()
-                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-            );
-        }
-        for url in [TOOLBOX_LINUX_X64_URL, TOOLBOX_LINUX_ARM64_URL] {
-            assert!(url.starts_with("https://"));
-            assert!(!url.contains("/latest/"));
-            assert!(url.contains("jetbrains-toolbox-"));
-        }
+    fn linux_x64_pin_is_well_formed() {
+        assert_eq!(TOOLBOX_LINUX_X64_SHA256.len(), 64);
+        assert!(
+            TOOLBOX_LINUX_X64_SHA256
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
+        assert!(TOOLBOX_LINUX_X64_URL.starts_with("https://"));
+        assert!(!TOOLBOX_LINUX_X64_URL.contains("/latest/"));
+        assert!(TOOLBOX_LINUX_X64_URL.contains("jetbrains-toolbox-"));
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    #[test]
+    fn linux_arm64_pin_is_well_formed() {
+        assert_eq!(TOOLBOX_LINUX_ARM64_SHA256.len(), 64);
+        assert!(
+            TOOLBOX_LINUX_ARM64_SHA256
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
+        assert!(TOOLBOX_LINUX_ARM64_URL.starts_with("https://"));
+        assert!(!TOOLBOX_LINUX_ARM64_URL.contains("/latest/"));
+        assert!(TOOLBOX_LINUX_ARM64_URL.contains("jetbrains-toolbox-"));
     }
 }
