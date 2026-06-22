@@ -165,6 +165,7 @@ pub mod p7zip;
 pub mod packer;
 pub mod pgcli;
 pub mod php;
+pub mod pinned_binary_installer;
 pub mod pinned_installer;
 pub mod plugins;
 pub mod podman;
