@@ -450,6 +450,144 @@ fn https_redirect_is_refused() {
 // capture raw stderr if the team wants the literal "WARNING" text
 // pinned by a Rust-test-level assertion.
 
+// ===== Item 2 — plugin-loader cache index =====
+
+#[test]
+#[serial]
+fn sync_writes_remote_index_for_plugin_loader_cache() {
+    let _env = TestEnv::new();
+    let tool_body = make_tool_toml("indexed");
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "tools": [
+            { "name": "indexed", "path": "tools/indexed.toml", "sha256": sha256_hex(&tool_body) }
+        ]
+    })
+    .to_string();
+    let mut routes = HashMap::new();
+    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
+    routes.insert("/tools/indexed.toml".to_string(), Canned::ok(tool_body));
+    let (url, stop) = spawn_server(routes);
+
+    jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url)).expect("sync should succeed");
+    *stop.lock().unwrap() = true;
+
+    let cache_root = jarvy::paths::registry_remote_cache_dir().unwrap();
+    let index_path = cache_root.join("index.json");
+    assert!(
+        index_path.exists(),
+        "sync must write index.json for the loader cache"
+    );
+
+    let index: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&index_path).unwrap()).expect("index.json parses");
+    assert!(index["synced_at_unix"].is_u64());
+    let tools = index["tools"].as_array().expect("tools array");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"], "indexed");
+    assert_eq!(tools[0]["command"], "indexed");
+
+    // synced_at_unix matches meta.json so the loader's invalidation
+    // check accepts the index as fresh.
+    let meta: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(cache_root.join("meta.json")).unwrap()).unwrap();
+    assert_eq!(index["synced_at_unix"], meta["last_synced_at_unix"]);
+}
+
+// ===== Item 12 — parallel per-tool fetch sanity =====
+
+#[test]
+#[serial]
+fn parallel_fetch_handles_many_tools() {
+    let _env = TestEnv::new();
+    // 25 tools — more than the default parallelism cap (8) so we
+    // actually exercise the round-robin work-stealing logic.
+    const COUNT: usize = 25;
+    let mut tool_entries = Vec::with_capacity(COUNT);
+    let mut routes = HashMap::new();
+    for i in 0..COUNT {
+        let name = format!("tool_{i}");
+        let body = make_tool_toml(&name);
+        let sha = sha256_hex(&body);
+        let path = format!("tools/{name}.toml");
+        routes.insert(format!("/{path}"), Canned::ok(body));
+        tool_entries.push(serde_json::json!({
+            "name": name,
+            "path": path,
+            "sha256": sha,
+        }));
+    }
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "tools": tool_entries,
+    })
+    .to_string();
+    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
+    let (url, stop) = spawn_server(routes);
+
+    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+        .expect("parallel sync of 25 tools should succeed");
+    *stop.lock().unwrap() = true;
+
+    assert_eq!(report.tools_synced, COUNT);
+    // All 25 landed in tools/.
+    let tools_dir = jarvy::paths::registry_remote_cache_dir()
+        .unwrap()
+        .join("tools");
+    for i in 0..COUNT {
+        let p = tools_dir.join(format!("tool_{i}.toml"));
+        assert!(p.exists(), "tool_{i}.toml missing after parallel sync");
+    }
+}
+
+#[test]
+#[serial]
+fn parallel_fetch_fails_fast_on_404() {
+    let _env = TestEnv::new();
+    // 10 tools: tool_5 404s. With parallelism, several workers may
+    // have already started; the test asserts the error surfaces and
+    // tools/ stays untouched (fail-fast invariant + staging-swap).
+    let mut tool_entries = Vec::new();
+    let mut routes = HashMap::new();
+    for i in 0..10 {
+        let name = format!("tool_{i}");
+        let body = make_tool_toml(&name);
+        let sha = sha256_hex(&body);
+        let path = format!("tools/{name}.toml");
+        if i == 5 {
+            routes.insert(format!("/{path}"), Canned::not_found());
+        } else {
+            routes.insert(format!("/{path}"), Canned::ok(body));
+        }
+        tool_entries.push(serde_json::json!({
+            "name": name,
+            "path": path,
+            "sha256": sha,
+        }));
+    }
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "tools": tool_entries,
+    })
+    .to_string();
+    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
+    let (url, stop) = spawn_server(routes);
+
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+        .expect_err("the 404 on tool_5 should propagate");
+    *stop.lock().unwrap() = true;
+    assert!(matches!(err, jarvy::registry_remote::SyncError::Fetch(_)));
+
+    // No partial state in active tools/.
+    let tools_dir = jarvy::paths::registry_remote_cache_dir()
+        .unwrap()
+        .join("tools");
+    assert!(
+        !tools_dir.exists() || std::fs::read_dir(&tools_dir).unwrap().count() == 0,
+        "fail-fast: no tools/ files should be visible after a partial sync"
+    );
+}
+
 // ===== Item 14 — meta.json schema =====
 
 #[test]

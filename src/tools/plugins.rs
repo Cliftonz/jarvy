@@ -32,34 +32,45 @@
 
 use crate::tools::common::{InstallError, Os, current_os, has, run};
 use crate::tools::registry::register_tool;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
-/// Parsed plugin tool definition
-#[derive(Debug, Deserialize, Clone)]
+/// Parsed plugin tool definition. `Serialize` is enabled so
+/// `registry_remote::sync` can write the parsed remote-tool set to a
+/// single JSON index after a successful sync — the plugin loader then
+/// reads ONE file at CLI startup instead of stat+open+parse N TOMLs.
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PluginTool {
     pub name: String,
     pub command: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub macos: Option<PluginPlatform>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linux: Option<PluginPlatform>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub windows: Option<PluginPlatform>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[allow(dead_code)] // Fields used for deserialization
 pub struct PluginPlatform {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brew: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cask: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uniform: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dnf: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pacman: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub winget: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choco: Option<String>,
 }
 
@@ -152,10 +163,18 @@ pub fn load_user_tools() -> usize {
     }
 
     // 2. Tools synced from a remote registry via `jarvy registry sync`.
-    //    Cached under ~/.jarvy/tools.d/.remote/tools/. Same security gates
-    //    apply — files Jarvy wrote with 0600 perms will pass; anything
-    //    tampered by another local user is rejected.
-    if let Ok(remote_dir) = crate::paths::registry_remote_cache_dir() {
+    //    Cached under ~/.jarvy/tools.d/.remote/tools/. Try the parsed
+    //    JSON index first — one read instead of N stat+open+TOML-parse.
+    //    Falls back to walking the dir when the index is missing,
+    //    perms-rejected, or stale relative to meta.json. Either way the
+    //    same security gates (perms, name validation, platform
+    //    validation) apply.
+    if let Some(remote_tools) = try_load_remote_index() {
+        for tool in remote_tools {
+            let key = tool.name.to_ascii_lowercase();
+            accepted.insert(key, tool);
+        }
+    } else if let Ok(remote_dir) = crate::paths::registry_remote_cache_dir() {
         let tools_subdir = remote_dir.join("tools");
         if tools_subdir.exists() {
             load_tools_from_dir(&tools_subdir, &mut accepted);
@@ -191,6 +210,111 @@ fn plugin_install_handler_unreachable(_version: &str) -> Result<(), InstallError
     Err(InstallError::Parse(
         "plugin handler invoked without name dispatch (bug)",
     ))
+}
+
+/// Cached parsed-tools snapshot written by `registry_remote::sync` at the
+/// end of a successful sync. The plugin loader prefers this single JSON
+/// read over walking `~/.jarvy/tools.d/.remote/tools/` + per-file open +
+/// TOML parse on every CLI startup.
+///
+/// `synced_at_unix` mirrors `meta.json::last_synced_at_unix` and is the
+/// invalidation key — if the loader sees the values disagree (someone
+/// hand-edited the cache between syncs) the index is treated as stale
+/// and the walk-and-parse fallback runs.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RemoteIndex {
+    pub synced_at_unix: u64,
+    pub tools: Vec<PluginTool>,
+}
+
+/// Walk `~/.jarvy/tools.d/.remote/tools/` once, parse every TOML, and
+/// write the resulting `PluginTool` set as a single JSON blob at
+/// `~/.jarvy/tools.d/.remote/index.json`. Called by
+/// `registry_remote::sync::run_sync_with_config` after the staging-swap
+/// succeeds; the next CLI startup will then read one file instead of N.
+///
+/// Failures here are non-fatal — they only fall back to the walk-and-
+/// parse path at next load. We log a warning so a fleet operator can
+/// notice but the sync still reports success because the actual TOMLs
+/// are on disk.
+pub fn build_remote_index(synced_at_unix: u64) -> std::io::Result<()> {
+    let Ok(remote_root) = crate::paths::registry_remote_cache_dir() else {
+        return Ok(()); // No home dir resolution; nothing to write.
+    };
+    let tools_dir = remote_root.join("tools");
+    if !tools_dir.exists() {
+        return Ok(());
+    }
+
+    let mut tools = Vec::with_capacity(64);
+    for entry in std::fs::read_dir(&tools_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        if !is_path_safe_to_load(&path) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(tool) = toml::from_str::<PluginTool>(&content) else {
+            continue;
+        };
+        if !is_valid_package_name(&tool.name)
+            || !is_valid_package_name(&tool.command)
+            || !validate_platforms(&tool)
+        {
+            continue;
+        }
+        tools.push(tool);
+    }
+
+    let index = RemoteIndex {
+        synced_at_unix,
+        tools,
+    };
+    let index_path = remote_root.join("index.json");
+    let payload = serde_json::to_vec(&index).map_err(std::io::Error::other)?;
+    std::fs::write(&index_path, payload)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&index_path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Try to load the remote-tool set from the cached JSON index.
+///
+/// Returns `Some(tools)` only if:
+/// 1. `index.json` exists with safe perms
+/// 2. `meta.json` exists with safe perms
+/// 3. Both parse and their `synced_at_unix`/`last_synced_at_unix`
+///    fields agree
+///
+/// Any other shape (missing file, mismatched timestamp, parse error)
+/// returns `None` and the caller falls back to walking the tools/
+/// directory. Avoiding hard errors keeps the loader resilient against
+/// a partially-written cache from an interrupted older Jarvy.
+fn try_load_remote_index() -> Option<Vec<PluginTool>> {
+    let remote_root = crate::paths::registry_remote_cache_dir().ok()?;
+    let index_path = remote_root.join("index.json");
+    let meta_path = remote_root.join("meta.json");
+    if !is_path_safe_to_load(&index_path) || !is_path_safe_to_load(&meta_path) {
+        return None;
+    }
+
+    let index_bytes = std::fs::read(&index_path).ok()?;
+    let meta_bytes = std::fs::read(&meta_path).ok()?;
+    let index: RemoteIndex = serde_json::from_slice(&index_bytes).ok()?;
+    let meta: serde_json::Value = serde_json::from_slice(&meta_bytes).ok()?;
+    let meta_synced = meta.get("last_synced_at_unix")?.as_u64()?;
+    if meta_synced != index.synced_at_unix {
+        return None;
+    }
+    Some(index.tools)
 }
 
 /// Walk one directory of TOML plugin files and insert any that pass

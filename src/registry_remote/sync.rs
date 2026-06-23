@@ -214,52 +214,118 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     // -- 4. Snapshot pre-existing tool filenames so we can count removals.
     let pre_existing = list_cached_tool_files()?;
 
-    // -- 5. Per-tool fetch + sha-verify into a fresh STAGING dir.
+    // -- 5. Per-tool fetch + sha-verify into a fresh STAGING dir,
+    //       parallelized across a bounded worker pool.
     //
     // The staging dir is wiped fresh at entry; the active tools/ dir is
-    // left alone. A failure during the loop leaves staging behind to be
-    // cleaned up on the next sync (next fresh_staging_tools_dir wipes it).
+    // left alone. A failure in any worker stops the others fast via
+    // `first_error` — same fail-fast semantics as the serial loop,
+    // just with N parallel HTTPS round-trips per worker pool tick.
+    //
+    // Parallelism caps at JARVY_REGISTRY_SYNC_PARALLELISM (default 8)
+    // OR the tool count, whichever is smaller — we never spawn more
+    // threads than there is work. The shared `crate::net::agent`
+    // ureq::Agent supports concurrent connections via its internal
+    // pool, so workers reuse keep-alive connections rather than each
+    // doing a fresh TLS handshake.
     let staging = cache::fresh_staging_tools_dir()?;
-    let mut written_filenames: HashSet<String> = HashSet::with_capacity(manifest.tools.len());
-    let mut sha_buf = String::with_capacity(64);
-    let mut filename_buf = String::with_capacity(64);
-    for entry in &manifest.tools {
-        let url = cfg.tool_url(&entry.path);
-        let body = fetch_with_event(&url, MAX_TOOL_BYTES, &redacted_url)?;
-        sha_buf.clear();
-        sha256_hex_into(&body, &mut sha_buf);
-        if sha_buf != entry.sha256 {
-            emit(|| {
-                tracing::error!(
-                    event = "registry.sync.sha_mismatch",
-                    tool = %entry.name,
-                    url = %url,
-                    expected = %entry.sha256,
-                    actual = %sha_buf,
-                );
-            });
-            return Err(SyncError::ShaMismatch {
-                name: entry.name.clone(),
-                expected: entry.sha256.clone(),
-                actual: sha_buf.clone(),
+    let total = manifest.tools.len();
+    let written_filenames: std::sync::Mutex<HashSet<String>> =
+        std::sync::Mutex::new(HashSet::with_capacity(total));
+    let first_error: std::sync::Mutex<Option<SyncError>> = std::sync::Mutex::new(None);
+    let next_idx = std::sync::atomic::AtomicUsize::new(0);
+    let max_parallel = std::env::var("JARVY_REGISTRY_SYNC_PARALLELISM")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(8)
+        .clamp(1, total.max(1));
+    let staging_ref = &staging;
+    let cfg_ref = cfg;
+    let manifest_ref = &manifest;
+    let redacted_ref = redacted_url.as_str();
+    let first_error_ref = &first_error;
+    let written_ref = &written_filenames;
+    let next_idx_ref = &next_idx;
+
+    std::thread::scope(|scope| {
+        for _ in 0..max_parallel {
+            scope.spawn(move || {
+                let mut sha_buf = String::with_capacity(64);
+                let mut filename_buf = String::with_capacity(64);
+                loop {
+                    // Fast-exit if another worker already errored.
+                    if first_error_ref.lock().unwrap().is_some() {
+                        return;
+                    }
+                    let idx = next_idx_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if idx >= total {
+                        return;
+                    }
+                    let entry = &manifest_ref.tools[idx];
+                    let url = cfg_ref.tool_url(&entry.path);
+                    let body = match fetch_with_event(&url, MAX_TOOL_BYTES, redacted_ref) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            let mut slot = first_error_ref.lock().unwrap();
+                            if slot.is_none() {
+                                *slot = Some(e);
+                            }
+                            return;
+                        }
+                    };
+                    sha_buf.clear();
+                    sha256_hex_into(&body, &mut sha_buf);
+                    if sha_buf != entry.sha256 {
+                        emit(|| {
+                            tracing::error!(
+                                event = "registry.sync.sha_mismatch",
+                                tool = %entry.name,
+                                url = %url,
+                                expected = %entry.sha256,
+                                actual = %sha_buf,
+                            );
+                        });
+                        let mut slot = first_error_ref.lock().unwrap();
+                        if slot.is_none() {
+                            *slot = Some(SyncError::ShaMismatch {
+                                name: entry.name.clone(),
+                                expected: entry.sha256.clone(),
+                                actual: sha_buf.clone(),
+                            });
+                        }
+                        return;
+                    }
+
+                    filename_buf.clear();
+                    write!(filename_buf, "{}.toml", entry.name)
+                        .expect("write to String never fails");
+                    let dest = staging_ref.join(&filename_buf);
+                    if let Err(e) = cache::write_atomic(&dest, &body) {
+                        let mut slot = first_error_ref.lock().unwrap();
+                        if slot.is_none() {
+                            *slot = Some(SyncError::Cache(e));
+                        }
+                        return;
+                    }
+                    emit(|| {
+                        tracing::debug!(
+                            event = "registry.sync.tool.synced",
+                            tool = %entry.name,
+                            bytes = body.len() as u64,
+                        );
+                    });
+                    written_ref.lock().unwrap().insert(filename_buf.clone());
+                }
             });
         }
+    });
 
-        // File on disk is `<tool-name>.toml` — collapsing manifest paths
-        // into a flat staging/ keeps the plugin loader's walk shallow.
-        filename_buf.clear();
-        write!(filename_buf, "{}.toml", entry.name).expect("write to String never fails");
-        let dest = staging.join(&filename_buf);
-        cache::write_atomic(&dest, &body)?;
-        emit(|| {
-            tracing::debug!(
-                event = "registry.sync.tool.synced",
-                tool = %entry.name,
-                bytes = body.len() as u64,
-            );
-        });
-        written_filenames.insert(filename_buf.clone());
+    if let Some(err) = first_error.into_inner().expect("first_error poisoned") {
+        return Err(err);
     }
+    let written_filenames = written_filenames
+        .into_inner()
+        .expect("written_filenames poisoned");
 
     // -- 6. Atomic-swap staging → active. From this point on the new set
     //       is live; pre_existing − written = removed.
@@ -285,6 +351,19 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     });
     let meta_path = cache::cache_root()?.join("meta.json");
     cache::write_atomic(&meta_path, meta_payload.to_string().as_bytes())?;
+
+    // Build the parsed-tools index alongside meta.json. The plugin
+    // loader will prefer this single-file read over the per-tool walk
+    // on subsequent CLI startups. Failures here are non-fatal — they
+    // just mean the loader falls back to the walk.
+    if let Err(e) = crate::tools::plugins::build_remote_index(now) {
+        emit(|| {
+            tracing::warn!(
+                event = "registry.cache.index_build_failed",
+                error = %e,
+            );
+        });
+    }
 
     emit(|| {
         tracing::info!(
