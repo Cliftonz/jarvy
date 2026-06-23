@@ -68,11 +68,27 @@ fn default_true() -> bool {
 /// boundary. Both gates apply (config + per-fetch) so even with the env
 /// var set, a misconfigured non-loopback URL still fails at the earlier
 /// validation step.
+///
+/// The same userinfo-bypass concern applies — `http://127.0.0.1:80@attacker/`
+/// parses as host `attacker` per RFC 3986. Refuse any URL with a `@` in
+/// the authority.
 fn insecure_loopback_url_allowed(url: &str) -> bool {
     if std::env::var_os("JARVY_REGISTRY_ALLOW_INSECURE_FETCH").is_none() {
         return false;
     }
-    url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
+    let Some(after_scheme) = url.strip_prefix("http://") else {
+        return false;
+    };
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
+    if authority.contains('@') {
+        return false;
+    }
+    let host_end = authority.find(':').unwrap_or(authority.len());
+    let host = &authority[..host_end];
+    matches!(host, "127.0.0.1" | "localhost")
 }
 
 impl Default for RegistryConfig {

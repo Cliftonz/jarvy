@@ -47,7 +47,9 @@ pub enum FetchError {
 /// [`insecure_loopback_allowed`]).
 pub fn fetch_bounded(url: &str, max_bytes: u64) -> Result<Vec<u8>, FetchError> {
     if !url.starts_with("https://") && !insecure_loopback_allowed(url) {
-        return Err(FetchError::NonHttps(url.to_string()));
+        return Err(FetchError::NonHttps(
+            crate::network::redact_credentials(url).into_owned(),
+        ));
     }
 
     let agent = crate::net::agent::agent();
@@ -56,13 +58,13 @@ pub fn fetch_bounded(url: &str, max_bytes: u64) -> Result<Vec<u8>, FetchError> {
         .header("User-Agent", crate::net::agent::USER_AGENT)
         .call()
         .map_err(|e| FetchError::Network {
-            url: url.to_string(),
+            url: crate::network::redact_credentials(url).into_owned(),
             message: e.to_string(),
         })?;
 
     if response.status() != 200 {
         return Err(FetchError::HttpStatus {
-            url: url.to_string(),
+            url: crate::network::redact_credentials(url).into_owned(),
             status: response.status().as_u16(),
         });
     }
@@ -75,13 +77,13 @@ pub fn fetch_bounded(url: &str, max_bytes: u64) -> Result<Vec<u8>, FetchError> {
     limited
         .read_to_end(&mut buf)
         .map_err(|e| FetchError::Read {
-            url: url.to_string(),
+            url: crate::network::redact_credentials(url).into_owned(),
             source: e,
         })?;
 
     if buf.len() as u64 > max_bytes {
         return Err(FetchError::TooLarge {
-            url: url.to_string(),
+            url: crate::network::redact_credentials(url).into_owned(),
             cap: max_bytes,
         });
     }
@@ -103,7 +105,32 @@ fn insecure_loopback_allowed(url: &str) -> bool {
     if std::env::var_os("JARVY_REGISTRY_ALLOW_INSECURE_FETCH").is_none() {
         return false;
     }
-    url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
+    is_plain_loopback_http(url)
+}
+
+/// True iff `url` is `http://<loopback-host>[:port]/...` with NO
+/// `userinfo@` segment. Byte-prefix matching the serialized form is
+/// not enough: `http://127.0.0.1:80@attacker.example/` parses with
+/// `127.0.0.1:80` as USERINFO and `attacker.example` as host (RFC 3986).
+/// We parse the authority portion ourselves rather than pulling in the
+/// `url` crate just for this gate.
+fn is_plain_loopback_http(url: &str) -> bool {
+    let Some(after_scheme) = url.strip_prefix("http://") else {
+        return false;
+    };
+    // The authority is everything before the first '/', '?' or '#'.
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
+    // Reject any `@` in the authority — that's a userinfo segment.
+    if authority.contains('@') {
+        return false;
+    }
+    // The host is everything up to ':' (port) or end.
+    let host_end = authority.find(':').unwrap_or(authority.len());
+    let host = &authority[..host_end];
+    matches!(host, "127.0.0.1" | "localhost")
 }
 
 #[cfg(test)]
@@ -149,5 +176,53 @@ mod tests {
         unsafe {
             std::env::remove_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH");
         }
+    }
+
+    /// Userinfo bypass: `http://127.0.0.1:80@attacker.example/x` parses
+    /// (per RFC 3986) with `127.0.0.1:80` as USERINFO and `attacker.example`
+    /// as host. Pre-fix byte-prefix matching accepted this; the
+    /// post-fix authority parser refuses anything with `@`.
+    #[test]
+    #[serial(registry_env)]
+    fn refuses_userinfo_authority_bypass() {
+        // SAFETY: serialized via #[serial(registry_env)].
+        unsafe {
+            std::env::set_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH", "1");
+        }
+        for url in [
+            "http://127.0.0.1:80@attacker.example/x",
+            "http://localhost:80@attacker.example/x",
+            "http://127.0.0.1@attacker.example/x",
+            "http://user:pass@127.0.0.1:8080/x",
+        ] {
+            let err = fetch_bounded(url, 1024).unwrap_err();
+            assert!(
+                matches!(err, FetchError::NonHttps(_)),
+                "must refuse userinfo-bearing URL {url:?}"
+            );
+        }
+        // SAFETY: same.
+        unsafe {
+            std::env::remove_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH");
+        }
+    }
+
+    #[test]
+    fn is_plain_loopback_http_accepts_clean_loopback() {
+        // Direct unit on the parser — no env dance.
+        assert!(is_plain_loopback_http("http://127.0.0.1:8080/x"));
+        assert!(is_plain_loopback_http("http://localhost:8080/x"));
+        assert!(is_plain_loopback_http("http://127.0.0.1/"));
+    }
+
+    #[test]
+    fn is_plain_loopback_http_refuses_userinfo() {
+        assert!(!is_plain_loopback_http(
+            "http://127.0.0.1:80@attacker.example/x"
+        ));
+        assert!(!is_plain_loopback_http("http://user@127.0.0.1:8080/x"));
+        assert!(!is_plain_loopback_http(
+            "http://localhost@attacker.example/x"
+        ));
     }
 }

@@ -112,9 +112,21 @@ pub fn swap_staging_into_tools_dir() -> Result<(), CacheError> {
         fs::rename(&active, &retired)?;
     }
     if let Err(e) = fs::rename(&staging, &active) {
+        tracing::error!(
+            event = "registry.cache.swap_failed",
+            stage = "promote",
+            error = %e,
+        );
         // Best-effort rollback so the user isn't left with no active dir.
         if retired.exists() {
-            let _ = fs::rename(&retired, &active);
+            if let Err(rollback_err) = fs::rename(&retired, &active) {
+                tracing::error!(
+                    event = "registry.cache.swap_failed",
+                    stage = "rollback",
+                    error = %rollback_err,
+                    promote_error = %e,
+                );
+            }
         }
         return Err(e.into());
     }
@@ -140,8 +152,18 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), CacheError> {
         ext.push_str(".tmp");
         ext
     });
+    // Clean up any stale .tmp from a prior panicked write before opening
+    // with O_EXCL. Two concurrent writers to the SAME dest would race
+    // on the create_new; manifest::DuplicateName rejection at parse
+    // closes the only known source of that race within a single sync,
+    // so EEXIST here surfaces a real bug (two threads same path) rather
+    // than a stale-tmp issue.
+    let _ = fs::remove_file(&tmp);
     let write_result = (|| -> Result<(), std::io::Error> {
-        let mut f = fs::File::create(&tmp)?;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
         Ok(())

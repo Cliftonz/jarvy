@@ -70,6 +70,7 @@ fn error_kind(e: &registry_remote::SyncError) -> &'static str {
         E::Signature(_) => "signature",
         E::CosignBackend(_) => "cosign",
         E::ShaMismatch { .. } => "sha_mismatch",
+        E::ToolParseFailed { .. } => "tool_parse_failed",
     }
 }
 

@@ -237,52 +237,48 @@ pub struct RemoteIndex {
 /// parse path at next load. We log a warning so a fleet operator can
 /// notice but the sync still reports success because the actual TOMLs
 /// are on disk.
-pub fn build_remote_index(synced_at_unix: u64) -> std::io::Result<()> {
+pub fn build_remote_index(synced_at_unix: u64, tools: Vec<PluginTool>) -> std::io::Result<()> {
     let Ok(remote_root) = crate::paths::registry_remote_cache_dir() else {
-        return Ok(()); // No home dir resolution; nothing to write.
-    };
-    let tools_dir = remote_root.join("tools");
-    if !tools_dir.exists() {
         return Ok(());
-    }
+    };
 
-    let mut tools = Vec::with_capacity(64);
-    for entry in std::fs::read_dir(&tools_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        if !is_path_safe_to_load(&path) {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(tool) = toml::from_str::<PluginTool>(&content) else {
-            continue;
-        };
-        if !is_valid_package_name(&tool.name)
-            || !is_valid_package_name(&tool.command)
-            || !validate_platforms(&tool)
-        {
-            continue;
-        }
-        tools.push(tool);
-    }
-
+    let accepted_count = tools.len();
     let index = RemoteIndex {
         synced_at_unix,
         tools,
     };
     let index_path = remote_root.join("index.json");
     let payload = serde_json::to_vec(&index).map_err(std::io::Error::other)?;
-    std::fs::write(&index_path, payload)?;
+
+    // Atomic-ish write via tmp + rename + stat-after-chmod (matches the
+    // cache layer's hardening: silent chmod failures on NFS/exFAT used
+    // to leave index.json world-readable).
+    let tmp = index_path.with_extension("json.tmp");
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::write(&tmp, &payload)?;
+    std::fs::rename(&tmp, &index_path)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&index_path, std::fs::Permissions::from_mode(0o600));
+        std::fs::set_permissions(&index_path, std::fs::Permissions::from_mode(0o600))?;
+        let mode = std::fs::metadata(&index_path)?.permissions().mode() & 0o777;
+        if mode & 0o077 != 0 {
+            tracing::warn!(
+                event = "registry.cache.index_perms_unsafe",
+                mode = format!("{:#o}", mode),
+            );
+            // Best effort: delete the file rather than leave it world-readable.
+            let _ = std::fs::remove_file(&index_path);
+            return Err(std::io::Error::other(format!(
+                "index.json mode {mode:#o} grants group/other access; refusing to leave it on disk"
+            )));
+        }
     }
+
+    tracing::info!(
+        event = "registry.cache.index_built",
+        accepted_count = accepted_count,
+    );
     Ok(())
 }
 
@@ -302,19 +298,64 @@ fn try_load_remote_index() -> Option<Vec<PluginTool>> {
     let remote_root = crate::paths::registry_remote_cache_dir().ok()?;
     let index_path = remote_root.join("index.json");
     let meta_path = remote_root.join("meta.json");
-    if !is_path_safe_to_load(&index_path) || !is_path_safe_to_load(&meta_path) {
+    if !is_path_safe_to_load(&index_path) {
+        emit_index_miss("unsafe_perms");
+        return None;
+    }
+    if !is_path_safe_to_load(&meta_path) {
+        emit_index_miss("unsafe_perms");
         return None;
     }
 
-    let index_bytes = std::fs::read(&index_path).ok()?;
-    let meta_bytes = std::fs::read(&meta_path).ok()?;
-    let index: RemoteIndex = serde_json::from_slice(&index_bytes).ok()?;
-    let meta: serde_json::Value = serde_json::from_slice(&meta_bytes).ok()?;
-    let meta_synced = meta.get("last_synced_at_unix")?.as_u64()?;
+    let Ok(index_bytes) = std::fs::read(&index_path) else {
+        emit_index_miss("no_index");
+        return None;
+    };
+    let Ok(meta_bytes) = std::fs::read(&meta_path) else {
+        emit_index_miss("no_meta");
+        return None;
+    };
+    let Ok(index) = serde_json::from_slice::<RemoteIndex>(&index_bytes) else {
+        emit_index_miss("parse_failed");
+        return None;
+    };
+    let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&meta_bytes) else {
+        emit_index_miss("parse_failed");
+        return None;
+    };
+    let meta_synced = meta.get("last_synced_at_unix").and_then(|v| v.as_u64())?;
     if meta_synced != index.synced_at_unix {
+        emit_index_miss("stale_timestamp");
         return None;
     }
+
+    // Per-tool security gates: the index was BUILT by trusted sync code,
+    // but anything could have hand-edited index.json between sync and
+    // load. Re-run the same validation `load_tools_from_dir` applies to
+    // the walk fallback. A single bad entry rejects the whole index —
+    // caller falls back to the walk, which surfaces the bad TOML with
+    // its own warn event.
+    for tool in &index.tools {
+        if !is_valid_package_name(&tool.name) || !is_valid_package_name(&tool.command) {
+            emit_index_miss("invalid_identifier");
+            return None;
+        }
+        if !validate_platforms(tool) {
+            emit_index_miss("invalid_platform_package");
+            return None;
+        }
+    }
+
+    tracing::debug!(
+        event = "registry.cache.index_hit",
+        tools_count = index.tools.len(),
+        synced_at_unix = index.synced_at_unix,
+    );
     Some(index.tools)
+}
+
+fn emit_index_miss(reason: &'static str) {
+    tracing::debug!(event = "registry.cache.index_miss", reason = reason);
 }
 
 /// Walk one directory of TOML plugin files and insert any that pass
@@ -751,5 +792,129 @@ command = "bad;rm -rf /"
         // metadata) OR read_dir → err. Either way, accepted stays empty.
         load_tools_from_dir(&absent, &mut accepted);
         assert!(accepted.is_empty());
+    }
+
+    /// Item 1 (post-review fix) — `try_load_remote_index` MUST refuse
+    /// to load tools whose `command` field contains shell metachars.
+    /// Pre-fix the index path bypassed the per-tool validators that
+    /// `load_tools_from_dir` ran; this pins the equivalence.
+    #[test]
+    #[allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
+    fn try_load_remote_index_rejects_invalid_command_field() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prev = std::env::var_os("JARVY_HOME");
+        // SAFETY: serial-test gate would help here but the test is
+        // small; we restore on drop via the let-_ = guard pattern.
+        unsafe {
+            std::env::set_var("JARVY_HOME", tmp.path());
+        }
+        struct Guard(Option<std::ffi::OsString>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                // SAFETY: restore the previously-saved value.
+                unsafe {
+                    match &self.0 {
+                        Some(v) => std::env::set_var("JARVY_HOME", v),
+                        None => std::env::remove_var("JARVY_HOME"),
+                    }
+                }
+            }
+        }
+        let _guard = Guard(prev);
+
+        let remote = crate::paths::registry_remote_cache_dir().expect("cache dir resolves");
+        std::fs::create_dir_all(&remote).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&remote, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let index = serde_json::json!({
+            "synced_at_unix": 100u64,
+            "tools": [{
+                "name": "tool",
+                "command": "evil;rm -rf ~",
+                "macos": null, "linux": null, "windows": null
+            }]
+        });
+        let meta = serde_json::json!({ "last_synced_at_unix": 100u64 });
+        std::fs::write(remote.join("index.json"), index.to_string()).unwrap();
+        std::fs::write(remote.join("meta.json"), meta.to_string()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                remote.join("index.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+            std::fs::set_permissions(
+                remote.join("meta.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+        }
+
+        let result = try_load_remote_index();
+        assert!(
+            result.is_none(),
+            "index with shell-meta in command MUST fall back to walk, got {result:?}"
+        );
+    }
+
+    /// Item 9 — try_load_remote_index returns None on each enumerated
+    /// rejection condition.
+    #[test]
+    #[allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
+    fn try_load_remote_index_rejects_stale_timestamp() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prev = std::env::var_os("JARVY_HOME");
+        // SAFETY: see invalid_command_field test.
+        unsafe {
+            std::env::set_var("JARVY_HOME", tmp.path());
+        }
+        struct Guard(Option<std::ffi::OsString>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                // SAFETY: restore prior env.
+                unsafe {
+                    match &self.0 {
+                        Some(v) => std::env::set_var("JARVY_HOME", v),
+                        None => std::env::remove_var("JARVY_HOME"),
+                    }
+                }
+            }
+        }
+        let _g = Guard(prev);
+
+        let remote = crate::paths::registry_remote_cache_dir().expect("cache dir resolves");
+        std::fs::create_dir_all(&remote).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&remote, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+
+        // Index claims synced_at_unix=200, meta says 100. Mismatch → None.
+        let index = serde_json::json!({ "synced_at_unix": 200u64, "tools": [] });
+        let meta = serde_json::json!({ "last_synced_at_unix": 100u64 });
+        std::fs::write(remote.join("index.json"), index.to_string()).unwrap();
+        std::fs::write(remote.join("meta.json"), meta.to_string()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                remote.join("index.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+            std::fs::set_permissions(
+                remote.join("meta.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+        }
+
+        assert!(try_load_remote_index().is_none());
     }
 }

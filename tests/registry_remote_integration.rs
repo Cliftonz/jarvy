@@ -588,6 +588,94 @@ fn parallel_fetch_fails_fast_on_404() {
     );
 }
 
+// ===== Item 4 — duplicate-name manifest rejected at parse =====
+
+#[test]
+#[serial]
+fn duplicate_tool_names_in_manifest_are_rejected() {
+    let _env = TestEnv::new();
+    let body = make_tool_toml("dup");
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "tools": [
+            { "name": "dup", "path": "tools/a.toml", "sha256": sha256_hex(&body) },
+            { "name": "dup", "path": "tools/b.toml", "sha256": sha256_hex(&body) },
+        ]
+    })
+    .to_string();
+    let mut routes = HashMap::new();
+    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
+    let (url, stop) = spawn_server(routes);
+
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+        .expect_err("duplicate names must be refused");
+    *stop.lock().unwrap() = true;
+    assert!(
+        matches!(
+            err,
+            jarvy::registry_remote::SyncError::Manifest(
+                jarvy::registry_remote::ManifestError::DuplicateName { ref name }
+            ) if name == "dup"
+        ),
+        "expected ManifestError::DuplicateName('dup'); got {err:?}"
+    );
+}
+
+// ===== Item 11 — index build failure non-fatal =====
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn sync_still_succeeds_when_index_build_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let _env = TestEnv::new();
+    let tool_body = make_tool_toml("foo");
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "tools": [
+            { "name": "foo", "path": "tools/foo.toml", "sha256": sha256_hex(&tool_body) }
+        ]
+    })
+    .to_string();
+    let mut routes = HashMap::new();
+    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
+    routes.insert("/tools/foo.toml".to_string(), Canned::ok(tool_body));
+    let (url, stop) = spawn_server(routes);
+
+    // Seed the cache dir then chmod it 0500 (read+exec, no write) so
+    // index.json write fails. enforce_dir_perms refuses *insecure*
+    // perms (looser than 0700); 0500 is *stricter* so cache_root()
+    // accepts it, but the write itself errors with EACCES.
+    let cache_dir = jarvy::paths::registry_remote_cache_dir().unwrap();
+    std::fs::create_dir_all(&cache_dir).unwrap();
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    // Sync runs; the swap + meta.json writes happen inside tools/ and
+    // cache_root respectively (cache_root's 0500 prevents the
+    // sub-directory creations we need). So instead reset to 0700 and
+    // chmod index.json's parent before the build_remote_index call —
+    // but that's tricky with timing. Easier: pre-create index.json as
+    // a read-only file so the write fails (we don't actually exercise
+    // a perms-error here; we exercise that the sync still returns Ok
+    // when build_remote_index returns Err).
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let index_path = cache_dir.join("index.json");
+    std::fs::write(&index_path, b"placeholder").unwrap();
+    // Make index.json's parent dir read-only AFTER seeding a stale
+    // index. The rename inside build_remote_index will fail.
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url));
+    // Restore so the test teardown can clean up.
+    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    *stop.lock().unwrap() = true;
+
+    // Sync should succeed even if the read-only dir blocks the index
+    // rename. (If it fails for another reason, surface that.)
+    let report = report.expect("sync must report Ok even when index build fails");
+    assert_eq!(report.tools_synced, 1);
+}
+
 // ===== Item 14 — meta.json schema =====
 
 #[test]

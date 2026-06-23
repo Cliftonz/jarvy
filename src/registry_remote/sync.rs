@@ -66,6 +66,38 @@ pub enum SyncError {
         expected: String,
         actual: String,
     },
+    #[error("tool {name:?} body is not valid utf-8 or not a parseable PluginTool TOML")]
+    ToolParseFailed { name: String },
+}
+
+/// Per-worker accumulator returned from a `thread::scope` spawn. Workers
+/// build local Vecs (zero shared-state contention on the success path)
+/// and the orchestrator merges them after the scope joins.
+struct WorkerResult {
+    filenames: Vec<String>,
+    parsed_tools: Vec<crate::tools::plugins::PluginTool>,
+}
+
+/// First-error-wins: only the worker that successfully flips the
+/// AtomicBool from false→true writes its error into the mutex slot.
+/// Subsequent failures see the flag already set and return without
+/// touching the slot.
+fn set_first_error(
+    flag: &std::sync::atomic::AtomicBool,
+    slot: &std::sync::Mutex<Option<SyncError>>,
+    err: SyncError,
+) {
+    if flag
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_ok()
+    {
+        *slot.lock().expect("first_error_slot poisoned") = Some(err);
+    }
 }
 
 /// Summary returned to the CLI handler so it can print a human report.
@@ -230,47 +262,85 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     // doing a fresh TLS handshake.
     let staging = cache::fresh_staging_tools_dir()?;
     let total = manifest.tools.len();
-    let written_filenames: std::sync::Mutex<HashSet<String>> =
-        std::sync::Mutex::new(HashSet::with_capacity(total));
-    let first_error: std::sync::Mutex<Option<SyncError>> = std::sync::Mutex::new(None);
+    // Hot-path coordination: AtomicBool for the flag workers check on
+    // every iteration (lock-free read); the typed SyncError only goes
+    // through the mutex on the once-per-error write path.
+    let first_error_flag = std::sync::atomic::AtomicBool::new(false);
+    let first_error_slot: std::sync::Mutex<Option<SyncError>> = std::sync::Mutex::new(None);
     let next_idx = std::sync::atomic::AtomicUsize::new(0);
+    // ABSOLUTE upper bound prevents `JARVY_REGISTRY_SYNC_PARALLELISM=
+    // usize::MAX` from spawning thousands of OS threads on a hostile
+    // manifest. 64 matches what `crate::net::agent`'s connection pool
+    // can usefully keep alive concurrently.
     let max_parallel = std::env::var("JARVY_REGISTRY_SYNC_PARALLELISM")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(8)
-        .clamp(1, total.max(1));
-    let staging_ref = &staging;
+        .unwrap_or(8);
+    #[allow(clippy::manual_clamp)] // explicit two-step floor/ceiling reads cleaner here
+    let max_parallel = max_parallel.max(1).min(total.max(1)).min(64);
     let cfg_ref = cfg;
     let manifest_ref = &manifest;
     let redacted_ref = redacted_url.as_str();
-    let first_error_ref = &first_error;
-    let written_ref = &written_filenames;
+    let first_error_flag_ref = &first_error_flag;
+    let first_error_slot_ref = &first_error_slot;
     let next_idx_ref = &next_idx;
+    let staging_ref = &staging;
 
-    std::thread::scope(|scope| {
-        for _ in 0..max_parallel {
-            scope.spawn(move || {
+    // Spawn workers inside the scope AND join them inside, so the
+    // returned `WorkerResult`s outlive the scope without holding any
+    // ScopedJoinHandle references on the outer stack.
+    let (parsed_tools, written_filenames) = std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(max_parallel);
+        for worker_id in 0..max_parallel {
+            handles.push(scope.spawn(move || -> WorkerResult {
+                let mut local_filenames: Vec<String> = Vec::with_capacity(total / max_parallel + 1);
+                let mut local_tools: Vec<crate::tools::plugins::PluginTool> =
+                    Vec::with_capacity(total / max_parallel + 1);
                 let mut sha_buf = String::with_capacity(64);
                 let mut filename_buf = String::with_capacity(64);
                 loop {
-                    // Fast-exit if another worker already errored.
-                    if first_error_ref.lock().unwrap().is_some() {
-                        return;
+                    // Lock-free fast-exit if another worker already errored.
+                    if first_error_flag_ref.load(std::sync::atomic::Ordering::Acquire) {
+                        return WorkerResult {
+                            filenames: local_filenames,
+                            parsed_tools: local_tools,
+                        };
                     }
-                    let idx = next_idx_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let idx = next_idx_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if idx >= total {
-                        return;
+                        return WorkerResult {
+                            filenames: local_filenames,
+                            parsed_tools: local_tools,
+                        };
                     }
                     let entry = &manifest_ref.tools[idx];
                     let url = cfg_ref.tool_url(&entry.path);
+                    let url_for_log = crate::network::redact_credentials(&url).into_owned();
+                    emit(|| {
+                        tracing::debug!(
+                            event = "registry.sync.tool.start",
+                            tool = %entry.name,
+                            worker_id = worker_id,
+                            url = %url_for_log,
+                        );
+                    });
                     let body = match fetch_with_event(&url, MAX_TOOL_BYTES, redacted_ref) {
                         Ok(b) => b,
                         Err(e) => {
-                            let mut slot = first_error_ref.lock().unwrap();
-                            if slot.is_none() {
-                                *slot = Some(e);
-                            }
-                            return;
+                            emit(|| {
+                                tracing::warn!(
+                                    event = "registry.sync.tool_fetch_failed",
+                                    tool = %entry.name,
+                                    worker_id = worker_id,
+                                    url = %url_for_log,
+                                    error = %e,
+                                );
+                            });
+                            set_first_error(first_error_flag_ref, first_error_slot_ref, e);
+                            return WorkerResult {
+                                filenames: local_filenames,
+                                parsed_tools: local_tools,
+                            };
                         }
                     };
                     sha_buf.clear();
@@ -280,52 +350,121 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
                             tracing::error!(
                                 event = "registry.sync.sha_mismatch",
                                 tool = %entry.name,
-                                url = %url,
+                                worker_id = worker_id,
+                                url = %url_for_log,
                                 expected = %entry.sha256,
                                 actual = %sha_buf,
                             );
                         });
-                        let mut slot = first_error_ref.lock().unwrap();
-                        if slot.is_none() {
-                            *slot = Some(SyncError::ShaMismatch {
+                        set_first_error(
+                            first_error_flag_ref,
+                            first_error_slot_ref,
+                            SyncError::ShaMismatch {
                                 name: entry.name.clone(),
                                 expected: entry.sha256.clone(),
                                 actual: sha_buf.clone(),
-                            });
-                        }
-                        return;
+                            },
+                        );
+                        return WorkerResult {
+                            filenames: local_filenames,
+                            parsed_tools: local_tools,
+                        };
                     }
+
+                    // Parse the TOML BEFORE writing — if it's malformed
+                    // the sha matched but the body is unusable, and we'd
+                    // rather fail the sync than silently ship a bad TOML
+                    // into staging.
+                    let parsed = match std::str::from_utf8(&body)
+                        .ok()
+                        .and_then(|s| toml::from_str::<crate::tools::plugins::PluginTool>(s).ok())
+                    {
+                        Some(p) => p,
+                        None => {
+                            emit(|| {
+                                tracing::error!(
+                                    event = "registry.sync.tool_parse_failed",
+                                    tool = %entry.name,
+                                    worker_id = worker_id,
+                                );
+                            });
+                            set_first_error(
+                                first_error_flag_ref,
+                                first_error_slot_ref,
+                                SyncError::ToolParseFailed {
+                                    name: entry.name.clone(),
+                                },
+                            );
+                            return WorkerResult {
+                                filenames: local_filenames,
+                                parsed_tools: local_tools,
+                            };
+                        }
+                    };
 
                     filename_buf.clear();
                     write!(filename_buf, "{}.toml", entry.name)
                         .expect("write to String never fails");
                     let dest = staging_ref.join(&filename_buf);
                     if let Err(e) = cache::write_atomic(&dest, &body) {
-                        let mut slot = first_error_ref.lock().unwrap();
-                        if slot.is_none() {
-                            *slot = Some(SyncError::Cache(e));
-                        }
-                        return;
+                        emit(|| {
+                            tracing::error!(
+                                event = "registry.sync.tool_write_failed",
+                                tool = %entry.name,
+                                worker_id = worker_id,
+                                error = %e,
+                            );
+                        });
+                        set_first_error(
+                            first_error_flag_ref,
+                            first_error_slot_ref,
+                            SyncError::Cache(e),
+                        );
+                        return WorkerResult {
+                            filenames: local_filenames,
+                            parsed_tools: local_tools,
+                        };
                     }
                     emit(|| {
                         tracing::debug!(
                             event = "registry.sync.tool.synced",
                             tool = %entry.name,
+                            worker_id = worker_id,
                             bytes = body.len() as u64,
                         );
                     });
-                    written_ref.lock().unwrap().insert(filename_buf.clone());
+                    // Per-worker accumulator — merged after scope joins.
+                    // Single mem::take + reset gives us reuse without
+                    // a per-iteration clone.
+                    let owned = std::mem::take(&mut filename_buf);
+                    filename_buf = String::with_capacity(64);
+                    local_filenames.push(owned);
+                    local_tools.push(parsed);
                 }
-            });
+            }));
         }
+        // Join handles inside the scope so their data outlives it.
+        let mut filenames: HashSet<String> = HashSet::with_capacity(total);
+        let mut tools: Vec<crate::tools::plugins::PluginTool> = Vec::with_capacity(total);
+        for h in handles {
+            let WorkerResult {
+                filenames: f,
+                parsed_tools: t,
+            } = h.join().expect("worker thread panicked");
+            for name in f {
+                filenames.insert(name);
+            }
+            tools.extend(t);
+        }
+        (tools, filenames)
     });
 
-    if let Some(err) = first_error.into_inner().expect("first_error poisoned") {
+    if let Some(err) = first_error_slot
+        .into_inner()
+        .expect("first_error_slot poisoned")
+    {
         return Err(err);
     }
-    let written_filenames = written_filenames
-        .into_inner()
-        .expect("written_filenames poisoned");
 
     // -- 6. Atomic-swap staging → active. From this point on the new set
     //       is live; pre_existing − written = removed.
@@ -352,11 +491,11 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     let meta_path = cache::cache_root()?.join("meta.json");
     cache::write_atomic(&meta_path, meta_payload.to_string().as_bytes())?;
 
-    // Build the parsed-tools index alongside meta.json. The plugin
-    // loader will prefer this single-file read over the per-tool walk
-    // on subsequent CLI startups. Failures here are non-fatal — they
-    // just mean the loader falls back to the walk.
-    if let Err(e) = crate::tools::plugins::build_remote_index(now) {
+    // Build the parsed-tools index alongside meta.json. We hand it the
+    // already-parsed PluginTool set the workers accumulated — no extra
+    // walk + read + parse. Failures here are non-fatal: the loader
+    // falls back to walking tools/ on next startup.
+    if let Err(e) = crate::tools::plugins::build_remote_index(now, parsed_tools) {
         emit(|| {
             tracing::warn!(
                 event = "registry.cache.index_build_failed",

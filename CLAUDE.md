@@ -122,6 +122,22 @@ OTEL-based, **opt-in by default**. Config in `~/.jarvy/config.toml::[telemetry]`
 | `ai_hook.windows_auto_translated` | Bash→PowerShell xlat | `agent`, `hook_name` |
 | `mcp_register.phase_started` / `mcp_register.phase_completed` | apply phase | `agents`, `applied`, `refused_local`, `refused_remote`, `failures`, `duration_ms` |
 | `mcp_register.agent_applied` / `mcp_register.agent_failed` | per agent | `agent_failed`: `error_type` only |
+| `registry.sync.started` / `registry.sync.completed` | `jarvy registry sync` lifecycle | `registry_url` (redacted), `require_signature`, `tools_synced`, `tools_removed`, `signature_verified`, `duration_ms` |
+| `registry.sync.failed` | preflight + per-stage error returns | `stage = "preflight" \| "manifest_parse" \| ...`, `reason` (when preflight), `error` |
+| `registry.sync.signature_refused` | cosign verification rejected | `registry_url`, `identity_regexp`, `oidc_issuer`, `reason` |
+| `registry.signature_disabled` | `require_signature = false` escape hatch | `registry_url` |
+| `registry.sync.sha_mismatch` | per-tool sha verification fails | `tool`, `worker_id`, `url` (redacted), `expected`, `actual` |
+| `registry.sync.tool.start` / `registry.sync.tool.synced` | per-tool in parallel loop (debug) | `tool`, `worker_id`, `bytes` |
+| `registry.sync.tool_fetch_failed` / `tool_parse_failed` / `tool_write_failed` | per-tool failures inside the parallel loop | `tool`, `worker_id`, plus `url`/`error` |
+| `registry.fetch.start` / `registry.fetch.completed` | per HTTPS GET in `fetch_bounded` (debug) | `url`, `max_bytes`, `bytes` |
+| `registry.fetch.failed` | non-200 / size cap / network err | `url`, `registry_url`, `error` |
+| `registry.cache.swap_failed` | atomic-swap of `tools.new/` into `tools/` failed | `stage = "promote" \| "rollback"`, `error` |
+| `registry.cache.index_built` | parsed-tools index written | `accepted_count` |
+| `registry.cache.index_build_failed` | index write IO failure (non-fatal) | `error` |
+| `registry.cache.index_perms_unsafe` | `index.json` mode looser than `0700` after chmod | `mode` |
+| `registry.cache.index_hit` / `registry.cache.index_miss` | plugin loader read the index cache (debug) | `tools_count`, `synced_at_unix` / `reason` |
+| `registry.cli.sync_failed` | `jarvy registry sync` exit-code mapping | bounded `error_kind` label only |
+| `signature.skipped` / `signature.verified` / `signature.failed` | cosign verify path (was `update.signature.*` — renamed because shared with registry) | `file`, plus `reason` (skipped) or `error` (failed) |
 
 **`tool.unsupported` fields** (uniform across setup and `--request`):
 ```
