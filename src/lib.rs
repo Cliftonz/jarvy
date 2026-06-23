@@ -15,10 +15,12 @@ pub mod network;
 pub mod observability;
 pub mod packages;
 pub mod paths;
+pub mod registry_remote;
 pub mod sandbox;
 pub mod security;
 pub mod ticket;
 pub mod tools;
+pub mod update;
 pub mod workspace;
 
 pub use drift::{DriftConfig, DriftDetector, DriftReport, DriftStatus, EnvironmentState};

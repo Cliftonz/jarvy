@@ -56,6 +56,7 @@ pub mod lock_cmd;
 pub mod logs_cmd;
 pub mod mcp_cmd;
 pub mod mcp_register_cmd;
+pub mod registry_cmd;
 pub mod roles_cmd;
 pub mod services_cmd;
 pub mod setup_cmd;

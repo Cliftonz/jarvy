@@ -80,6 +80,21 @@ pub enum TemplatesSubcommand {
 }
 
 #[derive(Subcommand)]
+pub enum RegistryAction {
+    /// Fetch the remote registry: verify signature, sha-verify each tool
+    /// TOML, and cache under ~/.jarvy/tools.d/.remote/. The next
+    /// `jarvy setup` / `jarvy validate` run picks up the synced tools
+    /// via the plugin loader.
+    Sync {},
+    /// Show the last sync's metadata (URL, count, timestamp,
+    /// signature-verified flag).
+    Status {},
+    /// Clear the local registry cache. Synced tools disappear on next
+    /// startup until you run `jarvy registry sync` again.
+    Clear {},
+}
+
+#[derive(Subcommand)]
 pub enum TelemetryAction {
     /// Show current telemetry configuration
     Status {},

@@ -32,34 +32,45 @@
 
 use crate::tools::common::{InstallError, Os, current_os, has, run};
 use crate::tools::registry::register_tool;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
-/// Parsed plugin tool definition
-#[derive(Debug, Deserialize, Clone)]
+/// Parsed plugin tool definition. `Serialize` is enabled so
+/// `registry_remote::sync` can write the parsed remote-tool set to a
+/// single JSON index after a successful sync — the plugin loader then
+/// reads ONE file at CLI startup instead of stat+open+parse N TOMLs.
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PluginTool {
     pub name: String,
     pub command: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub macos: Option<PluginPlatform>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linux: Option<PluginPlatform>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub windows: Option<PluginPlatform>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[allow(dead_code)] // Fields used for deserialization
 pub struct PluginPlatform {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brew: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cask: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uniform: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dnf: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pacman: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub winget: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choco: Option<String>,
 }
 
@@ -144,24 +155,227 @@ pub fn load_user_tools() -> usize {
         }
     }
 
-    let Some(dir) = plugin_dir() else {
-        return 0;
-    };
+    let mut accepted: HashMap<String, PluginTool> = HashMap::new();
 
-    if !dir.exists() {
-        return 0;
+    // 1. User-authored plugins at ~/.jarvy/tools.d/*.toml.
+    if let Some(user_dir) = plugin_dir() {
+        load_tools_from_dir(&user_dir, &mut accepted);
     }
 
-    if !is_path_safe_to_load(&dir) {
+    // 2. Tools synced from a remote registry via `jarvy registry sync`.
+    //    Cached under ~/.jarvy/tools.d/.remote/tools/. Try the parsed
+    //    JSON index first — one read instead of N stat+open+TOML-parse.
+    //    Falls back to walking the dir when the index is missing,
+    //    perms-rejected, or stale relative to meta.json. Either way the
+    //    same security gates (perms, name validation, platform
+    //    validation) apply.
+    if let Some(remote_tools) = try_load_remote_index() {
+        for tool in remote_tools {
+            let key = tool.name.to_ascii_lowercase();
+            accepted.insert(key, tool);
+        }
+    } else if let Ok(remote_dir) = crate::paths::registry_remote_cache_dir() {
+        let tools_subdir = remote_dir.join("tools");
+        if tools_subdir.exists() {
+            load_tools_from_dir(&tools_subdir, &mut accepted);
+        }
+    }
+
+    let count = accepted.len();
+
+    // Register a stub handler in the main registry first so existing
+    // `tools::add(name, version)` lookups find the plugin. The handler
+    // never executes — `tools::add` consults the plugin registry first.
+    for tool in accepted.values() {
+        let _ = register_tool(&tool.name, plugin_install_handler_unreachable);
+    }
+
+    // Then drain into the plugin registry. Drain (not clone) avoids
+    // duplicating every key + PluginTool when populating the lock —
+    // `accepted` is about to drop anyway.
+    {
+        let mut map = registry().write().expect("plugin registry rwlock poisoned");
+        for (key, tool) in accepted.drain() {
+            map.insert(key, tool);
+        }
+    }
+
+    tracing::info!(event = "plugins.registered", count = count);
+    count
+}
+
+/// Stub handler that should never be invoked because `tools::add` checks the
+/// plugin registry first. Returns `Unsupported` if it ever is reached.
+fn plugin_install_handler_unreachable(_version: &str) -> Result<(), InstallError> {
+    Err(InstallError::Parse(
+        "plugin handler invoked without name dispatch (bug)",
+    ))
+}
+
+/// Cached parsed-tools snapshot written by `registry_remote::sync` at the
+/// end of a successful sync. The plugin loader prefers this single JSON
+/// read over walking `~/.jarvy/tools.d/.remote/tools/` + per-file open +
+/// TOML parse on every CLI startup.
+///
+/// `synced_at_unix` mirrors `meta.json::last_synced_at_unix` and is the
+/// invalidation key — if the loader sees the values disagree (someone
+/// hand-edited the cache between syncs) the index is treated as stale
+/// and the walk-and-parse fallback runs.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RemoteIndex {
+    pub synced_at_unix: u64,
+    pub tools: Vec<PluginTool>,
+}
+
+/// Walk `~/.jarvy/tools.d/.remote/tools/` once, parse every TOML, and
+/// write the resulting `PluginTool` set as a single JSON blob at
+/// `~/.jarvy/tools.d/.remote/index.json`. Called by
+/// `registry_remote::sync::run_sync_with_config` after the staging-swap
+/// succeeds; the next CLI startup will then read one file instead of N.
+///
+/// Failures here are non-fatal — they only fall back to the walk-and-
+/// parse path at next load. We log a warning so a fleet operator can
+/// notice but the sync still reports success because the actual TOMLs
+/// are on disk.
+pub fn build_remote_index(synced_at_unix: u64, tools: Vec<PluginTool>) -> std::io::Result<()> {
+    let Ok(remote_root) = crate::paths::registry_remote_cache_dir() else {
+        return Ok(());
+    };
+
+    let accepted_count = tools.len();
+    let index = RemoteIndex {
+        synced_at_unix,
+        tools,
+    };
+    let index_path = remote_root.join("index.json");
+    let payload = serde_json::to_vec(&index).map_err(std::io::Error::other)?;
+
+    // Atomic-ish write via tmp + rename + stat-after-chmod (matches the
+    // cache layer's hardening: silent chmod failures on NFS/exFAT used
+    // to leave index.json world-readable).
+    let tmp = index_path.with_extension("json.tmp");
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::write(&tmp, &payload)?;
+    std::fs::rename(&tmp, &index_path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&index_path, std::fs::Permissions::from_mode(0o600))?;
+        let mode = std::fs::metadata(&index_path)?.permissions().mode() & 0o777;
+        if mode & 0o077 != 0 {
+            tracing::warn!(
+                event = "registry.cache.index_perms_unsafe",
+                mode = format!("{:#o}", mode),
+            );
+            // Best effort: delete the file rather than leave it world-readable.
+            let _ = std::fs::remove_file(&index_path);
+            return Err(std::io::Error::other(format!(
+                "index.json mode {mode:#o} grants group/other access; refusing to leave it on disk"
+            )));
+        }
+    }
+
+    tracing::info!(
+        event = "registry.cache.index_built",
+        accepted_count = accepted_count,
+    );
+    Ok(())
+}
+
+/// Try to load the remote-tool set from the cached JSON index.
+///
+/// Returns `Some(tools)` only if:
+/// 1. `index.json` exists with safe perms
+/// 2. `meta.json` exists with safe perms
+/// 3. Both parse and their `synced_at_unix`/`last_synced_at_unix`
+///    fields agree
+///
+/// Any other shape (missing file, mismatched timestamp, parse error)
+/// returns `None` and the caller falls back to walking the tools/
+/// directory. Avoiding hard errors keeps the loader resilient against
+/// a partially-written cache from an interrupted older Jarvy.
+fn try_load_remote_index() -> Option<Vec<PluginTool>> {
+    let remote_root = crate::paths::registry_remote_cache_dir().ok()?;
+    let index_path = remote_root.join("index.json");
+    let meta_path = remote_root.join("meta.json");
+    if !is_path_safe_to_load(&index_path) {
+        emit_index_miss("unsafe_perms");
+        return None;
+    }
+    if !is_path_safe_to_load(&meta_path) {
+        emit_index_miss("unsafe_perms");
+        return None;
+    }
+
+    let Ok(index_bytes) = std::fs::read(&index_path) else {
+        emit_index_miss("no_index");
+        return None;
+    };
+    let Ok(meta_bytes) = std::fs::read(&meta_path) else {
+        emit_index_miss("no_meta");
+        return None;
+    };
+    let Ok(index) = serde_json::from_slice::<RemoteIndex>(&index_bytes) else {
+        emit_index_miss("parse_failed");
+        return None;
+    };
+    let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&meta_bytes) else {
+        emit_index_miss("parse_failed");
+        return None;
+    };
+    let meta_synced = meta.get("last_synced_at_unix").and_then(|v| v.as_u64())?;
+    if meta_synced != index.synced_at_unix {
+        emit_index_miss("stale_timestamp");
+        return None;
+    }
+
+    // Per-tool security gates: the index was BUILT by trusted sync code,
+    // but anything could have hand-edited index.json between sync and
+    // load. Re-run the same validation `load_tools_from_dir` applies to
+    // the walk fallback. A single bad entry rejects the whole index —
+    // caller falls back to the walk, which surfaces the bad TOML with
+    // its own warn event.
+    for tool in &index.tools {
+        if !is_valid_package_name(&tool.name) || !is_valid_package_name(&tool.command) {
+            emit_index_miss("invalid_identifier");
+            return None;
+        }
+        if !validate_platforms(tool) {
+            emit_index_miss("invalid_platform_package");
+            return None;
+        }
+    }
+
+    tracing::debug!(
+        event = "registry.cache.index_hit",
+        tools_count = index.tools.len(),
+        synced_at_unix = index.synced_at_unix,
+    );
+    Some(index.tools)
+}
+
+fn emit_index_miss(reason: &'static str) {
+    tracing::debug!(event = "registry.cache.index_miss", reason = reason);
+}
+
+/// Walk one directory of TOML plugin files and insert any that pass
+/// validation into `accepted`. Both the user `tools.d/` dir and the
+/// remote-registry cache `tools.d/.remote/tools/` dir flow through here
+/// so the security gates (dir perms, file perms, name validation,
+/// platform validation) are applied uniformly. Conflicts: a later entry
+/// for the same name wins — by call order in `load_user_tools`,
+/// remote-synced tools override user-authored ones if they share a name.
+fn load_tools_from_dir(dir: &std::path::Path, accepted: &mut HashMap<String, PluginTool>) {
+    if !is_path_safe_to_load(dir) {
         tracing::warn!(
             event = "plugins.tools_d_unsafe_perms",
             path = %crate::network::redact_home(&dir.display().to_string()),
-            "tools.d directory has insecure permissions; skipping plugin load"
+            "plugin directory has insecure permissions; skipping load"
         );
-        return 0;
+        return;
     }
 
-    let entries = match std::fs::read_dir(&dir) {
+    let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(
@@ -169,11 +383,9 @@ pub fn load_user_tools() -> usize {
                 path = %crate::network::redact_home(&dir.display().to_string()),
                 error = %e,
             );
-            return 0;
+            return;
         }
     };
-
-    let mut accepted: HashMap<String, PluginTool> = HashMap::new();
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -241,34 +453,6 @@ pub fn load_user_tools() -> usize {
         );
         accepted.insert(key, tool);
     }
-
-    let count = accepted.len();
-
-    // Insert into the plugin registry first so dispatch can find them by name.
-    {
-        let mut map = registry().write().expect("plugin registry rwlock poisoned");
-        for (key, tool) in accepted.iter() {
-            map.insert(key.clone(), tool.clone());
-        }
-    }
-
-    // Register a stub handler in the main registry so existing
-    // `tools::add(name, version)` lookups find the plugin. The handler
-    // never executes — `tools::add` consults the plugin registry first.
-    for tool in accepted.values() {
-        let _ = register_tool(&tool.name, plugin_install_handler_unreachable);
-    }
-
-    tracing::info!(event = "plugins.registered", count = count);
-    count
-}
-
-/// Stub handler that should never be invoked because `tools::add` checks the
-/// plugin registry first. Returns `Unsupported` if it ever is reached.
-fn plugin_install_handler_unreachable(_version: &str) -> Result<(), InstallError> {
-    Err(InstallError::Parse(
-        "plugin handler invoked without name dispatch (bug)",
-    ))
 }
 
 fn validate_platforms(tool: &PluginTool) -> bool {
@@ -512,5 +696,225 @@ mod tests {
         let found = get_plugin("testplug").expect("plugin should be present case-insensitive");
         assert_eq!(found.name, "TeStPlUg");
         assert_eq!(found.command, "testplug");
+    }
+
+    fn write_plugin(dir: &Path, name: &str, command: &str) {
+        std::fs::write(
+            dir.join(format!("{name}.toml")),
+            format!(
+                r#"name = "{name}"
+command = "{command}"
+"#
+            ),
+        )
+        .expect("write plugin");
+    }
+
+    /// Item 5 part 1 — `load_tools_from_dir` walks a single dir and
+    /// registers everything that passes validation.
+    #[test]
+    fn load_tools_from_dir_registers_each_toml() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_plugin(tmp.path(), "alpha", "alpha");
+        write_plugin(tmp.path(), "beta", "beta");
+
+        let mut accepted = HashMap::new();
+        load_tools_from_dir(tmp.path(), &mut accepted);
+        assert_eq!(accepted.len(), 2);
+        assert!(accepted.contains_key("alpha"));
+        assert!(accepted.contains_key("beta"));
+    }
+
+    /// Item 5 part 2 — collision precedence. The plugin loader walks
+    /// user dir THEN remote cache; a later insert with the same key
+    /// shadows the earlier one (remote wins over user-authored). Pin
+    /// this behavior so a future refactor that reorders the walks
+    /// fails this test.
+    #[test]
+    fn load_tools_from_dir_later_call_overrides_earlier() {
+        let user_dir = tempfile::tempdir().expect("user tempdir");
+        let remote_dir = tempfile::tempdir().expect("remote tempdir");
+
+        std::fs::write(
+            user_dir.path().join("collide.toml"),
+            r#"name = "collide"
+command = "user-version"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            remote_dir.path().join("collide.toml"),
+            r#"name = "collide"
+command = "remote-version"
+"#,
+        )
+        .unwrap();
+
+        let mut accepted = HashMap::new();
+        load_tools_from_dir(user_dir.path(), &mut accepted);
+        load_tools_from_dir(remote_dir.path(), &mut accepted);
+        // Remote-walked-second wins.
+        assert_eq!(
+            accepted.get("collide").map(|t| t.command.as_str()),
+            Some("remote-version")
+        );
+    }
+
+    /// Item 5 part 3 — invalid identifier silently skipped (NOT all-
+    /// or-nothing).
+    #[test]
+    fn load_tools_from_dir_skips_invalid_name_keeps_valid() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Valid one.
+        write_plugin(tmp.path(), "good", "good");
+        // Invalid: command has a shell metacharacter.
+        std::fs::write(
+            tmp.path().join("bad.toml"),
+            r#"name = "bad"
+command = "bad;rm -rf /"
+"#,
+        )
+        .unwrap();
+
+        let mut accepted = HashMap::new();
+        load_tools_from_dir(tmp.path(), &mut accepted);
+        assert!(accepted.contains_key("good"));
+        assert!(!accepted.contains_key("bad"));
+    }
+
+    /// Item 5 part 4 — missing dir is a no-op, not a panic.
+    #[test]
+    fn load_tools_from_dir_missing_dir_is_noop() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let absent = tmp.path().join("does-not-exist");
+        let mut accepted = HashMap::new();
+        // Function exits early via is_path_safe_to_load → false (no
+        // metadata) OR read_dir → err. Either way, accepted stays empty.
+        load_tools_from_dir(&absent, &mut accepted);
+        assert!(accepted.is_empty());
+    }
+
+    /// Item 1 (post-review fix) — `try_load_remote_index` MUST refuse
+    /// to load tools whose `command` field contains shell metachars.
+    /// Pre-fix the index path bypassed the per-tool validators that
+    /// `load_tools_from_dir` ran; this pins the equivalence.
+    #[test]
+    #[allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
+    fn try_load_remote_index_rejects_invalid_command_field() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prev = std::env::var_os("JARVY_HOME");
+        // SAFETY: serial-test gate would help here but the test is
+        // small; we restore on drop via the let-_ = guard pattern.
+        unsafe {
+            std::env::set_var("JARVY_HOME", tmp.path());
+        }
+        struct Guard(Option<std::ffi::OsString>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                // SAFETY: restore the previously-saved value.
+                unsafe {
+                    match &self.0 {
+                        Some(v) => std::env::set_var("JARVY_HOME", v),
+                        None => std::env::remove_var("JARVY_HOME"),
+                    }
+                }
+            }
+        }
+        let _guard = Guard(prev);
+
+        let remote = crate::paths::registry_remote_cache_dir().expect("cache dir resolves");
+        std::fs::create_dir_all(&remote).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&remote, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let index = serde_json::json!({
+            "synced_at_unix": 100u64,
+            "tools": [{
+                "name": "tool",
+                "command": "evil;rm -rf ~",
+                "macos": null, "linux": null, "windows": null
+            }]
+        });
+        let meta = serde_json::json!({ "last_synced_at_unix": 100u64 });
+        std::fs::write(remote.join("index.json"), index.to_string()).unwrap();
+        std::fs::write(remote.join("meta.json"), meta.to_string()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                remote.join("index.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+            std::fs::set_permissions(
+                remote.join("meta.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+        }
+
+        let result = try_load_remote_index();
+        assert!(
+            result.is_none(),
+            "index with shell-meta in command MUST fall back to walk, got {result:?}"
+        );
+    }
+
+    /// Item 9 — try_load_remote_index returns None on each enumerated
+    /// rejection condition.
+    #[test]
+    #[allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
+    fn try_load_remote_index_rejects_stale_timestamp() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prev = std::env::var_os("JARVY_HOME");
+        // SAFETY: see invalid_command_field test.
+        unsafe {
+            std::env::set_var("JARVY_HOME", tmp.path());
+        }
+        struct Guard(Option<std::ffi::OsString>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                // SAFETY: restore prior env.
+                unsafe {
+                    match &self.0 {
+                        Some(v) => std::env::set_var("JARVY_HOME", v),
+                        None => std::env::remove_var("JARVY_HOME"),
+                    }
+                }
+            }
+        }
+        let _g = Guard(prev);
+
+        let remote = crate::paths::registry_remote_cache_dir().expect("cache dir resolves");
+        std::fs::create_dir_all(&remote).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&remote, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+
+        // Index claims synced_at_unix=200, meta says 100. Mismatch → None.
+        let index = serde_json::json!({ "synced_at_unix": 200u64, "tools": [] });
+        let meta = serde_json::json!({ "last_synced_at_unix": 100u64 });
+        std::fs::write(remote.join("index.json"), index.to_string()).unwrap();
+        std::fs::write(remote.join("meta.json"), meta.to_string()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                remote.join("index.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+            std::fs::set_permissions(
+                remote.join("meta.json"),
+                std::fs::Permissions::from_mode(0o600),
+            )
+            .unwrap();
+        }
+
+        assert!(try_load_remote_index().is_none());
     }
 }

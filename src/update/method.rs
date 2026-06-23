@@ -281,7 +281,11 @@ impl InstallMethod {
         crate::paths::install_method_json().ok()
     }
 
-    /// Parse installation method from string
+    /// Parse installation method from string. Returns `None` for unknown
+    /// methods rather than `Err`, so this is intentionally not a
+    /// `std::str::FromStr` impl (which would force `Err` on every lookup
+    /// where the caller just wants `Option`).
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "homebrew" | "brew" => Some(InstallMethod::Homebrew),

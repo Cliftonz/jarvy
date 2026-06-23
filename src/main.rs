@@ -35,6 +35,7 @@ mod outputs;
 mod packages;
 mod paths;
 mod provisioner;
+mod registry_remote;
 pub mod remote;
 mod report;
 mod roles;
@@ -366,6 +367,7 @@ fn dispatch_command(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             commands::run_telemetry(action, global_config);
             0
         }
+        Some(Commands::Registry { action }) => commands::registry_cmd::run_registry(action),
         Some(Commands::Mcp { config }) => commands::run_mcp(config.clone()),
         Some(Commands::Diagnose {
             tool,

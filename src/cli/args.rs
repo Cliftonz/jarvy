@@ -304,6 +304,11 @@ pub enum Commands {
         #[clap(subcommand)]
         action: TemplatesSubcommand,
     },
+    /// Sync + inspect the remote tool registry configured in ~/.jarvy/config.toml [registry]
+    Registry {
+        #[clap(subcommand)]
+        action: RegistryAction,
+    },
     /// Manage telemetry settings (OTEL endpoint, signals)
     Telemetry {
         #[clap(subcommand)]

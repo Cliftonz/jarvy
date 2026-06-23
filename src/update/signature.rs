@@ -88,18 +88,40 @@ pub enum SignatureOutcome {
     Rejected(String),
 }
 
-/// Verify a file's Sigstore signature using cosign.
+/// Verify a file's Sigstore signature using cosign with the canonical
+/// Jarvy-release identity. Wrapper over
+/// [`verify_sigstore_signature_with_identity`] that pins the cosign
+/// identity-regexp + OIDC issuer to the Jarvy release workflow.
 ///
-/// Returns a `SignatureOutcome` describing what happened — fail-OPEN handling
-/// (treating cosign-missing or sig-missing as success) is **the caller's
-/// decision**. The installer fails closed unless explicit override is granted.
+/// Returns a `SignatureOutcome` describing what happened — fail-OPEN
+/// handling (treating cosign-missing or sig-missing as success) is **the
+/// caller's decision**. The installer fails closed unless explicit
+/// override is granted.
 pub fn verify_sigstore_signature(file_path: &Path) -> Result<SignatureOutcome, VerifyError> {
-    use std::process::Command;
+    verify_sigstore_signature_with_identity(
+        file_path,
+        COSIGN_CERT_IDENTITY_REGEX,
+        "https://token.actions.githubusercontent.com",
+    )
+}
 
-    // Check if cosign is available
-    if Command::new("cosign").arg("version").output().is_err() {
+/// Verify a file's Sigstore signature against a caller-supplied
+/// `identity_regexp` and `oidc_issuer`. Used by both the canonical
+/// Jarvy-release verification ([`verify_sigstore_signature`], which pins
+/// to the release workflow) and by `registry_remote::sync` (which pins
+/// to whatever registry repo the user subscribed to).
+///
+/// Identity-regexp **MUST** be fully anchored (`^…$`). Callers that load
+/// the regex from user config should refuse missing anchors before
+/// reaching this function.
+pub fn verify_sigstore_signature_with_identity(
+    file_path: &Path,
+    identity_regexp: &str,
+    oidc_issuer: &str,
+) -> Result<SignatureOutcome, VerifyError> {
+    if !cosign_on_path() {
         tracing::warn!(
-            event = "update.signature.skipped",
+            event = "signature.skipped",
             reason = "cosign_missing",
             file = %file_path.display(),
         );
@@ -117,13 +139,14 @@ pub fn verify_sigstore_signature(file_path: &Path) -> Result<SignatureOutcome, V
 
     if !sig_path.exists() || !cert_path.exists() {
         tracing::warn!(
-            event = "update.signature.skipped",
+            event = "signature.skipped",
             reason = "sig_files_missing",
             file = %file_path.display(),
         );
         return Ok(SignatureOutcome::SignatureFilesMissing);
     }
 
+    use std::process::Command;
     let output = Command::new("cosign")
         .args([
             "verify-blob",
@@ -132,9 +155,9 @@ pub fn verify_sigstore_signature(file_path: &Path) -> Result<SignatureOutcome, V
             "--certificate",
             &cert_path.to_string_lossy(),
             "--certificate-identity-regexp",
-            COSIGN_CERT_IDENTITY_REGEX,
+            identity_regexp,
             "--certificate-oidc-issuer",
-            "https://token.actions.githubusercontent.com",
+            oidc_issuer,
         ])
         .arg(file_path)
         .output()
@@ -142,19 +165,49 @@ pub fn verify_sigstore_signature(file_path: &Path) -> Result<SignatureOutcome, V
 
     if output.status.success() {
         tracing::info!(
-            event = "update.signature.verified",
+            event = "signature.verified",
             file = %file_path.display(),
         );
         Ok(SignatureOutcome::Verified)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         tracing::error!(
-            event = "update.signature.failed",
+            event = "signature.failed",
             file = %file_path.display(),
             error = %stderr,
         );
         Ok(SignatureOutcome::Rejected(stderr))
     }
+}
+
+/// `which::which`-style PATH lookup for cosign, cached once per process.
+/// Replaces the previous "spawn cosign --version as a presence probe"
+/// pattern (Perf F3) — the spawn cost is 80–200 ms cold-start per call;
+/// a PATH lookup is microseconds.
+fn cosign_on_path() -> bool {
+    use std::sync::OnceLock;
+    static FOUND: OnceLock<bool> = OnceLock::new();
+    *FOUND.get_or_init(|| {
+        // Walk $PATH manually to avoid a `which` dep. The cosign binary
+        // is named `cosign` on every supported platform; on Windows the
+        // .exe extension is checked too.
+        let Some(path_var) = std::env::var_os("PATH") else {
+            return false;
+        };
+        let names: &[&str] = if cfg!(windows) {
+            &["cosign.exe", "cosign"]
+        } else {
+            &["cosign"]
+        };
+        for dir in std::env::split_paths(&path_var) {
+            for name in names {
+                if dir.join(name).is_file() {
+                    return true;
+                }
+            }
+        }
+        false
+    })
 }
 
 /// Decide whether a `SignatureOutcome` should permit installation to proceed.
