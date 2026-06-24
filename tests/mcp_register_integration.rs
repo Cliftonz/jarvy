@@ -354,8 +354,8 @@ fn concurrent_applies_dont_corrupt_settings() {
     // the real user profile while mcp_register writes into the
     // env-var-resolved tempdir. Same shape as the parallel fix in
     // tests/ai_hooks_integration.rs.
-    let body = fs::read_to_string(guard.path().join(".claude.json"))
-        .expect("settings file present");
+    let body =
+        fs::read_to_string(guard.path().join(".claude.json")).expect("settings file present");
     let parsed: serde_json::Value =
         serde_json::from_str(&body).expect("settings file must still parse");
     assert!(parsed.get("mcpServers").is_some());
