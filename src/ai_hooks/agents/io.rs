@@ -22,13 +22,39 @@ use serde_json::{Map, Value};
 use crate::ai_hooks::error::AiHookError;
 
 /// Resolve the user's home directory, or surface a clean error.
+///
+/// Consults env vars (`HOME` on Unix, `USERPROFILE` then `HOME` on
+/// Windows) before falling back to `dirs::home_dir()`. On Windows,
+/// `dirs::home_dir()` calls `SHGetKnownFolderPath(FOLDERID_Profile)`
+/// — a Win32 API that ignores env vars — so test sandboxes that
+/// override `USERPROFILE` (e.g. `tests/ai_hooks_integration.rs`'s
+/// `HomeGuard`) had no effect and the suite silently wrote agent
+/// settings into the real user profile on every Windows tag-push CI
+/// run since v0.2.0-rc.1. Preferring env vars makes the resolution
+/// consistent with Unix behavior, respects user overrides, and
+/// restores test-isolation correctness.
 pub fn home_or_err() -> Result<PathBuf, AiHookError> {
+    if let Some(home) = home_from_env() {
+        return Ok(home);
+    }
     dirs::home_dir().ok_or_else(|| {
         AiHookError::io(
             PathBuf::from("$HOME"),
             std::io::Error::other("cannot determine home directory"),
         )
     })
+}
+
+fn home_from_env() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        if let Some(p) = std::env::var_os("USERPROFILE").filter(|v| !v.is_empty()) {
+            return Some(PathBuf::from(p));
+        }
+    }
+    std::env::var_os("HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
 }
 
 /// Read JSON from `path`. If the file is missing or empty, return an empty
