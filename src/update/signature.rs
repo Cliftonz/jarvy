@@ -119,14 +119,14 @@ pub fn verify_sigstore_signature_with_identity(
     identity_regexp: &str,
     oidc_issuer: &str,
 ) -> Result<SignatureOutcome, VerifyError> {
-    if !cosign_on_path() {
+    let Some(cosign_bin) = cosign_path() else {
         tracing::warn!(
             event = "signature.skipped",
             reason = "cosign_missing",
             file = %file_path.display(),
         );
         return Ok(SignatureOutcome::CosignMissing);
-    }
+    };
 
     let sig_path = file_path.with_extension(format!(
         "{}.sig",
@@ -147,7 +147,12 @@ pub fn verify_sigstore_signature_with_identity(
     }
 
     use std::process::Command;
-    let output = Command::new("cosign")
+    // Use the resolved binary path (not the bare name "cosign") so
+    // Windows can invoke a .cmd/.bat fake-cosign shim from PATH —
+    // `Command::new("cosign")` on Windows only auto-appends `.exe`
+    // via CreateProcessW, so a `cosign.cmd` shim was unreachable
+    // even after cosign_path discovered it.
+    let output = Command::new(cosign_bin)
         .args([
             "verify-blob",
             "--signature",
@@ -184,30 +189,37 @@ pub fn verify_sigstore_signature_with_identity(
 /// Replaces the previous "spawn cosign --version as a presence probe"
 /// pattern (Perf F3) — the spawn cost is 80–200 ms cold-start per call;
 /// a PATH lookup is microseconds.
-fn cosign_on_path() -> bool {
+fn cosign_path() -> Option<&'static std::path::PathBuf> {
+    use std::path::PathBuf;
     use std::sync::OnceLock;
-    static FOUND: OnceLock<bool> = OnceLock::new();
-    *FOUND.get_or_init(|| {
-        // Walk $PATH manually to avoid a `which` dep. The cosign binary
-        // is named `cosign` on every supported platform; on Windows the
-        // .exe extension is checked too.
-        let Some(path_var) = std::env::var_os("PATH") else {
-            return false;
-        };
-        let names: &[&str] = if cfg!(windows) {
-            &["cosign.exe", "cosign"]
-        } else {
-            &["cosign"]
-        };
-        for dir in std::env::split_paths(&path_var) {
-            for name in names {
-                if dir.join(name).is_file() {
-                    return true;
+    static FOUND: OnceLock<Option<PathBuf>> = OnceLock::new();
+    FOUND
+        .get_or_init(|| {
+            // Walk $PATH manually to avoid a `which` dep. On Windows the
+            // standard PATHEXT-style extensions (.exe, .cmd, .bat) are
+            // all valid executable names. We return the FULL resolved
+            // path so `Command::new(&path)` can invoke a .cmd shim
+            // directly — `Command::new("cosign")` on Windows uses
+            // CreateProcessW which only auto-appends `.exe`, so the
+            // FakeCosign test shim (`cosign.cmd`) was unreachable
+            // even after discovery returned true.
+            let path_var = std::env::var_os("PATH")?;
+            let names: &[&str] = if cfg!(windows) {
+                &["cosign.exe", "cosign.cmd", "cosign.bat", "cosign"]
+            } else {
+                &["cosign"]
+            };
+            for dir in std::env::split_paths(&path_var) {
+                for name in names {
+                    let candidate = dir.join(name);
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
                 }
             }
-        }
-        false
-    })
+            None
+        })
+        .as_ref()
 }
 
 /// Decide whether a `SignatureOutcome` should permit installation to proceed.
