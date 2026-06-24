@@ -155,20 +155,35 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
         );
     });
 
-    // -- 1. Fetch manifest + cosign companions into *.unverified files.
-    //
-    // We do NOT touch the canonical `manifest.json` / `manifest.json.sig`
-    // / `manifest.json.pem` paths until cosign verification passes. A
-    // failed verify therefore leaves the prior known-good triplet in
-    // place — preserving the doc-comment invariant.
+    // -- 1. Fetch manifest bytes. PARSE BEFORE WRITING — a malformed
+    //       manifest (invalid UTF-8, bad JSON, bad schema) must not
+    //       leave a `manifest.json` on disk that a subsequent
+    //       `jarvy registry status` would happily print.
     let manifest_bytes = fetch_with_event(&cfg.manifest_url(), MAX_MANIFEST_BYTES, &redacted_url)?;
+    let manifest_str =
+        std::str::from_utf8(&manifest_bytes).map_err(|_| ManifestError::InvalidEncoding)?;
+    let manifest = Manifest::parse(manifest_str).inspect_err(|e| {
+        emit(|| {
+            tracing::error!(
+                event = "registry.sync.failed",
+                stage = "manifest_parse",
+                error = %e,
+            );
+        });
+    })?;
+
     let cache_root = cache::cache_root()?;
     let manifest_path = cache_root.join("manifest.json");
     let sig_path = cache_root.join("manifest.json.sig");
     let pem_path = cache_root.join("manifest.json.pem");
     let manifest_unverified = cache_root.join("manifest.json.unverified");
-    let sig_unverified = cache_root.join("manifest.json.sig.unverified");
-    let pem_unverified = cache_root.join("manifest.json.pem.unverified");
+    // verify_sigstore_signature_with_identity derives the sig/pem
+    // siblings via `file_path.with_extension(format!("{ext}.sig"))` on
+    // the input path. Given `manifest.json.unverified` (extension =
+    // "unverified"), it looks for `manifest.json.unverified.sig` and
+    // `manifest.json.unverified.pem`. Stage at exactly those names.
+    let sig_unverified = cache_root.join("manifest.json.unverified.sig");
+    let pem_unverified = cache_root.join("manifest.json.unverified.pem");
     cache::write_atomic(&manifest_unverified, &manifest_bytes)?;
 
     // -- 2. Verify signature (or accept unsigned if explicitly allowed).
@@ -230,18 +245,8 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
         false
     };
 
-    // -- 3. Parse manifest. Validation rejects malformed entries wholesale.
-    let manifest_str =
-        std::str::from_utf8(&manifest_bytes).map_err(|_| ManifestError::InvalidEncoding)?;
-    let manifest = Manifest::parse(manifest_str).inspect_err(|e| {
-        emit(|| {
-            tracing::error!(
-                event = "registry.sync.failed",
-                stage = "manifest_parse",
-                error = %e,
-            );
-        });
-    })?;
+    // -- 3. (Manifest already parsed in step 1 — pre-promote so a
+    //       malformed body doesn't poison the canonical manifest.json.)
 
     // -- 4. Snapshot pre-existing tool filenames so we can count removals.
     let pre_existing = list_cached_tool_files()?;
@@ -598,15 +603,11 @@ fn list_cached_tool_files() -> Result<Vec<String>, CacheError> {
     Ok(out)
 }
 
-/// Tracing-emit helper. Gates every event on the global telemetry gate
-/// per CLAUDE.md (the same contract `packages.*` events follow). When
-/// telemetry is disabled at the user-config layer, registry events
-/// don't leak to OTLP.
-fn emit<F: FnOnce()>(f: F) {
-    if crate::observability::telemetry_gate::is_enabled() {
-        f();
-    }
-}
+// Tracing-emit helper now lives in `observability::telemetry_gate` so
+// every registry call site (sync, CLI handler, cache, plugin loader)
+// can route through the same gate. Re-exported as a local alias to
+// keep the existing call-site shape `emit(|| tracing::...)`.
+use crate::observability::telemetry_gate::emit;
 
 #[cfg(test)]
 mod tests {

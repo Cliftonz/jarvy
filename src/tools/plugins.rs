@@ -263,10 +263,12 @@ pub fn build_remote_index(synced_at_unix: u64, tools: Vec<PluginTool>) -> std::i
         std::fs::set_permissions(&index_path, std::fs::Permissions::from_mode(0o600))?;
         let mode = std::fs::metadata(&index_path)?.permissions().mode() & 0o777;
         if mode & 0o077 != 0 {
-            tracing::warn!(
-                event = "registry.cache.index_perms_unsafe",
-                mode = format!("{:#o}", mode),
-            );
+            crate::observability::telemetry_gate::emit(|| {
+                tracing::warn!(
+                    event = "registry.cache.index_perms_unsafe",
+                    mode = format!("{:#o}", mode),
+                );
+            });
             // Best effort: delete the file rather than leave it world-readable.
             let _ = std::fs::remove_file(&index_path);
             return Err(std::io::Error::other(format!(
@@ -275,10 +277,12 @@ pub fn build_remote_index(synced_at_unix: u64, tools: Vec<PluginTool>) -> std::i
         }
     }
 
-    tracing::info!(
-        event = "registry.cache.index_built",
-        accepted_count = accepted_count,
-    );
+    crate::observability::telemetry_gate::emit(|| {
+        tracing::info!(
+            event = "registry.cache.index_built",
+            accepted_count = accepted_count,
+        );
+    });
     Ok(())
 }
 
@@ -346,16 +350,20 @@ fn try_load_remote_index() -> Option<Vec<PluginTool>> {
         }
     }
 
-    tracing::debug!(
-        event = "registry.cache.index_hit",
-        tools_count = index.tools.len(),
-        synced_at_unix = index.synced_at_unix,
-    );
+    crate::observability::telemetry_gate::emit(|| {
+        tracing::debug!(
+            event = "registry.cache.index_hit",
+            tools_count = index.tools.len(),
+            synced_at_unix = index.synced_at_unix,
+        );
+    });
     Some(index.tools)
 }
 
 fn emit_index_miss(reason: &'static str) {
-    tracing::debug!(event = "registry.cache.index_miss", reason = reason);
+    crate::observability::telemetry_gate::emit(|| {
+        tracing::debug!(event = "registry.cache.index_miss", reason = reason);
+    });
 }
 
 /// Walk one directory of TOML plugin files and insert any that pass

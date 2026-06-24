@@ -112,20 +112,24 @@ pub fn swap_staging_into_tools_dir() -> Result<(), CacheError> {
         fs::rename(&active, &retired)?;
     }
     if let Err(e) = fs::rename(&staging, &active) {
-        tracing::error!(
-            event = "registry.cache.swap_failed",
-            stage = "promote",
-            error = %e,
-        );
+        crate::observability::telemetry_gate::emit(|| {
+            tracing::error!(
+                event = "registry.cache.swap_failed",
+                stage = "promote",
+                error = %e,
+            );
+        });
         // Best-effort rollback so the user isn't left with no active dir.
         if retired.exists() {
             if let Err(rollback_err) = fs::rename(&retired, &active) {
-                tracing::error!(
-                    event = "registry.cache.swap_failed",
-                    stage = "rollback",
-                    error = %rollback_err,
-                    promote_error = %e,
-                );
+                crate::observability::telemetry_gate::emit(|| {
+                    tracing::error!(
+                        event = "registry.cache.swap_failed",
+                        stage = "rollback",
+                        error = %rollback_err,
+                        promote_error = %e,
+                    );
+                });
             }
         }
         return Err(e.into());

@@ -40,11 +40,13 @@ fn run_sync() -> i32 {
         }
         Err(e) => {
             eprintln!("Registry sync failed: {}", e);
-            tracing::error!(
-                event = "registry.cli.sync_failed",
-                error_kind = error_kind(&e),
-                error = %e,
-            );
+            crate::observability::telemetry_gate::emit(|| {
+                tracing::error!(
+                    event = "registry.cli.sync_failed",
+                    error_kind = error_kind(&e),
+                    error = %e,
+                );
+            });
             // Map the most common failures to specific exit codes; fall
             // back to CONFIG_ERROR for everything else (matches the
             // "config-shaped failure" semantics callers already handle).

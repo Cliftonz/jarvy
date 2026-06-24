@@ -3,6 +3,8 @@
 // actionable. This is the conventional pattern for tests/common/.
 #![allow(dead_code)]
 
+pub mod registry;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;

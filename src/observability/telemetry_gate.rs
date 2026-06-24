@@ -38,6 +38,20 @@ pub fn is_enabled() -> bool {
     TELEMETRY_ENABLED.load(Ordering::Relaxed)
 }
 
+/// Run `f` only when the gate is on. Single-shot wrapper that lifts
+/// the `if is_enabled() { f() }` pattern out of every call site —
+/// previously open-coded in `src/registry_remote/sync.rs` and
+/// missing entirely from `src/commands/registry_cmd.rs`,
+/// `src/tools/plugins.rs`, and `src/registry_remote/cache.rs`,
+/// which leaked `registry.*` events to OTLP when the user had set
+/// `telemetry.enabled = false`. Routing every emit through this
+/// helper closes that contract.
+pub fn emit<F: FnOnce()>(f: F) {
+    if is_enabled() {
+        f();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

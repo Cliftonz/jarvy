@@ -1,168 +1,35 @@
-//! End-to-end integration tests for the remote tool-registry pull.
+//! In-process integration tests for the remote tool-registry pull.
 //!
-//! Spins up a tiny TCP listener that serves canned HTTP/1.1 responses to
-//! ureq, points a `RegistryConfig` at it via the
-//! `JARVY_REGISTRY_ALLOW_INSECURE_FETCH=1` test bypass, and exercises
-//! the orchestrator end-to-end. Every test pins `JARVY_HOME` to a
-//! per-test tempdir so the suite never touches the developer's real
-//! `~/.jarvy/`.
+//! These tests call `run_sync_with_config` directly (no `jarvy` child
+//! process) against the in-process `MockRegistry` from
+//! `tests/common/registry.rs`. The CLI-surface counterparts that
+//! assert exit codes and stderr text live in:
+//!   - `tests/registry_e2e_lifecycle.rs`
+//!   - `tests/registry_signature_e2e.rs`
+//!   - `tests/registry_resilience.rs`
+//!   - `tests/registry_cli_smoke.rs`
 //!
-//! Covers items 3, 4, 7-invariant, 12, 13, 14, 15, 32 from the
-//! parallel-code-review enhancement plan.
+//! Split policy after the maintainability review (item P1 #5): each
+//! invariant is tested at the layer that proves the most:
+//!   - **SyncError variant** assertions live here (typed return value
+//!     is the load-bearing surface for callers like the MCP layer).
+//!   - **stderr text + CLI exit code** assertions live in the CLI
+//!     suites (user-facing diagnostics are the load-bearing surface
+//!     for operators).
+//!
+//! Tests that previously duplicated CLI-level coverage (happy zero
+//! tools, parallel-fetch happy path) were removed — see
+//! `tests/registry_resilience.rs` for the canonical versions.
 
-#![allow(unsafe_code)] // env mutation is fenced by #[serial] + cleanup guards
+#![allow(unsafe_code)] // env mutation fenced by #[serial]
+
+mod common;
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
 use serial_test::serial;
-use tempfile::TempDir;
 
-/// Holds the per-test environment. Drop restores `JARVY_HOME` to its
-/// prior value so subsequent tests don't see the temp dir.
-struct TestEnv {
-    _tmp: TempDir,
-    prev_home: Option<std::ffi::OsString>,
-    prev_insecure: Option<std::ffi::OsString>,
-}
-
-impl TestEnv {
-    fn new() -> Self {
-        let tmp = TempDir::new().expect("tempdir");
-        let prev_home = std::env::var_os("JARVY_HOME");
-        let prev_insecure = std::env::var_os("JARVY_REGISTRY_ALLOW_INSECURE_FETCH");
-        unsafe {
-            std::env::set_var("JARVY_HOME", tmp.path());
-            std::env::set_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH", "1");
-        }
-        Self {
-            _tmp: tmp,
-            prev_home,
-            prev_insecure,
-        }
-    }
-}
-
-impl Drop for TestEnv {
-    fn drop(&mut self) {
-        unsafe {
-            match &self.prev_home {
-                Some(v) => std::env::set_var("JARVY_HOME", v),
-                None => std::env::remove_var("JARVY_HOME"),
-            }
-            match &self.prev_insecure {
-                Some(v) => std::env::set_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH", v),
-                None => std::env::remove_var("JARVY_REGISTRY_ALLOW_INSECURE_FETCH"),
-            }
-        }
-    }
-}
-
-/// Canned response for a single path. `status` is the HTTP status line
-/// (200 for happy, 404 for not-found, 301 for redirect testing). Body is
-/// served verbatim.
-#[derive(Clone)]
-struct Canned {
-    status: u16,
-    body: Vec<u8>,
-    /// If set, sent as a `Location:` header (for 3xx redirect tests).
-    redirect_to: Option<String>,
-}
-
-impl Canned {
-    fn ok(body: impl Into<Vec<u8>>) -> Self {
-        Self {
-            status: 200,
-            body: body.into(),
-            redirect_to: None,
-        }
-    }
-    fn not_found() -> Self {
-        Self {
-            status: 404,
-            body: b"not found".to_vec(),
-            redirect_to: None,
-        }
-    }
-    fn redirect(to: impl Into<String>) -> Self {
-        Self {
-            status: 301,
-            body: Vec::new(),
-            redirect_to: Some(to.into()),
-        }
-    }
-}
-
-/// Minimal HTTP/1.1 test server. Each path → canned response.
-fn spawn_server(routes: HashMap<String, Canned>) -> (String, Arc<Mutex<bool>>) {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
-    let port = listener.local_addr().unwrap().port();
-    listener.set_nonblocking(true).expect("nonblock");
-    let url = format!("http://127.0.0.1:{port}/");
-
-    let stop = Arc::new(Mutex::new(false));
-    let stop_srv = Arc::clone(&stop);
-    let routes = Arc::new(routes);
-
-    thread::spawn(move || {
-        let deadline = std::time::Instant::now() + Duration::from_secs(15);
-        loop {
-            if *stop_srv.lock().unwrap() {
-                break;
-            }
-            if std::time::Instant::now() > deadline {
-                break;
-            }
-            match listener.accept() {
-                Ok((stream, _)) => {
-                    let routes = Arc::clone(&routes);
-                    thread::spawn(move || handle_request(stream, &routes));
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(_) => break,
-            }
-        }
-    });
-    (url, stop)
-}
-
-fn handle_request(mut stream: TcpStream, routes: &HashMap<String, Canned>) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let mut buf = [0u8; 4096];
-    let n = match stream.read(&mut buf) {
-        Ok(n) => n,
-        Err(_) => return,
-    };
-    let req = String::from_utf8_lossy(&buf[..n]);
-    // Extract path from "GET /path HTTP/1.1"
-    let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
-    let canned = routes.get(&path).cloned().unwrap_or_else(Canned::not_found);
-
-    let mut response = format!(
-        "HTTP/1.1 {} OK\r\nContent-Length: {}\r\nConnection: close\r\n",
-        canned.status,
-        canned.body.len()
-    );
-    if let Some(to) = &canned.redirect_to {
-        response.push_str(&format!("Location: {to}\r\n"));
-    }
-    response.push_str("\r\n");
-    let _ = stream.write_all(response.as_bytes());
-    let _ = stream.write_all(&canned.body);
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(bytes);
-    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
-}
+use common::registry::{Canned, MockRegistry, TestEnv, sha256_hex, tool_toml};
 
 fn cfg(url: &str) -> jarvy::registry_remote::RegistryConfig {
     jarvy::registry_remote::RegistryConfig {
@@ -173,25 +40,13 @@ fn cfg(url: &str) -> jarvy::registry_remote::RegistryConfig {
     }
 }
 
-fn make_tool_toml(name: &str) -> Vec<u8> {
-    format!(
-        r#"name = "{name}"
-command = "{name}"
-
-[macos]
-brew = "{name}"
-"#
-    )
-    .into_bytes()
-}
-
-// ===== Item 3 — happy path =====
+// ===== Happy path: sync report + meta.json shape =====
 
 #[test]
 #[serial]
 fn happy_one_tool_syncs_and_caches() {
     let _env = TestEnv::new();
-    let tool_body = make_tool_toml("foo");
+    let tool_body = tool_toml("foo");
     let manifest = serde_json::json!({
         "schema_version": 1,
         "tools": [
@@ -200,19 +55,17 @@ fn happy_one_tool_syncs_and_caches() {
     })
     .to_string();
     let mut routes = HashMap::new();
-    routes.insert("/manifest.json".to_string(), Canned::ok(manifest.clone()));
+    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
     routes.insert("/tools/foo.toml".to_string(), Canned::ok(tool_body.clone()));
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
         .expect("sync should succeed");
-    *stop.lock().unwrap() = true;
 
     assert_eq!(report.tools_synced, 1);
     assert_eq!(report.tools_removed, 0);
     assert!(!report.signature_verified); // require_signature=false
 
-    // foo.toml ended up in the active tools dir.
     let tools_dir = jarvy::paths::registry_remote_cache_dir()
         .unwrap()
         .join("tools");
@@ -220,7 +73,6 @@ fn happy_one_tool_syncs_and_caches() {
     assert!(foo_path.exists(), "foo.toml should be cached");
     assert_eq!(std::fs::read(&foo_path).unwrap(), tool_body);
 
-    // meta.json contains the expected fields.
     let meta_path = jarvy::paths::registry_remote_cache_dir()
         .unwrap()
         .join("meta.json");
@@ -237,22 +89,11 @@ fn happy_one_tool_syncs_and_caches() {
     );
 }
 
-#[test]
-#[serial]
-fn happy_zero_tools_syncs() {
-    let _env = TestEnv::new();
-    let manifest = serde_json::json!({"schema_version": 1, "tools": []}).to_string();
-    let mut routes = HashMap::new();
-    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
-    let (url, stop) = spawn_server(routes);
+// (`happy_zero_tools_syncs` removed — covered at CLI level by
+// `registry_resilience.rs::empty_manifest_is_valid_zero_tools_synced`,
+// which asserts the same outcome plus the stdout report and exit code.)
 
-    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
-        .expect("zero-tool sync should succeed");
-    *stop.lock().unwrap() = true;
-    assert_eq!(report.tools_synced, 0);
-}
-
-// ===== Item 4 — sha mismatch =====
+// ===== Sha mismatch: pin the typed SyncError variant =====
 
 #[test]
 #[serial]
@@ -272,11 +113,10 @@ fn sha_mismatch_aborts_sync() {
         "/tools/foo.toml".to_string(),
         Canned::ok(b"hostile".to_vec()),
     );
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
         .expect_err("sync should fail on sha mismatch");
-    *stop.lock().unwrap() = true;
     assert!(
         matches!(
             err,
@@ -286,7 +126,7 @@ fn sha_mismatch_aborts_sync() {
     );
 }
 
-// ===== Item 7 — fail-fast invariant (the bug fix) =====
+// ===== Fail-fast invariant: prior cache survives a failed sync =====
 
 #[test]
 #[serial]
@@ -294,8 +134,8 @@ fn partial_fetch_failure_preserves_prior_cache() {
     let _env = TestEnv::new();
 
     // Step 1: seed the cache with a successful prior sync.
-    let foo_body = make_tool_toml("foo");
-    let bar_body = make_tool_toml("bar");
+    let foo_body = tool_toml("foo");
+    let bar_body = tool_toml("bar");
     let manifest_1 = serde_json::json!({
         "schema_version": 1,
         "tools": [
@@ -308,10 +148,10 @@ fn partial_fetch_failure_preserves_prior_cache() {
     routes_1.insert("/manifest.json".to_string(), Canned::ok(manifest_1));
     routes_1.insert("/tools/foo.toml".to_string(), Canned::ok(foo_body.clone()));
     routes_1.insert("/tools/bar.toml".to_string(), Canned::ok(bar_body.clone()));
-    let (url_1, stop_1) = spawn_server(routes_1);
-    jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url_1))
+    let server_1 = MockRegistry::start(routes_1);
+    jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server_1.base_url))
         .expect("seed sync should succeed");
-    *stop_1.lock().unwrap() = true;
+    drop(server_1);
 
     let tools_dir = jarvy::paths::registry_remote_cache_dir()
         .unwrap()
@@ -319,8 +159,8 @@ fn partial_fetch_failure_preserves_prior_cache() {
     assert!(tools_dir.join("foo.toml").exists());
     assert!(tools_dir.join("bar.toml").exists());
 
-    // Step 2: a sync where the SECOND tool 404s.
-    let baz_body = make_tool_toml("baz");
+    // Step 2: a sync where the second tool 404s.
+    let baz_body = tool_toml("baz");
     let manifest_2 = serde_json::json!({
         "schema_version": 1,
         "tools": [
@@ -333,15 +173,12 @@ fn partial_fetch_failure_preserves_prior_cache() {
     routes_2.insert("/manifest.json".to_string(), Canned::ok(manifest_2));
     routes_2.insert("/tools/baz.toml".to_string(), Canned::ok(baz_body));
     routes_2.insert("/tools/qux.toml".to_string(), Canned::not_found());
-    let (url_2, stop_2) = spawn_server(routes_2);
-    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url_2))
+    let server_2 = MockRegistry::start(routes_2);
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server_2.base_url))
         .expect_err("sync should fail on the qux 404");
-    *stop_2.lock().unwrap() = true;
     assert!(matches!(err, jarvy::registry_remote::SyncError::Fetch(_)));
 
-    // Step 3: assert pre-existing foo + bar still present, baz/qux NOT.
-    // This is the invariant the PR's doc-comment claimed but the
-    // wipe-before-fetch shape violated.
+    // Prior foo + bar still present; baz/qux NOT.
     assert!(
         tools_dir.join("foo.toml").exists(),
         "prior cache MUST survive a failed sync"
@@ -357,17 +194,14 @@ fn partial_fetch_failure_preserves_prior_cache() {
     assert!(!tools_dir.join("qux.toml").exists());
 }
 
-// ===== Item 13 — trust narrowing (project config can't subscribe) =====
+// ===== Trust narrowing: project config can't subscribe =====
 
 #[test]
 #[serial]
 fn registry_config_is_global_only_not_project() {
     let _env = TestEnv::new();
-    // No ~/.jarvy/config.toml exists.
     assert!(jarvy::registry_remote::RegistryConfig::load().is_none());
 
-    // Even if a project jarvy.toml in CWD contains a [registry] section,
-    // load() ignores it — load() reads from paths::config_toml() only.
     let cwd_jarvy = std::env::current_dir().unwrap().join("jarvy.toml.test");
     let _ = std::fs::write(
         &cwd_jarvy,
@@ -377,8 +211,6 @@ url = "https://attacker.example/r/"
 enabled = true
 "#,
     );
-    // RegistryConfig::load() still returns None — confirms it doesn't
-    // walk CWD for a project file.
     assert!(
         jarvy::registry_remote::RegistryConfig::load().is_none(),
         "project-level jarvy.toml MUST NOT subscribe to a registry"
@@ -386,7 +218,7 @@ enabled = true
     let _ = std::fs::remove_file(&cwd_jarvy);
 }
 
-// ===== Item 15 — schema_version too new at orchestrator =====
+// ===== Schema-version too new: pin ManifestError::UnsupportedSchema =====
 
 #[test]
 #[serial]
@@ -399,11 +231,10 @@ fn schema_version_too_new_aborts_with_manifest_error() {
     .to_string();
     let mut routes = HashMap::new();
     routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
         .expect_err("v99 manifest should be refused");
-    *stop.lock().unwrap() = true;
     assert!(matches!(
         err,
         jarvy::registry_remote::SyncError::Manifest(
@@ -412,7 +243,7 @@ fn schema_version_too_new_aborts_with_manifest_error() {
     ));
 }
 
-// ===== Item 32 — HTTPS redirect refusal =====
+// ===== HTTPS redirect refused at the shared agent =====
 
 #[test]
 #[serial]
@@ -423,40 +254,26 @@ fn https_redirect_is_refused() {
         "/manifest.json".to_string(),
         Canned::redirect("http://attacker.example/manifest.json"),
     );
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
         .expect_err("redirect should NOT be auto-followed");
-    *stop.lock().unwrap() = true;
     // shared net::agent is configured max_redirects(0); ureq surfaces
-    // this as a non-200 / TooManyRedirects error category. We just
-    // require: sync errors, didn't follow.
+    // this as a non-200 / TooManyRedirects error. We only require:
+    // sync errored, didn't follow.
     assert!(
         matches!(err, jarvy::registry_remote::SyncError::Fetch(_)),
         "got {err:?}"
     );
 }
 
-// ===== Item 12 — require_signature=false emits stderr warning =====
-//
-// The stderr capture lives in the orchestrator's `eprintln!`. We can't
-// trivially redirect raw stderr from a #[test] thread without a helper
-// crate, so we settle for asserting the structured outcome
-// (signature_verified=false in meta.json + the report) which proves the
-// disabled branch was taken. The stderr text is asserted via assert_cmd
-// in a separate CLI-level smoke test (see registry_cli_smoke.rs).
-//
-// Coverage gap remaining: a future PR can add the `gag` crate to
-// capture raw stderr if the team wants the literal "WARNING" text
-// pinned by a Rust-test-level assertion.
-
-// ===== Item 2 — plugin-loader cache index =====
+// ===== Plugin-loader cache index =====
 
 #[test]
 #[serial]
 fn sync_writes_remote_index_for_plugin_loader_cache() {
     let _env = TestEnv::new();
-    let tool_body = make_tool_toml("indexed");
+    let tool_body = tool_toml("indexed");
     let manifest = serde_json::json!({
         "schema_version": 1,
         "tools": [
@@ -467,10 +284,10 @@ fn sync_writes_remote_index_for_plugin_loader_cache() {
     let mut routes = HashMap::new();
     routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
     routes.insert("/tools/indexed.toml".to_string(), Canned::ok(tool_body));
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url)).expect("sync should succeed");
-    *stop.lock().unwrap() = true;
+    jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
+        .expect("sync should succeed");
 
     let cache_root = jarvy::paths::registry_remote_cache_dir().unwrap();
     let index_path = cache_root.join("index.json");
@@ -487,58 +304,14 @@ fn sync_writes_remote_index_for_plugin_loader_cache() {
     assert_eq!(tools[0]["name"], "indexed");
     assert_eq!(tools[0]["command"], "indexed");
 
-    // synced_at_unix matches meta.json so the loader's invalidation
-    // check accepts the index as fresh.
     let meta: serde_json::Value =
         serde_json::from_slice(&std::fs::read(cache_root.join("meta.json")).unwrap()).unwrap();
     assert_eq!(index["synced_at_unix"], meta["last_synced_at_unix"]);
 }
 
-// ===== Item 12 — parallel per-tool fetch sanity =====
-
-#[test]
-#[serial]
-fn parallel_fetch_handles_many_tools() {
-    let _env = TestEnv::new();
-    // 25 tools — more than the default parallelism cap (8) so we
-    // actually exercise the round-robin work-stealing logic.
-    const COUNT: usize = 25;
-    let mut tool_entries = Vec::with_capacity(COUNT);
-    let mut routes = HashMap::new();
-    for i in 0..COUNT {
-        let name = format!("tool_{i}");
-        let body = make_tool_toml(&name);
-        let sha = sha256_hex(&body);
-        let path = format!("tools/{name}.toml");
-        routes.insert(format!("/{path}"), Canned::ok(body));
-        tool_entries.push(serde_json::json!({
-            "name": name,
-            "path": path,
-            "sha256": sha,
-        }));
-    }
-    let manifest = serde_json::json!({
-        "schema_version": 1,
-        "tools": tool_entries,
-    })
-    .to_string();
-    routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
-    let (url, stop) = spawn_server(routes);
-
-    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
-        .expect("parallel sync of 25 tools should succeed");
-    *stop.lock().unwrap() = true;
-
-    assert_eq!(report.tools_synced, COUNT);
-    // All 25 landed in tools/.
-    let tools_dir = jarvy::paths::registry_remote_cache_dir()
-        .unwrap()
-        .join("tools");
-    for i in 0..COUNT {
-        let p = tools_dir.join(format!("tool_{i}.toml"));
-        assert!(p.exists(), "tool_{i}.toml missing after parallel sync");
-    }
-}
+// (`parallel_fetch_handles_many_tools` removed — covered at CLI level
+// by `registry_resilience.rs::many_tools_parallel_fetch_succeeds`
+// with 32 tools instead of 25 and per-tool hit-count assertions.)
 
 #[test]
 #[serial]
@@ -551,7 +324,7 @@ fn parallel_fetch_fails_fast_on_404() {
     let mut routes = HashMap::new();
     for i in 0..10 {
         let name = format!("tool_{i}");
-        let body = make_tool_toml(&name);
+        let body = tool_toml(&name);
         let sha = sha256_hex(&body);
         let path = format!("tools/{name}.toml");
         if i == 5 {
@@ -571,14 +344,12 @@ fn parallel_fetch_fails_fast_on_404() {
     })
     .to_string();
     routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
         .expect_err("the 404 on tool_5 should propagate");
-    *stop.lock().unwrap() = true;
     assert!(matches!(err, jarvy::registry_remote::SyncError::Fetch(_)));
 
-    // No partial state in active tools/.
     let tools_dir = jarvy::paths::registry_remote_cache_dir()
         .unwrap()
         .join("tools");
@@ -588,13 +359,13 @@ fn parallel_fetch_fails_fast_on_404() {
     );
 }
 
-// ===== Item 4 — duplicate-name manifest rejected at parse =====
+// ===== Duplicate-name manifest rejected at parse: pin variant =====
 
 #[test]
 #[serial]
 fn duplicate_tool_names_in_manifest_are_rejected() {
     let _env = TestEnv::new();
-    let body = make_tool_toml("dup");
+    let body = tool_toml("dup");
     let manifest = serde_json::json!({
         "schema_version": 1,
         "tools": [
@@ -605,11 +376,10 @@ fn duplicate_tool_names_in_manifest_are_rejected() {
     .to_string();
     let mut routes = HashMap::new();
     routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url))
+    let err = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
         .expect_err("duplicate names must be refused");
-    *stop.lock().unwrap() = true;
     assert!(
         matches!(
             err,
@@ -621,7 +391,7 @@ fn duplicate_tool_names_in_manifest_are_rejected() {
     );
 }
 
-// ===== Item 11 — index build failure non-fatal =====
+// ===== Index build failure is non-fatal =====
 
 #[test]
 #[serial]
@@ -629,7 +399,7 @@ fn duplicate_tool_names_in_manifest_are_rejected() {
 fn sync_still_succeeds_when_index_build_fails() {
     use std::os::unix::fs::PermissionsExt;
     let _env = TestEnv::new();
-    let tool_body = make_tool_toml("foo");
+    let tool_body = tool_toml("foo");
     let manifest = serde_json::json!({
         "schema_version": 1,
         "tools": [
@@ -640,49 +410,30 @@ fn sync_still_succeeds_when_index_build_fails() {
     let mut routes = HashMap::new();
     routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
     routes.insert("/tools/foo.toml".to_string(), Canned::ok(tool_body));
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    // Seed the cache dir then chmod it 0500 (read+exec, no write) so
-    // index.json write fails. enforce_dir_perms refuses *insecure*
-    // perms (looser than 0700); 0500 is *stricter* so cache_root()
-    // accepts it, but the write itself errors with EACCES.
     let cache_dir = jarvy::paths::registry_remote_cache_dir().unwrap();
     std::fs::create_dir_all(&cache_dir).unwrap();
-    std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
-
-    // Sync runs; the swap + meta.json writes happen inside tools/ and
-    // cache_root respectively (cache_root's 0500 prevents the
-    // sub-directory creations we need). So instead reset to 0700 and
-    // chmod index.json's parent before the build_remote_index call —
-    // but that's tricky with timing. Easier: pre-create index.json as
-    // a read-only file so the write fails (we don't actually exercise
-    // a perms-error here; we exercise that the sync still returns Ok
-    // when build_remote_index returns Err).
     std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     let index_path = cache_dir.join("index.json");
     std::fs::write(&index_path, b"placeholder").unwrap();
-    // Make index.json's parent dir read-only AFTER seeding a stale
-    // index. The rename inside build_remote_index will fail.
     std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
 
-    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url));
-    // Restore so the test teardown can clean up.
+    let report = jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url));
+    // Restore so test teardown can clean up.
     std::fs::set_permissions(&cache_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    *stop.lock().unwrap() = true;
 
-    // Sync should succeed even if the read-only dir blocks the index
-    // rename. (If it fails for another reason, surface that.)
     let report = report.expect("sync must report Ok even when index build fails");
     assert_eq!(report.tools_synced, 1);
 }
 
-// ===== Item 14 — meta.json schema =====
+// ===== meta.json schema =====
 
 #[test]
 #[serial]
 fn meta_json_records_required_fields() {
     let _env = TestEnv::new();
-    let tool_body = make_tool_toml("alpha");
+    let tool_body = tool_toml("alpha");
     let manifest = serde_json::json!({
         "schema_version": 1,
         "tools": [
@@ -693,10 +444,10 @@ fn meta_json_records_required_fields() {
     let mut routes = HashMap::new();
     routes.insert("/manifest.json".to_string(), Canned::ok(manifest));
     routes.insert("/tools/alpha.toml".to_string(), Canned::ok(tool_body));
-    let (url, stop) = spawn_server(routes);
+    let server = MockRegistry::start(routes);
 
-    jarvy::registry_remote::sync::run_sync_with_config(&cfg(&url)).expect("sync should succeed");
-    *stop.lock().unwrap() = true;
+    jarvy::registry_remote::sync::run_sync_with_config(&cfg(&server.base_url))
+        .expect("sync should succeed");
 
     let meta_path = jarvy::paths::registry_remote_cache_dir()
         .unwrap()
