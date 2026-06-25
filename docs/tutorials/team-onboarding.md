@@ -119,7 +119,33 @@ jarvy setup
 That's it. Re-run `jarvy setup` any time you need to refresh the environment.
 ````
 
-Commit `jarvy.toml` and the README change.
+### Even simpler: ship `scripts/bootstrap.sh`
+
+Want a true one-command onboarding? Drop Jarvy's bootstrap script into your repo:
+
+```bash
+mkdir -p scripts
+curl -fsSL \
+  https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh \
+  -o scripts/bootstrap.sh
+chmod +x scripts/bootstrap.sh
+```
+
+Then your README snippet collapses to:
+
+````markdown
+## Set up the dev environment
+
+```bash
+./scripts/bootstrap.sh
+```
+
+Installs Jarvy if missing, then runs `jarvy setup`. Idempotent — safe to re-run.
+````
+
+The script handles the install-Jarvy-first hop, adds `~/.cargo/bin`, `~/.local/bin`, `/usr/local/bin`, and `/opt/homebrew/bin` to `PATH` if needed, and runs `jarvy setup` against the `jarvy.toml` at the repo root. Flags: `--no-setup`, `--channel beta|nightly`, plus passthrough args to `jarvy setup` (e.g. `./scripts/bootstrap.sh --role devops`).
+
+Commit `jarvy.toml`, `scripts/bootstrap.sh`, and the README change.
 
 ---
 

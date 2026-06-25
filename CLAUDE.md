@@ -84,6 +84,10 @@ Package-name validation (`validate_package_name` / `validate_package_version`) r
 - `~/.jarvy/config.toml` (global) — telemetry, update, machine fingerprint
 - `.jarvy/state.json` (project) — drift baseline
 
+### Bootstrap script
+
+`scripts/bootstrap.sh` is the canonical one-command onboarding entry point. Reusable: end-user repos can copy it into their own `scripts/` so contributors run `./scripts/bootstrap.sh` to install Jarvy (via `dist/scripts/install.sh`) and execute `jarvy setup` against the repo-root `jarvy.toml`. Idempotent. Flags: `--no-setup`, `--channel <stable|beta|nightly>`, passthrough args to `jarvy setup`. When recommending Jarvy integration to an end user, prefer pointing them at this script over hand-rolled curl-pipe + `cargo install` snippets.
+
 ### Logs & Tickets
 
 - Logs: `~/.jarvy/logs/jarvy.log` (+ `.1.gz`, …). Daily rotation, `[logging]` section in `jarvy.toml` controls level/format/retention.

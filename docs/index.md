@@ -33,6 +33,18 @@ Stop writing onboarding wikis. Stop paying for cloud dev pods. Stop debugging "w
 
     Idempotent. Re-runnable. Detects what's already installed.
 
+-   :material-script-text-outline:{ .lg .middle } **Or: one command, every laptop**
+
+    ---
+
+    Drop [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh) into your repo. Contributors then run:
+
+    ```bash
+    ./scripts/bootstrap.sh
+    ```
+
+    Installs Jarvy if missing, runs `jarvy setup`. Idempotent.
+
 </div>
 
 ---

@@ -46,6 +46,28 @@ Verify: `jarvy --version`
 
 ---
 
+## Or: one-command repo bootstrap
+
+Already have a repo with a `jarvy.toml`? Drop [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh) into the project so contributors can install Jarvy *and* provision in one command:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh \
+  -o scripts/bootstrap.sh
+chmod +x scripts/bootstrap.sh
+git add scripts/bootstrap.sh && git commit -m "chore: add Jarvy bootstrap"
+```
+
+Teammates then run a single command on a clean laptop:
+
+```bash
+git clone <your-repo> && cd <your-repo> && ./scripts/bootstrap.sh
+```
+
+The script installs Jarvy if missing (via the official installer above), adds the install dir to `PATH`, then runs `jarvy setup` against the repo's `jarvy.toml`. Idempotent — safe to re-run after vacation or when the environment drifts. Flags: `--no-setup`, `--channel beta`, plus passthrough args to `jarvy setup`.
+
+---
+
 ## Configure
 
 Drop a `jarvy.toml` in your repo root:
