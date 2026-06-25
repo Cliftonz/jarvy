@@ -213,6 +213,26 @@ fn run_one_scanner(scanner: &ScannerDef) -> ScannerResult {
     );
     let _enter = span.enter();
 
+    // Fast-test bypass: tests/common/mod.rs::jarvy_fast_cmd sets
+    // JARVY_FAST_TEST=1 with the documented contract "skip external
+    // command execution." `tests/new_commands.rs::audit_runs_or_reports_no_scanners`
+    // exercises the CLI surface (dispatch + stdout shape) without
+    // wanting the actual scanners to run; previously this test took
+    // 11 minutes locally because every installed scanner (trivy,
+    // gitleaks, etc.) ran to completion. With this bypass the test
+    // returns synthetic "not available" results in ms.
+    if std::env::var_os("JARVY_FAST_TEST").is_some() {
+        return ScannerResult {
+            name: scanner.name.to_string(),
+            category: scanner.category.to_string(),
+            available: false,
+            ran: false,
+            passed: false,
+            exit_code: None,
+            summary: None,
+        };
+    }
+
     let available = has(scanner.command);
     if !available {
         tracing::debug!(

@@ -88,8 +88,34 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Check the code
-        run: cargo check --verbose
+        # No --verbose — was producing megabytes of rustc invocation
+        # spam per matrix entry on cache misses; cache hits don't need
+        # them and failures already include the relevant diagnostic.
+        run: cargo check --all-features
 
       - name: Run tests
-        run: cargo test --verbose -- --show-output
+        # `cargo nextest run` is 2-3x faster than `cargo test` on this
+        # suite because nextest runs each test in its own process and
+        # parallelizes across all cores; cargo test parallelizes within
+        # a single binary but runs binaries sequentially. `--no-fail-fast`
+        # surfaces the FULL failure set per run (cargo test stops at
+        # first binary failure, which masked the Windows test-isolation
+        # tech debt from v0.2.0-rc.1 through v0.2.1-rc.7).
+        #
+        # Dropped `--show-output` from the prior `cargo test` invocation
+        # — Windows terminal I/O was eating 30s-1min per run dumping
+        # stdout from every passing test. nextest captures per-test
+        # output by default and only surfaces it for failures, which is
+        # what we wanted anyway.
+        run: cargo nextest run --all-features --no-fail-fast
+
+      - name: Run doctests
+        # nextest doesn't run doctests yet (rust-lang/rust#50297).
+        # Doctests are tiny and only need to run on one OS; the Linux
+        # job covers it. macOS / Windows skip with no functional cost.
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --doc --all-features
