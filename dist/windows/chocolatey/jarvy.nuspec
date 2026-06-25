@@ -6,7 +6,7 @@
     <title>Jarvy</title>
     <authors>Jarvy Team</authors>
     <owners>bearbinary</owners>
-    <projectUrl>https://github.com/bearbinary/jarvy</projectUrl>
+    <projectUrl>https://jarvy.dev</projectUrl>
     <iconUrl>https://cdn.jsdelivr.net/gh/bearbinary/Jarvy@main/assets/CLI_Logo.png</iconUrl>
     <licenseUrl>https://github.com/bearbinary/jarvy/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>

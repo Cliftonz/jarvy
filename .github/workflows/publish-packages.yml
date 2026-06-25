@@ -288,8 +288,14 @@ jobs:
       # would land a broken PKGBUILD that fails `makepkg` integrity
       # check on user `yay -S jarvy-bin`. Pull the real sha256s from
       # the published checksum file; if the tarball assets aren't
-      # there yet (pre-tarball-production gap), this step fails loud
-      # so the AUR push doesn't quietly write garbage.
+      # there yet, this step fails loud so the AUR push doesn't
+      # quietly write garbage.
+      #
+      # Triple match must mirror dist/aur/PKGBUILD-bin and the
+      # release.yml "Package raw Linux tarball" step:
+      #   x86_64  → musl (statically-linked, works on Arch glibc)
+      #   aarch64 → gnu  (paired with the gcc-aarch64-linux-gnu sysroot
+      #                   in CI)
       - name: Substitute sha256sums from release checksums
         if: steps.aur_secret.outputs.have_secret == 'true'
         run: |
@@ -298,12 +304,13 @@ jobs:
           curl -fsSL \
             "https://github.com/bearbinary/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
             -o /tmp/sha256sums.txt
-          X86_SHA=$(awk -v p="jarvy-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+          X86_SHA=$(awk -v p="jarvy-v${VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             '$2 ~ p { print $1; exit }' /tmp/sha256sums.txt)
           ARM_SHA=$(awk -v p="jarvy-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
             '$2 ~ p { print $1; exit }' /tmp/sha256sums.txt)
           if [ -z "$X86_SHA" ] || [ -z "$ARM_SHA" ]; then
-            echo "::error::AUR linux-gnu tarballs not present in release. release.yml does not yet produce `jarvy-v<version>-<arch>-unknown-linux-gnu.tar.gz` (see docs/release-quirks-jarvy.md tarball pipeline gap). Skip AUR push until tarball production lands."
+            echo "::error::AUR Linux tarballs not present in release. Expected jarvy-v${VERSION}-x86_64-unknown-linux-musl.tar.gz and jarvy-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz. Verify .github/workflows/release.yml \"Package raw Linux tarball\" step produced them for the matching matrix slots."
+            cat /tmp/sha256sums.txt
             exit 1
           fi
           sed -i "s/SHA256_PLACEHOLDER_X86/$X86_SHA/g" dist/aur/PKGBUILD-bin

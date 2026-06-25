@@ -12,7 +12,13 @@ provides=('jarvy')
 conflicts=('jarvy')
 depends=('gcc-libs')
 
-source_x86_64=("https://github.com/bearbinary/jarvy/releases/download/v${pkgver}/jarvy-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
+# x86_64 is shipped as a statically-linked MUSL binary (works on any
+# glibc / musl system, including Arch). aarch64 is built against the
+# GNU toolchain because the aarch64 cross-rust toolchain pairs with
+# the gcc-aarch64-linux-gnu sysroot in CI. Both binaries land in the
+# same release at `jarvy-v${pkgver}-${TRIPLE}.tar.gz` per
+# .github/workflows/release.yml "Package raw Linux tarball" step.
+source_x86_64=("https://github.com/bearbinary/jarvy/releases/download/v${pkgver}/jarvy-v${pkgver}-x86_64-unknown-linux-musl.tar.gz")
 source_aarch64=("https://github.com/bearbinary/jarvy/releases/download/v${pkgver}/jarvy-v${pkgver}-aarch64-unknown-linux-gnu.tar.gz")
 
 sha256sums_x86_64=('SHA256_PLACEHOLDER_X86')

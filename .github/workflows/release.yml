@@ -82,6 +82,7 @@ jobs:
               target/x86_64-unknown-linux-musl/release/jarvy*_amd64.deb
               target/x86_64-unknown-linux-musl/release/jarvy*_x86_64.AppImage
               target/x86_64-unknown-linux-musl/generate-rpm/jarvy*.rpm
+              target/x86_64-unknown-linux-musl/release/jarvy-v*.tar.gz
             build_args: "--target=x86_64-unknown-linux-musl"
             cross: true
             apt: musl-tools
@@ -98,6 +99,7 @@ jobs:
             artifact_paths: |
               target/aarch64-unknown-linux-gnu/release/jarvy*.deb
               target/aarch64-unknown-linux-gnu/generate-rpm/jarvy*.rpm
+              target/aarch64-unknown-linux-gnu/release/jarvy-v*.tar.gz
             build_args: "--target=aarch64-unknown-linux-gnu"
             cross: true
             apt: gcc-aarch64-linux-gnu
@@ -108,6 +110,7 @@ jobs:
             artifact_paths: |
               target/armv7-unknown-linux-gnueabihf/release/jarvy*.deb
               target/armv7-unknown-linux-gnueabihf/generate-rpm/jarvy*.rpm
+              target/armv7-unknown-linux-gnueabihf/release/jarvy-v*.tar.gz
             build_args: "--target=armv7-unknown-linux-gnueabihf"
             cross: true
             apt: gcc-arm-linux-gnueabihf
@@ -146,6 +149,28 @@ jobs:
 
       - name: Build the application
         run: cargo build --release ${{ matrix.build_args }}
+
+      # Produce a raw binary tarball for each Linux target. AUR's
+      # `jarvy-bin` PKGBUILD downloads this directly — no .deb / .rpm
+      # extraction, no AppImage unpack, just `tar xzf` then
+      # `install -Dm755 jarvy`. Matching the AUR convention also lets
+      # other minimalist consumers (musl docker layers, embedded
+      # bootstraps) skip every distro-specific wrapper. Asset name
+      # `jarvy-v${VERSION}-${TRIPLE}.tar.gz` is the contract the AUR
+      # PKGBUILD and the publish-packages.yml AUR awk pattern both pin
+      # against. Only runs for Linux slots where `rust_target` is set.
+      - name: Package raw Linux tarball
+        if: matrix.platform == 'ubuntu-latest' && matrix.rust_target != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRIPLE="${{ matrix.rust_target }}"
+          VER="${{ env.VERSION }}"
+          VER_CLEAN="${VER#v}"
+          OUT="target/${TRIPLE}/release/jarvy-v${VER_CLEAN}-${TRIPLE}.tar.gz"
+          tar -C "target/${TRIPLE}/release" -czf "${OUT}" jarvy
+          echo "Produced: ${OUT}"
+          ls -la "${OUT}"
 
       - name: Package Binary
         shell: bash
