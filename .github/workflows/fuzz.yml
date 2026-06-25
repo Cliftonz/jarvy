@@ -41,7 +41,7 @@ jobs:
           - fuzz_toml_input
           - fuzz_tool_spec
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly

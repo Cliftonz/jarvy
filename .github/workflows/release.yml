@@ -38,7 +38,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
           # `fetch-tags: true` would conflict with the tag-trigger
@@ -116,7 +116,7 @@ jobs:
             rust_target: armv7-unknown-linux-gnueabihf
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install cross dependencies (cross only)
         if: matrix.cross
@@ -180,7 +180,7 @@ jobs:
       sbom_artifact: sbom-${{ env.VERSION }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -350,7 +350,7 @@ jobs:
       # Checkout so we have CHANGELOG.md + git history for release-note
       # extraction. `fetch-depth: 0` is needed because `git describe` walks
       # the full history to find the previous tag for the compare link.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
