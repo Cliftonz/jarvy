@@ -27,7 +27,22 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/bearbinary/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [Unreleased]
+## [v0.2.2] — Opt-out telemetry default + P0 seamless-gate fix (2026-06-25)
+
+Patch release on the v0.2.x line, but a behavior-significant one: the
+telemetry default flipped from opt-in to opt-out, and a P0 security
+regression in the CI / sandbox auto-disable was caught and fixed
+before any stable shipped with the flip. The two changes are bundled
+because they were authored back-to-back in the same evening — the
+opt-out flip introduced the regression, and the follow-up commit
+closed it along with 15 review findings from a five-persona parallel
+code review (security / Rust perf / QA / observability /
+maintainability).
+
+Users on a pre-`[telemetry]`-block legacy config also now see the
+disclosure on first post-upgrade run, closing the silent-enrollment
+loop the security reviewer found. Privacy-disclosure surfaces (`PRIVACY.md`,
+`UPGRADING.md`, `data/faq.json`) were swept to match the new posture.
 
 ### Changed — privacy posture
 
@@ -1347,7 +1362,8 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/bearbinary/jarvy/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bearbinary/jarvy/compare/v0.2.2...HEAD
+[v0.2.2]: https://github.com/bearbinary/jarvy/releases/tag/v0.2.2
 [v0.2.1]: https://github.com/bearbinary/jarvy/releases/tag/v0.2.1
 [v0.2.0]: https://github.com/bearbinary/jarvy/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/bearbinary/jarvy/releases/tag/v0.1.0
