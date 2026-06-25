@@ -302,7 +302,7 @@ jobs:
 
       - name: Publish to AUR
         if: steps.aur_secret.outputs.have_secret == 'true'
-        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: jarvy-bin
           pkgbuild: dist/aur/PKGBUILD-bin
