@@ -59,6 +59,22 @@ impl Default for Settings {
 static GLOBAL_CONFIG: std::sync::OnceLock<std::sync::RwLock<Option<CliConfig>>> =
     std::sync::OnceLock::new();
 
+/// Side-channel for the telemetry disclosure trigger. `initialize_from_disk`
+/// runs BEFORE `telemetry::init` (the subscriber + OTLP exporter wiring
+/// happen in `main.rs` after the config is loaded), so emitting the
+/// `telemetry.disclosure_shown` event inline would always drop — the
+/// `is_enabled()` gate reads an uninitialized TELEMETRY OnceLock and
+/// returns false. Stash the trigger here; `main.rs` drains it after
+/// `telemetry::init` completes.
+static PENDING_DISCLOSURE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// Return and clear any pending telemetry disclosure trigger. Called
+/// from `main.rs` after `telemetry::init` so the OTLP layer is ready
+/// to ship the event.
+pub(crate) fn take_pending_disclosure() -> Option<&'static str> {
+    PENDING_DISCLOSURE.get().copied()
+}
+
 fn config_cache() -> &'static std::sync::RwLock<Option<CliConfig>> {
     GLOBAL_CONFIG.get_or_init(|| std::sync::RwLock::new(None))
 }
@@ -105,25 +121,80 @@ fn initialize_from_disk() -> CliConfig {
     };
     let config_file_path = jarvy_dir.join("config.toml");
 
-    // Create the .jarvy directory if it doesn't exist
-    if !jarvy_dir.exists() {
+    // Create the .jarvy directory if it doesn't exist. Notice →
+    // stderr (stdout stays clean for `--format json` consumers).
+    let is_first_run = !jarvy_dir.exists();
+    if is_first_run {
         if let Err(e) = fs::create_dir(&jarvy_dir) {
             eprintln!("Unable to create jarvy config directory: {e}");
             return CliConfig::default();
         }
-        // Notice → stderr. Stdout is reserved for command output so
-        // callers piping `jarvy <cmd> --format json` get a clean payload
-        // on first run (when ~/.jarvy doesn't yet exist). Documented
-        // in docs/release-quirks-jarvy.md.
-        //
-        // Telemetry is **opt-out** (CLAUDE.md commitment): `enabled` in
-        // TelemetryConfig::default() is true. This notice surfaces the
-        // default and the disable path on the first run so users can
-        // make an informed choice. The boxed format is deliberate; an
-        // opt-out regime demands a loud disclosure or it is consent
-        // in name only.
-        eprintln!(
-            r#"
+    }
+
+    // Load the current on-disk config content (empty if missing).
+    let config_content = fs::read_to_string(&config_file_path).unwrap_or_default();
+
+    // Telemetry is **opt-out** (CLAUDE.md commitment). On the first
+    // run we have nothing on disk; on subsequent runs the user may
+    // have a config that pre-dates the `[telemetry]` block. In both
+    // cases the user has not persisted an explicit decision —
+    // `telemetry::user_decided` is the section-aware predicate that
+    // returns false. The boxed disclosure must surface, the config
+    // must then be rewritten with `enabled = true` so the next run
+    // is "decided" and the disclosure doesn't repeat.
+    if !crate::telemetry::user_decided(&config_content) {
+        let trigger: &'static str = if is_first_run {
+            "first_run"
+        } else {
+            "legacy_upgrade"
+        };
+        render_telemetry_disclosure();
+        // Telemetry isn't initialized yet — stash the trigger for
+        // main.rs to emit after `telemetry::init`.
+        let _ = PENDING_DISCLOSURE.set(trigger);
+
+        // Build the persisted config: keep any other fields the user
+        // already set; only ensure `[telemetry]` has the default
+        // (opt-out, enabled = true) so future runs are "decided".
+        let mut persisted: CliConfig = toml::from_str(&config_content).unwrap_or_default();
+        persisted.telemetry = TelemetryConfig::default();
+        if let Ok(toml) = toml::to_string(&persisted) {
+            match fs::File::create(&config_file_path) {
+                Ok(mut file) => {
+                    if let Err(e) = file.write_all(toml.as_bytes()) {
+                        eprintln!("Unable to write content to config file: {e}");
+                    }
+                }
+                Err(e) => eprintln!("Unable to create config file: {e}"),
+            }
+        }
+    }
+
+    // Read existing or just-created config.toml
+    let config: CliConfig = {
+        let config_content = fs::read_to_string(&config_file_path).unwrap_or_default();
+        if config_content.trim().is_empty() {
+            CliConfig::default()
+        } else {
+            toml::from_str(&config_content).unwrap_or_default()
+        }
+    };
+
+    config
+}
+
+/// Render the opt-out telemetry disclosure to stderr.
+///
+/// Triggered by `initialize_from_disk` on every run where the user
+/// has no persisted `[telemetry] enabled` decision (first run or a
+/// legacy config that pre-dates the `[telemetry]` block). The file
+/// is written with `enabled = true` regardless of whether the user
+/// reads the banner — this is a disclosure, not a consent prompt.
+/// The boxed format is deliberate: an opt-out default is only
+/// ethically defensible when the disclosure is unmissable.
+fn render_telemetry_disclosure() {
+    eprintln!(
+        r#"
 ╭─────────────────────────────────────────────────────────────────╮
 │  Jarvy telemetry is currently ENABLED.                          │
 │                                                                 │
@@ -144,40 +215,7 @@ fn initialize_from_disk() -> CliConfig {
 │    JARVY_TELEMETRY=0 jarvy <cmd>                                │
 ╰─────────────────────────────────────────────────────────────────╯
 "#
-        );
-
-        // Write initial config
-        let config = CliConfig {
-            settings: Settings::default(),
-            telemetry: TelemetryConfig::default(),
-            shell_init: None,
-            mcp: McpPreferences::default(),
-        };
-        let toml = toml::to_string(&config).unwrap_or_default();
-        let mut file = match fs::File::create(&config_file_path) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("Unable to create config file: {e}");
-                return CliConfig::default();
-            }
-        };
-        if let Err(e) = file.write_all(toml.as_bytes()) {
-            eprintln!("Unable to write content to config file: {e}");
-            return CliConfig::default();
-        }
-    }
-
-    // Read existing or just-created config.toml
-    let config: CliConfig = {
-        let config_content = fs::read_to_string(&config_file_path).unwrap_or_default();
-        if config_content.trim().is_empty() {
-            CliConfig::default()
-        } else {
-            toml::from_str(&config_content).unwrap_or_default()
-        }
-    };
-
-    config
+    );
 }
 
 /// Save the global config back to ~/.jarvy/config.toml

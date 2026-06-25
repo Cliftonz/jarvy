@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Jarvy collects optional, anonymized telemetry to help improve the tool. Telemetry is **opt-in** by default and can be disabled at any time.
+Jarvy collects anonymized telemetry to help improve the tool. Telemetry is **opt-out** by default — it is enabled on first run after a loud, boxed disclosure printed to stderr, and can be disabled at any time. CI environments and unattended AI sandboxes (Codespaces, Claude Code, devcontainers) auto-disable unless explicitly overridden.
 
 ## What is collected
 
@@ -83,7 +83,7 @@ enabled = false      # Also disables telemetry
 
 ## Data destination
 
-Telemetry is sent to the configured OTLP endpoint (default: `http://localhost:4318`). You control where this data goes. Jarvy does not operate a centralized telemetry service.
+Telemetry is sent to the configured OTLP endpoint (default: `https://telemetry.jarvy.dev` — the project's hardened public forwarder; see [Telemetry forwarder operations](docs/operations/telemetry-forwarder.md) for the security model, PII scrubbing, and rate limits). Override the endpoint with `JARVY_OTLP_ENDPOINT` or `[telemetry] endpoint = "..."` to send to your own collector instead.
 
 ## Questions
 

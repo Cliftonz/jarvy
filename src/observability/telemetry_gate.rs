@@ -1,4 +1,4 @@
-//! Process-wide opt-in gate for telemetry, visible from both the bin
+//! Process-wide consent gate for telemetry, visible from both the bin
 //! and lib crates.
 //!
 //! `src/telemetry.rs` is currently bin-private (declared as `mod
@@ -18,7 +18,7 @@
 //! `packages.*` events from leaking to OTLP when the user explicitly
 //! set `telemetry.enabled = false` — the prior round emitted raw
 //! `tracing::*` to dodge the visibility wall, which broke the
-//! documented opt-in contract.
+//! documented consent contract.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -30,10 +30,10 @@ pub fn set_enabled(enabled: bool) {
     TELEMETRY_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
-/// Read the current opt-in state. Callers in `src/packages/*` and
+/// Read the current consent state. Callers in `src/packages/*` and
 /// other lib-side modules use this in place of
-/// `telemetry::is_enabled()` so events fire only when the user
-/// consented.
+/// `telemetry::is_enabled()` so events fire only when the user has
+/// consented to (or not yet opted out of) telemetry.
 pub fn is_enabled() -> bool {
     TELEMETRY_ENABLED.load(Ordering::Relaxed)
 }

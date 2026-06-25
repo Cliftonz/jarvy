@@ -4,6 +4,82 @@ This document covers breaking changes and migration steps between versions.
 
 ## Unreleased (development)
 
+### Telemetry default flipped from opt-in to opt-out (breaking)
+
+Jarvy telemetry is now **opt-out** instead of opt-in. After this
+upgrade lands, every run loads with `enabled = true` unless the user
+has persisted an explicit `[telemetry] enabled = false` line in
+`~/.jarvy/config.toml`. The release contains three guardrails:
+
+1. **First-run disclosure**: a boxed stderr notice surfaces on first
+   `~/.jarvy/` creation, describing the data shape, the forwarder
+   destination, and the disable command. The notice no longer asks
+   for consent — it discloses.
+2. **Legacy-upgrade disclosure**: users whose config pre-dates the
+   `[telemetry]` block (the section was introduced after v0.1.0) see
+   the same boxed notice on the first post-upgrade run, then the
+   block is persisted with `enabled = true` so the disclosure does
+   not repeat.
+3. **CI / sandbox auto-disable still applies**: GitHub Actions,
+   GitLab CI, CircleCI, Codespaces, Claude Code, devcontainers, and
+   other unattended sandboxes auto-disable unless `JARVY_TELEMETRY=1`
+   is explicitly set. This guardrail was load-bearing under opt-in
+   and was hardened in this release after a review found the
+   no-`JARVY_TELEMETRY` branch was being discarded at config-merge
+   time.
+
+#### How to disable
+
+Persistent (recommended for self-hosted enterprise):
+
+```bash
+jarvy telemetry disable
+```
+
+Per-invocation:
+
+```bash
+JARVY_TELEMETRY=0 jarvy <command>
+```
+
+Via config (`~/.jarvy/config.toml`):
+
+```toml
+[telemetry]
+enabled = false
+```
+
+#### Verification
+
+```bash
+jarvy telemetry status
+```
+
+Should print `Status: disabled` after any of the above.
+
+#### What changed in the disclosure surface
+
+Two new telemetry events were added so on-call can audit the
+disclosure flow:
+
+- `telemetry.disclosure_shown` — emitted after the first-run /
+  legacy-upgrade banner fires, carries `trigger` and `platform`.
+- `telemetry.undecided_nudge_shown` — emitted by the end-of-`setup`
+  "opt-out and currently on" one-liner, carries `platform`.
+
+Both gate on `is_enabled()`; if you disable telemetry before they
+emit, no event ships.
+
+Other surfaces updated to match: `PRIVACY.md`, `docs/telemetry.md`,
+`docs/operations/telemetry-forwarder.md`, `docs/ai-hooks.md`,
+`docs/index.md`, `docs/release-testing.md`, `CLAUDE.md`,
+`data/faq.json`. The forwarder operator runbook also got a note
+about the expected step-change in receive volume.
+
+Cross-link: the prior breaking-change entry ("Telemetry disable now
+clears machine fingerprint") in the same release line is the
+sibling fix for "I want to fully reset my telemetry footprint."
+
 ## v0.0.5 → v0.1.0
 
 v0.1.0 is the first feature-complete milestone. The public CLI

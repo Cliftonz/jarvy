@@ -78,15 +78,15 @@ fn main() {
 
     // CI-flag forwarding to env BEFORE any cached ci::detect()/is_ci()
     // call. The `Setup { ci, no_ci, .. }` flags were forwarded into
-    // `JARVY_CI` / `JARVY_NO_CI` only inside `run_setup` — but
-    // `telemetry::init` (and `update::config`) call
-    // `sandbox::is_seamless_auto()` → `crate::ci::is_ci()` →
-    // `cached_detect()` long before `run_setup` runs. The cache locks
-    // in `None` from the no-env baseline, so the subsequent
-    // `set_var("JARVY_CI", "1")` inside `run_setup` is invisible to the
-    // cached state and the `Running in CI mode` notice never fires.
-    // Hoist the forwarding here so both early-init callers and the
-    // setup-command path see the same forced-CI state.
+    // `JARVY_CI` / `JARVY_NO_CI` only inside `run_setup`, but the
+    // telemetry-config merge below applies `sandbox::is_seamless_auto()`
+    // → `crate::ci::is_ci()` → `cached_detect()` long before
+    // `run_setup` runs. The cache locks in `None` from the no-env
+    // baseline, so a subsequent `set_var("JARVY_CI", "1")` inside
+    // `run_setup` is invisible to the cached state and the `Running
+    // in CI mode` notice never fires. Hoist the forwarding here so
+    // both early-init callers and the setup-command path see the
+    // same forced-CI state.
     //
     // SAFETY: env vars set at startup before any threads are spawned.
     #[allow(unsafe_code)]
@@ -107,7 +107,7 @@ fn main() {
     // tracing subscriber's OTLP layer sees the same merge result as
     // `telemetry::init` (metrics + traces). Earlier versions gated the
     // log layer on the file flag only — `JARVY_TELEMETRY=1` env-only
-    // opt-in left the OTLP logger permanently off, while metrics still
+    // override left the OTLP logger permanently off, while metrics still
     // exported, producing a half-on telemetry stack that was hard to
     // diagnose.
     //
@@ -145,8 +145,34 @@ fn main() {
         telemetry_config.endpoint = env_config.endpoint;
     }
 
+    // Seamless / CI auto-disable, applied to the FINAL merged config.
+    // `from_env` already encodes this on `env_config`, but `env_config`'s
+    // `enabled` is only propagated above when `JARVY_TELEMETRY` is
+    // explicitly set — which is the opposite of when the auto-disable
+    // needs to fire. Under the opt-out default the disk value is `true`,
+    // so without this re-application a CI / Codespaces / Claude-Code
+    // sandbox would silently telemeter despite the documented contract
+    // ("CI and unattended sandboxes auto-disable unless explicitly
+    // overridden"). Forced sandbox (`JARVY_SANDBOX=1` without a real
+    // detector match) is deliberately NOT in this gate — a hostile
+    // dotfile or compromised devcontainer image that sets
+    // `JARVY_SANDBOX=1` must not silently silence telemetry on a
+    // victim's machine. Only `is_seamless_auto` (real detection)
+    // triggers the disable.
+    if std::env::var("JARVY_TELEMETRY").is_err() && sandbox::is_seamless_auto() {
+        telemetry_config.enabled = false;
+    }
+
     init_logging(&telemetry_config);
     telemetry::init(telemetry_config);
+
+    // If `initialize_from_disk` rendered the first-run / legacy-upgrade
+    // telemetry disclosure, emit the audit event now that the OTLP
+    // layer is wired up. On-call uses this to confirm the disclosure
+    // actually surfaced when a user files a privacy complaint.
+    if let Some(trigger) = init::take_pending_disclosure() {
+        telemetry::disclosure_shown(trigger);
+    }
 
     // Install panic hook BEFORE the banner so any (currently hard-to-
     // hit) stderr-emission failure produces a structured panic

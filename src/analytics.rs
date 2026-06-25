@@ -72,7 +72,7 @@ fn set_bootstrap_state(state: TelemetryBootstrapState) {
 /// and the endpoint must come from this single source — earlier
 /// versions gated the OTLP layer on the global file flag while
 /// `telemetry::init` gated metrics/traces on the merged config,
-/// producing the bug where `JARVY_TELEMETRY=1` env-only opt-in left
+/// producing the bug where `JARVY_TELEMETRY=1` env-only override left
 /// the logger layer permanently disabled.
 pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
     let enable_analytics = cfg.enabled && cfg.logs;

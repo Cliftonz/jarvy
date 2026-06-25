@@ -28,9 +28,11 @@ When seamless mode is active, Jarvy:
 
 - **Disables interactive prompts.** No first-run setup wizard, no
   confirmation dialogs.
-- **Disables telemetry by default.** Multi-tenant base images don't
-  leak signal across tenants. Explicit opt-in via `JARVY_TELEMETRY=1`
-  still works.
+- **Auto-disables telemetry.** Despite the global opt-out default,
+  multi-tenant base images must not leak signal across tenants —
+  unattended sandboxes drop back to off. Per-session re-enable via
+  `JARVY_TELEMETRY=1` still works for fleet operators who want
+  session-scoped traces.
 - **Disables auto-update checks.** Ephemeral envs shouldn't try to
   swap their own binary mid-session.
 - **Auto-baselines drift state on first clean run.** If the sandbox

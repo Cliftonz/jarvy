@@ -151,8 +151,9 @@ Then point Jarvy at it: `jarvy telemetry set-endpoint http://otel-collector.inte
 
 ## Privacy
 
-- Opt-in by default
-- No secrets, no env vars, no file paths
+- Opt-out by default, with a loud boxed first-run / upgrade disclosure
+- CI runners and unattended AI sandboxes auto-disable unless explicitly overridden
+- No secrets, no env vars, no raw file paths (home-dir prefix is redacted to `~`)
 - A stable per-machine ID (machineid-rs) lets you correlate signals from the same workstation without identifying the user
 - See [`PRIVACY.md`](https://github.com/bearbinary/jarvy/blob/main/PRIVACY.md) for the full data-handling policy
 

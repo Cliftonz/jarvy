@@ -597,10 +597,15 @@ pub fn tool_already_installed(
         return;
     }
 
+    // `install_path` arrives as `/Users/<name>/.oh-my-zsh` (or the
+    // platform equivalent) — the OS username is identifying. Redact
+    // home-dir prefix to `~` before emitting; the forwarder's
+    // server-side scrub is defense in depth, not the contract.
+    let redacted_path = redact_path(install_path);
     tracing::info!(
         event = "tool.already_installed",
         tool = %tool,
-        install_path = %install_path,
+        install_path = %redacted_path,
         detection_method = %detection_method,
         source = %source,
         prompted_user = %prompted_user,
@@ -986,16 +991,33 @@ pub fn doctor_issue_found(category: &str, severity: &str, message: &str) {
     );
 }
 
-/// Record search execution
+/// Record search execution.
+///
+/// The user's raw query is NEVER emitted — enterprise users routinely
+/// `jarvy search` for project-internal tool names that would otherwise
+/// leak as fragments of their internal tooling vocabulary. Only the
+/// hit-rate signal (whether the query had results) and the bucketed
+/// length are sent so dashboards can graph "what fraction of searches
+/// return zero hits" without storing the query text itself.
 pub fn search_executed(query: &str, results_count: usize) {
     if !is_enabled() {
         return;
     }
 
+    let had_results = results_count > 0;
+    let query_len_bucket = match query.chars().count() {
+        0 => "0",
+        1..=4 => "1-4",
+        5..=15 => "5-15",
+        16..=40 => "16-40",
+        _ => "40+",
+    };
+
     tracing::info!(
         event = "search.executed",
-        query = %query,
+        had_results = %had_results,
         results_count = %results_count,
+        query_len_bucket = %query_len_bucket,
     );
 }
 
@@ -1315,6 +1337,76 @@ pub fn redact_path(path: &str) -> String {
     path.to_string()
 }
 
+/// Record that the first-run boxed telemetry disclosure was rendered.
+///
+/// The banner itself is a bare `eprintln!` so the user always sees it
+/// regardless of telemetry state. This event is the audit trail: when
+/// a user files "I didn't know telemetry was on," on-call can confirm
+/// the disclosure actually fired on their host. Counter-only; carries
+/// no PII (just `platform`).
+///
+/// Respects the consent guard: no-op if telemetry is disabled (a
+/// disabled user shouldn't generate telemetry just because they saw
+/// the disclosure — the disclosure itself fired regardless).
+pub fn disclosure_shown(trigger: &str) {
+    if !is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "telemetry.disclosure_shown",
+        trigger = %trigger,
+        platform = %env::consts::OS,
+    );
+}
+
+/// Record that the end-of-`setup` "opt-out, currently on" nudge fired.
+///
+/// Counterpart to [`disclosure_shown`]: lets on-call graph what
+/// fraction of the fleet is still in the "undecided" state, which is
+/// the signal for "is it safe to retire the nudge yet?". The nudge
+/// only emits when telemetry is on, so this is also gated.
+pub fn undecided_nudge_shown() {
+    if !is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "telemetry.undecided_nudge_shown",
+        platform = %env::consts::OS,
+    );
+}
+
+/// Returns `true` when the user has persisted an explicit telemetry
+/// decision in `~/.jarvy/config.toml` — i.e., the `[telemetry]` table
+/// contains a literal `enabled` key, regardless of value.
+///
+/// `content` is the raw TOML text. An empty string, missing file, or
+/// missing `[telemetry]` table all parse as "undecided" so the caller
+/// can fire a disclosure surface. Parsing is done via `toml::Value` so
+/// the check is section-aware — a sibling table that happens to have
+/// its own `enabled` key (`[mcp_register] enabled = true`) does NOT
+/// suppress the disclosure, fixing a bug in the prior line-by-line
+/// string match that was not section-aware and was fragile to
+/// whitespace.
+///
+/// This is the source-of-truth check for the disclosure surfaces in
+/// `src/init.rs` (boxed banner on first-run + legacy-config upgrade)
+/// and `src/commands/setup_cmd.rs` (end-of-setup nudge).
+pub fn user_decided(content: &str) -> bool {
+    // Use `toml::from_str` rather than `Value::from_str` — in toml
+    // 0.8, the `FromStr` impl on `Value` is the older "value-only"
+    // parser that refuses content beyond a single TOML value, so
+    // `"[telemetry]\nenabled = true"` errors with "expected nothing"
+    // after the section header. `from_str::<Value>` is the document
+    // parser and accepts a full TOML document.
+    let Ok(value) = toml::from_str::<toml::Value>(content) else {
+        return false;
+    };
+    let Some(telemetry) = value.get("telemetry").and_then(|t| t.as_table()) else {
+        return false;
+    };
+    telemetry.contains_key("enabled")
+}
+
 // ============================================================================
 // Timing Helpers
 // ============================================================================
@@ -1545,6 +1637,13 @@ mod tests {
         // CLAUDE.md and docs/telemetry.md.
         let config = TelemetryConfig::default();
         assert!(config.enabled);
+        // Pin the *effective* posture, not just the bit — survives
+        // an accidental change that makes `enabled` true while every
+        // signal is off.
+        assert!(
+            config.is_enabled(),
+            "default must be effectively on (enabled + at least one signal)"
+        );
         assert_eq!(config.endpoint, "https://telemetry.jarvy.dev");
         assert_eq!(config.protocol, "http");
         assert!(config.logs);
@@ -1849,6 +1948,46 @@ mod tests {
             assert!(result.starts_with("~"));
             assert!(!result.contains(&home));
         }
+    }
+
+    #[test]
+    fn user_decided_recognizes_explicit_enabled() {
+        assert!(user_decided("[telemetry]\nenabled = true\n"));
+        assert!(user_decided("[telemetry]\nenabled = false\n"));
+        // Whitespace-agnostic — the prior string-match required exactly
+        // `enabled = true` and missed `enabled=true`.
+        assert!(user_decided("[telemetry]\nenabled=true\n"));
+        // Order-independent: enabled may appear after other keys.
+        assert!(user_decided(
+            "[telemetry]\nendpoint = \"https://example\"\nenabled = false\n"
+        ));
+    }
+
+    #[test]
+    fn user_decided_undecided_when_telemetry_missing() {
+        assert!(!user_decided(""));
+        assert!(!user_decided("[settings]\nfingerprint = \"abc\"\n"));
+        // Telemetry section present but no `enabled` key — undecided.
+        assert!(!user_decided(
+            "[telemetry]\nendpoint = \"https://example\"\n"
+        ));
+    }
+
+    #[test]
+    fn user_decided_section_aware_not_string_match() {
+        // The prior implementation scanned lines and would treat a
+        // sibling section's `enabled` as a decision. This must NOT.
+        assert!(!user_decided(
+            "[mcp_register]\nenabled = true\n[telemetry]\nendpoint = \"https://example\"\n"
+        ));
+        assert!(!user_decided("[drift]\nenabled = true\n"));
+    }
+
+    #[test]
+    fn user_decided_returns_false_on_malformed_toml() {
+        // Brand-new corrupt config — treat as undecided so the next run
+        // surfaces the disclosure rather than silently enrolling.
+        assert!(!user_decided("not [valid toml"));
     }
 
     #[test]

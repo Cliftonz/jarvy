@@ -205,7 +205,7 @@ fn run_request(name: &str, open: bool, output_format: OutputFormat, output: Opti
         return error_codes::EXIT_SUCCESS;
     }
 
-    // Explicit user action — fire telemetry regardless of opt-in.
+    // Explicit user action — fire telemetry regardless of consent gate.
     // `--request` IS the request mechanism. Telemetry is the canonical
     // channel because it requires no GitHub account from user or agent
     // and zero triage work from the maintainer.

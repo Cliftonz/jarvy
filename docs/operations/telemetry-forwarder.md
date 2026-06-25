@@ -21,6 +21,39 @@ it, and how to recover when it breaks.
 > [Telemetry](../telemetry.md); the data-handling promise made there is
 > the contract this doc must implement.
 
+## Default-flip — volume expectations (READ BEFORE NEXT STABLE)
+
+The Jarvy CLI telemetry default flipped from opt-in to opt-out in
+the release cycle following v0.2.1. Once that stable ships and
+adoption catches up, the forwarder will see a step-change in
+receive volume — every `setup.started`, `setup.completed`,
+`command.executed`, and `tool.*` event now lands by default unless
+the user explicitly disabled telemetry or is running in a CI /
+sandbox that auto-disabled.
+
+Operator checklist before the stable bump propagates:
+
+1. **Re-baseline rate limits.** The shelf calibrated for opt-in
+   volume will trip 429s on the first wave of opt-out CLIs and
+   look like a (D)DoS. Bump the per-IP and per-tenant limits to
+   match the projected fleet size, or shift to a sliding-window
+   model that adapts.
+2. **Re-baseline anomaly-detection alerts.** Any
+   "volume-over-historical-baseline" alert in Grafana / Mimir
+   will fire as soon as the population shifts. Either widen the
+   threshold or pause the alert until the new baseline settles.
+3. **Watch the inverse signal**: a *sudden drop* in
+   `tool.requested` or `command.executed` after the bump is the
+   actionable outage signal, not the increase. Users running
+   `JARVY_TELEMETRY=0` will appear as silence on the receiver
+   side — and that is the documented contract, not a failure.
+
+The new `telemetry.disclosure_shown` event (emitted once per host
+after the boxed first-run / legacy-upgrade disclosure) is a
+first-time-seen counter: stable hosts emit it exactly once. Useful
+for tracking opt-out adoption — `disclosure_shown - disable_calls`
+approximates "users who saw the banner and stayed enrolled."
+
 The forwarder is deployed as discrete Kubernetes Services in a
 single namespace on a self-hosted cluster. Traefik handles ingress
 and TLS. cert-manager provisions certificates. The
@@ -97,7 +130,7 @@ replaceable.
 ## Architecture
 
 ```
-   Jarvy CLI (opt-in users)
+   Jarvy CLI (opt-out default — users may disable)
    └─ HTTPS POST /v1/{logs,metrics,traces}
        │
        ▼
@@ -1147,7 +1180,7 @@ month, not a thing that requires constant attention.
 
 ## See also
 
-- [Telemetry](../telemetry.md) — user-facing schema, opt-in command,
+- [Telemetry](../telemetry.md) — user-facing schema, disable command,
   environment variables, and the data-handling promise this
   document implements.
 - [`docs/release-quirks-jarvy.md`](../release-quirks-jarvy.md) —

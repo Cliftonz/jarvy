@@ -80,12 +80,12 @@ impl NugetHandler {
         // Emit per-package events through `tracing` directly, but only
         // when the user has opted into telemetry. `observability::
         // telemetry_gate` is populated by `telemetry::init` at startup
-        // and gives lib-side modules a way to honor the opt-in without
+        // and gives lib-side modules a way to honor the consent gate without
         // reaching the bin-only `crate::telemetry::is_enabled()`. The
         // gate prevents `package.*` events from leaking to a
         // user-configured OTLP endpoint when `telemetry.enabled =
         // false` — the prior round emitted unconditionally and broke
-        // the documented opt-in contract.
+        // the documented consent contract.
         let telemetry_on = crate::observability::telemetry_gate::is_enabled();
         if telemetry_on {
             tracing::info!(

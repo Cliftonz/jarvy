@@ -952,22 +952,14 @@ fn emit_telemetry_hint_if_undecided() {
         return;
     };
     let config_path = home.join(".jarvy").join("config.toml");
-    let Ok(content) = fs::read_to_string(&config_path) else {
-        return;
-    };
-    // A user who set `[telemetry]\nenabled = true|false` has decided.
-    // Anything else (no section, or section present without an
-    // explicit `enabled = …` line) is treated as undecided.
-    let decided = content.lines().any(|l| {
-        let t = l.trim();
-        t == "enabled = true" || t == "enabled = false"
-    });
-    if decided {
+    let content = fs::read_to_string(&config_path).unwrap_or_default();
+    if crate::telemetry::user_decided(&content) {
         return;
     }
     eprintln!(
         "\nNote: Jarvy telemetry is opt-out and currently on. Anonymized usage data helps prioritize fixes.\n      Disable with: jarvy telemetry disable   |   Details: https://jarvy.dev/telemetry/"
     );
+    crate::telemetry::undecided_nudge_shown();
 }
 
 /// Render a sorted, scope-labelled package list for the dry-run preview.

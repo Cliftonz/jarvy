@@ -31,38 +31,87 @@ for divergences from generic release skills.
 
 ### Changed — privacy posture
 
-- **Telemetry default flipped from opt-in to opt-out.** New installs (and
+- **Telemetry default flipped from opt-in to opt-out.** New installs and
   existing installs whose `~/.jarvy/config.toml` has no explicit
-  `[telemetry] enabled = …` line) now have telemetry **on by default**.
-  Anonymized usage data (which tools you install, setup durations,
-  failure categories — never file contents, hostnames, or IPs) ships to
-  `https://telemetry.jarvy.dev` unless disabled.
+  `[telemetry] enabled = …` line now ship anonymized usage data to
+  `https://telemetry.jarvy.dev` by default. The first-run boxed notice
+  declares telemetry enabled and surfaces the disable path; the
+  end-of-`setup` nudge fires when the user is still on the default and
+  points at `jarvy telemetry disable`. Trust boundary unchanged: a
+  remote `jarvy.toml` can still only narrow telemetry, never broaden
+  it.
 
   Disable persistently with `jarvy telemetry disable`, per-invocation
-  with `JARVY_TELEMETRY=0 jarvy <cmd>`, or by setting `[telemetry]
-  enabled = false` in `~/.jarvy/config.toml`. CI runners and unattended
-  AI sandboxes still auto-disable unless explicitly overridden — that
-  guardrail did not change.
+  with `JARVY_TELEMETRY=0 jarvy <cmd>`, or via `[telemetry]
+  enabled = false`. CI / unattended AI sandboxes still auto-disable —
+  that guardrail was hardened (see Fixed below).
 
-  The first-run boxed notice in `~/.jarvy/` creation now reads
-  "telemetry is currently ENABLED" with the disable command; the
-  end-of-`jarvy setup` nudge changed from "Tip: opt-in and currently
-  off" to "Note: opt-out and currently on" and fires when the user is
-  still on the default. Trust boundary unchanged: a remote `jarvy.toml`
-  can still only narrow telemetry, never broaden it.
-
-  Public docs updated: `CLAUDE.md`, `docs/telemetry.md`,
+  Public docs and disclosure surfaces updated: `CLAUDE.md`, `PRIVACY.md`,
+  `UPGRADING.md`, `docs/telemetry.md`,
   `docs/operations/telemetry-forwarder.md`, `docs/ai-hooks.md`,
-  `docs/index.md`, `docs/release-testing.md`.
+  `docs/ai-sandboxes.md`, `docs/index.md`, `docs/release-testing.md`,
+  `docs/for-ai-agents.md`, `data/faq.json`.
+
+### Added
+
+- **`telemetry.disclosure_shown` event.** Fires after the first-run
+  boxed banner (or the legacy-upgrade banner for users whose config
+  pre-dates the `[telemetry]` block) renders. Carries `trigger`
+  (`first_run` / `legacy_upgrade`) and `platform`. Gives on-call an
+  audit trail when users file privacy complaints.
+- **`telemetry.undecided_nudge_shown` event.** Fires when the
+  end-of-`setup` "Note: opt-out and currently on" line emits. Carries
+  `platform`. Lets operators graph what fraction of the fleet is still
+  in the undecided state and decide when to retire the nudge.
+- **Legacy-upgrade disclosure.** Users with a `~/.jarvy/config.toml`
+  that pre-dates the `[telemetry]` block now see the boxed disclosure
+  on the next post-upgrade run, after which the block is persisted
+  with `enabled = true` so the disclosure doesn't repeat. Closes a
+  silent-enrollment loop that would otherwise leave the long tail of
+  pre-`d039d9b` configs without ever seeing the banner.
 
 ### Fixed
 
 - **`jarvy setup` no longer re-prompts "Do you want to install Oh My
   Zsh?" when `~/.oh-my-zsh` already exists.** The macOS hard-dep check
-  asked first and *then* detected the existing install, so every run
-  surfaced the prompt followed by "Oh My Zsh! is already installed."
-  Detection now runs before the prompt; the `tool.already_installed`
-  telemetry event still fires (`prompted_user = false`).
+  asked first and *then* detected the existing install. Detection now
+  runs before the prompt; the `tool.already_installed` telemetry event
+  still fires (`prompted_user = false`). The decision logic moved into
+  a pure `decide_omz_action` function with a table-driven regression
+  test — including a `never_prompt` closure that panics if invoked,
+  pinning the "AlreadyInstalled short-circuits before any prompt"
+  invariant.
+- **CI / sandbox telemetry auto-disable now actually fires under the
+  opt-out default.** `from_env`'s seamless-detection branch correctly
+  computed `enabled = false` when `JARVY_TELEMETRY` was unset, but
+  `main.rs` only propagated `env_config.enabled` when the env var was
+  *set* — discarding the disable in exactly the case it was supposed to
+  fire. Under the prior opt-in default this was masked because the
+  disk value was already false. The seamless gate now applies
+  unconditionally after the config merge when `JARVY_TELEMETRY` is
+  unset. Forced sandbox (`JARVY_SANDBOX=1` without real detection) is
+  deliberately NOT in this gate — a hostile dotfile must not silence
+  telemetry on the victim's machine.
+- **`tool.already_installed` install_path is now home-prefix
+  redacted.** Pre-flip the event only fired after a user prompt;
+  post-flip it can fire automatically on every `jarvy setup` (the OMZ
+  short-circuit). The raw `/Users/<name>/.oh-my-zsh` path is now
+  routed through `redact_path` to `~/.oh-my-zsh` before emit. The
+  forwarder's server-side scrub remains the defense-in-depth backstop,
+  not the contract.
+- **`search.executed` no longer emits the raw query string.** The
+  user's free-text input previously shipped verbatim — invisible
+  under opt-in, but a leak surface once telemetry was on by default.
+  Replaced with `had_results` (bool) and `query_len_bucket`
+  (`0`/`1-4`/`5-15`/`16-40`/`40+`) so hit-rate dashboards still work
+  without storing the query text.
+- **`emit_telemetry_hint_if_undecided` uses a section-aware TOML
+  parse, not a line-by-line string match.** The prior predicate
+  treated `[mcp_register]\nenabled = true` (or any sibling section's
+  `enabled` key) as a telemetry decision, suppressing the nudge for
+  users who never made one. Extracted as
+  `telemetry::user_decided(content)` with five table-driven test
+  cases pinning the section-aware behavior.
 
 ## [v0.2.1] — Registry pull QA suite + sync.rs supply-chain fixes (2026-06-25)
 

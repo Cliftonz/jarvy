@@ -75,7 +75,7 @@ impl CargoHandler {
         }
 
         println!("    Installing {}...", name);
-        // Per-package telemetry, gated on the opt-in. See nuget.rs
+        // Per-package telemetry, gated on the consent gate. See nuget.rs
         // for the gate rationale.
         let telemetry_on = crate::observability::telemetry_gate::is_enabled();
         if telemetry_on {

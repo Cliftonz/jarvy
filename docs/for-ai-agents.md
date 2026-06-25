@@ -526,8 +526,8 @@ jarvy tools --request <name> --format json
 ```
 
 Same canonical event, same delivery. `--request` bypasses the global
-telemetry opt-in: typing the command is explicit consent for that
-event.
+telemetry consent gate: typing the command is explicit consent for that
+event, fired regardless of whether the user has disabled telemetry.
 
 Exit behavior: setup emits one `tool.unsupported` event per unknown
 tool. The process only exits `8` (`TOOL_UNSUPPORTED`) when **every**

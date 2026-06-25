@@ -145,7 +145,7 @@
       "id": "telemetry",
       "category": "advanced",
       "question": "What telemetry does Jarvy collect?",
-      "answer": "Telemetry is **opt-in** and disabled by default. When enabled, Jarvy collects:\n- Command usage (which commands are run)\n- Tool installation success/failure rates\n- Platform and version information\n- Anonymous machine fingerprint (no PII)\n\nManage telemetry:\n```bash\njarvy telemetry status    # Check current settings\njarvy telemetry enable    # Opt in\njarvy telemetry disable   # Opt out\njarvy telemetry preview   # See what would be sent\n```\n\nTelemetry is automatically disabled in CI environments.",
+      "answer": "Telemetry is **opt-out** and enabled by default. A loud boxed disclosure prints on first run (and on upgrade for users whose config pre-dates the `[telemetry]` section); the data destination, the disable command, and a per-invocation override are all shown. Anonymized usage data:\n- Command usage (which commands are run)\n- Tool installation success/failure rates\n- Platform and version information\n- Anonymous machine fingerprint (no PII)\n\nManage telemetry:\n```bash\njarvy telemetry status     # Check current settings\njarvy telemetry disable    # Disable persistently\njarvy telemetry enable     # Re-enable\njarvy telemetry preview    # See what would be sent\n```\n\nPer-invocation: `JARVY_TELEMETRY=0 jarvy <cmd>`.\n\nCI environments and unattended AI sandboxes auto-disable unless explicitly overridden.",
       "tags": ["telemetry", "privacy", "analytics"],
       "related": []
     }
