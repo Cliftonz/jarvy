@@ -346,7 +346,7 @@ jarvy logs view --level info | grep agent_applied
 
 When telemetry is enabled (`jarvy telemetry enable`), the same events are exported as OTLP log records to your configured endpoint. The event names and field shapes match the local log entries above, so the same query works across both surfaces.
 
-Telemetry is **opt-in by default** and follows Jarvy's standard trust boundary: a remote `jarvy.toml` can narrow what's emitted but can't broaden it. See [telemetry](telemetry.md) for the full opt-in / opt-out model and the endpoint configuration.
+Telemetry is **opt-out by default** and follows Jarvy's standard trust boundary: a remote `jarvy.toml` can narrow what's emitted but can't broaden it. See [telemetry](telemetry.md) for the full opt-out / disable model and the endpoint configuration.
 
 There is no `ai_hook.hook_executed` event in Jarvy telemetry, and there can't be — Jarvy doesn't run the hooks. If you want OTLP visibility into actual hook fires, see the next section.
 

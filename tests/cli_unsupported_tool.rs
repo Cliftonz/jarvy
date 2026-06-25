@@ -52,12 +52,13 @@ fn tools_request_pretty_confirms_telemetry_send_when_enabled() {
 #[test]
 fn tools_request_pretty_shows_url_when_telemetry_off() {
     // P0 regression guard from the second review: with telemetry off
-    // (the default in tests), `--request` previously claimed
-    // "Reported via telemetry" while the counter was silently dropped.
-    // The fix uses the counter_fired return value to pick the channel,
-    // so this path MUST now show the GitHub fallback URL.
+    // (now explicit via `JARVY_TELEMETRY=0` since the global default
+    // flipped to opt-out), `--request` previously claimed "Reported
+    // via telemetry" while the counter was silently dropped. The fix
+    // uses the counter_fired return value to pick the channel, so
+    // this path MUST now show the GitHub fallback URL.
     let mut c = jarvy_cmd();
-    c.env_remove("JARVY_TELEMETRY"); // explicit: telemetry off
+    c.env("JARVY_TELEMETRY", "0"); // explicit: telemetry off
     c.args(["tools", "--request", "definitely-not-a-real-tool"]);
 
     c.assert()
@@ -109,9 +110,11 @@ fn tools_request_json_telemetry_off_reports_manual_channel() {
     // P0 regression guard: JSON consumers (AI agents) must see
     // `channel: "manual"` when telemetry was off — that's their signal
     // to fall back to the URL. Previously the path always reported
-    // "telemetry" regardless of whether the counter fired.
+    // "telemetry" regardless of whether the counter fired. Telemetry
+    // off is now explicit via `JARVY_TELEMETRY=0` because the global
+    // default flipped to opt-out.
     let mut c = jarvy_cmd();
-    c.env_remove("JARVY_TELEMETRY");
+    c.env("JARVY_TELEMETRY", "0");
     c.args([
         "tools",
         "--request",
@@ -199,8 +202,9 @@ fn setup_with_only_unsupported_tools_exits_8() {
     // Build a jarvy.toml with a single fictional tool. Setup should:
     // - print the structured unsupported-tool message to stderr
     // - exit with TOOL_UNSUPPORTED (8)
-    // With telemetry off (default in tests), the fallback GitHub URL
-    // is surfaced because telemetry isn't covering the request.
+    // With telemetry off (explicit `JARVY_TELEMETRY=0` since the
+    // global default flipped to opt-out), the fallback GitHub URL is
+    // surfaced because telemetry isn't covering the request.
     let mut cfg = NamedTempFile::new().unwrap();
     writeln!(
         cfg,
@@ -213,12 +217,14 @@ totally-fake-tool-xyz = "1.0"
 
     // jarvy_fast_cmd() bundles JARVY_TEST_MODE + JARVY_FAST_TEST so we
     // skip actual command execution and don't hit the host's package
-    // manager. Telemetry stays off. JARVY_SANDBOX=0 disables sandbox
-    // auto-detection so the test runs the same way on Claude Code /
-    // containerized CI as on bare metal (otherwise seamless mode flips
-    // the renderer into `Sent` and the fallback URL gets suppressed).
+    // manager. `JARVY_TELEMETRY=0` keeps telemetry off (default is now
+    // opt-out). JARVY_SANDBOX=0 disables sandbox auto-detection so the
+    // test runs the same way on Claude Code / containerized CI as on
+    // bare metal (otherwise seamless mode flips the renderer into
+    // `Sent` and the fallback URL gets suppressed).
     let mut c = jarvy_fast_cmd();
     c.env("JARVY_SANDBOX", "0");
+    c.env("JARVY_TELEMETRY", "0");
     c.args(["setup", "--file"])
         .arg(cfg.path())
         .arg("--no-hooks");
@@ -286,8 +292,11 @@ seamless-fake-tool = "1.0"
 
     let mut c = jarvy_fast_cmd();
     // Force seamless on, telemetry off — the bug's reproducer.
+    // Telemetry must be explicitly disabled here; the global default
+    // flipped to opt-out, so simply removing the env var would leave
+    // telemetry on.
     c.env("JARVY_SANDBOX", "1");
-    c.env_remove("JARVY_TELEMETRY");
+    c.env("JARVY_TELEMETRY", "0");
     c.args(["setup", "--file"])
         .arg(cfg.path())
         .arg("--no-hooks");

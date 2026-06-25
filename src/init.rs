@@ -116,15 +116,16 @@ fn initialize_from_disk() -> CliConfig {
         // on first run (when ~/.jarvy doesn't yet exist). Documented
         // in docs/release-quirks-jarvy.md.
         //
-        // Telemetry is **opt-in** (CLAUDE.md commitment): `enabled` in
-        // TelemetryConfig::default() is false. This notice does not
-        // enable anything — it asks the user to decide. The boxed
-        // format is deliberate; an opt-in regime works only when the
-        // ask is visible enough that users actually see it.
+        // Telemetry is **opt-out** (CLAUDE.md commitment): `enabled` in
+        // TelemetryConfig::default() is true. This notice surfaces the
+        // default and the disable path on the first run so users can
+        // make an informed choice. The boxed format is deliberate; an
+        // opt-out regime demands a loud disclosure or it is consent
+        // in name only.
         eprintln!(
             r#"
 ╭─────────────────────────────────────────────────────────────────╮
-│  Jarvy telemetry is currently DISABLED.                         │
+│  Jarvy telemetry is currently ENABLED.                          │
 │                                                                 │
 │  Anonymized usage data (which tools you install, setup          │
 │  durations, failure categories) helps prioritize what to fix    │
@@ -136,11 +137,11 @@ fn initialize_from_disk() -> CliConfig {
 │  fan-out to Grafana Cloud):                                     │
 │    https://jarvy.dev/operations/telemetry-forwarder/            │
 │                                                                 │
-│  Opt in (you can opt out again any time):                       │
-│    jarvy telemetry enable                                       │
+│  Opt out (you can opt back in any time):                        │
+│    jarvy telemetry disable                                      │
 │                                                                 │
 │  Or per-invocation:                                             │
-│    JARVY_TELEMETRY=1 jarvy <cmd>                                │
+│    JARVY_TELEMETRY=0 jarvy <cmd>                                │
 ╰─────────────────────────────────────────────────────────────────╯
 "#
         );

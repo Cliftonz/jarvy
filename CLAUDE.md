@@ -91,7 +91,7 @@ Package-name validation (`validate_package_name` / `validate_package_version`) r
 
 ## Telemetry
 
-OTEL-based, **opt-in by default**. Config in `~/.jarvy/config.toml::[telemetry]` (`enabled`, `endpoint`, `protocol`, `logs`, `metrics`, `traces`, `sample_rate`). Env overrides: `JARVY_TELEMETRY`, `JARVY_OTLP_ENDPOINT`, `JARVY_OTLP_PROTOCOL`, `JARVY_OTLP_{LOGS,METRICS,TRACES}`, `JARVY_OTLP_SAMPLE_RATE`. CI auto-disables unless `JARVY_TELEMETRY=1`. CLI: `jarvy telemetry {status,enable,disable,set-endpoint,test,preview}`. Module: `src/telemetry.rs`.
+OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]` (`enabled`, `endpoint`, `protocol`, `logs`, `metrics`, `traces`, `sample_rate`). Env overrides: `JARVY_TELEMETRY` (`0` disables, `1` enables), `JARVY_OTLP_ENDPOINT`, `JARVY_OTLP_PROTOCOL`, `JARVY_OTLP_{LOGS,METRICS,TRACES}`, `JARVY_OTLP_SAMPLE_RATE`. CI / unattended sandboxes auto-disable unless `JARVY_TELEMETRY=1`. CLI: `jarvy telemetry {status,enable,disable,set-endpoint,test,preview}`. Module: `src/telemetry.rs`.
 
 ### Event Taxonomy — stable contract for AI agents and log queries
 

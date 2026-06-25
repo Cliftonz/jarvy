@@ -27,6 +27,43 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/bearbinary/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [Unreleased]
+
+### Changed — privacy posture
+
+- **Telemetry default flipped from opt-in to opt-out.** New installs (and
+  existing installs whose `~/.jarvy/config.toml` has no explicit
+  `[telemetry] enabled = …` line) now have telemetry **on by default**.
+  Anonymized usage data (which tools you install, setup durations,
+  failure categories — never file contents, hostnames, or IPs) ships to
+  `https://telemetry.jarvy.dev` unless disabled.
+
+  Disable persistently with `jarvy telemetry disable`, per-invocation
+  with `JARVY_TELEMETRY=0 jarvy <cmd>`, or by setting `[telemetry]
+  enabled = false` in `~/.jarvy/config.toml`. CI runners and unattended
+  AI sandboxes still auto-disable unless explicitly overridden — that
+  guardrail did not change.
+
+  The first-run boxed notice in `~/.jarvy/` creation now reads
+  "telemetry is currently ENABLED" with the disable command; the
+  end-of-`jarvy setup` nudge changed from "Tip: opt-in and currently
+  off" to "Note: opt-out and currently on" and fires when the user is
+  still on the default. Trust boundary unchanged: a remote `jarvy.toml`
+  can still only narrow telemetry, never broaden it.
+
+  Public docs updated: `CLAUDE.md`, `docs/telemetry.md`,
+  `docs/operations/telemetry-forwarder.md`, `docs/ai-hooks.md`,
+  `docs/index.md`, `docs/release-testing.md`.
+
+### Fixed
+
+- **`jarvy setup` no longer re-prompts "Do you want to install Oh My
+  Zsh?" when `~/.oh-my-zsh` already exists.** The macOS hard-dep check
+  asked first and *then* detected the existing install, so every run
+  surfaced the prompt followed by "Oh My Zsh! is already installed."
+  Detection now runs before the prompt; the `tool.already_installed`
+  telemetry event still fires (`prompted_user = false`).
+
 ## [v0.2.1] — Registry pull QA suite + sync.rs supply-chain fixes (2026-06-25)
 
 Patch release on the v0.2.x line. Dominantly defensive: a comprehensive

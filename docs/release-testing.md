@@ -349,10 +349,10 @@ doesn't trip a threshold — the cumulative record matters at promotion time.
 | `jarvy drift check` exit codes on cohort hosts | Unexpected drift suggests the rc changed tool defaults silently |
 | Telemetry (when adoption justifies it) | Once the OTLP cohort is non-trivial, watch for spikes in `setup.failure` and `tool.install.failure` events |
 
-**Telemetry note**: telemetry is opt-in and disabled by default. Until the
-opt-in beta cohort and an OTLP collector are set up, this row is aspirational
-— the soak relies on log inspection on the maintainer's hosts plus GitHub
-issue traffic.
+**Telemetry note**: telemetry is opt-out and enabled by default. Until the
+OTLP collector has a non-trivial cohort, this row is aspirational — the soak
+relies on log inspection on the maintainer's hosts plus GitHub issue
+traffic.
 
 ## Severity Scale
 

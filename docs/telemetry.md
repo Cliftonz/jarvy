@@ -1,15 +1,15 @@
 ---
 title: "Telemetry - Jarvy"
-description: "Configure OpenTelemetry logs, metrics, and optional traces for Jarvy. Opt-in by default."
+description: "Configure OpenTelemetry logs, metrics, and optional traces for Jarvy. Opt-out by default."
 ---
 
 # Telemetry
 
 Jarvy emits OpenTelemetry (OTLP) signals — logs, metrics, and optional traces — so teams can monitor adoption, surface common errors, and observe setup performance across a fleet.
 
-**Telemetry is opt-in.** Nothing is sent until you explicitly configure an endpoint or set `JARVY_TELEMETRY=1`. CI environments are auto-disabled unless overridden.
+**Telemetry is opt-out.** It is on by default after the first-run notice. Disable with `jarvy telemetry disable`, `JARVY_TELEMETRY=0`, or `[telemetry] enabled = false` in `~/.jarvy/config.toml`. CI and unattended sandboxes auto-disable unless explicitly overridden.
 
-When opted in, Jarvy CLIs send to the project's hardened public forwarder
+When enabled, Jarvy CLIs send to the project's hardened public forwarder
 at `https://telemetry.jarvy.dev` by default. The forwarder strips PII,
 rate-limits, and fans out to Grafana Cloud. The full architecture,
 threat model, scrub policy, and operational runbook live in
@@ -20,7 +20,14 @@ implement.
 Override the endpoint with `JARVY_OTLP_ENDPOINT=https://your-collector`
 or `[telemetry] endpoint = "..."` to send to your own collector instead.
 
-## Quick Enable
+## Quick Disable
+
+```bash
+jarvy telemetry disable                # persistent
+JARVY_TELEMETRY=0 jarvy <cmd>          # per-invocation
+```
+
+## Quick Enable / Configure
 
 ```bash
 jarvy telemetry enable
@@ -45,19 +52,19 @@ sample_rate = 1.0
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `enabled` | bool | `false` | Master switch |
+| `enabled` | bool | `true` | Master switch |
 | `endpoint` | string | – | OTLP endpoint URL |
 | `protocol` | enum | `http` | `http` (port 4318) or `grpc` (port 4317) |
 | `logs` | bool | `true` | Export structured logs |
 | `metrics` | bool | `true` | Export counters, histograms, gauges |
-| `traces` | bool | `false` | Export spans (heavier; opt-in) |
+| `traces` | bool | `false` | Export spans (heavier; off by default) |
 | `sample_rate` | float | `1.0` | Trace sampling 0.0–1.0 |
 
 ## Environment Overrides
 
 | Variable | Equivalent |
 |----------|-----------|
-| `JARVY_TELEMETRY=1` | `enabled = true` |
+| `JARVY_TELEMETRY=1` / `JARVY_TELEMETRY=0` | `enabled = true` / `enabled = false` |
 | `JARVY_OTLP_ENDPOINT=...` | `endpoint = ...` |
 | `JARVY_OTLP_PROTOCOL=grpc` | `protocol = "grpc"` |
 | `JARVY_OTLP_LOGS=1` | `logs = true` |
@@ -69,7 +76,7 @@ Env always wins over config file.
 
 ## CI Behavior
 
-When `CI=true` is set, telemetry is **off by default** even if `enabled = true` in config. Override with `JARVY_TELEMETRY=1` if you genuinely want CI runs to report.
+When `CI=true` is set (or Jarvy detects an unattended sandbox), telemetry is **auto-disabled** even though the global default is on. Override with `JARVY_TELEMETRY=1` if you genuinely want CI runs to report.
 
 ## What Gets Sent
 
@@ -85,7 +92,7 @@ Structured `tracing` events with `info!`/`warn!`/`error!` level. Includes comman
 | `jarvy.setup.duration` | histogram | Total `jarvy setup` time |
 | `jarvy.config.tool_count` | gauge | Tools declared in `jarvy.toml` |
 
-### Traces (opt-in)
+### Traces (off by default)
 Spans cover `setup`, per-tool `install`, hook execution, and remote-config fetch. Useful for diagnosing slow installs.
 
 ## CLI Commands

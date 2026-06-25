@@ -5,7 +5,7 @@
 //!
 //! ## Configuration
 //!
-//! Telemetry is opt-in and disabled by default. Configure via:
+//! Telemetry is opt-out and enabled by default. Configure via:
 //! - `~/.jarvy/config.toml` [telemetry] section
 //! - Environment variables (JARVY_TELEMETRY, JARVY_OTLP_ENDPOINT, etc.)
 //!
@@ -37,11 +37,11 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TelemetryConfig {
-    /// Master switch for telemetry. Default is `false` (opt-in).
-    /// Users enable with `jarvy telemetry enable` (persistent),
-    /// `JARVY_TELEMETRY=1` (per-invocation), or by setting
-    /// `[telemetry] enabled = true` in `~/.jarvy/config.toml`.
-    /// The first-run prompt in `src/init.rs` makes the choice visible.
+    /// Master switch for telemetry. Default is `true` (opt-out).
+    /// Users disable with `jarvy telemetry disable` (persistent),
+    /// `JARVY_TELEMETRY=0` (per-invocation), or by setting
+    /// `[telemetry] enabled = false` in `~/.jarvy/config.toml`.
+    /// The first-run notice in `src/init.rs` makes the choice visible.
     pub enabled: bool,
     /// OTLP endpoint URL. Default is the project's hardened public
     /// forwarder — only reached if the user actually opts in. See
@@ -67,12 +67,12 @@ pub struct TelemetryConfig {
 impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {
-            // Opt-in: telemetry is off by default. Documented in
-            // CLAUDE.md and surfaced as a loud first-run prompt in
-            // src/init.rs. Users opt in with `jarvy telemetry enable`,
-            // `JARVY_TELEMETRY=1`, or `[telemetry] enabled = true` in
+            // Opt-out: telemetry is on by default. Documented in
+            // CLAUDE.md and surfaced as a loud first-run notice in
+            // src/init.rs. Users opt out with `jarvy telemetry disable`,
+            // `JARVY_TELEMETRY=0`, or `[telemetry] enabled = false` in
             // `~/.jarvy/config.toml`.
-            enabled: false,
+            enabled: true,
             // Default endpoint is the project's hardened public OTLP
             // forwarder. Only reached if the user opts in.
             // Provisioning, security model, and data-handling policy
@@ -93,7 +93,7 @@ impl TelemetryConfig {
     /// Apply a project-level `[telemetry]` table on top of an existing
     /// (typically user-global + env) config, enforcing the trust-boundary
     /// rule: a project `jarvy.toml` arriving via `git clone <untrusted>`
-    /// may **narrow** the user's opt-in but never **broaden** it.
+    /// may **narrow** the user's telemetry posture but never **broaden** it.
     ///
     /// Narrowing is allowed (and applied):
     /// - `enabled = false` disables telemetry for this run
@@ -271,7 +271,7 @@ pub enum Source {
     /// From CLI argument
     Cli,
     /// User explicitly invoked `jarvy tools --request <name>`. Treated
-    /// as direct consent — telemetry opt-in is bypassed because this
+    /// as direct consent — the telemetry consent gate is bypassed because this
     /// command's whole purpose is to file a request. The GitHub issue
     /// URL printed alongside remains the canonical channel.
     Request,
@@ -320,7 +320,7 @@ struct Metrics {
 
 /// Initialize telemetry with the given configuration
 pub fn init(config: TelemetryConfig) {
-    // Mirror the opt-in state into the lib-visible gate so modules
+    // Mirror the consent state into the lib-visible gate so modules
     // declared by `lib.rs` (`src/packages/*`, etc.) can check the
     // consent flag without reaching `crate::telemetry::is_enabled`,
     // which is bin-only. See `observability::telemetry_gate` for the
@@ -678,7 +678,7 @@ pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error:
 /// in one place — see [Event Taxonomy in `CLAUDE.md`]. This function
 /// just bumps the OTEL counter so dashboards can graph request volume.
 ///
-/// Respects the opt-in guard: no-op if telemetry is disabled.
+/// Respects the consent guard: no-op if telemetry is disabled.
 pub fn tool_not_supported(tool: &str, _version: Option<&str>, source: Source) {
     if !is_enabled() {
         return;
@@ -700,7 +700,7 @@ pub fn tool_not_supported(tool: &str, _version: Option<&str>, source: Source) {
 
 /// Record an explicit user request via `jarvy tools --request <name>`.
 ///
-/// Bypasses the [`is_enabled`] opt-in guard because the user typed the
+/// Bypasses the [`is_enabled`] consent guard because the user typed the
 /// command — consent is implicit. The metric increment is still gated
 /// on `TELEMETRY` having been initialized with a metrics provider, so
 /// users who explicitly disabled telemetry for the run don't get
@@ -1540,8 +1540,11 @@ mod tests {
 
     #[test]
     fn test_telemetry_config_default() {
+        // Pins the opt-out default. Flipping back to `enabled = false`
+        // would silently undo the documented opt-out posture in
+        // CLAUDE.md and docs/telemetry.md.
         let config = TelemetryConfig::default();
-        assert!(!config.enabled);
+        assert!(config.enabled);
         assert_eq!(config.endpoint, "https://telemetry.jarvy.dev");
         assert_eq!(config.protocol, "http");
         assert!(config.logs);
@@ -1553,6 +1556,10 @@ mod tests {
     #[test]
     fn test_telemetry_config_is_enabled() {
         let mut config = TelemetryConfig::default();
+        // Default is opt-out → enabled.
+        assert!(config.is_enabled());
+
+        config.enabled = false;
         assert!(!config.is_enabled());
 
         config.enabled = true;
@@ -1648,7 +1655,13 @@ mod tests {
 
     #[test]
     fn narrow_with_project_cannot_enable_when_user_disabled() {
-        let mut user = TelemetryConfig::default(); // enabled = false
+        // User has explicitly opted out via `jarvy telemetry disable`
+        // or `JARVY_TELEMETRY=0`. A project `jarvy.toml` setting
+        // `enabled = true` must not flip them back on.
+        let mut user = TelemetryConfig {
+            enabled: false,
+            ..TelemetryConfig::default()
+        };
         let project = TelemetryConfig {
             enabled: true,
             ..TelemetryConfig::default()

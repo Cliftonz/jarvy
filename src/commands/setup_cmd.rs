@@ -917,9 +917,9 @@ pub fn run_setup(
         println!("\nTip: open a new terminal or run `exec {shell}` to pick up new PATH entries.");
     }
 
-    // Second chance to surface the telemetry opt-in. The first-run
-    // boxed notice in `src/init.rs` is the primary ask, but it only
-    // fires when `~/.jarvy/` is created. A user can blow past it
+    // Second chance to surface the telemetry opt-out. The first-run
+    // boxed notice in `src/init.rs` is the primary disclosure, but it
+    // only fires when `~/.jarvy/` is created. A user can blow past it
     // (CI, copy-pasted setup) — show a one-liner at the end of
     // every `jarvy setup` until they've made a decision. Stays
     // quiet once `[telemetry] enabled` is either explicitly true
@@ -932,7 +932,7 @@ pub fn run_setup(
     0
 }
 
-/// Print a one-line telemetry opt-in nudge on stderr if the user has
+/// Print a one-line telemetry opt-out nudge on stderr if the user has
 /// not yet made an explicit choice. "Explicit" means the
 /// `[telemetry]` section exists in `~/.jarvy/config.toml` with
 /// `enabled` set either way; absence of the section (the default-
@@ -941,11 +941,10 @@ pub fn run_setup(
 fn emit_telemetry_hint_if_undecided() {
     use std::fs;
 
-    // A live env-var opt-in (`JARVY_TELEMETRY=1`) is a per-run choice —
-    // not persisted to config, but absolutely an explicit decision for
-    // this invocation. Surfacing "telemetry is off" while the user is
-    // actively running with telemetry on misrepresents what's happening.
-    if crate::telemetry::is_enabled() {
+    // Only nudge when telemetry is actually on right now. If the user
+    // ran with `JARVY_TELEMETRY=0` or is inside an auto-disabled
+    // sandbox/CI, telling them how to opt out is just noise.
+    if !crate::telemetry::is_enabled() {
         return;
     }
 
@@ -967,7 +966,7 @@ fn emit_telemetry_hint_if_undecided() {
         return;
     }
     eprintln!(
-        "\nTip: Jarvy telemetry is opt-in and currently off. Anonymized usage data helps prioritize fixes.\n     Enable with: jarvy telemetry enable   |   Details: https://jarvy.dev/telemetry/"
+        "\nNote: Jarvy telemetry is opt-out and currently on. Anonymized usage data helps prioritize fixes.\n      Disable with: jarvy telemetry disable   |   Details: https://jarvy.dev/telemetry/"
     );
 }
 

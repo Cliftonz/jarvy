@@ -112,47 +112,45 @@ fn check_zsh() {
         return;
     }
 
-    // Zsh is installed, ask to install Oh My Zsh
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let ohmyzsh_dir = format!("{}/.oh-my-zsh", home.display());
+
+    // Skip prompt entirely when Oh My Zsh already installed —
+    // re-prompting on every `jarvy setup` is pure noise.
+    if Path::new(&ohmyzsh_dir).exists() {
+        println!("Oh My Zsh! is already installed.");
+        telemetry::tool_already_installed(
+            "oh-my-zsh",
+            &ohmyzsh_dir,
+            "path_exists",
+            "check_zsh",
+            false,
+        );
+        return;
+    }
+
     let user_choice = Select::new("Do you want to install Oh My Zsh?", vec!["Yes", "No"]).prompt();
 
     let Ok(response) = user_choice else {
         return;
     };
 
-    // Check if user wants to install Oh My Zsh
-    if response == "Yes" {
-        let Some(home) = dirs::home_dir() else {
-            return;
-        };
-        let ohmyzsh_dir = format!("{}/.oh-my-zsh", home.display());
+    if response != "Yes" {
+        return;
+    }
 
-        // Check if directory .oh-my-zsh exists in the home directory
-        if !Path::new(&ohmyzsh_dir).exists() {
-            // Download and install Oh My Zsh!
-            if let Err(e) = Command::new("sh")
-                .arg("-c")
-                .arg("$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)")
-                .status()
-            {
-                eprintln!("Failed to install Oh My Zsh: {e}");
-                return;
-            }
+    if let Err(e) = Command::new("sh")
+        .arg("-c")
+        .arg("$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)")
+        .status()
+    {
+        eprintln!("Failed to install Oh My Zsh: {e}");
+        return;
+    }
 
-            // Check if Oh My Zsh! is installed successfully
-            if !Path::new(&ohmyzsh_dir).exists() {
-                println!("Error: Oh My Zsh!");
-            } else {
-                //success_message("Oh My Zsh!");
-            }
-        } else {
-            println!("Oh My Zsh! is already installed.");
-            telemetry::tool_already_installed(
-                "oh-my-zsh",
-                &ohmyzsh_dir,
-                "path_exists",
-                "check_zsh",
-                true,
-            );
-        }
+    if !Path::new(&ohmyzsh_dir).exists() {
+        println!("Error: Oh My Zsh!");
     }
 }

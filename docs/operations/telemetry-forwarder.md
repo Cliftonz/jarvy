@@ -1,24 +1,25 @@
 ---
 title: "Telemetry forwarder operations — Jarvy"
-description: "How to stand up and operate the public OTLP forwarder that receives opt-in telemetry from Jarvy CLIs and fans out to Grafana Cloud. Deployed on a self-hosted Kubernetes cluster with Traefik ingress. Anonymize-don't-drop PII policy. Threat model, hardening, incident playbook."
+description: "How to stand up and operate the public OTLP forwarder that receives opt-out telemetry from Jarvy CLIs and fans out to Grafana Cloud. Deployed on a self-hosted Kubernetes cluster with Traefik ingress. Anonymize-don't-drop PII policy. Threat model, hardening, incident playbook."
 ---
 
 # Telemetry forwarder operations
 
-The forwarder is the public-internet endpoint Jarvy CLIs send opt-in
-telemetry to (`https://telemetry.jarvy.dev`). It accepts OTLP/HTTP from
+The forwarder is the public-internet endpoint Jarvy CLIs send telemetry
+to (`https://telemetry.jarvy.dev`). Telemetry is opt-out by default; this
+forwarder absorbs whatever the fleet emits. It accepts OTLP/HTTP from
 anyone, **anonymizes** every PII-shaped field with a rotating salted
 hash, rate-limits, and fans out to Grafana Cloud (Loki for logs, Mimir
 for metrics, Tempo for traces). This document is the operational
 source of truth: what it looks like, how to build it, how to operate
 it, and how to recover when it breaks.
 
-> **Telemetry is opt-in.** This doc is a *prerequisite* for opt-in
-> actually being useful — without a working forwarder, the data has
-> nowhere to go and `JARVY_OTLP_ENDPOINT` is just a config knob. The
-> user-facing telemetry reference is at
-> [Telemetry](../telemetry.md); the data-handling promise made there
-> is the contract this doc must implement.
+> **Telemetry is opt-out.** This doc is a *prerequisite* for the
+> default-on signal actually reaching a destination — without a working
+> forwarder, the data has nowhere to go and `JARVY_OTLP_ENDPOINT` is
+> just a config knob. The user-facing telemetry reference is at
+> [Telemetry](../telemetry.md); the data-handling promise made there is
+> the contract this doc must implement.
 
 The forwarder is deployed as discrete Kubernetes Services in a
 single namespace on a self-hosted cluster. Traefik handles ingress
