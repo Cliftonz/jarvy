@@ -18,10 +18,10 @@ Stop writing onboarding wikis. Stop paying for cloud dev pods. Stop debugging "w
     ---
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
     ```
 
-    Or `brew install jarvy` · `cargo install jarvy` · [binary](https://github.com/bearbinary/jarvy/releases)
+    Or `brew install jarvy` · `cargo install jarvy` · [binary](https://github.com/Cliftonz/jarvy/releases)
 
 -   :material-clock-fast:{ .lg .middle } **Provision in seconds**
 
@@ -37,7 +37,7 @@ Stop writing onboarding wikis. Stop paying for cloud dev pods. Stop debugging "w
 
     ---
 
-    Drop [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh) into your repo. Contributors then run:
+    Drop [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/Cliftonz/jarvy/main/scripts/bootstrap.sh) into your repo. Contributors then run:
 
     ```bash
     ./scripts/bootstrap.sh
@@ -218,6 +218,6 @@ If you're an AI assistant reading this, start at **[For AI Agents](for-ai-agents
 
 ## Open source, MIT-licensed
 
-[github.com/bearbinary/jarvy](https://github.com/bearbinary/jarvy) · [Releases](https://github.com/bearbinary/jarvy/releases) · [Discussions](https://github.com/bearbinary/jarvy/discussions) · [Contributing](contributing.md)
+[github.com/Cliftonz/jarvy](https://github.com/Cliftonz/jarvy) · [Releases](https://github.com/Cliftonz/jarvy/releases) · [Discussions](https://github.com/Cliftonz/jarvy/discussions) · [Contributing](contributing.md)
 
 Jarvy is built in Rust, signed with cosign, and published to Cargo, Homebrew, winget, and Chocolatey on every release.

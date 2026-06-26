@@ -258,7 +258,7 @@ jobs:
             ## Verify signature
 
             The `--certificate-identity` flag is **exact**, not a
-            substring match. A fork named `bearbinary/jarvy-anything`
+            substring match. A fork named `Cliftonz/jarvy-anything`
             cannot satisfy this identity even with a valid Sigstore
             certificate.
 

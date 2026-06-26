@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2024"
 description = "Shared tool-scaffold template + validation for jarvy and cargo-jarvy. No runtime deps so dependents stay light."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/bearbinary/jarvy"
+repository = "https://github.com/Cliftonz/jarvy"
 homepage = "https://jarvy.dev"
 # `publish = false` previously kept this internal — but jarvy and
 # cargo-jarvy depend on it via `{ version = "X", path = "..." }`, and

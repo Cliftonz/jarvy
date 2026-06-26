@@ -17,7 +17,7 @@ The TL;DR. Want a guided walkthrough instead? See the [tutorial: your first jarv
 === "macOS / Linux"
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
     ```
 
 === "Homebrew"
@@ -35,12 +35,12 @@ The TL;DR. Want a guided walkthrough instead? See the [tutorial: your first jarv
 === "Windows (PowerShell)"
 
     ```powershell
-    irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+    irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
     ```
 
 === "Binary"
 
-    Download from [GitHub Releases](https://github.com/bearbinary/jarvy/releases) and add to `PATH`.
+    Download from [GitHub Releases](https://github.com/Cliftonz/jarvy/releases) and add to `PATH`.
 
 Verify: `jarvy --version`
 
@@ -48,11 +48,11 @@ Verify: `jarvy --version`
 
 ## Or: one-command repo bootstrap
 
-Already have a repo with a `jarvy.toml`? Drop [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh) into the project so contributors can install Jarvy *and* provision in one command:
+Already have a repo with a `jarvy.toml`? Drop [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/Cliftonz/jarvy/main/scripts/bootstrap.sh) into the project so contributors can install Jarvy *and* provision in one command:
 
 ```bash
 curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh \
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/scripts/bootstrap.sh \
   -o scripts/bootstrap.sh
 chmod +x scripts/bootstrap.sh
 git add scripts/bootstrap.sh && git commit -m "chore: add Jarvy bootstrap"

@@ -57,10 +57,10 @@ install_jarvy() {
 
     if have curl; then
         JARVY_CHANNEL="$CHANNEL" \
-            curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
     elif have wget; then
         JARVY_CHANNEL="$CHANNEL" \
-            wget -qO- https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+            wget -qO- https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
     else
         err "Neither curl nor wget found. Install one and re-run."
         exit 1

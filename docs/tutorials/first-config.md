@@ -26,7 +26,7 @@ We'll build a config for a hypothetical service that uses Node 20 for the API an
 === "macOS / Linux"
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
     ```
 
 === "Homebrew"
@@ -44,7 +44,7 @@ We'll build a config for a hypothetical service that uses Node 20 for the API an
 === "Windows (PowerShell)"
 
     ```powershell
-    irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+    irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
     ```
 
 Verify:

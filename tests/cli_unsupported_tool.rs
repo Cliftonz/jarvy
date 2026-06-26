@@ -307,7 +307,7 @@ seamless-fake-tool = "1.0"
         .stderr(predicate::str::contains("Reported via telemetry").not())
         // Must show the fallback URL (only remaining channel).
         .stderr(predicate::str::contains("Telemetry off"))
-        .stderr(predicate::str::contains("bearbinary/jarvy"))
+        .stderr(predicate::str::contains("Cliftonz/jarvy"))
         // Must NOT push the user toward `jarvy telemetry enable` —
         // seamless operators can't toggle it per-run.
         .stderr(predicate::str::contains("jarvy telemetry enable").not());

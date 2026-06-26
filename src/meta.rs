@@ -15,9 +15,9 @@
 /// **Case matters.** GitHub redirects on the org segment but the path
 /// segment is case-sensitive in some downstream contexts (e.g., raw
 /// content URLs, Sigstore Fulcio certificate SAN matching). The rest
-/// of the repo uses lowercase `bearbinary/jarvy` — keep this constant
+/// of the repo uses lowercase `Cliftonz/jarvy` — keep this constant
 /// aligned with that convention.
-pub const REPO_SLUG: &str = "bearbinary/jarvy";
+pub const REPO_SLUG: &str = "Cliftonz/jarvy";
 
 /// Base repo URL — `https://github.com/<slug>`.
-pub const REPO_URL: &str = "https://github.com/bearbinary/jarvy";
+pub const REPO_URL: &str = "https://github.com/Cliftonz/jarvy";

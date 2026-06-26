@@ -130,4 +130,4 @@ So the editor catches typos and unknown fields; `jarvy validate` catches everyth
 
 ## Reporting schema issues
 
-The schema is hand-maintained alongside the Rust config struct. If you see a field accepted by `jarvy validate` that the schema rejects (or vice versa), [open an issue](https://github.com/bearbinary/jarvy/issues) — schema drift is a bug.
+The schema is hand-maintained alongside the Rust config struct. If you see a field accepted by `jarvy validate` that the schema rejects (or vice versa), [open an issue](https://github.com/Cliftonz/jarvy/issues) — schema drift is a bug.

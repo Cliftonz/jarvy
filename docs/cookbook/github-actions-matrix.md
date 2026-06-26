@@ -40,12 +40,12 @@ jobs:
 
       - name: Install Jarvy (Unix)
         if: runner.os != 'Windows'
-        run: curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+        run: curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
       - name: Install Jarvy (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+        run: irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
 
       - name: Add Jarvy to PATH (Unix)
         if: runner.os != 'Windows'

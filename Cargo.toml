@@ -5,7 +5,7 @@ license = "MIT OR Apache-2.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Jarvy is a fast, cross-platform CLI that installs and manages developer tools across macOS and Linux."
-repository = "https://github.com/bearbinary/jarvy"
+repository = "https://github.com/Cliftonz/jarvy"
 homepage = "https://jarvy.dev"
 documentation = "https://docs.rs/jarvy"
 readme = "Readme.md"
@@ -140,9 +140,9 @@ workspace = true
 
 [package.metadata.packager]
 product-name = "jarvy"
-identifier = "io.github.bearbinary.jarvy"
+identifier = "io.github.cliftonz.jarvy"
 category = "Utility"
-homepage = "https://github.com/bearbinary/jarvy"
+homepage = "https://github.com/Cliftonz/jarvy"
 licenseFile = "LICENSE"
 formats = ["all"]
 # cargo-packager treats `icons` as a top-level field. It auto-picks .icns for

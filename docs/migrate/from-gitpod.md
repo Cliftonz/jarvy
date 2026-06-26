@@ -159,7 +159,7 @@ Keep the Dockerfile around if you also use Gitpod for ephemeral PR previews; oth
 ## Local development
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 jarvy setup
 ```
 

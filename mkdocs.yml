@@ -5,8 +5,8 @@ site_description: >-
   development environment from a single declarative jarvy.toml file —
   native package managers, no cloud, MIT-licensed.
 site_author: Zac Clifton
-repo_url: https://github.com/bearbinary/jarvy
-repo_name: bearbinary/jarvy
+repo_url: https://github.com/Cliftonz/jarvy
+repo_name: Cliftonz/jarvy
 edit_uri: edit/main/docs/
 
 copyright: Copyright &copy; 2025-2026 Zac Clifton
@@ -77,7 +77,7 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/bearbinary/jarvy
+      link: https://github.com/Cliftonz/jarvy
       name: Jarvy on GitHub
     - icon: fontawesome/brands/x-twitter
       link: https://twitter.com/intent/tweet?text=Check%20out%20Jarvy%20%E2%80%94%20dev%20environments%20as%20code&url=https://jarvy.dev

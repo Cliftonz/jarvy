@@ -14,10 +14,10 @@ version: 0.6.1
 appVersion: "0.1.0"
 home: https://jarvy.dev
 sources:
-  - https://github.com/bearbinary/jarvy
+  - https://github.com/Cliftonz/jarvy
 maintainers:
   - name: Zac Clifton
-    url: https://github.com/bearbinary
+    url: https://github.com/Cliftonz
 keywords:
   - opentelemetry
   - otlp

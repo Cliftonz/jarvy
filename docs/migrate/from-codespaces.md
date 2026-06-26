@@ -148,7 +148,7 @@ Update your project README:
 Prefer to develop locally? You don't need Codespaces.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 jarvy setup
 ```
 

@@ -23,7 +23,7 @@ body = """
         - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
             {{ commit.message | upper_first }}\
             {% if commit.github.username %} by @{{ commit.github.username }}{%- endif %}\
-            {% if commit.github.pr_number %} in [#{{ commit.github.pr_number }}](https://github.com/bearbinary/jarvy/pull/{{ commit.github.pr_number }}){%- endif %}
+            {% if commit.github.pr_number %} in [#{{ commit.github.pr_number }}](https://github.com/Cliftonz/jarvy/pull/{{ commit.github.pr_number }}){%- endif %}
     {%- endfor %}
 {% endfor %}\n
 """
@@ -32,10 +32,10 @@ footer = """
     {% if release.version -%}
         {% if release.previous.version -%}
             [{{ release.version | trim_start_matches(pat="v") }}]: \
-                https://github.com/bearbinary/jarvy/compare/{{ release.previous.version }}...{{ release.version }}
+                https://github.com/Cliftonz/jarvy/compare/{{ release.previous.version }}...{{ release.version }}
         {% endif -%}
     {% else -%}
-        [unreleased]: https://github.com/bearbinary/jarvy/compare/{{ release.previous.version }}...HEAD
+        [unreleased]: https://github.com/Cliftonz/jarvy/compare/{{ release.previous.version }}...HEAD
     {% endif -%}
 {% endfor %}
 """
@@ -46,7 +46,7 @@ conventional_commits = true
 filter_unconventional = true
 split_commits = false
 commit_preprocessors = [
-    { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/bearbinary/jarvy/issues/${2}))" },
+    { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/Cliftonz/jarvy/issues/${2}))" },
 ]
 commit_parsers = [
     { message = "^feat", group = "Features" },
@@ -70,5 +70,5 @@ topo_order = false
 sort_commits = "oldest"
 
 [remote.github]
-owner = "bearbinary"
+owner = "Cliftonz"
 repo = "jarvy"

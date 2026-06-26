@@ -5,15 +5,15 @@
     <version>VERSION_PLACEHOLDER</version>
     <title>Jarvy</title>
     <authors>Jarvy Team</authors>
-    <owners>bearbinary</owners>
+    <owners>Cliftonz</owners>
     <projectUrl>https://jarvy.dev</projectUrl>
-    <iconUrl>https://cdn.jsdelivr.net/gh/bearbinary/Jarvy@main/assets/CLI_Logo.png</iconUrl>
-    <licenseUrl>https://github.com/bearbinary/jarvy/blob/main/LICENSE</licenseUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/Cliftonz/Jarvy@main/assets/CLI_Logo.png</iconUrl>
+    <licenseUrl>https://github.com/Cliftonz/jarvy/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <projectSourceUrl>https://github.com/bearbinary/jarvy</projectSourceUrl>
-    <packageSourceUrl>https://github.com/bearbinary/jarvy/tree/main/dist/windows/chocolatey</packageSourceUrl>
-    <docsUrl>https://github.com/bearbinary/jarvy#readme</docsUrl>
-    <bugTrackerUrl>https://github.com/bearbinary/jarvy/issues</bugTrackerUrl>
+    <projectSourceUrl>https://github.com/Cliftonz/jarvy</projectSourceUrl>
+    <packageSourceUrl>https://github.com/Cliftonz/jarvy/tree/main/dist/windows/chocolatey</packageSourceUrl>
+    <docsUrl>https://github.com/Cliftonz/jarvy#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/Cliftonz/jarvy/issues</bugTrackerUrl>
     <tags>devtools provisioning cli developer-experience setup rust</tags>
     <summary>Fast, cross-platform CLI that installs and manages developer tools</summary>
     <description>
@@ -38,7 +38,7 @@ jarvy configure
 jarvy setup
 ```
     </description>
-    <releaseNotes>https://github.com/bearbinary/jarvy/releases/tag/vVERSION_PLACEHOLDER</releaseNotes>
+    <releaseNotes>https://github.com/Cliftonz/jarvy/releases/tag/vVERSION_PLACEHOLDER</releaseNotes>
   </metadata>
   <files>
     <file src="tools\**" target="tools" />

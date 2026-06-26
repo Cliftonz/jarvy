@@ -206,7 +206,7 @@ pub fn fetch_remote_config(url: &str, headers: &[String]) -> Result<String, Stri
         .get(&fetch_url)
         .header(
             "User-Agent",
-            "Jarvy/0.1 (https://github.com/bearbinary/jarvy)",
+            "Jarvy/0.1 (https://github.com/Cliftonz/jarvy)",
         )
         .header("Accept", "text/plain, application/toml, */*");
 

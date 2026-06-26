@@ -6,7 +6,7 @@ pkgver=VERSION_PLACEHOLDER
 pkgrel=1
 pkgdesc="Fast, cross-platform CLI that installs and manages developer tools (binary release)"
 arch=('x86_64' 'aarch64')
-url="https://github.com/bearbinary/jarvy"
+url="https://github.com/Cliftonz/jarvy"
 license=('MIT' 'Apache-2.0')
 provides=('jarvy')
 conflicts=('jarvy')
@@ -18,8 +18,8 @@ depends=('gcc-libs')
 # the gcc-aarch64-linux-gnu sysroot in CI. Both binaries land in the
 # same release at `jarvy-v${pkgver}-${TRIPLE}.tar.gz` per
 # .github/workflows/release.yml "Package raw Linux tarball" step.
-source_x86_64=("https://github.com/bearbinary/jarvy/releases/download/v${pkgver}/jarvy-v${pkgver}-x86_64-unknown-linux-musl.tar.gz")
-source_aarch64=("https://github.com/bearbinary/jarvy/releases/download/v${pkgver}/jarvy-v${pkgver}-aarch64-unknown-linux-gnu.tar.gz")
+source_x86_64=("https://github.com/Cliftonz/jarvy/releases/download/v${pkgver}/jarvy-v${pkgver}-x86_64-unknown-linux-musl.tar.gz")
+source_aarch64=("https://github.com/Cliftonz/jarvy/releases/download/v${pkgver}/jarvy-v${pkgver}-aarch64-unknown-linux-gnu.tar.gz")
 
 sha256sums_x86_64=('SHA256_PLACEHOLDER_X86')
 sha256sums_aarch64=('SHA256_PLACEHOLDER_ARM')

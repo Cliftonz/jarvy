@@ -144,8 +144,8 @@ fn sample_substitutions_match_workflow_behavior() {
     // placeholder token surfaces here, not in Chocolatey moderation.
     let cases: &[(&str, &str)] = &[
         (
-            "InstallerUrl: https://github.com/bearbinary/jarvy/releases/download/vVERSION_PLACEHOLDER/x.zip",
-            "InstallerUrl: https://github.com/bearbinary/jarvy/releases/download/v0.0.0-test/x.zip",
+            "InstallerUrl: https://github.com/Cliftonz/jarvy/releases/download/vVERSION_PLACEHOLDER/x.zip",
+            "InstallerUrl: https://github.com/Cliftonz/jarvy/releases/download/v0.0.0-test/x.zip",
         ),
         (
             "$checksum64  = 'SHA256_PLACEHOLDER'",

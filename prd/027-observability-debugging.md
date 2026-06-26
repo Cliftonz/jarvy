@@ -446,7 +446,7 @@ jarvy diagnose --export
 #   performance.json
 #
 # Share this file when reporting issues:
-#   https://github.com/bearbinary/jarvy/issues
+#   https://github.com/Cliftonz/jarvy/issues
 #
 # ⚠ Review contents before sharing:
 #   unzip -l jarvy-diagnostic-20240115-103045.zip

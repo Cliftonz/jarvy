@@ -8,7 +8,7 @@ use crate::update::config::Channel;
 use serde::Deserialize;
 
 /// GitHub repository information
-pub const GITHUB_OWNER: &str = "bearbinary";
+pub const GITHUB_OWNER: &str = "Cliftonz";
 pub const GITHUB_REPO: &str = "jarvy";
 
 /// GitHub release information

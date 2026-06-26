@@ -5,7 +5,7 @@ Priority: optional
 Architecture: amd64
 Depends: libc6 (>= 2.17)
 Maintainer: Jarvy Team <team@jarvy.dev>
-Homepage: https://github.com/bearbinary/jarvy
+Homepage: https://github.com/Cliftonz/jarvy
 Description: Fast, cross-platform CLI that installs and manages developer tools
  Jarvy provisions development environments from a jarvy.toml config file.
  It installs tools via native package managers (brew, apt, dnf, winget).

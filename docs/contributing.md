@@ -95,7 +95,7 @@ uniform = "my-internal-tool"
 
 ```bash
 # Clone and build
-git clone https://github.com/bearbinary/jarvy.git
+git clone https://github.com/Cliftonz/jarvy.git
 cd jarvy
 cargo build
 

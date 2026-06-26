@@ -140,7 +140,7 @@ State: clean VM with no Jarvy artifacts.
 ```bash
 # Example for Ubuntu via install.sh + beta channel
 JARVY_CHANNEL=beta curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 jarvy --version  # confirms vX.Y.Z-rc.N
 jarvy configure
@@ -164,7 +164,7 @@ path on macOS arm64, Ubuntu 22.04 x86_64, and Windows x86_64 on every
 installs `jarvy` to `~/.local/bin` (which falls through to
 `InstallMethod::Binary`), runs `jarvy update --version <target> --method
 binary`, and asserts the binary reports the target version. **Bootstrap
-caveat**: until [#30](https://github.com/bearbinary/Jarvy/issues/30) ships
+caveat**: until [#30](https://github.com/Cliftonz/Jarvy/issues/30) ships
 binary tarballs as release assets, the workflow detects the missing artifact
 and emits a `::warning::` instead of failing. The manual procedure below is
 the fallback while the gate is in bootstrap mode.
@@ -172,7 +172,7 @@ the fallback while the gate is in bootstrap mode.
 ```bash
 # Install N-1 first
 JARVY_VERSION=<previous-stable> curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 jarvy setup
 
 # Upgrade to rc
@@ -268,7 +268,7 @@ fetched and verified, and this is the path that does it.
 ```
 
 The script also runs unattended on every published release via
-[`.github/workflows/verify-release.yml`](https://github.com/bearbinary/jarvy/blob/main/.github/workflows/verify-release.yml).
+[`.github/workflows/verify-release.yml`](https://github.com/Cliftonz/jarvy/blob/main/.github/workflows/verify-release.yml).
 A green check run on the rc is the canonical signal; running locally is for
 when CI is unavailable or to reproduce a failure.
 
@@ -281,7 +281,7 @@ Pass criteria:
 - Every `jarvy*` artifact has a matching `.sig`, `.pem`, and `.bundle`
 - `cosign verify-blob --bundle <bundle> <file>` succeeds for every artifact,
   with `--certificate-identity-regexp` pinned to the
-  `bearbinary/Jarvy/.github/workflows/release.yml@refs/tags/` subject and
+  `Cliftonz/Jarvy/.github/workflows/release.yml@refs/tags/` subject and
   `--certificate-oidc-issuer` pinned to `token.actions.githubusercontent.com`
 - SBOM artifacts (`sbom.spdx.json`, `sbom.cdx.json`) parse as valid JSON and
   carry the format-distinguishing key (`bomFormat: "CycloneDX"` or
@@ -374,7 +374,7 @@ When the minimum soak duration has elapsed, **all** must be true to promote:
 - [ ] Paths 2/3/4 (upgrade, skip-version, rollback) PASS — green check run
       on the rc tag from `.github/workflows/release-paths.yml`. The workflow
       auto-fires on `release: published`. Until binary tarballs ship as
-      release assets ([#30](https://github.com/bearbinary/Jarvy/issues/30)),
+      release assets ([#30](https://github.com/Cliftonz/Jarvy/issues/30)),
       the workflow runs in **bootstrap mode** — it logs a `::warning::` and
       passes the check run without actually exercising `jarvy update`. The
       bootstrap waiver is in force only while #30 is open. Do not promote a
@@ -447,7 +447,7 @@ to channels that don't auto-update from the GitHub release:
 |---|---|---|
 | GitHub release | Triggered by tag push | Auto |
 | crates.io | `cargo publish` (CI workflow `publish-packages.yml::publish-crates-io`) | Auto |
-| Homebrew tap | CI updates `bearbinary/homebrew-tap` formula | Auto |
+| Homebrew tap | CI updates `Cliftonz/homebrew-tap` formula | Auto |
 | `.deb`, `.rpm`, `.msi`, `.dmg`, `.AppImage` | Built and attached to the release | Auto |
 | AUR (`jarvy-bin`) | Update `PKGBUILD-bin` checksums, `makepkg --printsrcinfo`, push to `ssh://aur@aur.archlinux.org/jarvy-bin.git` | Manual |
 | AUR (`jarvy`, source) | Same as `jarvy-bin` for `PKGBUILD` | Manual |
@@ -472,7 +472,7 @@ If a sev-1 surfaces after the stable tag has shipped:
    delete the release — the assets are immutable and other channels point
    at them.
 3. **Revert Homebrew formula**: push the previous formula version to
-   `bearbinary/homebrew-tap`.
+   `Cliftonz/homebrew-tap`.
 4. **Cut a fix**: bump patch (`vX.Y.(Z+1)`), restart from the rc soak.
 5. **Notify channels with manual propagation**: the catalog/marketplace
    channels (AUR, winget, Choco) need explicit notification — they will not

@@ -48,7 +48,7 @@ Jarvy currently operates as a standalone CLI tool, requiring developers to manua
 
 #### Acceptance Criteria
 
-1. Action available at `uses: bearbinary/jarvy-action@v1`
+1. Action available at `uses: Cliftonz/jarvy-action@v1`
 2. Action installs Jarvy CLI if not present
 3. Action runs `jarvy setup` with CI mode enabled
 4. Action supports input parameters:
@@ -73,7 +73,7 @@ Jarvy currently operates as a standalone CLI tool, requiring developers to manua
 2. Feature installable via devcontainer.json:
    ```json
    "features": {
-     "ghcr.io/bearbinary/jarvy-devcontainer-feature:1": {}
+     "ghcr.io/Cliftonz/jarvy-devcontainer-feature:1": {}
    }
    ```
 3. Feature installs Jarvy CLI during container build
@@ -111,7 +111,7 @@ Jarvy currently operates as a standalone CLI tool, requiring developers to manua
 2. Hook validates tools defined in jarvy.toml are installed
 3. Hook configuration in .pre-commit-config.yaml:
    ```yaml
-   - repo: https://github.com/bearbinary/jarvy
+   - repo: https://github.com/Cliftonz/jarvy
      rev: v1.0.0
      hooks:
        - id: jarvy-check
@@ -556,10 +556,10 @@ jarvy-jetbrains/
 
 ### Repositories
 ```
-github.com/bearbinary/jarvy-action/
-github.com/bearbinary/jarvy-vscode/
-github.com/bearbinary/jarvy-devcontainer-feature/
-github.com/bearbinary/jarvy-jetbrains/
+github.com/Cliftonz/jarvy-action/
+github.com/Cliftonz/jarvy-vscode/
+github.com/Cliftonz/jarvy-devcontainer-feature/
+github.com/Cliftonz/jarvy-jetbrains/
 ```
 
 ### Main Repository

@@ -615,6 +615,6 @@ docs/
 
 ## Related Documentation
 
-- [PRD-038: Hybrid Cross-Platform E2E Testing Harness](https://github.com/bearbinary/jarvy/blob/main/prd/038-aws-ec2-e2e-testing-harness.md)
-- [Task Tracking: PRD-038](https://github.com/bearbinary/jarvy/blob/main/tasks/prd-038-e2e-testing-harness.json)
-- [CLAUDE.md](https://github.com/bearbinary/jarvy/blob/main/CLAUDE.md) - Build commands and architecture overview
+- [PRD-038: Hybrid Cross-Platform E2E Testing Harness](https://github.com/Cliftonz/jarvy/blob/main/prd/038-aws-ec2-e2e-testing-harness.md)
+- [Task Tracking: PRD-038](https://github.com/Cliftonz/jarvy/blob/main/tasks/prd-038-e2e-testing-harness.json)
+- [CLAUDE.md](https://github.com/Cliftonz/jarvy/blob/main/CLAUDE.md) - Build commands and architecture overview

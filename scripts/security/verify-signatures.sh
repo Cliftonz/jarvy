@@ -18,7 +18,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Repository information
-REPO_OWNER="bearbinary"
+REPO_OWNER="Cliftonz"
 REPO_NAME="jarvy"
 GITHUB_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}"
 RELEASES_URL="${GITHUB_URL}/releases/download"

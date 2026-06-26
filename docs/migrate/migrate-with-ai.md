@@ -36,7 +36,7 @@ Every prompt has the same five sections, with the per-source bits swapped in:
 4. **Tool-name registry hints** — common name corrections (`aws-cli` → `awscli`, `postgresql` → `psql`, `nodejs` → `node`)
 5. **Output contract** — output ONLY the TOML, no prose
 
-This structure was designed and tuned against the [migration fixture suite](https://github.com/bearbinary/jarvy/tree/main/tests/migrate/fixtures) and validated against real `jarvy validate` runs in the [promptfoo eval harness](https://github.com/bearbinary/jarvy/tree/main/evals/migrate).
+This structure was designed and tuned against the [migration fixture suite](https://github.com/Cliftonz/jarvy/tree/main/tests/migrate/fixtures) and validated against real `jarvy validate` runs in the [promptfoo eval harness](https://github.com/Cliftonz/jarvy/tree/main/evals/migrate).
 
 ---
 

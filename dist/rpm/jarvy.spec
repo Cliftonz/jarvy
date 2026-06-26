@@ -3,8 +3,8 @@ Version:        VERSION_PLACEHOLDER
 Release:        1%{?dist}
 Summary:        Fast, cross-platform CLI that installs and manages developer tools
 License:        MIT or Apache-2.0
-URL:            https://github.com/bearbinary/jarvy
-Source0:        https://github.com/bearbinary/jarvy/releases/download/v%{version}/jarvy-v%{version}-x86_64-unknown-linux-gnu.tar.gz
+URL:            https://github.com/Cliftonz/jarvy
+Source0:        https://github.com/Cliftonz/jarvy/releases/download/v%{version}/jarvy-v%{version}-x86_64-unknown-linux-gnu.tar.gz
 
 %description
 Jarvy provisions development environments from a jarvy.toml config file.

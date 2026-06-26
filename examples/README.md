@@ -8,7 +8,7 @@ commit.
 
 ```bash
 # In your project root
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/examples/<template>/jarvy.toml -o jarvy.toml
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/examples/<template>/jarvy.toml -o jarvy.toml
 $EDITOR jarvy.toml
 jarvy setup
 ```

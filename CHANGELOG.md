@@ -22,9 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entry headers must match the awk pattern: `## [vX.Y.Z]` or
   `## [vX.Y.Z] — Title` (em-dash optional). Other shapes won't be matched.
 
-See [`docs/release-testing.md`](https://github.com/bearbinary/jarvy/blob/main/docs/release-testing.md)
+See [`docs/release-testing.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-testing.md)
 for the full release process and
-[`docs/release-quirks-jarvy.md`](https://github.com/bearbinary/jarvy/blob/main/docs/release-quirks-jarvy.md)
+[`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
 ## [v0.2.2] — Opt-out telemetry default + P0 seamless-gate fix (2026-06-25)
@@ -136,7 +136,7 @@ v0.2.0, plus the two real bugs that suite caught in the supply-chain
 verification path. Also closes Windows test-isolation tech debt that had
 been silently red on every tag-push CI run going back to v0.2.0-rc.1.
 Soaked as `v0.2.1-rc.1` → `-rc.8` over 2026-06-24 → 2026-06-25; soak
-record in [#39](https://github.com/bearbinary/Jarvy/issues/39).
+record in [#39](https://github.com/Cliftonz/Jarvy/issues/39).
 
 The two registry-sync bug fixes are the user-impacting items. Operators
 running `jarvy registry sync` against a cosign-signed manifest in v0.2.0
@@ -154,7 +154,7 @@ is what surfaced them.
 
 ### Known limitation — bootstrap-mode gates carry forward
 
-Same status as v0.2.0: [#30](https://github.com/bearbinary/Jarvy/issues/30)
+Same status as v0.2.0: [#30](https://github.com/Cliftonz/Jarvy/issues/30)
 is still open, so the Path 2/3/4 (upgrade / skip-version / rollback) CI
 gate still runs in bootstrap mode. No regression vs v0.2.0; the gap
 closes when tarballs ship.
@@ -232,10 +232,10 @@ closes when tarballs ship.
 
 ### Tooling
 
-- **Cursor + JetBrains Toolbox Linux install support** ([#35](https://github.com/bearbinary/Jarvy/pull/35)).
+- **Cursor + JetBrains Toolbox Linux install support** ([#35](https://github.com/Cliftonz/Jarvy/pull/35)).
   Both were macOS+Windows only in v0.2.0; Linux now lands via tarball
   fallback paths.
-- **9 networking tools** ([#36](https://github.com/bearbinary/Jarvy/pull/36)):
+- **9 networking tools** ([#36](https://github.com/Cliftonz/Jarvy/pull/36)):
   `cloudflared`, `headscale`, `nebula`, `netbird`, `openvpn`,
   `tailscale`, `twingate`, `wireguard-tools`, `zerotier`. Covers VPN +
   overlay-mesh stacks for both home-lab and corp deployments.
@@ -248,12 +248,12 @@ significant MCP tool surface, AI-hooks distribution to six coding agents,
 auto-registration of the Jarvy MCP server, and the release-soak CI gates
 that catch regressions before promotion. Soaked as `v0.2.0-rc.1` →
 `-rc.2` over 2026-06-16 → 2026-06-22; soak record in
-[#25](https://github.com/bearbinary/Jarvy/issues/25).
+[#25](https://github.com/Cliftonz/Jarvy/issues/25).
 
 ### Known limitation — binary self-update gate ships in bootstrap mode
 
 The Path 2/3/4 (upgrade / skip-version / rollback) CI gate is live but
-[#30](https://github.com/bearbinary/Jarvy/issues/30) is open: `release.yml`
+[#30](https://github.com/Cliftonz/Jarvy/issues/30) is open: `release.yml`
 does not yet emit `.tar.gz` / `.zip` binary tarballs as release assets, so
 the `BinaryInstaller` self-update path has nothing to consume. Users on a
 package-manager path (Homebrew, cargo, apt, dnf, pacman, winget,
@@ -775,7 +775,7 @@ shipped together. Chart version bump pending.
 - The `cilium.enabled` values knob is still accepted but is now a
   synonym for `egressMode: fqdn`; future versions may remove.
 
-[helm-v0.4.0]: https://github.com/bearbinary/Jarvy/releases/tag/helm-v0.4.0
+[helm-v0.4.0]: https://github.com/Cliftonz/Jarvy/releases/tag/helm-v0.4.0
 
 ---
 
@@ -1219,7 +1219,7 @@ After the v0.0.3 fixes, the following propagation channels worked:
 Patch release. v0.0.2 went live on the GitHub release page but the
 crates.io and Homebrew workflows that fire on `release: published`
 both failed, leaving `cargo install jarvy` and
-`brew install bearbinary/tap/jarvy` unavailable.
+`brew install Cliftonz/tap/jarvy` unavailable.
 
 ### Fixed
 
@@ -1234,7 +1234,7 @@ both failed, leaving `cargo install jarvy` and
   project's template and never customized — `identifier: Benji377.Tooka`
   and `fork-user: Benji377` referenced a totally unrelated package.
   Rewrote with placeholder TODO values for `Jarvy.Jarvy` /
-  `bearbinary` and changed the trigger from `release: published` to
+  `Cliftonz` and changed the trigger from `release: published` to
   `workflow_dispatch` only. winget-releaser cannot create a brand-new
   package registration; the first submission must go through
   `wingetcreate new` and a hand-reviewed PR to microsoft/winget-pkgs.
@@ -1254,7 +1254,7 @@ both failed, leaving `cargo install jarvy` and
 
 ### Known issues (not fixed in this release)
 
-- **GitHub Pages** is not enabled for `bearbinary/Jarvy` repo — the
+- **GitHub Pages** is not enabled for `Cliftonz/Jarvy` repo — the
   Deploy Docs workflow fails with `HttpError: Not Found ... Ensure
   GitHub Pages has been enabled`. Fix is in repo Settings → Pages,
   not in code. Until enabled, the docs site at jarvy.dev (or
@@ -1270,14 +1270,14 @@ release notes, SECURITY.md, and docs/release-quirks-jarvy.md.
 ### Fixed
 
 - **release notes / SECURITY.md / docs**: the
-  `--certificate-identity-regexp` value used `bearbinary/jarvy`
+  `--certificate-identity-regexp` value used `Cliftonz/jarvy`
   (lowercase j). The actual Sigstore cert subject GitHub Actions
-  produces is `bearbinary/Jarvy/...` (capital J — the repo's
+  produces is `Cliftonz/Jarvy/...` (capital J — the repo's
   canonical case). cosign's regex is case-sensitive, so users
   copy-pasting the verify command from the v0.0.1 release page
   saw "none of the expected identities matched" even though the
   signature was valid. Corrected all three sources to
-  `bearbinary/Jarvy/`. github.com URLs elsewhere in the repo are
+  `Cliftonz/Jarvy/`. github.com URLs elsewhere in the repo are
   unchanged because GitHub URL matching is case-insensitive — only
   cosign's regex was affected.
 
@@ -1362,13 +1362,13 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/bearbinary/jarvy/compare/v0.2.2...HEAD
-[v0.2.2]: https://github.com/bearbinary/jarvy/releases/tag/v0.2.2
-[v0.2.1]: https://github.com/bearbinary/jarvy/releases/tag/v0.2.1
-[v0.2.0]: https://github.com/bearbinary/jarvy/releases/tag/v0.2.0
-[v0.1.0]: https://github.com/bearbinary/jarvy/releases/tag/v0.1.0
-[v0.0.5]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.5
-[v0.0.4]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.4
-[v0.0.3]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.3
-[v0.0.2]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.2
-[v0.0.1]: https://github.com/bearbinary/jarvy/releases/tag/v0.0.1
+[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.2.2...HEAD
+[v0.2.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.2.2
+[v0.2.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.2.1
+[v0.2.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.2.0
+[v0.1.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.1.0
+[v0.0.5]: https://github.com/Cliftonz/jarvy/releases/tag/v0.0.5
+[v0.0.4]: https://github.com/Cliftonz/jarvy/releases/tag/v0.0.4
+[v0.0.3]: https://github.com/Cliftonz/jarvy/releases/tag/v0.0.3
+[v0.0.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.0.2
+[v0.0.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.0.1

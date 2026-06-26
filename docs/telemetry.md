@@ -155,7 +155,7 @@ Then point Jarvy at it: `jarvy telemetry set-endpoint http://otel-collector.inte
 - CI runners and unattended AI sandboxes auto-disable unless explicitly overridden
 - No secrets, no env vars, no raw file paths (home-dir prefix is redacted to `~`)
 - A stable per-machine ID (machineid-rs) lets you correlate signals from the same workstation without identifying the user
-- See [`PRIVACY.md`](https://github.com/bearbinary/jarvy/blob/main/PRIVACY.md) for the full data-handling policy
+- See [`PRIVACY.md`](https://github.com/Cliftonz/jarvy/blob/main/PRIVACY.md) for the full data-handling policy
 
 ## Module
 

@@ -1,9 +1,9 @@
 # Default owners for everything
-* @bearbinary/maintainers
+* @Cliftonz
 
 # CI/CD workflows
-/.github/ @bearbinary/maintainers
+/.github/ @Cliftonz
 
 # Security-sensitive files
-/deny.toml @bearbinary/maintainers
-/SECURITY.md @bearbinary/maintainers
+/deny.toml @Cliftonz
+/SECURITY.md @Cliftonz

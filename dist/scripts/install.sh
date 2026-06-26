@@ -1,6 +1,6 @@
 #!/bin/bash
 # Jarvy Installer Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 #
 # Environment variables:
 #   JARVY_VERSION        - Version to install (default: latest)
@@ -15,7 +15,7 @@ set -euo pipefail
 JARVY_VERSION="${JARVY_VERSION:-latest}"
 JARVY_CHANNEL="${JARVY_CHANNEL:-stable}"
 JARVY_INSTALL_DIR="${JARVY_INSTALL_DIR:-$HOME/.local/bin}"
-JARVY_REPO="bearbinary/jarvy"
+JARVY_REPO="Cliftonz/jarvy"
 JARVY_NO_MODIFY_PATH="${JARVY_NO_MODIFY_PATH:-0}"
 
 # Validate channel
@@ -100,7 +100,7 @@ detect_platform() {
         log_error "    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
         log_error ""
         log_error "Or install Jarvy via Homebrew (compiles from source on Intel):"
-        log_error "    brew install bearbinary/tap/jarvy"
+        log_error "    brew install Cliftonz/tap/jarvy"
         exit 1
     fi
 

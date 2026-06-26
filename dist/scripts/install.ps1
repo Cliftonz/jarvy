@@ -1,5 +1,5 @@
 # Jarvy Installer Script for Windows
-# Usage: irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
 #
 # Environment variables:
 #   JARVY_VERSION     - Version to install (default: latest)
@@ -14,7 +14,7 @@ $ProgressPreference = 'SilentlyContinue'
 $JarvyVersion = if ($env:JARVY_VERSION) { $env:JARVY_VERSION } else { "latest" }
 $JarvyChannel = if ($env:JARVY_CHANNEL) { $env:JARVY_CHANNEL } else { "stable" }
 $InstallDir = if ($env:JARVY_INSTALL_DIR) { $env:JARVY_INSTALL_DIR } else { "$env:LOCALAPPDATA\Programs\jarvy" }
-$JarvyRepo = "bearbinary/jarvy"
+$JarvyRepo = "Cliftonz/jarvy"
 
 if ($JarvyChannel -notin @('stable', 'beta', 'nightly')) {
     Write-Host "[ERROR] Unknown JARVY_CHANNEL '$JarvyChannel'. Expected: stable, beta, nightly." -ForegroundColor Red

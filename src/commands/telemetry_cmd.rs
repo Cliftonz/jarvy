@@ -67,9 +67,7 @@ pub fn run_telemetry(action: &TelemetryAction, global_config: &init::CliConfig) 
             println!("Configuration sources:");
             println!("  - Config file: ~/.jarvy/config.toml [telemetry] section");
             println!("  - Environment: JARVY_TELEMETRY, JARVY_OTLP_ENDPOINT");
-            println!(
-                "  - Privacy details: https://github.com/bearbinary/jarvy/blob/main/PRIVACY.md"
-            );
+            println!("  - Privacy details: https://github.com/Cliftonz/jarvy/blob/main/PRIVACY.md");
         }
         TelemetryAction::Enable {} => {
             update_telemetry_config(true, None);

@@ -166,7 +166,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
           # Download checksums
-          curl -sL "https://github.com/bearbinary/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" -o checksums.txt
+          curl -sL "https://github.com/Cliftonz/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" -o checksums.txt
 
           # Extract SHA256 for each platform
           MACOS_X86_SHA=$(grep "x86_64-apple-darwin" checksums.txt | awk '{print $1}' || echo "")
@@ -193,7 +193,7 @@ jobs:
 
       # Skip when the secret isn't configured. Homebrew tap propagation
       # requires HOMEBREW_TAP_DEPLOY_KEY (an SSH private key with write
-      # access to the bearbinary/homebrew-tap repo) — see
+      # access to the Cliftonz/homebrew-tap repo) — see
       # docs/MAINTAINER_RELEASE_GUIDE.md for setup. Without it, the
       # cpina/github-action-push-to-another-repository action errors with
       # "API_TOKEN_GITHUB and SSH_DEPLOY_KEY are empty" and fails the
@@ -217,7 +217,7 @@ jobs:
           SSH_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         with:
           source-directory: dist/homebrew
-          destination-github-username: bearbinary
+          destination-github-username: Cliftonz
           destination-repository-name: homebrew-tap
           user-email: github-actions[bot]@users.noreply.github.com
           target-branch: main
@@ -302,7 +302,7 @@ jobs:
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
           curl -fsSL \
-            "https://github.com/bearbinary/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
+            "https://github.com/Cliftonz/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
             -o /tmp/sha256sums.txt
           X86_SHA=$(awk -v p="jarvy-v${VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             '$2 ~ p { print $1; exit }' /tmp/sha256sums.txt)
@@ -461,7 +461,7 @@ jobs:
           # Pull the .msi SHA256 from the published checksums file.
           # Asset name pattern set by cargo-packager: jarvy_<v>_x64_en-US.msi
           curl -fsSL \
-            "https://github.com/bearbinary/Jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
+            "https://github.com/Cliftonz/Jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
             -o /tmp/sha256sums.txt
           MSI_SHA=$(awk -v p="jarvy_${VERSION}_x64_en-US.msi" \
             '$2 ~ p { print $1; exit }' /tmp/sha256sums.txt)

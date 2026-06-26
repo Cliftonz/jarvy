@@ -13,7 +13,7 @@ Every template is a real, runnable `jarvy.toml` you can copy into your repo's ro
 
 ```bash
 # Copy from the repo
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/examples/<template>/jarvy.toml \
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/examples/<template>/jarvy.toml \
   -o jarvy.toml
 $EDITOR jarvy.toml
 jarvy setup
@@ -31,17 +31,17 @@ jarvy init --template node-pnpm
 
 | Template | Stack | Best for |
 |---|---|---|
-| [`node-npm`](https://github.com/bearbinary/jarvy/tree/main/examples/node-npm) | Node.js · npm | Vanilla Node services, libraries, CLI tools |
-| [`node-pnpm`](https://github.com/bearbinary/jarvy/tree/main/examples/node-pnpm) | Node.js · pnpm | Monorepos, faster installs, strict dependency resolution |
-| [`node-bun`](https://github.com/bearbinary/jarvy/tree/main/examples/node-bun) | Bun runtime | Edge functions, scripts, fast TypeScript builds |
-| [`deno`](https://github.com/bearbinary/jarvy/tree/main/examples/deno) | Deno | Secure-by-default scripts and APIs |
-| [`python-api`](https://github.com/bearbinary/jarvy/tree/main/examples/python-api) | Python · pip · venv | FastAPI, Django, Flask APIs |
-| [`python-uv`](https://github.com/bearbinary/jarvy/tree/main/examples/python-uv) | Python · uv | Modern, fast pip replacement; reproducible installs |
-| [`go-api`](https://github.com/bearbinary/jarvy/tree/main/examples/go-api) | Go · air · goose · golangci-lint | Go HTTP services with hot reload and migrations |
-| [`rust-cli`](https://github.com/bearbinary/jarvy/tree/main/examples/rust-cli) | Rust single-crate | CLI tools, focused libraries |
-| [`rust-workspace`](https://github.com/bearbinary/jarvy/tree/main/examples/rust-workspace) | Rust workspace | Multi-crate Cargo workspaces |
-| [`ruby-rails`](https://github.com/bearbinary/jarvy/tree/main/examples/ruby-rails) | Ruby on Rails · Postgres · Redis | Rails apps with full local services |
-| [`java-spring`](https://github.com/bearbinary/jarvy/tree/main/examples/java-spring) | Java · Spring Boot | Maven or Gradle Spring services |
+| [`node-npm`](https://github.com/Cliftonz/jarvy/tree/main/examples/node-npm) | Node.js · npm | Vanilla Node services, libraries, CLI tools |
+| [`node-pnpm`](https://github.com/Cliftonz/jarvy/tree/main/examples/node-pnpm) | Node.js · pnpm | Monorepos, faster installs, strict dependency resolution |
+| [`node-bun`](https://github.com/Cliftonz/jarvy/tree/main/examples/node-bun) | Bun runtime | Edge functions, scripts, fast TypeScript builds |
+| [`deno`](https://github.com/Cliftonz/jarvy/tree/main/examples/deno) | Deno | Secure-by-default scripts and APIs |
+| [`python-api`](https://github.com/Cliftonz/jarvy/tree/main/examples/python-api) | Python · pip · venv | FastAPI, Django, Flask APIs |
+| [`python-uv`](https://github.com/Cliftonz/jarvy/tree/main/examples/python-uv) | Python · uv | Modern, fast pip replacement; reproducible installs |
+| [`go-api`](https://github.com/Cliftonz/jarvy/tree/main/examples/go-api) | Go · air · goose · golangci-lint | Go HTTP services with hot reload and migrations |
+| [`rust-cli`](https://github.com/Cliftonz/jarvy/tree/main/examples/rust-cli) | Rust single-crate | CLI tools, focused libraries |
+| [`rust-workspace`](https://github.com/Cliftonz/jarvy/tree/main/examples/rust-workspace) | Rust workspace | Multi-crate Cargo workspaces |
+| [`ruby-rails`](https://github.com/Cliftonz/jarvy/tree/main/examples/ruby-rails) | Ruby on Rails · Postgres · Redis | Rails apps with full local services |
+| [`java-spring`](https://github.com/Cliftonz/jarvy/tree/main/examples/java-spring) | Java · Spring Boot | Maven or Gradle Spring services |
 
 ---
 
@@ -49,9 +49,9 @@ jarvy init --template node-pnpm
 
 | Template | Stack |
 |---|---|
-| [`react-app`](https://github.com/bearbinary/jarvy/tree/main/examples/react-app) | React + Vite frontend |
-| [`fullstack`](https://github.com/bearbinary/jarvy/tree/main/examples/fullstack) | Frontend + backend + database, ready for `docker compose` |
-| [`k8s-platform`](https://github.com/bearbinary/jarvy/tree/main/examples/k8s-platform) | Platform engineering: kubectl, helm, terraform, k9s, … |
+| [`react-app`](https://github.com/Cliftonz/jarvy/tree/main/examples/react-app) | React + Vite frontend |
+| [`fullstack`](https://github.com/Cliftonz/jarvy/tree/main/examples/fullstack) | Frontend + backend + database, ready for `docker compose` |
+| [`k8s-platform`](https://github.com/Cliftonz/jarvy/tree/main/examples/k8s-platform) | Platform engineering: kubectl, helm, terraform, k9s, … |
 
 ---
 
@@ -96,4 +96,4 @@ jarvy setup --dry-run  # full plan, no execution
 
 ## Don't see your stack?
 
-Open a [discussion](https://github.com/bearbinary/jarvy/discussions) or contribute a template via PR — see the [examples README](https://github.com/bearbinary/jarvy/blob/main/examples/README.md) for the contribution flow.
+Open a [discussion](https://github.com/Cliftonz/jarvy/discussions) or contribute a template via PR — see the [examples README](https://github.com/Cliftonz/jarvy/blob/main/examples/README.md) for the contribution flow.

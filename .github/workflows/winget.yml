@@ -34,12 +34,12 @@ jobs:
           # once the package is registered. Convention is
           # Publisher.Package; for Jarvy the conventional value is
           # Jarvy.Jarvy. Update if the publisher namespace ends up
-          # being `BearBinary` or similar.
+          # being `Cliftonz` or similar.
           identifier: Jarvy.Jarvy
           # TODO: replace with the GitHub user/org that holds the fork
-          # of microsoft/winget-pkgs. Likely `bearbinary` once the
+          # of microsoft/winget-pkgs. Likely `Cliftonz` once the
           # fork exists.
-          fork-user: bearbinary
+          fork-user: Cliftonz
           installers-regex: '\.msi$'
           token: ${{ secrets.WINGETCREATE_TOKEN }}
           release-tag: ${{ inputs.release-tag }}

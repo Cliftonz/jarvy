@@ -7,14 +7,14 @@ use serde::{Deserialize, Serialize};
 
 /// Default Sigstore identity-regexp expected on the manifest signature.
 /// Pins to a SPECIFIC workflow (`sign-manifest.yml`) on a SPECIFIC ref
-/// (`refs/heads/main`) of the canonical `bearbinary/jarvy-tools` repo —
+/// (`refs/heads/main`) of the canonical `Cliftonz/jarvy-tools` repo —
 /// not `.*\.yml` as in earlier drafts. A `.*` pattern would let any
 /// workflow on the canonical repo's main branch (ci-helper.yml,
 /// dependabot scripts, etc.) sign a hostile manifest using the repo's
 /// OIDC token, which is a weaker control than the cross-repo branch
 /// protection on `main` alone. Self-hosted registries override this to
 /// pin to their own org/repo + workflow file.
-pub const DEFAULT_IDENTITY_REGEXP: &str = r"^https://github\.com/bearbinary/jarvy-tools/\.github/workflows/sign-manifest\.yml@refs/heads/main$";
+pub const DEFAULT_IDENTITY_REGEXP: &str = r"^https://github\.com/Cliftonz/jarvy-tools/\.github/workflows/sign-manifest\.yml@refs/heads/main$";
 
 /// Default OIDC issuer for the GitHub Actions OIDC provider.
 pub const DEFAULT_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";

@@ -149,7 +149,7 @@ This repo supports both local-native and Dev Container workflows.
 **Native (recommended):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 jarvy setup
 ```
 

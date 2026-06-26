@@ -18,7 +18,7 @@ Every registry config pins:
 - A Sigstore identity-regexp the manifest signature must satisfy
 - An OIDC issuer URL for the signing cert
 
-The defaults point at the canonical `bearbinary/jarvy-tools` repo's release workflow. Self-hosted registries override both fields.
+The defaults point at the canonical `Cliftonz/jarvy-tools` repo's release workflow. Self-hosted registries override both fields.
 
 Per-tool TOMLs are sha256-pinned in the manifest. A swap-out attack on an individual tool URL is caught by the per-tool sha check; manifest tampering is caught by the cosign signature.
 
@@ -30,12 +30,12 @@ Per-tool TOMLs are sha256-pinned in the manifest. A swap-out attack on an indivi
 # ~/.jarvy/config.toml
 
 [registry]
-url = "https://raw.githubusercontent.com/bearbinary/jarvy-tools/main/registry/"
+url = "https://raw.githubusercontent.com/Cliftonz/jarvy-tools/main/registry/"
 enabled = true
 
-# Optional — defaults to the bearbinary/jarvy-tools repo's release workflow.
+# Optional — defaults to the Cliftonz/jarvy-tools repo's release workflow.
 # Override only if you self-host.
-signature_identity_regexp = "^https://github\\.com/bearbinary/jarvy-tools/\\.github/workflows/.*\\.yml@refs/heads/main$"
+signature_identity_regexp = "^https://github\\.com/Cliftonz/jarvy-tools/\\.github/workflows/.*\\.yml@refs/heads/main$"
 signature_oidc_issuer = "https://token.actions.githubusercontent.com"
 
 # Default true. Set false ONLY for local mirror testing.
@@ -148,7 +148,7 @@ Cache root is 0700, files are 0600 on Unix. The cache lives inside `tools.d/` so
 # Subscribe to the canonical registry
 cat >> ~/.jarvy/config.toml <<'EOF'
 [registry]
-url = "https://raw.githubusercontent.com/bearbinary/jarvy-tools/main/registry/"
+url = "https://raw.githubusercontent.com/Cliftonz/jarvy-tools/main/registry/"
 enabled = true
 EOF
 

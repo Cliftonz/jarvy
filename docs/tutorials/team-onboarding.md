@@ -110,7 +110,7 @@ Add this to your repo's `README.md`:
 
 ```bash
 # Install Jarvy (one-time, per laptop)
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # Provision this project's tools
 jarvy setup
@@ -126,7 +126,7 @@ Want a true one-command onboarding? Drop Jarvy's bootstrap script into your repo
 ```bash
 mkdir -p scripts
 curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh \
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/scripts/bootstrap.sh \
   -o scripts/bootstrap.sh
 chmod +x scripts/bootstrap.sh
 ```
@@ -176,7 +176,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+      - run: curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
       - run: jarvy validate --strict
       - run: jarvy diff --format json    # fails if config drifts from lockfile
 ```

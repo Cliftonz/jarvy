@@ -79,7 +79,7 @@
       "impact": "High",
       "acceptanceCriteria": [
         {
-          "criterion": "Action available at uses: bearbinary/jarvy-action@v1",
+          "criterion": "Action available at uses: Cliftonz/jarvy-action@v1",
           "passed": false
         },
         {
@@ -489,10 +489,10 @@
     }
   ],
   "repositoriesToCreate": [
-    "github.com/bearbinary/jarvy-action",
-    "github.com/bearbinary/jarvy-vscode",
-    "github.com/bearbinary/jarvy-devcontainer-feature",
-    "github.com/bearbinary/jarvy-jetbrains"
+    "github.com/Cliftonz/jarvy-action",
+    "github.com/Cliftonz/jarvy-vscode",
+    "github.com/Cliftonz/jarvy-devcontainer-feature",
+    "github.com/Cliftonz/jarvy-jetbrains"
   ],
   "filesToCreate": [
     "hooks/.pre-commit-hooks.yaml",

@@ -16,7 +16,7 @@ Jarvy is a fast, Rust-based CLI tool that standardizes and automates local devel
 
 ### Is Jarvy free and open source?
 
-Yes. Jarvy is MIT-licensed and hosted at [github.com/bearbinary/jarvy](https://github.com/bearbinary/jarvy).
+Yes. Jarvy is MIT-licensed and hosted at [github.com/Cliftonz/jarvy](https://github.com/Cliftonz/jarvy).
 
 ### What platforms does Jarvy support?
 
@@ -28,11 +28,11 @@ Jarvy runs on macOS, Linux, and Windows. It uses native package managers on each
 
 Five options:
 
-1. **Official installer** — `curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash` (macOS/Linux) or `irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex` (Windows PowerShell).
+1. **Official installer** — `curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash` (macOS/Linux) or `irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex` (Windows PowerShell).
 2. **Cargo** — `cargo install jarvy`
 3. **Homebrew** — `brew install jarvy`
-4. **Binary** — download from [GitHub Releases](https://github.com/bearbinary/jarvy/releases)
-5. **Repo bootstrap script** — for projects that already ship a `jarvy.toml`, copy [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh) into the repo so contributors run a single `./scripts/bootstrap.sh` to install Jarvy *and* provision. See the [Quickstart](quickstart.md#or-one-command-repo-bootstrap).
+4. **Binary** — download from [GitHub Releases](https://github.com/Cliftonz/jarvy/releases)
+5. **Repo bootstrap script** — for projects that already ship a `jarvy.toml`, copy [`scripts/bootstrap.sh`](https://raw.githubusercontent.com/Cliftonz/jarvy/main/scripts/bootstrap.sh) into the repo so contributors run a single `./scripts/bootstrap.sh` to install Jarvy *and* provision. See the [Quickstart](quickstart.md#or-one-command-repo-bootstrap).
 
 ### How do I update Jarvy?
 
@@ -114,4 +114,4 @@ Yes. Run `jarvy mcp` to start the MCP (Model Context Protocol) server. AI agents
 
 ### Where is the LLM reference?
 
-See [llms.txt](https://github.com/bearbinary/jarvy/blob/main/llms.txt) for a structured reference optimized for large language models.
+See [llms.txt](https://github.com/Cliftonz/jarvy/blob/main/llms.txt) for a structured reference optimized for large language models.

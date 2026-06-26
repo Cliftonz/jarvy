@@ -1,8 +1,8 @@
 <img src="assets/Vertical_Logo.svg" alt="Jarvy" width="200" />
 
-[![CI](https://github.com/bearbinary/jarvy/actions/workflows/test.yml/badge.svg)](https://github.com/bearbinary/jarvy/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/bearbinary/jarvy/graph/badge.svg)](https://codecov.io/gh/bearbinary/jarvy)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/bearbinary/jarvy/badge)](https://securityscorecards.dev/viewer/?uri=github.com/bearbinary/jarvy)
+[![CI](https://github.com/Cliftonz/jarvy/actions/workflows/test.yml/badge.svg)](https://github.com/Cliftonz/jarvy/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/Cliftonz/jarvy/graph/badge.svg)](https://codecov.io/gh/Cliftonz/jarvy)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Cliftonz/jarvy/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Cliftonz/jarvy)
 [![License: MIT](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 
 # Jarvy
@@ -24,15 +24,15 @@ Brand-new machine, nothing installed? Two commands:
 
 ```bash
 # 1. Install Jarvy
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # 2. Clone + provision everything else
-git clone https://github.com/bearbinary/jarvy && cd jarvy && make setup
+git clone https://github.com/Cliftonz/jarvy && cd jarvy && make setup
 ```
 
 That's it. `make setup` runs [`scripts/bootstrap.sh`](scripts/bootstrap.sh), which is idempotent — re-run any time you've been away from the project or the environment drifts.
 
-**Windows (PowerShell):** swap step 1 for `irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex`, then run the same `git clone ... && cd jarvy && make setup`.
+**Windows (PowerShell):** swap step 1 for `irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex`, then run the same `git clone ... && cd jarvy && make setup`.
 
 **Already have a tool installed via your own package manager?** Jarvy detects it and skips reinstall. It only adds what's missing.
 
@@ -48,7 +48,7 @@ cargo install jarvy
 brew install jarvy
 
 # Or download a binary from GitHub Releases
-# https://github.com/bearbinary/jarvy/releases
+# https://github.com/Cliftonz/jarvy/releases
 ```
 
 Verify installation:
@@ -68,11 +68,11 @@ of three ways — all are reversible.
 ```bash
 # Unix
 JARVY_CHANNEL=beta curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # Windows PowerShell
 $env:JARVY_CHANNEL = 'beta'
-irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
 ```
 
 **Per-update** — pass `--channel`:
@@ -261,7 +261,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Jarvy
-        uses: bearbinary/jarvy/.github/actions/setup-jarvy@main
+        uses: Cliftonz/jarvy/.github/actions/setup-jarvy@main
         with:
           method: cargo
       - run: jarvy setup --ci
@@ -327,4 +327,4 @@ Dual-licensed under [MIT](LICENSE) or [Apache-2.0](LICENSE), at your option.
 
 ---
 
-[GitHub](https://github.com/bearbinary/jarvy) | [Documentation](https://jarvy.dev) | [Report an Issue](https://github.com/bearbinary/jarvy/issues)
+[GitHub](https://github.com/Cliftonz/jarvy) | [Documentation](https://jarvy.dev) | [Report an Issue](https://github.com/Cliftonz/jarvy/issues)

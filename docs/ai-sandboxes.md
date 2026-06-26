@@ -97,7 +97,7 @@ into the image. For one-off ephemeral envs, install on start.
 {
   "name": "Project dev container",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-  "onCreateCommand": "curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash",
+  "onCreateCommand": "curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash",
   "postCreateCommand": "jarvy setup"
 }
 ```
@@ -117,7 +117,7 @@ For Codespaces specifically, see also the
 FROM ubuntu:24.04
 
 # Bake Jarvy into the image
-RUN curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+RUN curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # Project config — checked in alongside the Dockerfile
 COPY jarvy.toml /workspace/jarvy.toml
@@ -222,7 +222,7 @@ Three guardrails:
    `JARVY_TELEMETRY=1` with a sidecar OTLP collector on `localhost:4318`
    or leave it off.
 3. **For K8s-hosted sandboxes**, the
-   [`jarvy-telemetry-forwarder` Helm chart](https://github.com/bearbinary/jarvy/tree/main/dist/helm/jarvy-telemetry-forwarder)
+   [`jarvy-telemetry-forwarder` Helm chart](https://github.com/Cliftonz/jarvy/tree/main/dist/helm/jarvy-telemetry-forwarder)
    terminates OTLP in-cluster and forwards via whatever egress your
    cluster already allows. See
    [Telemetry forwarder operations](operations/telemetry-forwarder.md)

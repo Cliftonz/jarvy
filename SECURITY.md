@@ -17,7 +17,7 @@ Instead, please report them via one of the following methods:
 ### GitHub Private Vulnerability Reporting (Preferred)
 
 Use GitHub's built-in private vulnerability reporting feature:
-https://github.com/bearbinary/jarvy/security/advisories/new
+https://github.com/Cliftonz/jarvy/security/advisories/new
 
 ### Email
 
@@ -106,15 +106,15 @@ All releases are signed with Sigstore. To verify:
 brew install cosign  # or see https://docs.sigstore.dev/cosign/installation
 
 # Download release artifact and signature
-curl -LO https://github.com/bearbinary/jarvy/releases/download/v1.0.0/jarvy-linux-x86_64.tar.gz
-curl -LO https://github.com/bearbinary/jarvy/releases/download/v1.0.0/jarvy-linux-x86_64.tar.gz.sig
-curl -LO https://github.com/bearbinary/jarvy/releases/download/v1.0.0/jarvy-linux-x86_64.tar.gz.pem
+curl -LO https://github.com/Cliftonz/jarvy/releases/download/v1.0.0/jarvy-linux-x86_64.tar.gz
+curl -LO https://github.com/Cliftonz/jarvy/releases/download/v1.0.0/jarvy-linux-x86_64.tar.gz.sig
+curl -LO https://github.com/Cliftonz/jarvy/releases/download/v1.0.0/jarvy-linux-x86_64.tar.gz.pem
 
 # Verify signature
 cosign verify-blob \
   --signature jarvy-linux-x86_64.tar.gz.sig \
   --certificate jarvy-linux-x86_64.tar.gz.pem \
-  --certificate-identity-regexp "https://github.com/bearbinary/Jarvy/" \
+  --certificate-identity-regexp "https://github.com/Cliftonz/Jarvy/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   jarvy-linux-x86_64.tar.gz
 ```
@@ -123,7 +123,7 @@ cosign verify-blob \
 
 ```bash
 # Download checksums file
-curl -LO https://github.com/bearbinary/jarvy/releases/download/v1.0.0/SHA256SUMS.txt
+curl -LO https://github.com/Cliftonz/jarvy/releases/download/v1.0.0/SHA256SUMS.txt
 
 # Verify
 sha256sum -c SHA256SUMS.txt
@@ -153,7 +153,7 @@ If you've reported a security issue and would like to be acknowledged, please le
 
 For security-related questions or concerns:
 
-- **Private advisory**: https://github.com/bearbinary/jarvy/security/advisories/new
+- **Private advisory**: https://github.com/Cliftonz/jarvy/security/advisories/new
 - **Email**: security@jarvy.dev
 
-For general questions, please use [GitHub Discussions](https://github.com/bearbinary/jarvy/discussions).
+For general questions, please use [GitHub Discussions](https://github.com/Cliftonz/jarvy/discussions).

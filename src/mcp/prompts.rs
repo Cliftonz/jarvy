@@ -118,7 +118,7 @@ Jarvy is a fast, cross-platform CLI for provisioning developer environments. Her
 ## Recommended: Quick Install (curl)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 ```
 
 This downloads the latest release and installs it to `~/.local/bin`.
@@ -126,7 +126,7 @@ This downloads the latest release and installs it to `~/.local/bin`.
 ## Alternative: Homebrew
 
 ```bash
-brew install bearbinary/tap/jarvy
+brew install Cliftonz/tap/jarvy
 ```
 
 ## Alternative: Cargo (requires Rust)
@@ -156,7 +156,7 @@ cargo install jarvy
 
 Jarvy is an open-source tool that helps teams standardize their developer workstations without VMs or containers. Define your tools in a `jarvy.toml` file, and Jarvy installs them using native package managers (Homebrew, apt, winget, etc.).
 
-**Project:** https://github.com/bearbinary/jarvy
+**Project:** https://github.com/Cliftonz/jarvy
 "#
         }
         "linux" => {
@@ -167,7 +167,7 @@ Jarvy is a fast, cross-platform CLI for provisioning developer environments. Her
 ## Recommended: Quick Install (curl)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 ```
 
 This downloads the latest release and installs it to `~/.local/bin`.
@@ -175,7 +175,7 @@ This downloads the latest release and installs it to `~/.local/bin`.
 ## Alternative: Homebrew (if installed)
 
 ```bash
-brew install bearbinary/tap/jarvy
+brew install Cliftonz/tap/jarvy
 ```
 
 ## Alternative: Cargo (requires Rust)
@@ -205,7 +205,7 @@ cargo install jarvy
 
 Jarvy is an open-source tool that helps teams standardize their developer workstations without VMs or containers. Define your tools in a `jarvy.toml` file, and Jarvy installs them using native package managers (apt, dnf, pacman, etc.).
 
-**Project:** https://github.com/bearbinary/jarvy
+**Project:** https://github.com/Cliftonz/jarvy
 "#
         }
         "windows" => {
@@ -218,7 +218,7 @@ Jarvy is a fast, cross-platform CLI for provisioning developer environments. Her
 Open PowerShell and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
 ```
 
 This downloads the latest release and adds it to your PATH.
@@ -264,7 +264,7 @@ cargo install jarvy
 
 Jarvy is an open-source tool that helps teams standardize their developer workstations without VMs or containers. Define your tools in a `jarvy.toml` file, and Jarvy installs them using native package managers (winget, Chocolatey).
 
-**Project:** https://github.com/bearbinary/jarvy
+**Project:** https://github.com/Cliftonz/jarvy
 "#
         }
         _ => {
@@ -293,7 +293,7 @@ Use the `jarvy_get_install_instructions` tool with your specific platform for de
 
 Jarvy is an open-source tool that helps teams standardize their developer workstations without VMs or containers. Define your tools in a `jarvy.toml` file, and Jarvy installs them using native package managers.
 
-**Project:** https://github.com/bearbinary/jarvy
+**Project:** https://github.com/Cliftonz/jarvy
 "#
         }
     };

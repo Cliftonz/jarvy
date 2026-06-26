@@ -184,7 +184,7 @@ pub fn handle_get_install_instructions(
     {
         methods.push(serde_json::json!({
             "method": "curl",
-            "command": "curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash",
+            "command": "curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash",
             "description": "Quick install via shell script (recommended)",
             "requires_sudo": false,
             "notes": "Downloads latest release and installs to ~/.local/bin"
@@ -195,7 +195,7 @@ pub fn handle_get_install_instructions(
     if target_platform == "windows" && matches!(method_filter, "all" | "curl") {
         methods.push(serde_json::json!({
             "method": "powershell",
-            "command": "irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex",
+            "command": "irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex",
             "description": "Quick install via PowerShell script (recommended)",
             "requires_sudo": false,
             "notes": "Downloads latest release and adds to PATH"
@@ -208,7 +208,7 @@ pub fn handle_get_install_instructions(
     {
         methods.push(serde_json::json!({
             "method": "homebrew",
-            "command": "brew install bearbinary/tap/jarvy",
+            "command": "brew install Cliftonz/tap/jarvy",
             "description": "Install via Homebrew",
             "requires_sudo": false,
             "notes": "Requires Homebrew to be installed first"
@@ -259,8 +259,8 @@ pub fn handle_get_install_instructions(
         "platform": target_platform,
         "methods": methods,
         "recommended": recommended,
-        "project_url": "https://github.com/bearbinary/jarvy",
-        "documentation": "https://github.com/bearbinary/jarvy#readme"
+        "project_url": "https://github.com/Cliftonz/jarvy",
+        "documentation": "https://github.com/Cliftonz/jarvy#readme"
     }))
 }
 

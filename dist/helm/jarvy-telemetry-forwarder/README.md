@@ -17,9 +17,9 @@ Registry:
 
 ```bash
 # Replace <version> with the current chart version. Latest release:
-# https://github.com/bearbinary/Jarvy/releases?q=helm-v
+# https://github.com/Cliftonz/Jarvy/releases?q=helm-v
 helm install jarvy-telemetry \
-  oci://ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder \
+  oci://ghcr.io/Cliftonz/charts/jarvy-telemetry-forwarder \
   --version <version> \
   --namespace jarvy-telemetry --create-namespace
 ```
@@ -29,16 +29,16 @@ the release notes for the full command):
 
 ```bash
 cosign verify \
-  --certificate-identity "https://github.com/bearbinary/Jarvy/.github/workflows/helm-release.yml@refs/tags/helm-v<version>" \
+  --certificate-identity "https://github.com/Cliftonz/Jarvy/.github/workflows/helm-release.yml@refs/tags/helm-v<version>" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder:<version>
+  ghcr.io/Cliftonz/charts/jarvy-telemetry-forwarder:<version>
 ```
 
 For a development install with inline secrets (dev clusters only):
 
 ```bash
 helm install jarvy-telemetry \
-  oci://ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder \
+  oci://ghcr.io/Cliftonz/charts/jarvy-telemetry-forwarder \
   --version <version> \
   --namespace jarvy-telemetry --create-namespace \
   --set secrets.strategy=inline \
@@ -157,7 +157,7 @@ The chart releases independently from the Jarvy CLI. Tags shaped
 `helm-vX.Y.Z` trigger
 [`.github/workflows/helm-release.yml`](../../../.github/workflows/helm-release.yml),
 which lints, packages, signs with cosign, and pushes the OCI artifact
-to `ghcr.io/bearbinary/charts/jarvy-telemetry-forwarder`.
+to `ghcr.io/Cliftonz/charts/jarvy-telemetry-forwarder`.
 
 The `version` field in `Chart.yaml` must equal the tag minus the
 `helm-v` prefix; the workflow enforces this. The `appVersion` field
@@ -204,7 +204,7 @@ spec:
     spec:
       sources:
         - chart: jarvy-telemetry-forwarder
-          repoURL: oci://ghcr.io/bearbinary/charts
+          repoURL: oci://ghcr.io/Cliftonz/charts
           helm:
             valuesObject: { /* tenant overrides */ }
             # ApplicationSet generator validates this against the

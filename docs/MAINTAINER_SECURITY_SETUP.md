@@ -92,7 +92,7 @@ updates:
       - "dependencies"
       - "rust"
     reviewers:
-      - "bearbinary/maintainers"  # Replace with your team
+      - "Cliftonz/maintainers"  # Replace with your team
     commit-message:
       prefix: "chore(deps):"
 
@@ -124,14 +124,14 @@ publish_results: true
 Add the following badge to your `README.md`:
 
 ```markdown
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/bearbinary/jarvy/badge)](https://securityscorecards.dev/viewer/?uri=github.com/bearbinary/jarvy)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Cliftonz/jarvy/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Cliftonz/jarvy)
 ```
 
 ### View Scorecard Results
 
 After the workflow runs, view results at:
 ```
-https://securityscorecards.dev/viewer/?uri=github.com/bearbinary/jarvy
+https://securityscorecards.dev/viewer/?uri=github.com/Cliftonz/jarvy
 ```
 
 ## 5. CODEOWNERS File (Recommended)
@@ -140,14 +140,14 @@ Create `.github/CODEOWNERS` for security-related files:
 
 ```
 # Security files require security team review
-/deny.toml @bearbinary/security-team
-/.gitleaks.toml @bearbinary/security-team
-/SECURITY.md @bearbinary/security-team
-/.github/workflows/security.yml @bearbinary/security-team
-/.github/workflows/scorecard.yml @bearbinary/security-team
-/.github/workflows/release.yml @bearbinary/security-team @bearbinary/release-team
-/.pre-commit-config.yaml @bearbinary/security-team
-/scripts/security/ @bearbinary/security-team
+/deny.toml @Cliftonz
+/.gitleaks.toml @Cliftonz
+/SECURITY.md @Cliftonz
+/.github/workflows/security.yml @Cliftonz
+/.github/workflows/scorecard.yml @Cliftonz
+/.github/workflows/release.yml @Cliftonz @Cliftonz
+/.pre-commit-config.yaml @Cliftonz
+/scripts/security/ @Cliftonz
 ```
 
 ## 6. Local Development Setup

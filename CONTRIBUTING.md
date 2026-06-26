@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Jarvy! This document provides gui
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/bearbinary/jarvy.git
+   git clone https://github.com/Cliftonz/jarvy.git
    cd jarvy
    ```
 

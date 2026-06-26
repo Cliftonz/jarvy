@@ -60,7 +60,7 @@ package, SBOM, and checksum artifact. Verification:
 cosign verify-blob \
   --signature jarvy-linux-x86_64.tar.gz.sig \
   --certificate jarvy-linux-x86_64.tar.gz.pem \
-  --certificate-identity-regexp "https://github.com/bearbinary/Jarvy/" \
+  --certificate-identity-regexp "https://github.com/Cliftonz/Jarvy/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   jarvy-linux-x86_64.tar.gz
 ```
@@ -177,7 +177,7 @@ bash) — but even if it did, the URL 404s. Use
 take effect, and combine that with the upstream tarball fix.
 
 Workaround for users right now: `cargo install --git
-https://github.com/bearbinary/Jarvy --tag v0.1.0-rc.10 jarvy`
+https://github.com/Cliftonz/Jarvy --tag v0.1.0-rc.10 jarvy`
 (compiles from source).
 
 This needs to be fixed before any soak claims `install.sh` /
@@ -189,7 +189,7 @@ upstream tarball fix lands (same blocker as Homebrew).
 
 ## Homebrew pipeline is non-functional pending tarball artifacts
 
-The Homebrew formula in `bearbinary/homebrew-tap` is authored against
+The Homebrew formula in `Cliftonz/homebrew-tap` is authored against
 `.tar.gz` tarball assets (`jarvy-v<version>-<arch>-<os>.tar.gz`) that
 `release.yml` does **not** produce. Verified on `v0.0.5`:
 
@@ -214,7 +214,7 @@ Consequences:
    (v0.0.1 → v0.0.5). The tap repo's `jarvy.rb` still contains literal
    `VERSION_PLACEHOLDER` / `SHA256_PLACEHOLDER_*` strings from initial
    setup on 2026-01-18.
-3. `brew install jarvy` (or `brew install bearbinary/tap/jarvy`)
+3. `brew install jarvy` (or `brew install Cliftonz/tap/jarvy`)
    currently fails — the formula is unparseable and references
    non-existent URLs.
 
@@ -251,7 +251,7 @@ Summary:
 |---|---|
 | GitHub release | Auto (CI) |
 | crates.io | Auto (`publish-packages.yml::publish-crates-io` job) |
-| Homebrew tap | Auto (CI PR to `bearbinary/homebrew-tap`) |
+| Homebrew tap | Auto (CI PR to `Cliftonz/homebrew-tap`) |
 | `.deb`, `.rpm`, `.msi`, `.dmg`, `.AppImage` | Auto (release.yml asset) |
 | AUR (`jarvy-bin` and `jarvy`) | Manual |
 | winget | Manual (`wingetcreate`, then Microsoft approves) |

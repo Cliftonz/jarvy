@@ -546,7 +546,7 @@ mod tests {
         assert!(url.contains("tool_name=kubectl"));
         assert!(url.contains("title=%5BTool%5D%3A%20kubectl"));
         assert!(url.contains("use_case="));
-        assert!(url.contains("bearbinary/jarvy"));
+        assert!(url.contains("Cliftonz/jarvy"));
     }
 
     #[test]

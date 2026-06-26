@@ -38,7 +38,7 @@ dist/
 |----------|--------|---------|
 | All | Cargo | `cargo install jarvy` |
 | All | GitHub Release | Download from releases page |
-| macOS | Homebrew | `brew install bearbinary/tap/jarvy` |
+| macOS | Homebrew | `brew install Cliftonz/tap/jarvy` |
 | macOS/Linux | Curl script | `curl -fsSL https://.../install.sh \| bash` |
 | Linux (Arch) | AUR | `yay -S jarvy-bin` |
 | Linux (Debian) | .deb package | `dpkg -i jarvy_*.deb` |
@@ -74,7 +74,7 @@ The following secrets must be configured in the repository settings under **Sett
 **Purpose:** Push updated formula to the Homebrew tap repository
 
 **Prerequisites:**
-1. Create a separate repository: `bearbinary/homebrew-tap`
+1. Create a separate repository: `Cliftonz/homebrew-tap`
 2. Add a `jarvy.rb` formula file to this repo
 
 **How to obtain:**
@@ -87,7 +87,7 @@ ssh-keygen -t ed25519 -C "jarvy-homebrew-tap" -f jarvy-homebrew-tap
 # - jarvy-homebrew-tap.pub (public key)
 ```
 
-1. Go to `bearbinary/homebrew-tap` repository
+1. Go to `Cliftonz/homebrew-tap` repository
 2. Settings → Deploy keys → Add deploy key
 3. Title: `jarvy-release-bot`
 4. Key: Paste contents of `jarvy-homebrew-tap.pub`
@@ -208,7 +208,7 @@ git push
 
 **Users install with:**
 ```bash
-brew tap bearbinary/tap
+brew tap Cliftonz/tap
 brew install jarvy
 ```
 
@@ -381,7 +381,7 @@ Get-FileHash .\jarvy-v1.0.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256
 
 # 5. Submit PR to microsoft/winget-pkgs
 # Use wingetcreate for easier submission:
-wingetcreate update Jarvy.Jarvy --version 1.0.0 --urls https://github.com/bearbinary/jarvy/releases/download/v1.0.0/jarvy-v1.0.0-x86_64-pc-windows-msvc.zip --submit
+wingetcreate update Jarvy.Jarvy --version 1.0.0 --urls https://github.com/Cliftonz/jarvy/releases/download/v1.0.0/jarvy-v1.0.0-x86_64-pc-windows-msvc.zip --submit
 ```
 
 **Users install with:**
@@ -453,13 +453,13 @@ These scripts automatically:
 **Users install with:**
 ```bash
 # macOS/Linux
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # With specific version
-JARVY_VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+JARVY_VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # Windows PowerShell
-irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
 ```
 
 **No Updates Required:** Scripts automatically fetch the latest version from GitHub releases. Only update if the script logic needs changes.
@@ -489,10 +489,10 @@ cargo install jarvy
 
 ```bash
 # Create repository
-gh repo create bearbinary/homebrew-tap --public
+gh repo create Cliftonz/homebrew-tap --public
 
 # Clone and initialize
-git clone git@github.com:bearbinary/homebrew-tap.git
+git clone git@github.com:Cliftonz/homebrew-tap.git
 cd homebrew-tap
 
 # Copy initial formula
@@ -506,7 +506,7 @@ git push
 
 Users can then install with:
 ```bash
-brew tap bearbinary/tap
+brew tap Cliftonz/tap
 brew install jarvy
 ```
 
@@ -710,5 +710,5 @@ Use this checklist when performing a release:
 ## Contact
 
 For release issues:
-- Open an issue: https://github.com/bearbinary/jarvy/issues
+- Open an issue: https://github.com/Cliftonz/jarvy/issues
 - Tag with `release` label

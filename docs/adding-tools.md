@@ -561,12 +561,12 @@ maintainer, this is your primary inbound signal for "add tool X next."
    friction for you.
 2. **GitHub fallback** — when telemetry is off, Jarvy prints a
    pre-filled issue URL pointing at
-   [`tool_request.yml`](https://github.com/bearbinary/jarvy/issues/new?template=tool_request.yml).
+   [`tool_request.yml`](https://github.com/Cliftonz/jarvy/issues/new?template=tool_request.yml).
    The form arrives with the tool name, platform, version, and
    `define_tool!` scaffold already populated.
 
 **Event payload shape** (uniform across `setup` and `--request`
-call sites; see [CLAUDE.md Event Taxonomy](https://github.com/bearbinary/jarvy/blob/main/CLAUDE.md#telemetry)
+call sites; see [CLAUDE.md Event Taxonomy](https://github.com/Cliftonz/jarvy/blob/main/CLAUDE.md#telemetry)
 for the canonical contract):
 
 | Field | Notes |

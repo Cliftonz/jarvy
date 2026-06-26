@@ -40,7 +40,7 @@ opt in explicitly. Point them at:
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # Or
 cargo install jarvy
@@ -48,7 +48,7 @@ cargo install jarvy
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
 ```
 
 Wait for the user to confirm install before continuing.
@@ -85,7 +85,7 @@ closest analog and tell the user to expect more customization.
 ```bash
 TEMPLATE=<picked-template>
 curl -fsSL \
-  "https://raw.githubusercontent.com/bearbinary/jarvy/main/examples/${TEMPLATE}/jarvy.toml" \
+  "https://raw.githubusercontent.com/Cliftonz/jarvy/main/examples/${TEMPLATE}/jarvy.toml" \
   -o jarvy.toml
 ```
 
@@ -94,11 +94,11 @@ as the one-command path for new contributors), also fetch:
 
 ```bash
 curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/Makefile \
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/Makefile \
   -o Makefile
 mkdir -p scripts
 curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh \
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/scripts/bootstrap.sh \
   -o scripts/bootstrap.sh
 chmod +x scripts/bootstrap.sh
 ```
@@ -431,8 +431,8 @@ Always pass `--format json` and parse the result. Don't scrape human-readable ou
 
 - [Configuration Reference](configuration.md) — every field, every section
 - [`jarvy schema`](cli.md#jarvy-schema) — outputs the JSON Schema for editor + agent autocomplete
-- [`llms-full.txt`](https://github.com/bearbinary/jarvy/blob/main/llms-full.txt) — single-file flat reference for one-shot agent context
-- [`llms.txt`](https://github.com/bearbinary/jarvy/blob/main/llms.txt) — short Q&A optimized for retrieval
+- [`llms-full.txt`](https://github.com/Cliftonz/jarvy/blob/main/llms-full.txt) — single-file flat reference for one-shot agent context
+- [`llms.txt`](https://github.com/Cliftonz/jarvy/blob/main/llms.txt) — short Q&A optimized for retrieval
 
 ### Patterns to follow
 
@@ -573,8 +573,8 @@ Fix and iterate before running `jarvy setup` for real.
 
 In order:
 
-1. [`CLAUDE.md`](https://github.com/bearbinary/jarvy/blob/main/CLAUDE.md) — project rules + module overview (loaded into Claude Code automatically)
-2. [`SKILL.md`](https://github.com/bearbinary/jarvy/blob/main/SKILL.md) — Rust best practices applied in this repo (179 rules)
+1. [`CLAUDE.md`](https://github.com/Cliftonz/jarvy/blob/main/CLAUDE.md) — project rules + module overview (loaded into Claude Code automatically)
+2. [`SKILL.md`](https://github.com/Cliftonz/jarvy/blob/main/SKILL.md) — Rust best practices applied in this repo (179 rules)
 3. [Architecture](architecture.md) — module map + control flow
 4. [Adding Tools](adding-tools.md) — the most common contribution
 
@@ -635,7 +635,7 @@ The clippy gate is enforced in CI — failures block merge. `correctness` is `de
 - **Edition 2024**
 - **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`)
 - **Prefer stdlib + existing deps** over new crates. Adding a dep needs justification in the PR.
-- **No `unwrap()`/`expect()` in production paths.** Return `Result` and propagate with `?`. See [`SKILL.md`](https://github.com/bearbinary/jarvy/blob/main/SKILL.md) `err-` rules.
+- **No `unwrap()`/`expect()` in production paths.** Return `Result` and propagate with `?`. See [`SKILL.md`](https://github.com/Cliftonz/jarvy/blob/main/SKILL.md) `err-` rules.
 
 ### Testing patterns
 
@@ -762,8 +762,8 @@ Jarvy should:
 
 ### Single-file references for one-shot agent context
 
-- [`llms.txt`](https://github.com/bearbinary/jarvy/blob/main/llms.txt) — concise Q&A
-- [`llms-full.txt`](https://github.com/bearbinary/jarvy/blob/main/llms-full.txt) — full feature reference
+- [`llms.txt`](https://github.com/Cliftonz/jarvy/blob/main/llms.txt) — concise Q&A
+- [`llms-full.txt`](https://github.com/Cliftonz/jarvy/blob/main/llms-full.txt) — full feature reference
 - [`jarvy schema`](cli.md#jarvy-schema) — JSON Schema for `jarvy.toml`
 - [`jarvy tools --index --format json`](cli.md#jarvy-tools) — full tool catalog
 
@@ -787,7 +787,7 @@ Jarvy should:
 
 ### Repo metadata
 
-- Repository: <https://github.com/bearbinary/jarvy>
-- Issues: <https://github.com/bearbinary/jarvy/issues>
+- Repository: <https://github.com/Cliftonz/jarvy>
+- Issues: <https://github.com/Cliftonz/jarvy/issues>
 - License: MIT OR Apache-2.0
 - Edition: Rust 2024 (rustc ≥ 1.85)

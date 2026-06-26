@@ -25,7 +25,7 @@
 //!
 //! Each registry config also pins the expected Sigstore signing identity
 //! (regexp + OIDC issuer). The default points at the canonical
-//! `bearbinary/jarvy-tools` repo's release workflow; self-hosted
+//! `Cliftonz/jarvy-tools` repo's release workflow; self-hosted
 //! registries must update both fields. `require_signature = false`
 //! exists as an escape hatch for development but is documented as
 //! unsafe — Jarvy emits a stderr warning every sync when it's set.

@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Jarvy
-        uses: bearbinary/jarvy/.github/actions/setup-jarvy@main
+        uses: Cliftonz/jarvy/.github/actions/setup-jarvy@main
         with:
           method: cargo       # or "path" to build from workspace
 

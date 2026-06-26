@@ -227,7 +227,7 @@ jarvy ticket
 #
 # To share with support:
 #   1. Review contents: unzip -l ~/.jarvy/tickets/jarvy-ticket-20260126-103045.zip
-#   2. Attach to GitHub issue: https://github.com/bearbinary/jarvy/issues
+#   2. Attach to GitHub issue: https://github.com/Cliftonz/jarvy/issues
 #   3. Or email: support@jarvy.dev
 #
 # Ticket expires: 2026-02-25 (30 days)

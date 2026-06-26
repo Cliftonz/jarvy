@@ -73,4 +73,4 @@ Every recipe follows the same shape:
 4. **Variations** — common tweaks
 5. **Caveats** — when this doesn't fit
 
-If you have a recipe to contribute, [open a PR](https://github.com/bearbinary/jarvy/blob/main/docs/cookbook/) — recipes are the highest-leverage contribution to the docs.
+If you have a recipe to contribute, [open a PR](https://github.com/Cliftonz/jarvy/blob/main/docs/cookbook/) — recipes are the highest-leverage contribution to the docs.

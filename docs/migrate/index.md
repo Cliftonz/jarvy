@@ -40,7 +40,7 @@ For teams already managing tools declaratively, just with a different tool.
 | asdf (`.tool-versions`) | [→ Migrating from asdf](from-asdf.md) |
 | Nix (`flake.nix`, `shell.nix`) | [→ Migrating from Nix](from-nix.md) |
 
-Don't see your tool? Open a [discussion](https://github.com/bearbinary/jarvy/discussions) or check the [comparison pages](../competitors/competitive-analysis.md) for feature differences.
+Don't see your tool? Open a [discussion](https://github.com/Cliftonz/jarvy/discussions) or check the [comparison pages](../competitors/competitive-analysis.md) for feature differences.
 
 ---
 

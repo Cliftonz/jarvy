@@ -6,11 +6,11 @@ pkgver=VERSION_PLACEHOLDER
 pkgrel=1
 pkgdesc="Fast, cross-platform CLI that installs and manages developer tools"
 arch=('x86_64' 'aarch64')
-url="https://github.com/bearbinary/jarvy"
+url="https://github.com/Cliftonz/jarvy"
 license=('MIT' 'Apache-2.0')
 depends=('gcc-libs')
 makedepends=('cargo')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/bearbinary/jarvy/archive/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Cliftonz/jarvy/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 prepare() {

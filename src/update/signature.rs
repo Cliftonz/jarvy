@@ -68,10 +68,10 @@ pub fn find_checksum(checksums_content: &str, filename: &str) -> Option<String> 
 
 /// Anchored Fulcio cert-identity regex. Anchors the host (`github.com`),
 /// the repo path, the workflow file, and the tag-ref so a Fulcio cert whose
-/// Subject merely *contains* `github.com/bearbinary/jarvy` (e.g. an attacker
+/// Subject merely *contains* `github.com/Cliftonz/jarvy` (e.g. an attacker
 /// fork's workflow URL with that substring) is rejected.
 pub(crate) const COSIGN_CERT_IDENTITY_REGEX: &str = concat!(
-    r"^https://github\.com/bearbinary/jarvy/\.github/workflows/[^@]+@",
+    r"^https://github\.com/Cliftonz/jarvy/\.github/workflows/[^@]+@",
     r"refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z\.\-]+)?$",
 );
 
@@ -366,23 +366,23 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc *jarvy-windows-
         let re = regex::Regex::new(COSIGN_CERT_IDENTITY_REGEX).expect("valid regex");
         // Legitimate identity from a release-tag workflow.
         assert!(re.is_match(
-            "https://github.com/bearbinary/jarvy/.github/workflows/release.yml@refs/tags/v1.2.3"
+            "https://github.com/Cliftonz/jarvy/.github/workflows/release.yml@refs/tags/v1.2.3"
         ));
         assert!(re.is_match(
-            "https://github.com/bearbinary/jarvy/.github/workflows/release.yml@refs/tags/v1.2.3-rc.1"
+            "https://github.com/Cliftonz/jarvy/.github/workflows/release.yml@refs/tags/v1.2.3-rc.1"
         ));
         // Substring attack: attacker repo's path happens to contain the substring.
         assert!(!re.is_match(
             "https://github.com/attacker/repo/.github/workflows/foo.yml@refs/heads/main\
-             github.com/bearbinary/jarvy"
+             github.com/Cliftonz/jarvy"
         ));
         // Non-tag ref must be rejected (workflow-on-branch).
         assert!(!re.is_match(
-            "https://github.com/bearbinary/jarvy/.github/workflows/release.yml@refs/heads/main"
+            "https://github.com/Cliftonz/jarvy/.github/workflows/release.yml@refs/heads/main"
         ));
         // Wrong host.
         assert!(!re.is_match(
-            "https://gitlab.com/bearbinary/jarvy/.github/workflows/release.yml@refs/tags/v1.0.0"
+            "https://gitlab.com/Cliftonz/jarvy/.github/workflows/release.yml@refs/tags/v1.0.0"
         ));
     }
 

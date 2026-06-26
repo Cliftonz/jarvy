@@ -233,7 +233,7 @@ jobs:
             dataLicense: "CC0-1.0",
             SPDXID: "SPDXRef-DOCUMENT",
             name: "jarvy-sbom",
-            documentNamespace: "https://github.com/bearbinary/jarvy/releases/tag/${{ env.VERSION }}",
+            documentNamespace: "https://github.com/Cliftonz/jarvy/releases/tag/${{ env.VERSION }}",
             packages: [.packages[] | {
               SPDXID: ("SPDXRef-Package-" + .name),
               name: .name,
@@ -468,17 +468,17 @@ jobs:
             echo ""
             echo "### Quick Install (Unix)"
             echo '```bash'
-            echo "curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash"
+            echo "curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash"
             echo '```'
             echo ""
             echo "### Quick Install (Windows PowerShell)"
             echo '```powershell'
-            echo "irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex"
+            echo "irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex"
             echo '```'
             echo ""
             echo "### Homebrew"
             echo '```bash'
-            echo "brew install bearbinary/tap/jarvy"
+            echo "brew install Cliftonz/tap/jarvy"
             echo '```'
             echo ""
             echo "### Cargo"
@@ -489,9 +489,9 @@ jobs:
             echo "### Early-Release Channel"
             echo "Pre-release tags (\`-rc.N\`, \`-beta.N\`) are routed through the beta channel."
             echo "Opt in: \`JARVY_CHANNEL=beta\` on the install script, or \`jarvy update --channel beta\`."
-            echo "See [docs/release-testing.md](https://github.com/bearbinary/jarvy/blob/main/docs/release-testing.md)."
+            echo "See [docs/release-testing.md](https://github.com/Cliftonz/jarvy/blob/main/docs/release-testing.md)."
             echo ""
-            echo "See [installation docs](https://github.com/bearbinary/jarvy#installation) for more options."
+            echo "See [installation docs](https://github.com/Cliftonz/jarvy#installation) for more options."
             echo ""
             echo "## Security"
             echo ""
@@ -500,14 +500,14 @@ jobs:
             echo ""
             echo '```bash'
             echo "ARTIFACT=jarvy-linux-x86_64.tar.gz"
-            echo "BASE=https://github.com/bearbinary/jarvy/releases/download/${TAG}"
+            echo "BASE=https://github.com/Cliftonz/jarvy/releases/download/${TAG}"
             echo "curl -LO \$BASE/\$ARTIFACT"
             echo "curl -LO \$BASE/\$ARTIFACT.sig"
             echo "curl -LO \$BASE/\$ARTIFACT.pem"
             echo "cosign verify-blob \\"
             echo "  --signature \$ARTIFACT.sig \\"
             echo "  --certificate \$ARTIFACT.pem \\"
-            echo "  --certificate-identity-regexp '^https://github\\.com/bearbinary/Jarvy/\\.github/workflows/release\\.yml@refs/tags/v[0-9.]+(-[A-Za-z0-9.]+)?$' \\"
+            echo "  --certificate-identity-regexp '^https://github\\.com/Cliftonz/Jarvy/\\.github/workflows/release\\.yml@refs/tags/v[0-9.]+(-[A-Za-z0-9.]+)?$' \\"
             echo "  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \\"
             echo "  \$ARTIFACT"
             echo '```'

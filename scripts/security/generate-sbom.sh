@@ -93,7 +93,7 @@ generate_spdx() {
             dataLicense: "CC0-1.0",
             SPDXID: "SPDXRef-DOCUMENT",
             name: "jarvy-sbom",
-            documentNamespace: ("https://github.com/bearbinary/jarvy/releases/tag/v" + $version),
+            documentNamespace: ("https://github.com/Cliftonz/jarvy/releases/tag/v" + $version),
             creationInfo: {
                 created: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
                 creators: ["Tool: cargo-metadata", "Organization: Jarvy"]

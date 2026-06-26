@@ -507,7 +507,7 @@ cmd="$(printf '%s' "$payload" \
   | head -1)"
 ```
 
-This is exactly what the library scripts do. Look at any `BLOCK_*_BASH` constant in [`src/ai_hooks/library.rs`](https://github.com/bearbinary/jarvy/blob/main/src/ai_hooks/library.rs) for working examples across event types.
+This is exactly what the library scripts do. Look at any `BLOCK_*_BASH` constant in [`src/ai_hooks/library.rs`](https://github.com/Cliftonz/jarvy/blob/main/src/ai_hooks/library.rs) for working examples across event types.
 
 ### Exit codes and decision protocol
 
@@ -703,7 +703,7 @@ cmd="$(printf '%s' "$payload" \
   | head -1)"
 ```
 
-This is what the library hooks all do. See any `BLOCK_*_BASH` constant in [`src/ai_hooks/library.rs`](https://github.com/bearbinary/jarvy/blob/main/src/ai_hooks/library.rs).
+This is what the library hooks all do. See any `BLOCK_*_BASH` constant in [`src/ai_hooks/library.rs`](https://github.com/Cliftonz/jarvy/blob/main/src/ai_hooks/library.rs).
 
 ---
 
@@ -790,7 +790,7 @@ See [contributing](contributing.md) for the general contribution flow.
 
 ### Templates
 
-A ready-to-edit starter config lives in [`examples/ai-hooks/custom-hook-template.toml`](https://github.com/bearbinary/jarvy/blob/main/examples/ai-hooks/custom-hook-template.toml). It walks through four common custom-hook shapes (command-string deny, file-path deny, context injection, network policy call) with both bash and PowerShell.
+A ready-to-edit starter config lives in [`examples/ai-hooks/custom-hook-template.toml`](https://github.com/Cliftonz/jarvy/blob/main/examples/ai-hooks/custom-hook-template.toml). It walks through four common custom-hook shapes (command-string deny, file-path deny, context injection, network policy call) with both bash and PowerShell.
 
 ---
 

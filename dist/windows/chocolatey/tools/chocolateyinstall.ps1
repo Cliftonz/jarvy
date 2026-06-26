@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $packageName = 'jarvy'
 $version     = 'VERSION_PLACEHOLDER'
-$url64       = "https://github.com/bearbinary/Jarvy/releases/download/v$version/jarvy_${version}_x64_en-US.msi"
+$url64       = "https://github.com/Cliftonz/Jarvy/releases/download/v$version/jarvy_${version}_x64_en-US.msi"
 $checksum64  = 'SHA256_PLACEHOLDER'
 
 $packageArgs = @{

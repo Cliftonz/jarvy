@@ -2,7 +2,7 @@
 
 > Single-file flat reference for AI agents. Optimized for one-shot context injection. For human-readable docs see https://jarvy.dev. For interactive AI integration use the MCP server (`jarvy mcp`).
 
-Jarvy is a fast, Rust-based, cross-platform CLI that provisions local development environments from a declarative `jarvy.toml` config file. It runs on macOS, Linux, and Windows, using each platform's native package managers (Homebrew, apt, dnf, pacman, apk, winget, Chocolatey, Scoop). It is MIT/Apache-2.0 licensed and hosted at https://github.com/bearbinary/jarvy.
+Jarvy is a fast, Rust-based, cross-platform CLI that provisions local development environments from a declarative `jarvy.toml` config file. It runs on macOS, Linux, and Windows, using each platform's native package managers (Homebrew, apt, dnf, pacman, apk, winget, Chocolatey, Scoop). It is MIT/Apache-2.0 licensed and hosted at https://github.com/Cliftonz/jarvy.
 
 This file is the canonical machine-consumption reference. It mirrors `https://jarvy.dev` but flattened for easy ingestion.
 
@@ -18,7 +18,7 @@ cargo install jarvy
 brew install jarvy
 
 # Direct download
-# https://github.com/bearbinary/jarvy/releases
+# https://github.com/Cliftonz/jarvy/releases
 ```
 
 Verify:
@@ -32,7 +32,7 @@ jarvy --version
 ```bash
 # Per-install
 JARVY_CHANNEL=beta curl -fsSL \
-  https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+  https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
 
 # Per-update
 jarvy update --channel beta
@@ -79,11 +79,11 @@ can bring up with one command.
 Step 1. Confirm Jarvy is installed: `jarvy --version`
         If not, ask the user to install (do NOT auto-install — Jarvy
         runs with elevated privileges, user must opt in):
-          curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.sh | bash
+          curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
           # or
           cargo install jarvy
           # Windows
-          irm https://raw.githubusercontent.com/bearbinary/jarvy/main/dist/scripts/install.ps1 | iex
+          irm https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.ps1 | iex
 
 Step 2. Detect the project's stack from lockfiles / manifests:
           pnpm-lock.yaml          → node-pnpm
@@ -104,11 +104,11 @@ Step 2. Detect the project's stack from lockfiles / manifests:
 
 Step 3. Fetch the template into the project:
           TEMPLATE=<picked>
-          curl -fsSL "https://raw.githubusercontent.com/bearbinary/jarvy/main/examples/${TEMPLATE}/jarvy.toml" -o jarvy.toml
+          curl -fsSL "https://raw.githubusercontent.com/Cliftonz/jarvy/main/examples/${TEMPLATE}/jarvy.toml" -o jarvy.toml
         Optionally add the one-command bootstrap:
-          curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/Makefile -o Makefile
+          curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/Makefile -o Makefile
           mkdir -p scripts
-          curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/scripts/bootstrap.sh -o scripts/bootstrap.sh
+          curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/scripts/bootstrap.sh -o scripts/bootstrap.sh
           chmod +x scripts/bootstrap.sh
 
 Step 4. Customize versions from the project's actual hint files:
@@ -810,7 +810,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bearbinary/jarvy/.github/actions/setup-jarvy@main
+      - uses: Cliftonz/jarvy/.github/actions/setup-jarvy@main
         with:
           method: cargo
       - run: jarvy setup --ci
@@ -1063,7 +1063,7 @@ repo. Pick by detecting lockfiles in the user's project.
 Fetch one:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bearbinary/jarvy/main/examples/<name>/jarvy.toml -o jarvy.toml
+curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/examples/<name>/jarvy.toml -o jarvy.toml
 ```
 
 Each template ships `[provisioner]`, `[<lang-pkg>]`, `[hooks]`, `[env.vars]`,
@@ -1076,8 +1076,8 @@ full decision table.
 
 - Website: https://jarvy.dev
 - Documentation: https://jarvy.dev
-- Repository: https://github.com/bearbinary/jarvy
-- Issues: https://github.com/bearbinary/jarvy/issues
-- llms.txt (concise): https://github.com/bearbinary/jarvy/blob/main/llms.txt
-- Privacy: https://github.com/bearbinary/jarvy/blob/main/PRIVACY.md
+- Repository: https://github.com/Cliftonz/jarvy
+- Issues: https://github.com/Cliftonz/jarvy/issues
+- llms.txt (concise): https://github.com/Cliftonz/jarvy/blob/main/llms.txt
+- Privacy: https://github.com/Cliftonz/jarvy/blob/main/PRIVACY.md
 - License: MIT OR Apache-2.0

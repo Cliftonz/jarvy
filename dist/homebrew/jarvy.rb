@@ -1,33 +1,33 @@
 # Homebrew formula for Jarvy
 # To update: Replace VERSION_PLACEHOLDER and SHA256 placeholders with actual values
-# Tap repository: https://github.com/bearbinary/homebrew-tap
+# Tap repository: https://github.com/Cliftonz/homebrew-tap
 
 class Jarvy < Formula
   desc "Fast, cross-platform CLI that installs and manages developer tools"
-  homepage "https://github.com/bearbinary/jarvy"
+  homepage "https://github.com/Cliftonz/jarvy"
   version "VERSION_PLACEHOLDER"
   license any_of: ["MIT", "Apache-2.0"]
 
   on_macos do
     on_intel do
-      url "https://github.com/bearbinary/jarvy/releases/download/v#{version}/jarvy-v#{version}-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/Cliftonz/jarvy/releases/download/v#{version}/jarvy-v#{version}-x86_64-apple-darwin.tar.gz"
       sha256 "SHA256_PLACEHOLDER_MACOS_X86"
     end
 
     on_arm do
-      url "https://github.com/bearbinary/jarvy/releases/download/v#{version}/jarvy-v#{version}-aarch64-apple-darwin.tar.gz"
+      url "https://github.com/Cliftonz/jarvy/releases/download/v#{version}/jarvy-v#{version}-aarch64-apple-darwin.tar.gz"
       sha256 "SHA256_PLACEHOLDER_MACOS_ARM"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/bearbinary/jarvy/releases/download/v#{version}/jarvy-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/Cliftonz/jarvy/releases/download/v#{version}/jarvy-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
       sha256 "SHA256_PLACEHOLDER_LINUX_X86"
     end
 
     on_arm do
-      url "https://github.com/bearbinary/jarvy/releases/download/v#{version}/jarvy-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/Cliftonz/jarvy/releases/download/v#{version}/jarvy-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
       sha256 "SHA256_PLACEHOLDER_LINUX_ARM"
     end
   end
@@ -50,7 +50,7 @@ class Jarvy < Formula
 
         jarvy setup
 
-      For more information, see: https://github.com/bearbinary/jarvy
+      For more information, see: https://github.com/Cliftonz/jarvy
     EOS
   end
 

@@ -87,4 +87,4 @@ Telemetry is sent to the configured OTLP endpoint (default: `https://telemetry.j
 
 ## Questions
 
-If you have privacy concerns, please open an issue at https://github.com/bearbinary/jarvy/issues.
+If you have privacy concerns, please open an issue at https://github.com/Cliftonz/jarvy/issues.
