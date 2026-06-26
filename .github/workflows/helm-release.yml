@@ -208,7 +208,7 @@ jobs:
           echo "rekor_uuid=${REKOR_UUID}" >> "$GITHUB_OUTPUT"
 
       - name: Install syft
-        uses: anchore/sbom-action/download-syft@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.8
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.17.8
 
       - name: Generate SBOM (single syft invocation, two output formats)
         run: |
