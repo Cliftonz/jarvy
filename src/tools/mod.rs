@@ -68,6 +68,7 @@ pub mod git_secrets;
 pub mod gitleaks;
 pub mod gitversion;
 pub mod glab;
+pub mod glances;
 pub mod gleam;
 pub mod go;
 pub mod gofumpt;
