@@ -286,7 +286,7 @@ toggles) is overridable. Common patterns:
   two `remoteRef.key` paths are independent.
 
 Chart release pipeline:
-[`.github/workflows/helm-release.yml`](https://github.com/Cliftonz/Jarvy/blob/main/.github/workflows/helm-release.yml)
+[`.github/workflows/helm-release.yml`](https://github.com/Cliftonz/jarvy/blob/main/.github/workflows/helm-release.yml)
 fires on `helm-vX.Y.Z` tags, lints + packages + signs (cosign
 keyless OIDC) + attests SBOM + pushes to GHCR. Decoupled from the
 CLI release so chart-only fixes don't require a CLI release.

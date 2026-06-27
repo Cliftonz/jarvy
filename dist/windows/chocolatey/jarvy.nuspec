@@ -7,7 +7,7 @@
     <authors>Jarvy Team</authors>
     <owners>Cliftonz</owners>
     <projectUrl>https://jarvy.dev</projectUrl>
-    <iconUrl>https://cdn.jsdelivr.net/gh/Cliftonz/Jarvy@main/assets/CLI_Logo.png</iconUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/Cliftonz/jarvy@main/assets/CLI_Logo.png</iconUrl>
     <licenseUrl>https://github.com/Cliftonz/jarvy/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectSourceUrl>https://github.com/Cliftonz/jarvy</projectSourceUrl>

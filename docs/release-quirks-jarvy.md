@@ -60,7 +60,7 @@ package, SBOM, and checksum artifact. Verification:
 cosign verify-blob \
   --signature jarvy-linux-x86_64.tar.gz.sig \
   --certificate jarvy-linux-x86_64.tar.gz.pem \
-  --certificate-identity-regexp "https://github.com/Cliftonz/Jarvy/" \
+  --certificate-identity-regexp "https://github.com/Cliftonz/jarvy/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   jarvy-linux-x86_64.tar.gz
 ```
@@ -177,7 +177,7 @@ bash) — but even if it did, the URL 404s. Use
 take effect, and combine that with the upstream tarball fix.
 
 Workaround for users right now: `cargo install --git
-https://github.com/Cliftonz/Jarvy --tag v0.1.0-rc.10 jarvy`
+https://github.com/Cliftonz/jarvy --tag v0.1.0-rc.10 jarvy`
 (compiles from source).
 
 This needs to be fixed before any soak claims `install.sh` /

@@ -461,7 +461,7 @@ jobs:
           # Pull the .msi SHA256 from the published checksums file.
           # Asset name pattern set by cargo-packager: jarvy_<v>_x64_en-US.msi
           curl -fsSL \
-            "https://github.com/Cliftonz/Jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
+            "https://github.com/Cliftonz/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
             -o /tmp/sha256sums.txt
           MSI_SHA=$(awk -v p="jarvy_${VERSION}_x64_en-US.msi" \
             '$2 ~ p { print $1; exit }' /tmp/sha256sums.txt)

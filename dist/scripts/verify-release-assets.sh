@@ -23,7 +23,7 @@ if [[ -z "$TAG" ]]; then
   exit 64
 fi
 
-REPO="${JARVY_REPO:-Cliftonz/Jarvy}"
+REPO="${JARVY_REPO:-Cliftonz/jarvy}"
 WORKDIR="$(mktemp -d -t jarvy-verify-XXXXXX)"
 trap 'rm -rf "$WORKDIR"' EXIT
 

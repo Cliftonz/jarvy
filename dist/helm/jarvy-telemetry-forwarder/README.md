@@ -17,7 +17,7 @@ Registry:
 
 ```bash
 # Replace <version> with the current chart version. Latest release:
-# https://github.com/Cliftonz/Jarvy/releases?q=helm-v
+# https://github.com/Cliftonz/jarvy/releases?q=helm-v
 helm install jarvy-telemetry \
   oci://ghcr.io/Cliftonz/charts/jarvy-telemetry-forwarder \
   --version <version> \
@@ -29,7 +29,7 @@ the release notes for the full command):
 
 ```bash
 cosign verify \
-  --certificate-identity "https://github.com/Cliftonz/Jarvy/.github/workflows/helm-release.yml@refs/tags/helm-v<version>" \
+  --certificate-identity "https://github.com/Cliftonz/jarvy/.github/workflows/helm-release.yml@refs/tags/helm-v<version>" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   ghcr.io/Cliftonz/charts/jarvy-telemetry-forwarder:<version>
 ```

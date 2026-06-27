@@ -114,7 +114,7 @@ curl -LO https://github.com/Cliftonz/jarvy/releases/download/v1.0.0/jarvy-linux-
 cosign verify-blob \
   --signature jarvy-linux-x86_64.tar.gz.sig \
   --certificate jarvy-linux-x86_64.tar.gz.pem \
-  --certificate-identity-regexp "https://github.com/Cliftonz/Jarvy/" \
+  --certificate-identity-regexp "https://github.com/Cliftonz/jarvy/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   jarvy-linux-x86_64.tar.gz
 ```

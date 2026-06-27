@@ -164,7 +164,7 @@ path on macOS arm64, Ubuntu 22.04 x86_64, and Windows x86_64 on every
 installs `jarvy` to `~/.local/bin` (which falls through to
 `InstallMethod::Binary`), runs `jarvy update --version <target> --method
 binary`, and asserts the binary reports the target version. **Bootstrap
-caveat**: until [#30](https://github.com/Cliftonz/Jarvy/issues/30) ships
+caveat**: until [#30](https://github.com/Cliftonz/jarvy/issues/30) ships
 binary tarballs as release assets, the workflow detects the missing artifact
 and emits a `::warning::` instead of failing. The manual procedure below is
 the fallback while the gate is in bootstrap mode.
@@ -281,7 +281,7 @@ Pass criteria:
 - Every `jarvy*` artifact has a matching `.sig`, `.pem`, and `.bundle`
 - `cosign verify-blob --bundle <bundle> <file>` succeeds for every artifact,
   with `--certificate-identity-regexp` pinned to the
-  `Cliftonz/Jarvy/.github/workflows/release.yml@refs/tags/` subject and
+  `Cliftonz/jarvy/.github/workflows/release.yml@refs/tags/` subject and
   `--certificate-oidc-issuer` pinned to `token.actions.githubusercontent.com`
 - SBOM artifacts (`sbom.spdx.json`, `sbom.cdx.json`) parse as valid JSON and
   carry the format-distinguishing key (`bomFormat: "CycloneDX"` or
@@ -374,7 +374,7 @@ When the minimum soak duration has elapsed, **all** must be true to promote:
 - [ ] Paths 2/3/4 (upgrade, skip-version, rollback) PASS — green check run
       on the rc tag from `.github/workflows/release-paths.yml`. The workflow
       auto-fires on `release: published`. Until binary tarballs ship as
-      release assets ([#30](https://github.com/Cliftonz/Jarvy/issues/30)),
+      release assets ([#30](https://github.com/Cliftonz/jarvy/issues/30)),
       the workflow runs in **bootstrap mode** — it logs a `::warning::` and
       passes the check run without actually exercising `jarvy update`. The
       bootstrap waiver is in force only while #30 is open. Do not promote a

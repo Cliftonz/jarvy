@@ -16,11 +16,11 @@ PackageVersion: VERSION_PLACEHOLDER
 PackageLocale: en-US
 Publisher: Jarvy
 PublisherUrl: https://github.com/Cliftonz
-PublisherSupportUrl: https://github.com/Cliftonz/Jarvy/issues
+PublisherSupportUrl: https://github.com/Cliftonz/jarvy/issues
 PackageName: Jarvy
-PackageUrl: https://github.com/Cliftonz/Jarvy
+PackageUrl: https://github.com/Cliftonz/jarvy
 License: MIT OR Apache-2.0
-LicenseUrl: https://github.com/Cliftonz/Jarvy/blob/main/LICENSE
+LicenseUrl: https://github.com/Cliftonz/jarvy/blob/main/LICENSE
 ShortDescription: Fast, cross-platform CLI that installs and manages developer tools
 Description: |
   Jarvy provisions development environments from a jarvy.toml config file.
@@ -42,7 +42,7 @@ Tags:
 Installers:
   - Architecture: x64
     InstallerType: wix
-    InstallerUrl: https://github.com/Cliftonz/Jarvy/releases/download/vVERSION_PLACEHOLDER/jarvy_VERSION_PLACEHOLDER_x64_en-US.msi
+    InstallerUrl: https://github.com/Cliftonz/jarvy/releases/download/vVERSION_PLACEHOLDER/jarvy_VERSION_PLACEHOLDER_x64_en-US.msi
     InstallerSha256: SHA256_PLACEHOLDER
     InstallerLocale: en-US
     Scope: machine
