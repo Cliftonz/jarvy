@@ -39,3 +39,6 @@ __pycache__/
 # Sync happens in `.github/workflows/docs.yml`. Tracking both in git
 # is duplication for no benefit (see maintainability review v2 F3).
 docs/schema/jarvy-telemetry-forwarder.values.schema.json
+
+# JetBrains IDE state (RustRover / IntelliJ)
+.idea/
