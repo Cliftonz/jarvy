@@ -31,43 +31,48 @@ Run without a subcommand to use the interactive menu.
 Usage: jarvy [COMMAND]
 
 Commands:
-  setup        Set up the environment based on the configuration file
-  bootstrap    Perform a minimal machine bootstrap (base requirements only, no dev tooling)
-  configure    Generate a default jarvy.toml configuration in the current directory
-  get          Display configured tools vs what is actually installed
-  tools        List all supported tools or output the tool index
-  env          Manage environment variables from jarvy.toml
-  ci-config    Generate CI configuration files for various providers
-  ci-info      Show detected CI environment information
-  services     Manage project services (docker-compose, tilt)
-  doctor       Diagnose environment issues, check tool health, and verify PATH
-  diff         Preview changes before running setup (dry-run)
-  export       Generate jarvy.toml from currently installed tools
-  upgrade      Upgrade tools to their latest versions
-  init         Create a new jarvy.toml configuration file interactively
-  search       Search available tools that Jarvy can install
-  validate     Validate a jarvy.toml configuration file
-  completions  Generate shell completions
-  templates    Browse and use pre-built configuration templates
-  telemetry    Manage telemetry settings (OTEL endpoint, signals)
-  mcp          Start the MCP (Model Context Protocol) server for LLM integration
-  diagnose     Deep diagnosis for a specific tool - check installation, dependencies, and health
-  team         Manage team configuration sources for shared configs
-  roles        Manage role-based configurations (list, show, diff)
-  lock         Manage version lock files for reproducible environments
-  config       Manage configuration inheritance and remote configs
-  quickstart   Guided quickstart experience for new users
-  update       Check for and install Jarvy updates
-  drift        Detect configuration drift in the environment
-  logs         View and manage log files
-  ticket       Generate debug tickets for support
-  shell-init   Output shell initialization snippet for RC files. Add `eval "$(jarvy shell-init)"` to your .bashrc/.zshrc
-  ensure       Ensure base tools are installed (lightweight check for shell startup). Reads tool list from [shell_init] in ~/.jarvy/config.toml
-  explain      Get detailed information about a specific tool
-  audit        Run security scanners and produce a unified audit report
-  migrate      Check jarvy.toml for deprecated patterns and suggest migrations
-  schema       Output the JSON Schema for jarvy.toml (for editor autocomplete)
-  help         Print this message or the help of the given subcommand(s)
+  setup         Set up the environment based on the configuration file
+  bootstrap     Perform a minimal machine bootstrap (base requirements only, no dev tooling)
+  configure     Generate a default jarvy.toml configuration in the current directory
+  get           Display configured tools vs what is actually installed
+  tools         List all supported tools or output the tool index
+  env           Manage environment variables from jarvy.toml
+  ci-config     Generate CI configuration files for various providers
+  ci-info       Show detected CI environment information
+  services      Manage project services (docker-compose, tilt)
+  doctor        Diagnose environment issues, check tool health, and verify PATH
+  diff          Preview changes before running setup (dry-run)
+  export        Generate jarvy.toml from currently installed tools
+  upgrade       Upgrade tools to their latest versions
+  init          Create a new jarvy.toml configuration file interactively
+  search        Search available tools that Jarvy can install
+  validate      Validate a jarvy.toml configuration file
+  completions   Generate shell completions
+  templates     Browse and use pre-built configuration templates
+  registry      Sync + inspect the remote tool registry configured in ~/.jarvy/config.toml [registry]
+  telemetry     Manage telemetry settings (OTEL endpoint, signals)
+  mcp           Start the MCP (Model Context Protocol) server for LLM integration
+  diagnose      Deep diagnosis for a specific tool - check installation, dependencies, and health
+  team          Manage team configuration sources for shared configs
+  roles         Manage role-based configurations (list, show, diff)
+  lock          Manage version lock files for reproducible environments
+  config        Manage configuration inheritance and remote configs
+  quickstart    Guided quickstart experience for new users
+  update        Check for and install Jarvy updates
+  drift         Detect configuration drift in the environment
+  logs          View and manage log files
+  ticket        Generate debug tickets for support
+  shell-init    Output shell initialization snippet for RC files. Add `eval "$(jarvy shell-init)"` to your .bashrc/.zshrc
+  ensure        Ensure base tools are installed (lightweight check for shell startup). Reads tool list from [shell_init] in ~/.jarvy/config.toml
+  explain       Get detailed information about a specific tool
+  audit         Run security scanners and produce a unified audit report
+  migrate       Check jarvy.toml for deprecated patterns and suggest migrations
+  schema        Output the JSON Schema for jarvy.toml (for editor autocomplete)
+  ai-hooks      Manage AI agent hooks (Claude Code / Cursor / Codex / Windsurf / Cline / Continue)
+  mcp-register  Register the Jarvy MCP server with terminal AI agents
+  hooks         Manage git hook frameworks (pre-commit, husky, lefthook)
+  skills        Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
+  help          Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help
@@ -154,6 +159,8 @@ Usage: jarvy tools [OPTIONS]
 Options:
       --index                   Output the full tool index as JSON
       --default-hooks           List tools with built-in default hooks
+      --request <TOOL>          Generate a pre-filled GitHub issue URL and scaffold snippet for requesting support for an unsupported tool
+      --open                    With --request, open the pre-filled GitHub issue in the default browser instead of just printing the URL
   -F, --format <OUTPUT_FORMAT>  Output format: json, yaml, toml, pretty (for --index) [default: pretty] [possible values: json, yaml, toml, pretty]
   -o, --output <OUTPUT>         Optional file to write output to; prints to stdout if omitted
   -h, --help                    Print help
@@ -359,6 +366,23 @@ Commands:
   show  Show details of a specific template
   use   Use a template to create jarvy.toml
   help  Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+### `jarvy registry`
+
+```text
+Sync + inspect the remote tool registry configured in ~/.jarvy/config.toml [registry]
+
+Usage: jarvy registry <COMMAND>
+
+Commands:
+  sync    Fetch the remote registry: verify signature, sha-verify each tool TOML, and cache under ~/.jarvy/tools.d/.remote/. The next `jarvy setup` / `jarvy validate` run picks up the synced tools via the plugin loader
+  status  Show the last sync's metadata (URL, count, timestamp, signature-verified flag)
+  clear   Clear the local registry cache. Synced tools disappear on next startup until you run `jarvy registry sync` again
+  help    Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
@@ -656,6 +680,85 @@ Usage: jarvy schema [OPTIONS]
 Options:
   -o, --output <OUTPUT>  Write to file instead of stdout
   -h, --help             Print help
+```
+
+### `jarvy ai-hooks`
+
+```text
+Manage AI agent hooks (Claude Code / Cursor / Codex / Windsurf / Cline / Continue)
+
+Usage: jarvy ai-hooks [OPTIONS] <COMMAND>
+
+Commands:
+  list    List provisioned hooks or the built-in library
+  apply   Write hook configs to every targeted AI agent
+  check   Diff desired vs. on-disk state (exit 1 if drift)
+  remove  Strip jarvy-managed entries from every targeted agent
+  test    Inspect a single library hook (event, matcher, script bodies)
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -f, --file <FILE>  Path to the configuration file [default: ./jarvy.toml]
+  -h, --help         Print help
+```
+
+### `jarvy mcp-register`
+
+```text
+Register the Jarvy MCP server with terminal AI agents
+
+Usage: jarvy mcp-register [OPTIONS] <COMMAND>
+
+Commands:
+  list    Show what's in jarvy.toml + agent → path mapping
+  apply   Register the Jarvy MCP server with every targeted agent
+  check   Diff desired vs. on-disk state (exit 1 if drift)
+  remove  Strip jarvy-managed entries from every targeted agent
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -f, --file <FILE>  Path to the configuration file [default: ./jarvy.toml]
+  -h, --help         Print help
+```
+
+### `jarvy hooks`
+
+```text
+Manage git hook frameworks (pre-commit, husky, lefthook)
+
+Usage: jarvy hooks [OPTIONS] <COMMAND>
+
+Commands:
+  install    Install the configured git hook framework into `.git/hooks/`
+  update     Run `pre-commit autoupdate` then reinstall hooks
+  status     Show framework + installation status
+  list       List configured hooks from `.pre-commit-config.yaml`
+  run        Run hooks once (defaults to changed files; `--all-files` for whole tree)
+  uninstall  Remove jarvy-installed hooks (calls `pre-commit uninstall`)
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -f, --file <FILE>  Path to the configuration file [default: ./jarvy.toml]
+  -h, --help         Print help
+```
+
+### `jarvy skills`
+
+```text
+Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
+
+Usage: jarvy skills [OPTIONS] <COMMAND>
+
+Commands:
+  install  Install every skill from `[skills.install]`, or a single named skill
+  list     List skills declared in jarvy.toml + their installation status across agents
+  status   Drift check: which configured skills are missing / out-of-version per agent
+  agents   Show which AI agents are detected on disk
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -f, --file <FILE>  Path to the configuration file [default: ./jarvy.toml]
+  -h, --help         Print help
 ```
 
 ### `jarvy help`

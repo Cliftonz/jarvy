@@ -23,6 +23,31 @@ Before starting validation, confirm:
   fault-injection drills are required.
 - **Cohort environment**: see [Cohort Environment](#cohort-environment) below.
 
+## CI gate (automatic — runs on every tag push)
+
+`release.yml` will not build, sign, or publish artifacts unless the
+`Test` workflow (`test.yml`) reports `conclusion = success` for the
+same commit SHA the tag points at. The gate is enforced by a
+`wait_for_tests` job in `release.yml` that polls
+`gh run list --workflow=test.yml --commit=<sha>` every 30 s for up
+to 15 minutes:
+
+- All matrix entries (Linux + macOS + Windows + lint + doctests) must
+  be `success`. Any `failure` / `cancelled` / `timed_out` fails the
+  gate immediately — the artifact build does NOT run.
+- The 15-minute budget is usually shorter than the artifact build
+  itself, so the gate rarely extends the release critical path.
+- Skipped on `workflow_dispatch`: a manual operator-triggered release
+  is an explicit override (the same shape as `verify_tag`'s
+  signed-tag bypass for `workflow_dispatch`).
+
+This means **the cross-OS test matrix is now part of the release
+gate**, not just a parallel sanity check. The validation checklist
+below is what runs ON TOP of CI — operator-driven validation for
+soak-worthy changes. The CI gate alone is sufficient for trivial
+patch releases; the checklist applies when the trigger matrix
+(below) says it does.
+
 ## Validation Checklist
 
 Copy and track progress on the soak issue:

@@ -2,10 +2,11 @@
 prd: 055-git-skill-sources
 title: Git-shorthand for skill sources — point [skills.library_sources] at a repo, not a manifest
 version: 1.0
-status: in_progress
+status: completed
 priority: medium
 estimated_days: 3
 created: 2026-06-28
+completed: 2026-06-28
 ---
 
 # PRD-055: Git-shorthand for skill sources

@@ -553,6 +553,14 @@ cargo test
 cargo clippy
 ```
 
+> **CI gate:** as of 2026-06-28, `release.yml` will not build or
+> publish artifacts unless `test.yml` reports green for the tag's
+> commit SHA (Linux + macOS + Windows + doctests). A red local
+> `cargo test` will block the release at the `wait_for_tests` job —
+> fix tests first. See [docs/release-testing.md](release-testing.md)
+> for the gate details. `workflow_dispatch` releases bypass the gate
+> as an explicit operator override.
+
 2. **Create the release:**
 ```bash
 # For patch release (0.1.0 -> 0.1.1)
