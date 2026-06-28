@@ -1,16 +1,25 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-01-18",
+  "last_updated": "2026-06-28",
   "contributors": [
     {
-      "username": "zacclifton",
+      "username": "Cliftonz",
       "name": "Zac Clifton",
-      "url": "https://github.com/zacclifton",
-      "avatar": "https://avatars.githubusercontent.com/u/zacclifton",
-      "roles": ["maintainer", "contributor"],
+      "roles": [
+        "contributor"
+      ],
       "tools": [],
-      "commits": 200,
-      "first_contribution": "2024-01-01",
+      "commits": 345,
+      "active": true
+    },
+    {
+      "username": "dependabot[bot]",
+      "name": "dependabot[bot]",
+      "roles": [
+        "contributor"
+      ],
+      "tools": [],
+      "commits": 2,
       "active": true
     }
   ]
