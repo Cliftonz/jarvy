@@ -148,13 +148,15 @@ pub fn install_skill(
         installed_agents.push(*agent);
     }
 
-    tracing::info!(
-        event = "skills.installed",
-        skill = %name,
-        version = %item.version,
-        agent_count = installed_agents.len(),
-        skipped_count = skipped.len(),
-    );
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "skills.installed",
+            skill = %name,
+            version = %item.version,
+            agent_count = installed_agents.len(),
+            skipped_count = skipped.len(),
+        );
+    }
 
     Ok(InstallResult {
         name: name.to_string(),

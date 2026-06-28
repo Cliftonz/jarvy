@@ -31,11 +31,13 @@ impl PreCommitHandler {
         if let Some(ref required) = self.config.version {
             let installed = get_version()?;
             if installed.trim() != required.trim() {
-                tracing::info!(
-                    event = "git_hooks.pre_commit_version_mismatch",
-                    installed = %installed,
-                    required = %required,
-                );
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::info!(
+                        event = "git_hooks.pre_commit_version_mismatch",
+                        installed = %installed,
+                        required = %required,
+                    );
+                }
                 self.upgrade(required)?;
             }
         }
@@ -63,11 +65,13 @@ impl PreCommitHandler {
             )));
         }
 
-        tracing::info!(
-            event = "git_hooks.installed",
-            framework = "pre-commit",
-            install_hooks = self.config.install_hooks,
-        );
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "git_hooks.installed",
+                framework = "pre-commit",
+                install_hooks = self.config.install_hooks,
+            );
+        }
 
         Ok(())
     }
@@ -101,7 +105,9 @@ impl PreCommitHandler {
             )));
         }
 
-        tracing::info!(event = "git_hooks.updated", framework = "pre-commit");
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(event = "git_hooks.updated", framework = "pre-commit");
+        }
         Ok(())
     }
 

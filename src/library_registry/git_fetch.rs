@@ -51,7 +51,13 @@ pub fn sync_git(
 ) -> Result<(Manifest, GitSyncReport), LibraryError> {
     ensure_git_available()?;
 
-    if is_mutable_ref(git_ref) {
+    // Telemetry gate (review item 7). New library.git.* events were
+    // emitted unconditionally; per CLAUDE.md every domain-scoped event
+    // must honor `telemetry_gate::is_enabled()` so users who opt out
+    // of OTLP don't ship breadcrumbs.
+    let telemetry_on = crate::observability::telemetry_gate::is_enabled();
+
+    if is_mutable_ref(git_ref) && telemetry_on {
         tracing::warn!(
             event = "library.git.mutable_ref",
             repo = %crate::network::redact_credentials(repo),
@@ -63,11 +69,13 @@ pub fn sync_git(
     let clone_dir = cache_dir.join("git");
     let started = std::time::Instant::now();
     if !clone_dir.exists() {
-        tracing::info!(
-            event = "library.git.clone_started",
-            repo = %crate::network::redact_credentials(repo),
-            git_ref = %git_ref,
-        );
+        if telemetry_on {
+            tracing::info!(
+                event = "library.git.clone_started",
+                repo = %crate::network::redact_credentials(repo),
+                git_ref = %git_ref,
+            );
+        }
         ensure_parent(&clone_dir)?;
         git_clone_and_checkout(repo, git_ref, &clone_dir)?;
     } else {
@@ -94,14 +102,16 @@ pub fn sync_git(
         items,
     };
 
-    tracing::info!(
-        event = "library.git.clone_completed",
-        repo = %crate::network::redact_credentials(repo),
-        git_ref = %git_ref,
-        subpath = %subpath.unwrap_or(""),
-        skills_discovered,
-        duration_ms = started.elapsed().as_millis() as u64,
-    );
+    if telemetry_on {
+        tracing::info!(
+            event = "library.git.clone_completed",
+            repo = %crate::network::redact_credentials(repo),
+            git_ref = %git_ref,
+            subpath = %subpath.unwrap_or(""),
+            skills_discovered,
+            duration_ms = started.elapsed().as_millis() as u64,
+        );
+    }
 
     let report = GitSyncReport {
         repo: repo.to_string(),
@@ -120,7 +130,9 @@ fn ensure_git_available() -> Result<(), LibraryError> {
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !ok {
-        tracing::warn!(event = "library.git.missing_git", os = std::env::consts::OS,);
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(event = "library.git.missing_git", os = std::env::consts::OS,);
+        }
         return Err(LibraryError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "`git` CLI not found on PATH. Install git (e.g. `jarvy setup` with \
@@ -226,12 +238,14 @@ fn run_git(args: &[&str], cwd: Option<&Path>) -> Result<(), LibraryError> {
             .map(|c| c.as_ref())
             .collect::<Vec<_>>()
             .join(" ");
-        tracing::warn!(
-            event = "library.git.clone_failed",
-            args = %redacted_args_joined,
-            exit = %output.status.code().unwrap_or(-1),
-            error = %redacted,
-        );
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "library.git.clone_failed",
+                args = %redacted_args_joined,
+                exit = %output.status.code().unwrap_or(-1),
+                error = %redacted,
+            );
+        }
         return Err(LibraryError::Io(std::io::Error::other(format!(
             "git {} failed: {}",
             redacted_args_joined, redacted
@@ -324,10 +338,12 @@ fn walk_dir(
             Err(_) => continue,
         };
         if file_type.is_symlink() {
-            tracing::info!(
-                event = "library.git.symlink_skipped",
-                path = %path.strip_prefix(canon_root).unwrap_or(&path).display(),
-            );
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::info!(
+                    event = "library.git.symlink_skipped",
+                    path = %path.strip_prefix(canon_root).unwrap_or(&path).display(),
+                );
+            }
             continue;
         }
         if file_type.is_dir() {
@@ -346,20 +362,24 @@ fn walk_dir(
                 Err(_) => continue,
             };
             if !canon_path.starts_with(canon_root) {
-                tracing::warn!(
-                    event = "library.git.path_escape_refused",
-                    canon_path = %canon_path.display(),
-                );
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "library.git.path_escape_refused",
+                        canon_path = %canon_path.display(),
+                    );
+                }
                 continue;
             }
             match build_skill_item(canon_root, &canon_path) {
                 Ok(item) => items.push(LibraryItem::Skill(item)),
                 Err(reason) => {
-                    tracing::info!(
-                        event = "library.git_skill.skipped",
-                        path = %canon_path.strip_prefix(canon_root).unwrap_or(&canon_path).display(),
-                        reason = %reason,
-                    );
+                    if crate::observability::telemetry_gate::is_enabled() {
+                        tracing::info!(
+                            event = "library.git_skill.skipped",
+                            path = %canon_path.strip_prefix(canon_root).unwrap_or(&canon_path).display(),
+                            reason = %reason,
+                        );
+                    }
                 }
             }
         }
@@ -469,10 +489,12 @@ pub fn read_file_url(url: &str) -> Result<Vec<u8>, LibraryError> {
         .canonicalize()
         .map_err(LibraryError::Io)?;
     if !canon_path.starts_with(&canon_root) {
-        tracing::warn!(
-            event = "library.file_url_refused",
-            reason = "outside_cache_root",
-        );
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "library.file_url_refused",
+                reason = "outside_cache_root",
+            );
+        }
         return Err(LibraryError::Parse {
             url: url.to_string(),
             source: serde::de::Error::custom(

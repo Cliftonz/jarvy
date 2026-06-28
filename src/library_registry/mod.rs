@@ -162,7 +162,23 @@ pub fn sync(source: &LibrarySource) -> Result<SyncReport, LibraryError> {
                     }
                     (m, true)
                 }
-                Ok(None) | Err(_) => return Err(fetch_err),
+                Ok(None) | Err(_) => {
+                    // Review item 8 (P0). Previously every sync failure
+                    // returned silently to the caller; on-call could not
+                    // compute "what fraction of library syncs failed in
+                    // the last hour." Emit a structured event so
+                    // dashboards can graph the failure rate.
+                    if telemetry_on {
+                        tracing::error!(
+                            event = "library.sync.failed",
+                            url = %crate::network::redact_credentials(&source.url),
+                            scheme = "manifest",
+                            error_kind = fetch_err.kind(),
+                            error = %fetch_err,
+                        );
+                    }
+                    return Err(fetch_err);
+                }
             },
         },
         url_parser::SourceScheme::Git {
@@ -199,7 +215,20 @@ pub fn sync(source: &LibrarySource) -> Result<SyncReport, LibraryError> {
                         }
                         (m, true)
                     }
-                    Ok(None) | Err(_) => return Err(git_err),
+                    Ok(None) | Err(_) => {
+                        // Review item 8 (P0) — see manifest-branch
+                        // counterpart above.
+                        if telemetry_on {
+                            tracing::error!(
+                                event = "library.sync.failed",
+                                url = %crate::network::redact_credentials(&source.url),
+                                scheme = "git",
+                                error_kind = git_err.kind(),
+                                error = %git_err,
+                            );
+                        }
+                        return Err(git_err);
+                    }
                 },
             }
         }

@@ -163,11 +163,17 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | `skills.installed` | per-skill install success | `skill`, `version`, `agent_count`, `skipped_count` |
 | `library.git.clone_started` | begin git clone (PRD-055) | `repo` (redacted), `git_ref` |
 | `library.git.clone_completed` | clone + SKILL.md walk succeeded | `repo`, `git_ref`, `subpath`, `skills_discovered`, `duration_ms` |
-| `library.git.clone_failed` | `git` subprocess exit nonzero | `args`, `exit`, `error` (redacted) |
+| `library.git.clone_failed` | `git` subprocess exit nonzero | `args` (per-arg redacted — review item 6), `exit`, `error` (redacted) |
 | `library.git.cache_hit` | served from clone cache after git failure | `url`, `reason = "git_failed"` |
 | `library.git.mutable_ref` | branch ref pinned (publishers can rev silently) | `repo`, `git_ref`, `advice` |
 | `library.git.missing_git` | `git` CLI not on PATH | `os` |
+| `library.git.symlink_skipped` | symlink in cloned repo refused (review item 2) | `path` (relative to clone root) |
+| `library.git.path_escape_refused` | SKILL.md canonicalizes outside clone root (review item 2 defense-in-depth) | `canon_path` |
 | `library.git_skill.skipped` | SKILL.md missing required frontmatter | `path`, `reason` (missing name / version / parse fail) |
+| `library.file_url_refused` | `file://` URL points outside cache root (review item 3) | `reason = "outside_cache_root"` |
+| `library.sync.failed` | every sync error path (review item 8) | `url`, `scheme = "manifest" \| "git"`, `error_kind`, `error` |
+
+**Telemetry gate.** Every `library.*`, `library.git.*`, `library.git_skill.*`, `skills.*`, `git_hooks.*`, and `package.*` event reads `observability::telemetry_gate::is_enabled()` before emitting. Users with `telemetry.enabled = false` don't ship event breadcrumbs even when the OTLP exporter is otherwise configured. Review item 7 (P0) — previously the new `library.git.*` / `skills.*` / `git_hooks.*` domains bypassed the gate; now consistent with `packages.*`.
 
 **`tool.unsupported` fields** (uniform across setup and `--request`):
 ```
