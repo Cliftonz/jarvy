@@ -108,13 +108,50 @@ env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `name` | string | yes | Server identifier; used as the key in each agent's `mcpServers` object. |
+| `name` | string | yes (when no `use`) | Server identifier; used as the key in each agent's `mcpServers` object. |
 | `transport` | `"stdio"` \| `"http"` | yes | `stdio` requires `command`; `http` requires `url`. |
 | `command` | string | stdio only | Binary to spawn. |
 | `args` | array | optional | Arguments. |
 | `url` | string | http only | HTTP / streamable-http endpoint. |
 | `env` | table | optional | Env vars (stdio only on most agents). |
 | `agents` | array | optional | Narrow to a subset of the top-level `agents` list. |
+| `use` | string | optional | Reference a library item by name (PRD-054). See below. |
+
+---
+
+## Library MCP servers (PRD-054)
+
+Beyond the built-in `jarvy` server, teams can publish reusable MCP servers in a library manifest and consume them across every developer. See [library registry](library-registry.md) for the full format.
+
+```toml
+[mcp_register]
+agents = ["claude-code", "cursor"]
+allow_custom_servers = true                     # required to enable library servers
+
+[[mcp_register.library_sources]]
+url = "https://cdn.myorg.com/jarvy/manifest.json"
+
+# Reference a library item by name:
+[[mcp_register.server]]
+use = "myorg-tickets"
+
+# Override library defaults locally (env wins over library env):
+[[mcp_register.server]]
+use = "myorg-tickets-pro"
+env = { LINEAR_API_KEY = "${LINEAR_API_KEY}" }
+```
+
+When `use = "..."` is set, Jarvy pulls `command` / `args` / `env` from the resolved library item. Any field declared on the local spec wins — so the team's published `LINEAR_API_KEY = "${LINEAR_API_KEY}"` is the recipe and the developer's local override (e.g. a different LINEAR workspace) takes precedence.
+
+### Resolution order
+
+1. Built-in `jarvy` server — always registers, no `use` needed.
+2. Inline `[[mcp_register.server]]` with explicit fields (subject to `allow_custom_servers` + local-origin gate).
+3. Library-resolved entries via `use = "..."` (subject to `allow_custom_servers` + the new `library_sources` trust gate).
+
+### Trust gate
+
+Remote-fetched configs (`jarvy setup --from <url>`) CANNOT declare `library_sources`. Refused with `library.remote_refused` event. Same boundary as `[ai_hooks]` / `[skills]` and `[packages] allow_remote`. There is no override flag.
 
 ---
 

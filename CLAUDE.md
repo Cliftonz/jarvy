@@ -147,6 +147,20 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | `registry.cache.index_hit` / `registry.cache.index_miss` | plugin loader read the index cache (debug) | `tools_count`, `synced_at_unix` / `reason` |
 | `registry.cli.sync_failed` | `jarvy registry sync` exit-code mapping | bounded `error_kind` label only |
 | `signature.skipped` / `signature.verified` / `signature.failed` | cosign verify path (was `update.signature.*` — renamed because shared with registry) | `file`, plus `reason` (skipped) or `error` (failed) |
+| `git_hooks.phase_started` / `git_hooks.phase_completed` | setup `run_git_hooks_phase` (PRD-048) | `dry_run`, `installed`, `duration_ms` |
+| `git_hooks.phase_skipped` | no framework detected | `reason` |
+| `git_hooks.phase_previewed` | dry-run preview | `framework` |
+| `git_hooks.remote_refused` | remote config tried auto_install | `reason = "allow_remote_not_set"` |
+| `git_hooks.install_failed` | install_hooks returned error | `error_kind`, `error` |
+| `git_hooks.installed` / `git_hooks.updated` | per-framework op | `framework = "pre-commit"`, `install_hooks` (for installed) |
+| `git_hooks.pre_commit_version_mismatch` | version pin triggered upgrade | `installed`, `required` |
+| `library.sync.started` | per-source fetch begins (PRD-054) | `url` (redacted), `require_signature` |
+| `library.sync.completed` | fetch + parse OK | `url`, `items_synced`, `ai_hook_count`, `mcp_server_count`, `skill_count`, `from_cache`, `signature_verified` |
+| `library.fetch.cached_hit` | served from disk cache after network failure | `url`, `reason = "fetch_failed"` |
+| `library.cache.write_failed` | disk-write best-effort failure (non-fatal) | `url`, `error` |
+| `library.signature_disabled` | `require_signature = false` warning | `url` |
+| `library.remote_refused` | trust gate — remote config declared `library_sources` | `consumer = "ai_hooks" \| "mcp_register" \| "skills"`, `reason` |
+| `skills.installed` | per-skill install success | `skill`, `version`, `agent_count`, `skipped_count` |
 
 **`tool.unsupported` fields** (uniform across setup and `--request`):
 ```

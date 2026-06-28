@@ -487,6 +487,58 @@ eslint = "latest"
 pytest = ">=7.0"
 black = "latest"
 venv = ".venv"
+
+# 6 ecosystems total: [npm], [pip], [cargo], [nuget], [gem], [go].
+```
+
+**Distribute AI guardrails + MCP servers + skills across every developer:**
+
+```toml
+[ai_hooks]
+agents = ["claude-code", "cursor", "codex"]
+
+[[ai_hooks.hook]]
+use = "block-rm-rf"                          # built-in library hook
+
+[mcp_register]
+agents = ["claude-code", "cursor"]
+# Built-in jarvy server auto-registers; no entries needed.
+
+[skills]
+agents = ["claude-code", "cursor"]
+```
+
+**Pull reusable hooks / MCP servers / skills from a team library (PRD-054):**
+
+```toml
+[[ai_hooks.library_sources]]
+url = "https://cdn.myorg.com/jarvy/manifest.json"
+
+[[ai_hooks.hook]]
+use = "myorg/no-prod-deploys"                # resolves from library_sources
+
+[[mcp_register.library_sources]]
+url = "https://cdn.myorg.com/jarvy/manifest.json"
+
+[[mcp_register.server]]
+use = "myorg-tickets"                        # spec fields override library defaults
+
+[[skills.library_sources]]
+url = "https://cdn.myorg.com/jarvy/manifest.json"
+
+[skills.install]
+myorg-code-review = "2.1.0"
+```
+
+Remote-fetched configs (`jarvy setup --from <url>`) CANNOT declare
+`library_sources`. The URL must live in the user's own local
+`jarvy.toml` or `~/.jarvy/config.toml`. See [library registry](library-registry.md) for the manifest format.
+
+**Install pre-commit hooks during setup:**
+
+```toml
+[git_hooks]
+# Block presence is the opt-in. Auto-detects from .pre-commit-config.yaml.
 ```
 
 ### When a tool isn't supported

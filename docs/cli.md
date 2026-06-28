@@ -352,6 +352,60 @@ jarvy mcp
 
 ---
 
+## AI Integration Commands
+
+### `jarvy ai-hooks`
+
+Manage AI agent guardrail hooks (Claude Code, Cursor, Codex, Windsurf, Cline, Continue). See the [AI Hooks guide](ai-hooks.md).
+
+```bash
+jarvy ai-hooks list                  # show what's configured
+jarvy ai-hooks list --library        # show built-in library hooks
+jarvy ai-hooks apply                 # write hooks to every targeted agent
+jarvy ai-hooks check                 # diff desired vs. on-disk (exit 1 if drift)
+jarvy ai-hooks remove                # strip jarvy-managed entries
+```
+
+### `jarvy mcp-register`
+
+Register the Jarvy MCP server (and optional library/custom servers) with terminal AI agents. See the [MCP Registration guide](mcp-registration.md).
+
+```bash
+jarvy mcp-register list              # show what's configured
+jarvy mcp-register apply             # write registrations to every targeted agent
+jarvy mcp-register check             # diff desired vs. on-disk
+jarvy mcp-register remove            # strip jarvy-managed entries
+```
+
+### `jarvy skills`
+
+Install AI agent skills from a library manifest URL across detected agents. See the [Skills guide](skills.md). PRD-049 + PRD-054.
+
+```bash
+jarvy skills install                 # install every skill from [skills.install]
+jarvy skills install --name <skill>  # install one named skill
+jarvy skills list                    # show configured skills + per-agent status
+jarvy skills status                  # drift summary
+jarvy skills agents                  # which AI agents are detected on disk
+```
+
+### `jarvy hooks`
+
+Manage git pre-commit framework hooks. See the [Git Hooks guide](git-hooks.md). PRD-048.
+
+```bash
+jarvy hooks install                  # install framework into .git/hooks/
+jarvy hooks update                   # pre-commit autoupdate + reinstall
+jarvy hooks status                   # framework + installed?  + hook count
+jarvy hooks list                     # configured hooks from .pre-commit-config.yaml
+jarvy hooks run                      # run hooks against staged changes
+jarvy hooks run --all-files          # run against entire tree
+jarvy hooks run --hook black         # run a single hook by id
+jarvy hooks uninstall                # pre-commit uninstall
+```
+
+---
+
 ## Exit Codes
 
 | Code | Name | Meaning |

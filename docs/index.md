@@ -182,10 +182,13 @@ That's the entire onboarding flow. Add it to `README.md`, push to `main`, every 
 
 | | |
 |---|---|
-| **200+ tools** | git, node, python, go, rust, docker, kubectl, terraform, awscli, gcloud, azure_cli, psql, redis-cli, … |
+| **235+ tools** | git, node, python, go, rust, docker, kubectl, terraform, awscli, gcloud, azure_cli, psql, redis-cli, … |
 | **Native package managers** | Homebrew (macOS), apt/dnf/pacman/apk (Linux), winget/Chocolatey/Scoop (Windows) |
-| **Language packages** | npm/pnpm/yarn, pip + venv, cargo, with lockfile-aware installs |
+| **6 language ecosystems** | `[npm]`, `[pip]`, `[cargo]`, `[nuget]`, `[gem]`, `[go]` — lockfile-aware where applicable |
 | **Hooks** | `pre_setup`, `post_setup`, per-tool `post_install` — shell scripts with sandboxed env vars |
+| **Git pre-commit hooks** | `[git_hooks]` installs the pre-commit framework during `jarvy setup` |
+| **AI agent integration** | `[ai_hooks]` guardrails + `[mcp_register]` server registration + `[skills]` skill install across Claude Code / Cursor / Codex / Windsurf / Cline / Continue |
+| **Library registry** | Publish reusable AI hooks, MCP servers, and skills at any HTTPS URL; consumers reference by `use = "name"` — see [library registry](library-registry.md) |
 | **Roles** | Inheritable tool sets with per-role version overrides, max 5 levels deep |
 | **Templates** | 14 ready-to-use `jarvy.toml` files for Node, Python, Go, Rust, Ruby, Java, fullstack, K8s |
 | **Drift detection** | SHA-256 file hashes + version policy (major/minor/patch/exact) |

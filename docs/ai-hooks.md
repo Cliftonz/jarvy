@@ -172,6 +172,48 @@ Most library hooks map cleanly onto each agent's native protocol. A few edge cas
 
 ---
 
+## Third-party hook libraries (PRD-054)
+
+The built-in `LIBRARY` const is Jarvy-authored and audited. Teams that want to ship their own reusable hooks publish a manifest at any HTTPS URL and point `library_sources` at it. See [library registry](library-registry.md) for the full manifest format.
+
+```toml
+[ai_hooks]
+agents = ["claude-code", "cursor"]
+
+[[ai_hooks.library_sources]]
+url = "https://cdn.myorg.com/jarvy/manifest.json"
+
+# Built-in (audited by Jarvy):
+[[ai_hooks.hook]]
+use = "block-rm-rf"
+
+# Third-party (audited by your publisher):
+[[ai_hooks.hook]]
+use = "no-prod-deploys"
+```
+
+### Resolution order
+
+When a `use = "..."` entry is resolved:
+
+1. **Built-in `LIBRARY` const** is checked first. Name collision favors the canonical Jarvy-shipped hook.
+2. **Library items** from cached `library_sources` manifests are checked in declaration order. First match wins.
+3. If nothing matches, the run fails with `AiHookError::UnknownLibraryHook`.
+
+This ordering means a publisher cannot accidentally (or deliberately) shadow a built-in hook by reusing its name — the built-in always wins.
+
+### Trust gate
+
+Remote-fetched configs (`jarvy setup --from <url>`) CANNOT declare `library_sources`. Refused with `library.remote_refused` event. There is no override flag — teams ship the URL via each developer's local `~/.jarvy/config.toml` instead.
+
+This mirrors the `allow_custom_commands` boundary: a friendly-looking remote config cannot silently land arbitrary hook URLs on the consuming machine.
+
+### Inline `bash` only in v1
+
+Library AI hook entries must carry their script body inline (`bash:` / `powershell:` fields on the manifest item). The `bash_url` / `bash_sha256` companion-fetch path parses but is not honored in v1 — a `use = "..."` entry that resolves to a URL-only library item fails with a clear error. Tracked as PRD-054 follow-up.
+
+---
+
 ## CLI
 
 ```bash
