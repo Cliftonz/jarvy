@@ -54,12 +54,110 @@ jobs:
           tag-prefix: "v"
           check-release-exists: "true"
 
+  # Hard gate: refuse to ship if the Test workflow (test.yml) hasn't
+  # gone green for this tag's commit SHA. test.yml + release.yml both
+  # trigger on the same `v*` tag push but run in parallel — without
+  # this gate, a tag push could publish artifacts even if integration
+  # / E2E tests reported failures.
+  #
+  # Skipped on workflow_dispatch: manual releases are an explicit
+  # operator override (matches `verify_tag`'s shape). The audit trail
+  # is the operator's invocation, not a CI green check.
+  #
+  # Polls via `gh` CLI (preinstalled on GH-hosted runners) — avoids a
+  # third-party action dependency. 15 min total budget at 30s
+  # intervals: enough for the Linux + macOS + Windows test matrix to
+  # complete; less than the typical artifact-build wall time so this
+  # rarely extends the critical path.
+  wait_for_tests:
+    name: Wait for Test workflow (green required)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [verify_tag]
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Poll test.yml status for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          DEADLINE=$(( SECONDS + 15 * 60 ))
+          ATTEMPT=0
+
+          echo "Waiting for Test workflow on commit ${COMMIT_SHA}..."
+          while [ $SECONDS -lt $DEADLINE ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            # `gh run list` with JSON fields the API guarantees. Filter
+            # by workflow file name + the exact commit SHA so we don't
+            # accidentally match the test run for a different ref that
+            # happened to share the SHA (rare but possible on
+            # cherry-picks).
+            RESULT=$(gh run list \
+              --repo "$REPO" \
+              --workflow=test.yml \
+              --commit="$COMMIT_SHA" \
+              --limit 5 \
+              --json status,conclusion,name,databaseId \
+              || echo '[]')
+
+            # Parse without jq's `--exit-status` to keep set -e safe.
+            CONCLUSIONS=$(echo "$RESULT" | jq -r '.[].conclusion // "pending"')
+            STATUSES=$(echo "$RESULT" | jq -r '.[].status // "pending"')
+
+            if [ -z "$STATUSES" ]; then
+              echo "[$ATTEMPT] No test.yml runs found yet for $COMMIT_SHA; sleeping 30s..."
+              sleep 30
+              continue
+            fi
+
+            # If ANY run for this commit failed/cancelled/timed_out,
+            # fail the release immediately. Don't wait for the rest —
+            # one red is enough.
+            if echo "$CONCLUSIONS" | grep -E -q '^(failure|cancelled|timed_out|action_required|stale)$'; then
+              echo "::error::Test workflow reported failure for $COMMIT_SHA. Refusing to release."
+              echo "$RESULT" | jq -r '.[] | "  \(.name) → status=\(.status) conclusion=\(.conclusion) (run \(.databaseId))"'
+              exit 1
+            fi
+
+            # All runs accounted for AND all green?
+            if echo "$STATUSES" | grep -qv "completed"; then
+              # Some still in_progress / queued — keep waiting.
+              echo "[$ATTEMPT] Test runs still in flight; sleeping 30s..."
+              echo "$RESULT" | jq -r '.[] | "  \(.name) → status=\(.status)"'
+              sleep 30
+              continue
+            fi
+
+            if echo "$CONCLUSIONS" | grep -qv "success"; then
+              # Completed but not all success — should have been caught
+              # by the failure grep above, but defense in depth.
+              echo "::error::Test workflow completed with non-success conclusion for $COMMIT_SHA."
+              echo "$RESULT" | jq -r '.[] | "  \(.name) → conclusion=\(.conclusion)"'
+              exit 1
+            fi
+
+            echo "Test workflow green for $COMMIT_SHA. Proceeding with release."
+            exit 0
+          done
+
+          echo "::error::Timed out waiting for Test workflow (15 min budget). Re-run after tests complete."
+          exit 1
+
   build_and_package:
     name: Build & Package
     runs-on: ${{ matrix.platform }}
-    needs: [verify_tag]
-    # verify_tag is skipped on workflow_dispatch; allow that to count as success.
-    if: always() && (needs.verify_tag.result == 'success' || needs.verify_tag.result == 'skipped')
+    needs: [verify_tag, wait_for_tests]
+    # Both gates are skipped on workflow_dispatch; allow either skip
+    # OR success to count as green. A failure on either explicitly
+    # blocks release.
+    if: |
+      always()
+      && (needs.verify_tag.result == 'success' || needs.verify_tag.result == 'skipped')
+      && (needs.wait_for_tests.result == 'success' || needs.wait_for_tests.result == 'skipped')
     permissions:
       contents: read
     strategy:
