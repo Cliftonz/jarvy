@@ -37,7 +37,7 @@ Cross-platform CLI that provisions dev environments from `jarvy.toml` using nati
 - `src/network/` — proxy + CA bundle resolution. Priority: env > tool override > global. Propagates `HTTP(S)_PROXY`, `NO_PROXY`, `CURL_CA_BUNDLE`, `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`.
 - `src/git/` — git config automation (identity, signing, aliases). `ConfigValue` = plain string or `{ env, default }`. Signing format auto-detected (`.pub` → ssh, else gpg). Credential helper defaults per-OS.
 - `src/git_hooks/` — pre-commit framework integration (PRD-048). `[git_hooks]` block in `jarvy.toml`. Auto-install during `jarvy setup` between git-config and ai-hooks phases. Husky / lefthook detected but handlers stubbed (`UnsupportedFramework` error). Remote-config trust gate via `[git_hooks] allow_remote`.
-- `src/library_registry/` — shared library-registry pattern (PRD-054) reused by `[ai_hooks] library_sources`, `[mcp_register] library_sources`, `[skills] library_sources`. One manifest format (`{schema_version, publisher, items: [{kind: ai_hook|mcp_server|skill, ...}]}`), HTTPS-bounded fetch, on-disk cache at `~/.jarvy/library.d/<sha256-of-url>/`, in-process resolver. Remote-fetched configs CANNOT declare `library_sources` (`library_registry::check_origin` refusal). Cosign sig verify scaffolded but not enforced in v1.
+- `src/library_registry/` — shared library-registry pattern (PRD-054) reused by `[ai_hooks] library_sources`, `[mcp_register] library_sources`, `[skills] library_sources`. Three URL schemes: `https://...` (manifest fetch), `git+https://...@<ref>[#<subpath>]` (PRD-055 git clone, skills-only), `github:owner/repo@<ref>` (shorthand). One manifest format (`{schema_version, publisher, items: [{kind: ai_hook|mcp_server|skill, ...}]}`), HTTPS-bounded fetch, on-disk cache at `~/.jarvy/library.d/<sha256-of-url>/` (+ `git/` subtree for git sources), in-process resolver. Remote-fetched configs CANNOT declare `library_sources` (`library_registry::check_origin` refusal). Cosign sig verify scaffolded but not enforced in v1.
 - `src/skills/` — AI agent skill installation (PRD-049 v1). `[skills]` block in `jarvy.toml` + `jarvy skills {install,list,status,agents}` CLI. Pulls `SKILL.md` from a library_sources manifest, sha-verifies, writes to `~/.{agent}/skills/<name>/SKILL.md` (claude-code, cursor, codex, windsurf, cline, continue). Per-skill agent narrowing + publisher `supported_agents` filter. `.jarvy-skill.json` sidecar for drift detection.
 - `src/progress.rs` — spinner abstraction over `indicatif` (PRD-052). Auto-disables on non-TTY, `--quiet`, `--format json`, sandbox / CI, `JARVY_NO_PROGRESS=1`. Used today by `jarvy update check` and `jarvy hooks {install,update}`; further integration follow-up.
 - `src/update/` — self-updater. Detects install method (brew/cargo/apt/dnf/pacman/winget/choco/scoop/binary). Env: `JARVY_UPDATE`, `JARVY_UPDATE_CHANNEL`, `JARVY_PINNED_VERSION`. CI auto-disables.
@@ -161,6 +161,13 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | `library.signature_disabled` | `require_signature = false` warning | `url` |
 | `library.remote_refused` | trust gate — remote config declared `library_sources` | `consumer = "ai_hooks" \| "mcp_register" \| "skills"`, `reason` |
 | `skills.installed` | per-skill install success | `skill`, `version`, `agent_count`, `skipped_count` |
+| `library.git.clone_started` | begin git clone (PRD-055) | `repo` (redacted), `git_ref` |
+| `library.git.clone_completed` | clone + SKILL.md walk succeeded | `repo`, `git_ref`, `subpath`, `skills_discovered`, `duration_ms` |
+| `library.git.clone_failed` | `git` subprocess exit nonzero | `args`, `exit`, `error` (redacted) |
+| `library.git.cache_hit` | served from clone cache after git failure | `url`, `reason = "git_failed"` |
+| `library.git.mutable_ref` | branch ref pinned (publishers can rev silently) | `repo`, `git_ref`, `advice` |
+| `library.git.missing_git` | `git` CLI not on PATH | `os` |
+| `library.git_skill.skipped` | SKILL.md missing required frontmatter | `path`, `reason` (missing name / version / parse fail) |
 
 **`tool.unsupported` fields** (uniform across setup and `--request`):
 ```

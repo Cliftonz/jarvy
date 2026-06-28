@@ -46,7 +46,9 @@
 pub mod cache;
 pub mod config;
 pub mod fetch;
+pub mod git_fetch;
 pub mod manifest;
+pub mod url_parser;
 
 pub use config::LibrarySource;
 pub use manifest::{
@@ -129,23 +131,27 @@ pub fn sync(source: &LibrarySource) -> Result<SyncReport, LibraryError> {
         );
     }
 
+    // Dispatch on URL scheme (PRD-055): manifest URLs go through the
+    // HTTPS fetcher; git+https:// / github: URLs go through the git
+    // fetcher which clones + walks for SKILL.md and synthesizes a
+    // manifest in-memory.
+    let scheme = url_parser::parse_source(&source.url)?;
     let cache_path = cache::manifest_cache_path(&source.url)?;
-    let (manifest, from_cache) = match fetch_and_parse(source) {
-        Ok(m) => {
-            // Write-through cache. Best-effort — if disk is full, we
-            // still return the freshly-fetched manifest.
-            if let Err(e) = cache::write_manifest(&cache_path, &m) {
-                tracing::warn!(
-                    event = "library.cache.write_failed",
-                    url = %crate::network::redact_credentials(&source.url),
-                    error = %e,
-                );
+    let (manifest, from_cache) = match scheme {
+        url_parser::SourceScheme::Manifest { .. } => match fetch_and_parse(source) {
+            Ok(m) => {
+                // Write-through cache. Best-effort — if disk is full, we
+                // still return the freshly-fetched manifest.
+                if let Err(e) = cache::write_manifest(&cache_path, &m) {
+                    tracing::warn!(
+                        event = "library.cache.write_failed",
+                        url = %crate::network::redact_credentials(&source.url),
+                        error = %e,
+                    );
+                }
+                (m, false)
             }
-            (m, false)
-        }
-        Err(fetch_err) => {
-            // Network / parse failure: try the disk cache.
-            match cache::read_manifest(&cache_path) {
+            Err(fetch_err) => match cache::read_manifest(&cache_path) {
                 Ok(Some(m)) => {
                     if telemetry_on {
                         tracing::info!(
@@ -157,6 +163,44 @@ pub fn sync(source: &LibrarySource) -> Result<SyncReport, LibraryError> {
                     (m, true)
                 }
                 Ok(None) | Err(_) => return Err(fetch_err),
+            },
+        },
+        url_parser::SourceScheme::Git {
+            repo,
+            git_ref,
+            subpath,
+        } => {
+            // Git fetch always populates from origin (or the disk cache
+            // of the prior clone if `git fetch` succeeds offline-stale).
+            // The synthesized manifest is written next to the clone.
+            let clone_root = cache_path
+                .parent()
+                .ok_or_else(|| LibraryError::Io(std::io::Error::other("cache path has no parent")))?
+                .to_path_buf();
+            match git_fetch::sync_git(&repo, &git_ref, subpath.as_deref(), &clone_root) {
+                Ok((m, _)) => {
+                    if let Err(e) = cache::write_manifest(&cache_path, &m) {
+                        tracing::warn!(
+                            event = "library.cache.write_failed",
+                            url = %crate::network::redact_credentials(&source.url),
+                            error = %e,
+                        );
+                    }
+                    (m, false)
+                }
+                Err(git_err) => match cache::read_manifest(&cache_path) {
+                    Ok(Some(m)) => {
+                        if telemetry_on {
+                            tracing::info!(
+                                event = "library.git.cache_hit",
+                                url = %crate::network::redact_credentials(&source.url),
+                                reason = "git_failed",
+                            );
+                        }
+                        (m, true)
+                    }
+                    Ok(None) | Err(_) => return Err(git_err),
+                },
             }
         }
     };

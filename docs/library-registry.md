@@ -70,6 +70,16 @@ That's the whole spec. Any HTTPS URL serving JSON in this shape is a library.
 
 ### Consumer: point your `jarvy.toml` at the URL
 
+Three URL forms are recognized today:
+
+| Form | Use when | Example |
+|---|---|---|
+| `https://...` | Publisher hosts a `manifest.json` (full PRD-054 surface — ai_hook / mcp_server / skill items) | `https://cdn.myorg.com/jarvy/manifest.json` |
+| `git+https://...@<ref>` | Skills-only; publisher has a Git repo of SKILL.md files (PRD-055) | `git+https://github.com/myorg/jarvy-skills.git@v1.2.0#skills/` |
+| `github:org/repo@<ref>` | GitHub shorthand for the git form | `github:anthropics/skills@v1.0.0` |
+
+Git sources are skills-only — AI hooks and MCP server entries still need a manifest because their wire format isn't self-describing. See [git sources](#git-sources-prd-055) below for the full surface.
+
 ```toml
 [ai_hooks]
 agents = ["claude-code", "cursor"]
@@ -258,6 +268,88 @@ The two will likely converge on a shared core in a future Jarvy release. For now
 
 ---
 
+## Git sources (PRD-055)
+
+Skills can also come from a plain Git repo — no `manifest.json` required. Jarvy clones the repo at the pinned ref, walks the optional subpath for `SKILL.md` files, parses each file's YAML frontmatter, and synthesizes a manifest in-memory.
+
+```toml
+[[skills.library_sources]]
+url = "git+https://github.com/myorg/jarvy-skills.git@v1.2.0#skills/"
+
+# Or shorthand:
+[[skills.library_sources]]
+url = "github:anthropics/skills@v1.0.0"
+```
+
+### URL grammar
+
+```
+git+https://<host>/<owner>/<repo>.git@<ref>[#<subpath>]
+github:<owner>/<repo>@<ref>[#<subpath>]
+```
+
+| Component | Required | Notes |
+|---|---|---|
+| `@<ref>` | **yes** | Tag, branch, or commit SHA. Unpinned URLs (no `@`) are refused at parse time. |
+| `#<subpath>` | no | Path inside the repo to scan. Default = repo root. `..` and absolute paths refused. |
+
+### SKILL.md frontmatter
+
+Each `SKILL.md` under the scanned subpath becomes one skill item. Required frontmatter:
+
+```markdown
+---
+name: code-review                    # required — used as skill identifier
+version: 2.1.0                       # required — used as the manifest version
+description: MyOrg code review checklist
+supported_agents:                    # optional; default = all
+  - claude-code
+  - cursor
+---
+
+# Code Review Skill
+
+(body — anything the agent should read)
+```
+
+Files missing `name` or `version` are skipped with a `library.git_skill.skipped` event citing the reason. No silent failures.
+
+### Ref pinning + trust
+
+| Ref type | Trust posture |
+|---|---|
+| **Commit SHA** (`@abc1234` or full 40-char) | Tamper-evident. Recommended for production. |
+| **Tag** (`@v1.2.0`) | Mutable (publishers can re-tag). Recommended for ergonomics + version visibility. |
+| **Branch** (`@main`) | Freely mutable. Emits `library.git.mutable_ref` warning every fetch. Documented as dev-only. |
+
+The mutable-ref warning is advisory — Jarvy does not refuse branches because they're a legitimate dev workflow ("track our internal `main` skills branch on every laptop"). For the strongest guarantee, pin to a commit SHA.
+
+### What you need
+
+- `git` CLI on PATH. Missing git refuses with a clear error pointing at `[provisioner] git = "latest"`. No libgit2 dependency.
+- HTTPS-reachable Git host. SSH (`git+ssh://`) is not supported in v1.
+
+### Why not also AI hooks + MCP servers?
+
+`SKILL.md` carries its own frontmatter — Jarvy has everything needed to build a manifest entry from one file. AI hook script bodies and MCP server `command`/`args`/`env` tables don't have an equivalent self-describing format. For those, publishers still ship a `manifest.json` at the repo root and use the URL form.
+
+### Cache
+
+```
+~/.jarvy/library.d/<sha256-of-url>/
+  manifest.json                  # synthesized from SKILL.md frontmatter
+  git/
+    <cloned repo tree at ref>
+      SKILL.md
+      skills/
+        code-review/
+          SKILL.md
+```
+
+The clone is shallow (`--depth 1`). Re-running `jarvy skills install` refreshes via `git fetch + git checkout <ref>`; offline runs fall back to the cached synthesized manifest with a `library.git.cache_hit` event.
+
+---
+
 ## What's next
 
 - Cosign signature enforcement (PRD-054 phase 5)
@@ -265,8 +357,11 @@ The two will likely converge on a shared core in a future Jarvy release. For now
 - `bash_url` / `powershell_url` companion fetch for ai_hook items (today only inline `bash:` bodies are honored)
 - Companion file fetch for skill items (today only `SKILL.md` lands; templates / helper scripts skip)
 - Public reference library (a community-maintained manifest of common hooks)
+- `git+ssh://` auth for private repos (PRD-055 follow-up)
+- Sparse-checkout for large repos (PRD-055 follow-up)
+- AI hooks + MCP servers from Git via a `manifest.json` at repo root (already works — documented above)
 
-Track follow-up under `prd/054-library-registry.md`.
+Track follow-up under `prd/054-library-registry.md` and `prd/055-git-skill-sources.md`.
 
 ---
 

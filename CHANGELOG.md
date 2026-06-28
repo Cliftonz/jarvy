@@ -27,16 +27,80 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [Unreleased] — Close out PRD-011/013/014/037/038/039/048/049/052/054 + library registry + skills + git hooks + progress (2026-06-28)
+## [Unreleased] — Close out PRD-011/013/014/037/038/039/048/049/052/054/055 + library registry + git skill sources + skills + git hooks + progress (2026-06-28)
 
 A documentation + maintainability + ecosystem-breadth pass that closes
-ten long-open PRDs across four commits. The headliner is **PRD-054
-library registry** — a shared HTTPS-fetched manifest format that lets a
-team publish reusable AI hooks, MCP servers, and AI agent skills at any
-URL, with `[ai_hooks]`, `[mcp_register]`, and `[skills]` all consuming
-the same format. PRD-049 (skills) rides on it for v1; PRD-048 / 052
-(git hooks, spinners) shipped in the prior commit. No user-visible
-behavior changes for existing configs — all new surface is additive.
+eleven long-open PRDs across five commits. The headliner is **PRD-054
+library registry** + **PRD-055 git skill sources** — a shared
+HTTPS-fetched manifest format that lets a team publish reusable AI
+hooks, MCP servers, and AI agent skills at any URL, with skills
+additionally supported via plain Git repos (no `manifest.json`
+required). `[ai_hooks]`, `[mcp_register]`, and `[skills]` all consume
+the same format. PRD-049 (skills) rides on it; PRD-048 / 052 (git
+hooks, spinners) shipped earlier in the day. No user-visible behavior
+changes for existing configs — all new surface is additive.
+
+### Added — git-shorthand for skill sources (PRD-055)
+
+- **`git+https://...@<ref>[#<subpath>]` URL scheme** on `[skills]
+  library_sources`. Jarvy clones the repo at the pinned ref, walks
+  the optional subpath for `SKILL.md` files, parses each file's YAML
+  frontmatter, and synthesizes a manifest in-memory. Publishers don't
+  need to maintain `manifest.json` — the SKILL.md files are
+  self-describing.
+
+  ```toml
+  [[skills.library_sources]]
+  url = "git+https://github.com/myorg/jarvy-skills.git@v1.2.0#skills/"
+  ```
+
+- **`github:owner/repo@<ref>` shorthand** for the common GitHub case:
+
+  ```toml
+  [[skills.library_sources]]
+  url = "github:anthropics/skills@v1.0.0"
+  ```
+
+- **`@<ref>` pin is mandatory**. Unpinned URLs refused at parse time
+  with a clear message — silent floating refs would let a publisher
+  rev skills without a visible pin bump.
+
+- **Trust hierarchy**: commit SHA (tamper-evident) > tag (mutable but
+  conventional) > branch (freely mutable, emits
+  `library.git.mutable_ref` warning every fetch). Documented in
+  `docs/library-registry.md`.
+
+- **SKILL.md frontmatter convention**: `name:` + `version:` required,
+  `description:` + `supported_agents:` optional. Files missing
+  required fields are skipped with a `library.git_skill.skipped`
+  event citing the reason. No silent failures.
+
+- **Subpath traversal refused** at parse time + at fetch time:
+  `..` segments and absolute paths are rejected with a canonical-path
+  check inside the clone root. Mirrors
+  `safety::resolve_within_workspace` from `src/mcp/extended_tools.rs`.
+
+- **No new dependencies**. Shells out to `git`; missing git refuses
+  with a clear error pointing at `[provisioner] git = "latest"`.
+  Cached `--depth 1` clone refreshes via `git fetch + git checkout
+  <ref>`.
+
+- **Why skills only**: SKILL.md carries its own frontmatter, so
+  Jarvy has everything needed to build a manifest entry from one
+  file. AI hooks (script bodies) and MCP servers (command/args/env
+  tables) don't — those still ship via `manifest.json`. A publisher
+  who wants both in one Git repo puts `manifest.json` at the root and
+  uses the existing URL form.
+
+- New modules: `src/library_registry/url_parser.rs` (scheme +
+  `@<ref>` + `#<subpath>` parsing with safety refusals),
+  `src/library_registry/git_fetch.rs` (clone + frontmatter walker
+  + manifest synthesizer). `sync()` in `mod.rs` dispatches by
+  scheme. `read_file_url()` extends the installer's fetch path to
+  handle `file://` URLs that point into the git cache.
+
+- Trust gate inherits unchanged from PRD-054 — remote-fetched configs
+  CANNOT declare `library_sources` of any scheme.
 
 ### Added — library registry (PRD-054)
 
@@ -128,6 +192,8 @@ behavior changes for existing configs — all new surface is additive.
 
 - Drafts + closes PRD-054 (Library Registry — v1 shipped, sig verify
   + `jarvy library` CLI tracked as follow-up)
+- Drafts + closes PRD-055 (Git skill sources — full v1 shipped;
+  `git+ssh://` and sparse-checkout tracked as follow-up)
 - Closes PRD-049 phase 1 (Skills Registry Integration — library-based
   install ships; skills.sh API + remove/update commands tracked as
   PRD-049 phase 2)

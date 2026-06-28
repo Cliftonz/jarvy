@@ -1,0 +1,24 @@
+{
+  "prd": "055-git-skill-sources",
+  "title": "Git-shorthand for skill sources",
+  "version": "1.0.0",
+  "priority": "medium",
+  "estimated_days": 3,
+  "created": "2026-06-28",
+  "status": "completed",
+  "completedAt": "2026-06-28T00:00:00Z",
+  "scope": "v1 ships skills-only. AI hooks + MCP servers via Git still go through manifest.json at repo root. SSH auth and sparse-checkout deferred.",
+  "completionNote": "src/library_registry/url_parser.rs handles git+https:// and github: schemes with mandatory @<ref> pin + #<subpath> + safety refusals (no .., no absolute paths). src/library_registry/git_fetch.rs clones via git CLI, walks SKILL.md, parses YAML frontmatter, synthesizes Manifest. sync() dispatches by scheme. Skills installer's fetch path now branches on file:// URLs (read from git cache) vs HTTPS (existing path). 14 new unit tests across URL parsing, frontmatter splitting, SKILL.md building, mutable-ref detection, walker, file:// reading.",
+  "progress": {
+    "completed": 12,
+    "total": 12,
+    "percentage": 100
+  },
+  "follow_up": [
+    "git+ssh:// auth for private repos",
+    "Sparse-checkout for large repos (--depth 1 helps but not enough on huge monorepos)",
+    "gitlab: and bitbucket: shorthands (architecture supports; just wire dispatch)",
+    "AI hooks + MCP servers from git via repo-root manifest.json (works today but undocumented)",
+    "Per-ref disk cache expiry (today: cache lives until jarvy library clean)"
+  ]
+}

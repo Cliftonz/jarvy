@@ -193,14 +193,35 @@ pub fn skill_status(skill_name: &str, requested_version: &str, agent: SkillAgent
 }
 
 fn fetch_skill_md(item: &crate::library_registry::LibrarySkillItem) -> Result<Vec<u8>, SkillError> {
-    let body = crate::library_registry::fetch::fetch_bounded(
-        &item.skill_md_url,
-        crate::library_registry::fetch::MAX_ITEM_BYTES,
-    )
-    .map_err(|e| SkillError::Fetch {
-        url: crate::network::redact_credentials(&item.skill_md_url).into_owned(),
-        source: e,
-    })?;
+    // PRD-055: git-fetched libraries synthesize `skill_md_url` as a
+    // `file://` URL pointing into the local clone cache. Branch here
+    // so the existing HTTPS fetcher (which would refuse non-HTTPS)
+    // stays clean.
+    let body = if item.skill_md_url.starts_with("file://") {
+        crate::library_registry::git_fetch::read_file_url(&item.skill_md_url).map_err(|e| {
+            SkillError::Fetch {
+                url: crate::network::redact_credentials(&item.skill_md_url).into_owned(),
+                // file:// reads surface as LibraryError::Io; map into
+                // the FetchError envelope by re-wrapping the io error.
+                source: crate::library_registry::fetch::FetchError::Read {
+                    url: crate::network::redact_credentials(&item.skill_md_url).into_owned(),
+                    source: match e {
+                        crate::library_registry::LibraryError::Io(io) => io,
+                        other => std::io::Error::other(format!("{other}")),
+                    },
+                },
+            }
+        })?
+    } else {
+        crate::library_registry::fetch::fetch_bounded(
+            &item.skill_md_url,
+            crate::library_registry::fetch::MAX_ITEM_BYTES,
+        )
+        .map_err(|e| SkillError::Fetch {
+            url: crate::network::redact_credentials(&item.skill_md_url).into_owned(),
+            source: e,
+        })?
+    };
 
     let actual = sha256_hex(&body);
     if !actual.eq_ignore_ascii_case(&item.skill_md_sha256) {

@@ -40,13 +40,22 @@ Add a `skill` item to your library manifest (see [library registry](library-regi
 # auto-detect every AI agent installed on disk
 # (or set agents = ["claude-code", "cursor"] to narrow)
 
+# Option A — manifest URL (PRD-054):
 [[skills.library_sources]]
 url = "https://cdn.myorg.com/jarvy/manifest.json"
+
+# Option B — Git repo with SKILL.md files (PRD-055):
+[[skills.library_sources]]
+url = "github:anthropics/skills@v1.0.0"
+# Or fully qualified:
+# url = "git+https://github.com/myorg/jarvy-skills.git@v1.2.0#skills/"
 
 [skills.install]
 myorg-code-review = "2.1.0"
 myorg-debug-checklist = { version = "1.0.0", agents = ["claude-code"] }
 ```
+
+Both source types appear in the same `library_sources` array — Jarvy fetches each according to its URL scheme. See [library registry](library-registry.md#git-sources-prd-055) for the full git-source surface (pin policy, SKILL.md frontmatter requirements, subpath safety).
 
 Then:
 
