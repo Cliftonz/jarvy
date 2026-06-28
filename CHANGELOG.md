@@ -27,12 +27,113 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [Unreleased] — Close out PRD-011/013/014/037/038/039 + gem/go package handlers (2026-06-28)
+## [Unreleased] — Close out PRD-011/013/014/037/038/039/048/052 + gem/go + git hooks + progress (2026-06-28)
 
-A documentation + maintainability + ecosystem-breadth pass that closes five
-long-open PRDs and adds Ruby gem and Go binary installation. No user-visible
-behavior changes for existing configs — additive surface for new
-`[gem]` / `[go]` sections plus a smaller, more navigable `src/main.rs`.
+A documentation + maintainability + ecosystem-breadth pass that closes
+eight long-open PRDs across three commits: gem/go package handlers +
+main.rs extraction + documentation gaps in the first, pre-commit hook
+framework + spinner output in the second. No user-visible behavior
+changes for existing configs — all new surface is additive (`[gem]` /
+`[go]` / `[git_hooks]` sections, `jarvy hooks` subcommand,
+opt-out-friendly progress spinners).
+
+### Added — pre-commit hook framework integration (PRD-048)
+
+- **`[git_hooks]` section** auto-installs and manages git pre-commit
+  hooks from `jarvy.toml`. Today the `pre-commit` framework
+  (<https://pre-commit.com>) is fully supported; `husky` and `lefthook`
+  are recognized by auto-detection but their handlers are stubbed with
+  a clear "framework configured but not yet supported" error so configs
+  can declare intent without silent no-ops.
+
+  ```toml
+  [git_hooks]
+  # block presence is the opt-in; auto-detects from .pre-commit-config.yaml
+
+  [git_hooks.pre_commit]
+  version = "3.6.0"                # pin the framework version
+  install_hooks = true             # warm hook envs eagerly
+  ```
+
+- **`jarvy hooks` subcommand**: `install`, `update`, `status`, `list`,
+  `run` (with `--all-files` / `--hook <id>`), `uninstall`. Status output
+  parses `.pre-commit-config.yaml` directly, so hook counts work even
+  when the `pre-commit` CLI itself isn't installed yet.
+
+- **Setup integration**: `jarvy setup` auto-runs `jarvy hooks install`
+  between the git-config and ai-hooks phases. Gated on
+  `[git_hooks] auto_install = true` (default). New phase emits
+  `git_hooks.phase_started` / `_completed` / `_skipped` /
+  `_install_failed` telemetry events.
+
+- **Trust boundary**: deliberately a new top-level block, NOT
+  `[hooks].git_hooks` — `[hooks]` is already taken by setup-lifecycle
+  shell scripts (PRD-003). Remote-config trust gate via
+  `[git_hooks] allow_remote = true` (mirrors `[packages] allow_remote`):
+  a friendly-looking remote config cannot silently land arbitrary git
+  hooks on the consuming machine without explicit opt-in in the SOURCE
+  config. Refusals log `git_hooks.remote_refused` for audit.
+
+- New module: `src/git_hooks/{mod.rs, config.rs, detection.rs, precommit.rs}`.
+  Husky / lefthook handler stubs return `HookError::UnsupportedFramework`
+  with the framework name, so the surface is stable for follow-up work.
+
+### Added — progress spinners (PRD-052)
+
+- **`indicatif` dependency** plus `src/progress.rs` helper providing
+  `Progress::start()` → `Spinner` with `finish_ok` / `finish_skipped` /
+  `finish_failed`. All long-running commands route through this helper
+  rather than constructing `ProgressBar` directly, keeping the muting
+  decision in one place.
+
+- **Auto-disable** when any of: stdout is not a TTY, `JARVY_QUIET=1` or
+  `--quiet`/`-q` on argv, `--format json` / `--log-format json`,
+  sandbox / CI detected by `sandbox::is_seamless_auto()`, or
+  `JARVY_NO_PROGRESS=1` (explicit kill switch). In sandbox / CI mode,
+  spinners fall through to plain `println!` lines so log scrapers still
+  see start / finish events.
+
+- **Wired into** `jarvy update check` (network spinner) and
+  `jarvy hooks install` / `update`. Deeper integration in `setup_cmd`'s
+  parallel-install loop is deferred — needs design to avoid clashing
+  with subprocess streaming stdout.
+
+- Uses stdlib `std::io::IsTerminal` rather than dragging in a direct
+  `libc` dep.
+
+### Changed
+
+- `src/main.rs` + `src/lib.rs`: register `progress` and `git_hooks`
+  modules. `CLAUDE.md` module map updated.
+- `src/config.rs`: new `git_hooks: Option<GitHooksConfig>` field;
+  `TOP_LEVEL_SECTIONS` extended; `top_level_sections_matches_config_fields`
+  destructure test updated.
+- `src/commands/dispatch.rs`: route `Commands::Hooks { action, file }`
+  to `commands::hooks_cmd::run_hooks`.
+
+### Docs
+
+- `docs/git-hooks.md` covers configuration, commands, status output,
+  trust boundary, CI considerations, troubleshooting.
+- `mkdocs.yml` adds "Git hooks (pre-commit)" under Guides.
+- `tasks/prd-048-pre-commit-hook-installation.json` and
+  `tasks/prd-052-progress-indicators.json` created with completion
+  notes and explicit follow-up scope.
+
+### Tracking
+
+- Closes PRD-048 (Pre-Commit Hook Installation — pre-commit framework
+  only; husky / lefthook tracked as follow-up)
+- Closes PRD-052 (Progress Indicators — helper module + `update check`
+  + `hooks install/update`; deeper setup_cmd integration tracked as
+  follow-up)
+
+---
+
+### Earlier in the day — gem/go handlers, main.rs extraction, documentation gaps
+
+(Originally committed separately; merged into this unreleased block so
+the awk extractor sees a single curated `[Unreleased]` section.)
 
 ### Added — language package ecosystems (PRD-039)
 

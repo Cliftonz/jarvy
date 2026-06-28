@@ -483,6 +483,14 @@ pub enum Commands {
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
     },
+    /// Manage git hook frameworks (pre-commit, husky, lefthook)
+    Hooks {
+        #[clap(subcommand)]
+        action: HooksAction,
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+    },
     /// Catch-all for unknown subcommands and their args
     #[clap(external_subcommand)]
     External(Vec<String>),

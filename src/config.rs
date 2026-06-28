@@ -307,6 +307,9 @@ pub struct Config {
     /// Git configuration
     #[serde(default)]
     pub git: Option<crate::git::GitConfig>,
+    /// Git hook framework integration (`[git_hooks]`)
+    #[serde(default, rename = "git_hooks")]
+    pub git_hooks: Option<crate::git_hooks::GitHooksConfig>,
     /// Drift detection configuration
     #[serde(default)]
     pub drift: Option<crate::drift::DriftConfig>,
@@ -395,6 +398,7 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "go",
     "packages",
     "git",
+    "git_hooks",
     "drift",
     "telemetry",
     "commands",
@@ -956,6 +960,7 @@ mod tests {
                 cargo: _,
                 nuget: _,
                 git: _,
+                git_hooks: _,
                 drift: _,
                 telemetry: _,
                 commands: _,
@@ -989,6 +994,7 @@ mod tests {
             "go",
             "packages",
             "git",
+            "git_hooks",
             "drift",
             "telemetry",
             "commands",

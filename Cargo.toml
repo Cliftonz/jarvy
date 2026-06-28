@@ -78,6 +78,7 @@ hex = "0.4"
 shellexpand = "3.1"
 tempfile = "3.27"
 which = "8.0"
+indicatif = "0.18"
 
 [dev-dependencies]
 assert_cmd = "2.2"

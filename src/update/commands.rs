@@ -87,11 +87,25 @@ fn run_check(channel_override: Option<Channel>) -> Result<(), UpdateError> {
         checker = UpdateChecker::with_config(config);
     }
 
-    println!("Checking for updates...");
     println!("Current version: {}", CURRENT_VERSION);
     println!("Channel: {}", checker.config().channel);
 
-    match checker.check() {
+    // Spinner across the network check. `Progress` auto-disables in
+    // CI / sandboxes / non-TTY (PRD-052) — the println!s below remain
+    // the source of truth for log scrapers.
+    let progress = crate::progress::Progress::start();
+    let spinner = progress.add("[update]", "Checking for updates...");
+
+    let result = checker.check();
+    match &result {
+        Ok(CheckResult::UpToDate) => spinner.finish_ok("up to date"),
+        Ok(CheckResult::UpdateAvailable { latest, .. }) => {
+            spinner.finish_ok(format!("update available: {latest}"))
+        }
+        Err(_) => spinner.finish_failed("check failed"),
+    }
+
+    match result {
         Ok(CheckResult::UpToDate) => {
             println!("\nJarvy is up to date!");
             Ok(())

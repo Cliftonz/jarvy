@@ -5,6 +5,29 @@
 use clap::Subcommand;
 
 #[derive(Subcommand)]
+pub enum HooksAction {
+    /// Install the configured git hook framework into `.git/hooks/`
+    Install {},
+    /// Run `pre-commit autoupdate` then reinstall hooks
+    Update {},
+    /// Show framework + installation status
+    Status {},
+    /// List configured hooks from `.pre-commit-config.yaml`
+    List {},
+    /// Run hooks once (defaults to changed files; `--all-files` for whole tree)
+    Run {
+        /// Run against every tracked file, not just staged changes
+        #[clap(long)]
+        all_files: bool,
+        /// Run a single hook by id (e.g. `--hook black`)
+        #[clap(long)]
+        hook: Option<String>,
+    },
+    /// Remove jarvy-installed hooks (calls `pre-commit uninstall`)
+    Uninstall {},
+}
+
+#[derive(Subcommand)]
 pub enum McpRegisterAction {
     /// Show what's in jarvy.toml + agent → path mapping
     List {},

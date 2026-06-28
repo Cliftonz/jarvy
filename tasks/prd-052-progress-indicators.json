@@ -1,0 +1,22 @@
+{
+  "prd": "052-progress-indicators",
+  "title": "Progress Indicators for Long-Running Operations",
+  "version": "1.0.0",
+  "priority": "low",
+  "estimated_days": 4,
+  "created": "2026-06-28",
+  "status": "completed",
+  "completedAt": "2026-06-28T00:00:00Z",
+  "scope": "v1 ships the Progress helper module + integration in `jarvy update check` and `jarvy hooks {install,update}`. Deep setup_cmd integration (per-tool spinners during rayon parallel install) deferred — needs design to avoid clashing with subprocess streaming stdout.",
+  "completionNote": "src/progress.rs shipped: Progress / Spinner over indicatif 0.18 with consistent auto-disable rules (non-TTY, --quiet, --format json, sandbox/CI, JARVY_NO_PROGRESS=1). When muted by sandbox/CI, falls through to plain println! so log scrapers still see start/finish lines. is_stdout_tty uses stdlib std::io::IsTerminal — no libc direct dep. Integration today: jarvy update check (network spinner), jarvy hooks install/update.",
+  "progress": {
+    "completed": 6,
+    "total": 10,
+    "percentage": 60
+  },
+  "follow_up": [
+    "Per-tool spinners during setup_cmd parallel install (needs design — rayon span carry-over + streaming subprocess stdout)",
+    "Audit / drift / hooks (setup-lifecycle) spinner integration",
+    "Multi-progress group for `jarvy registry sync` (parallel tool fetches)"
+  ]
+}

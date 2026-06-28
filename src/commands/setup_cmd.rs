@@ -746,6 +746,9 @@ pub fn run_setup(
     // Git configuration
     run_git_phase(&config, dry_run);
 
+    // Git hook framework (pre-commit / husky / lefthook) — PRD-048
+    run_git_hooks_phase(&config, file, dry_run);
+
     // AI agent hook provisioning (Claude Code, Cursor, Codex, Windsurf, ...)
     run_ai_hooks_phase(&config, dry_run);
 
@@ -1231,6 +1234,114 @@ fn run_git_phase(config: &Config, dry_run: bool) {
         match setup.configure() {
             Ok(()) => println!("Git configuration applied successfully"),
             Err(e) => eprintln!("Warning: Git configuration failed: {e}"),
+        }
+    }
+}
+
+/// Auto-install git hook framework during `jarvy setup` (PRD-048).
+///
+/// Skipped silently when:
+/// - `[git_hooks]` block absent
+/// - `[git_hooks] enabled = false`
+/// - `[git_hooks] auto_install = false`
+/// - no framework detected (no `.pre-commit-config.yaml`, etc.)
+/// - origin is `Remote` and `allow_remote = false` (trust gate; logs
+///   `git_hooks.remote_refused` for audit)
+///
+/// Failures are advisory — surface a warning but don't fail the whole
+/// setup. The dedicated `jarvy hooks install` command exists for users
+/// who want a hard-fail on hook install errors.
+fn run_git_hooks_phase(config: &Config, file: &str, dry_run: bool) {
+    let Some(ref gh_cfg) = config.git_hooks else {
+        return;
+    };
+    if !gh_cfg.enabled || !gh_cfg.auto_install {
+        return;
+    }
+    let project_dir = std::path::Path::new(file)
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
+
+    // Remote-config trust gate. Mirrors `[packages] allow_remote` —
+    // remote configs may narrow trust but cannot install arbitrary
+    // git hooks on the consuming machine without explicit opt-in in
+    // the source config.
+    if config.origin == crate::ai_hooks::ConfigOrigin::Remote && !gh_cfg.allow_remote {
+        tracing::warn!(
+            event = "git_hooks.remote_refused",
+            reason = "allow_remote_not_set",
+        );
+        eprintln!(
+            "\n  Refusing to install git hooks from a remote config (`jarvy setup --from <url>`).\n  \
+             Set `[git_hooks] allow_remote = true` in the source config — or copy it locally —\n  \
+             to authorize hook installation from this origin."
+        );
+        return;
+    }
+
+    let telemetry_on = crate::observability::telemetry_gate::is_enabled();
+    let _span = tracing::info_span!("git_hooks", dry_run = %dry_run).entered();
+
+    if dry_run {
+        println!("\n=== Git Hooks (dry-run) ===");
+        let framework = gh_cfg
+            .framework
+            .or_else(|| crate::git_hooks::detect_framework(&project_dir));
+        match framework {
+            Some(f) => println!("[DRY-RUN] Would install git hooks via {}", f.as_str()),
+            None => println!("[DRY-RUN] No hook framework detected — nothing to install"),
+        }
+        if telemetry_on {
+            tracing::info!(
+                event = "git_hooks.phase_previewed",
+                framework = framework.map(|f| f.as_str()).unwrap_or("none"),
+            );
+        }
+        return;
+    }
+
+    println!("\n=== Git Hooks ===");
+    let started = std::time::Instant::now();
+    match crate::git_hooks::install_hooks(gh_cfg, &project_dir) {
+        Ok(true) => {
+            println!("  Git hooks installed");
+            if gh_cfg.auto_update {
+                if let Err(e) = crate::git_hooks::update_hooks(gh_cfg, &project_dir) {
+                    eprintln!("  Warning: hook autoupdate failed: {e}");
+                }
+            }
+            if gh_cfg.run_after_install {
+                if let Err(e) = crate::git_hooks::run_hooks(gh_cfg, &project_dir, true, None) {
+                    eprintln!("  Warning: initial hook run reported failures: {e}");
+                }
+            }
+            if telemetry_on {
+                tracing::info!(
+                    event = "git_hooks.phase_completed",
+                    installed = true,
+                    duration_ms = started.elapsed().as_millis() as u64,
+                );
+            }
+        }
+        Ok(false) => {
+            println!("  No hook framework detected — skipping");
+            if telemetry_on {
+                tracing::info!(
+                    event = "git_hooks.phase_skipped",
+                    reason = "no_framework_detected",
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("  Warning: git hook install failed: {e}");
+            if telemetry_on {
+                tracing::warn!(
+                    event = "git_hooks.install_failed",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
         }
     }
 }

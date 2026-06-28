@@ -1,0 +1,22 @@
+{
+  "prd": "048-pre-commit-hook-installation",
+  "title": "Pre-Commit Hook Installation",
+  "version": "1.0.0",
+  "priority": "medium",
+  "estimated_days": 7,
+  "created": "2026-06-28",
+  "status": "completed",
+  "completedAt": "2026-06-28T00:00:00Z",
+  "scope": "v1 ships pre-commit framework only. Husky and lefthook handlers stubbed with UnsupportedFramework error so configs can declare intent.",
+  "completionNote": "src/git_hooks/ module ships with config + detection + precommit handler. New `[git_hooks]` top-level block (deliberately separate from existing `[hooks]` setup-lifecycle block). `jarvy hooks {install,update,status,list,run,uninstall}` CLI subcommand wired via commands/hooks_cmd.rs and dispatch.rs. Auto-install integrated into setup_cmd between git-config and ai-hooks phases. Remote-config trust gate via `[git_hooks] allow_remote = true` (mirrors `[packages] allow_remote`). 11 new unit tests across config parsing, framework detection, yaml parsing, and flag-like-name refusal. docs/git-hooks.md ships in mkdocs nav.",
+  "progress": {
+    "completed": 12,
+    "total": 15,
+    "percentage": 80
+  },
+  "follow_up": [
+    "Husky framework handler (npm/yarn/pnpm workflows)",
+    "Lefthook framework handler",
+    "Per-stage hook configuration (commit-msg, pre-push)"
+  ]
+}

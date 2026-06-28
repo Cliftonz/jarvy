@@ -177,6 +177,7 @@ nav:
   - Guides:
     - Roles guide: roles.md
     - Hooks guide: hooks.md
+    - Git hooks (pre-commit): git-hooks.md
     - AI hooks: ai-hooks.md
     - MCP registration: mcp-registration.md
     - Tool dependencies: tool-dependencies.md
