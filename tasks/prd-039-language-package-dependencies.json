@@ -5,11 +5,13 @@
   "priority": "high",
   "estimated_days": 11,
   "created": "2026-01-23",
-  "status": "in_progress",
+  "status": "completed",
+  "completedAt": "2026-06-27T00:00:00Z",
+  "completionNote": "All six ecosystems (npm/pip/cargo/nuget/gem/go) ship install handlers in src/packages/. Final two added 2026-06-27: src/packages/gem.rs (`gem install --no-document <name> [-v <ver>]`) and src/packages/go.rs (`go install <module>@<version>`). Both wired into PackagesConfigRef, install_packages dispatcher, Config struct, TOP_LEVEL_SECTIONS, validate_package_section, and run_packages_phase telemetry. GEM_KNOBS / GO_KNOBS slices pinned by destructure tests. Per-package name + version validation (control bytes, flag-like names, URL schemes) inherits from common.rs. Unit tests pass for both handlers including argv contract and flag-like-name refusal.",
   "progress": {
-    "completed": 0,
+    "completed": 24,
     "total": 24,
-    "percentage": 0
+    "percentage": 100
   },
   "phases": [
     {

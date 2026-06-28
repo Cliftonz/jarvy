@@ -23,12 +23,12 @@ Cross-platform CLI that provisions dev environments from `jarvy.toml` using nati
 
 ### Module Map
 
-- `src/main.rs` — minimal entry (~540 lines): args, telemetry init, dispatch
+- `src/main.rs` — minimal entry (~270 lines): args, telemetry init, OTLP flush. Dispatch + per-command glue live in `commands/dispatch.rs` (PRD-037).
 - `src/cli/` — `args.rs` (`Cli`, `Commands`, `OutputFormat`), `subcommands.rs` (nested enums)
-- `src/commands/` — one file per handler (`setup_cmd.rs`, `tools_cmd.rs`, `roles_cmd.rs`, `ai_hooks_cmd.rs`, `mcp_register_cmd.rs`, `drift_cmd.rs`, `logs_cmd.rs`, `ticket_cmd.rs`, …)
+- `src/commands/` — one file per handler (`setup_cmd.rs`, `tools_cmd.rs`, `roles_cmd.rs`, `ai_hooks_cmd.rs`, `mcp_register_cmd.rs`, `drift_cmd.rs`, `logs_cmd.rs`, `ticket_cmd.rs`, …) plus `dispatch.rs` (CLI routing table).
 - `src/config.rs` — `jarvy.toml` parser. **`TOP_LEVEL_SECTIONS` const is canonical**; `validate.rs` consumes it. Compile-time destructure test `config::tests::top_level_sections_matches_config_fields` rejects adding a `Config` field without updating both.
 - `src/tools/` — `registry.rs` (global `OnceLock<RwLock<HashMap>>`), `common.rs` (`Os`, `InstallError`, `run`, `has`, `cmd_satisfies`), `spec.rs` (`ToolSpec` + `define_tool!` macro)
-- `src/packages/` — npm / pip / cargo / nuget handlers
+- `src/packages/` — npm / pip / cargo / nuget / gem / go handlers
 - `src/roles/` — role-based config with inheritance (PRD-033)
 - `src/ai_hooks/` — guardrail hooks distributed to Claude Code, Cursor, Codex, Windsurf, Cline, Continue. See `docs/ai-hooks.md`.
 - `src/mcp_register/` — auto-registers Jarvy MCP server with the same 6 agents. See `docs/mcp-registration.md`.
@@ -73,10 +73,10 @@ Remote-fetched configs (loaded via `jarvy setup --from <url>`) are tagged `Confi
 
 - `[ai_hooks] allow_custom_commands = true` — refused for remote configs; library hooks always allowed.
 - `[mcp_register] allow_custom_servers = true` — refused for remote configs; built-in `jarvy` server always allowed.
-- `[packages] allow_remote = true` — without this, remote configs cannot install `[npm]/[pip]/[cargo]/[nuget]` entries.
+- `[packages] allow_remote = true` — without this, remote configs cannot install `[npm]/[pip]/[cargo]/[nuget]/[gem]/[go]` entries.
 - Project-config telemetry overrides (endpoint) — refused with stderr warning. Endpoint override only via `JARVY_OTLP_ENDPOINT`.
 
-Package-name validation (`validate_package_name` / `validate_package_version`) refuses leading-`-`, URL schemes, shell-meta, and control bytes (ESC/BEL/DEL/NUL — closes ANSI injection in dry-run preview). `jarvy validate` runs them on every `[npm]/[pip]/[cargo]/[nuget]` entry.
+Package-name validation (`validate_package_name` / `validate_package_version`) refuses leading-`-`, URL schemes, shell-meta, and control bytes (ESC/BEL/DEL/NUL — closes ANSI injection in dry-run preview). `jarvy validate` runs them on every `[npm]/[pip]/[cargo]/[nuget]/[gem]/[go]` entry.
 
 ### Config Files
 
@@ -108,7 +108,7 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | `tool.already_installed` | skip-detection path | `install_path`, `detection_method`, `prompted_user` |
 | `setup.started` / `setup.completed` | run lifecycle | Carries duration, counts |
 | `hook.started` / `hook.completed` / `hook.failed` / `hook.timeout` | per hook | |
-| `packages.phase_started` / `packages.phase_completed` | run_packages_phase | Carries `dry_run`, `npm`, `pip`, `cargo`, `nuget` booleans, `duration_ms` |
+| `packages.phase_started` / `packages.phase_completed` | run_packages_phase | Carries `dry_run`, `npm`, `pip`, `cargo`, `nuget`, `gem`, `go` booleans, `duration_ms` |
 | `packages.phase_skipped` | early-return | `reason`, `dry_run` |
 | `packages.phase_previewed` | dry-run preview | Per-ecosystem `*_count` (renamed from `packages.dry_run`) |
 | `packages.remote_refused` | trust gate refusal | `reason` (e.g. `allow_remote_packages_not_set`) |

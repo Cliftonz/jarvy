@@ -151,6 +151,7 @@ nav:
 
   - Get Started:
     - Quickstart: quickstart.md
+    - Installation: installation.md
     - Tutorial — your first jarvy.toml: tutorials/first-config.md
     - Tutorial — onboard a team: tutorials/team-onboarding.md
     - Examples gallery: examples.md
@@ -180,6 +181,8 @@ nav:
     - MCP registration: mcp-registration.md
     - Tool dependencies: tool-dependencies.md
     - Language packages: packages.md
+    - Environment variables: environment.md
+    - Services: services.md
     - Git configuration: git-config.md
     - Network & proxy: network.md
     - Drift detection: drift.md
@@ -208,6 +211,8 @@ nav:
     - CLI reference (auto): cli-reference.md
     - CLI guide: cli.md
     - Tool registry (auto): tools-registry.md
+    - Tools by category: tools-by-category.md
+    - Architecture decisions: decisions.md
     - Error codes: error-codes.md
     - FAQ: faq.md
     - Changelog: changelog.md
@@ -235,3 +240,4 @@ nav:
 
   - Community:
     - Contributing: contributing.md
+    - Contributor testing guide: contributing-testing.md

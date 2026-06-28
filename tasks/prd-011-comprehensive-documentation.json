@@ -1,10 +1,11 @@
 {
   "title": "PRD-011: Comprehensive Documentation System",
   "priority": "Medium",
-  "status": "Not Started",
+  "status": "completed",
   "source": "prd/011-comprehensive-documentation.md",
   "createdAt": "2026-01-15T23:00:00Z",
-  "updatedAt": "2026-01-15T23:00:00Z",
+  "updatedAt": "2026-06-27T00:00:00Z",
+  "completionNote": "docs/ tree covers all 26 PRD-011 topics. Filled final gaps 2026-06-27: docs/installation.md, services.md, environment.md, tools-by-category.md, contributing-testing.md, decisions.md (ADR index pointing to prd/ + CLAUDE.md). Existing coverage: quickstart, configuration, cli-reference, error-codes, hooks, architecture, faq, tools-registry, plus cookbook/, tutorials/, operations/, concepts/ subdirs. Examples in examples/ (24 persona .toml configs).",
   "overview": {
     "description": "Create complete, professional documentation for Jarvy covering all implemented features including parallel installation, post-install hooks, environment variables, CI detection, and service management.",
     "goals": [

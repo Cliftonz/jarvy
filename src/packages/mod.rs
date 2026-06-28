@@ -10,8 +10,8 @@
 //! - **pip/uv**: Python packages via `[pip]` section with virtual environment support
 //! - **cargo**: Rust binaries via `[cargo]` section
 //! - **nuget**: .NET global tools via `[nuget]` section
-//! - **gem**: Ruby gems via `[gem]` section (future)
-//! - **go**: Go binaries via `[go]` section (future)
+//! - **gem**: Ruby gems via `[gem]` section
+//! - **go**: Go binaries via `[go]` section
 //!
 //! # Example Configuration
 //!
@@ -38,6 +38,8 @@
 mod cargo_pkg;
 pub mod common;
 mod config;
+mod gem;
+mod go;
 mod npm;
 mod nuget;
 mod pip;
@@ -45,11 +47,13 @@ mod pip;
 pub use common::PackageError;
 #[allow(unused_imports)] // PackagesConfig retained for public lib re-export
 pub use config::{
-    CARGO_KNOBS, CargoConfig, NPM_KNOBS, NUGET_KNOBS, NpmConfig, NugetConfig, PIP_KNOBS,
-    PackagesConfig, PackagesConfigRef, PipConfig,
+    CARGO_KNOBS, CargoConfig, GEM_KNOBS, GO_KNOBS, GemConfig, GoConfig, NPM_KNOBS, NUGET_KNOBS,
+    NpmConfig, NugetConfig, PIP_KNOBS, PackagesConfig, PackagesConfigRef, PipConfig,
 };
 
 use cargo_pkg::CargoHandler;
+use gem::GemHandler;
+use go::GoHandler;
 use npm::NpmHandler;
 use nuget::NugetHandler;
 use pip::PipHandler;
@@ -74,7 +78,9 @@ pub fn install_packages(
         let any_configured = config.npm.is_some()
             || config.pip.is_some()
             || config.cargo.is_some()
-            || config.nuget.is_some();
+            || config.nuget.is_some()
+            || config.gem.is_some()
+            || config.go.is_some();
         if any_configured {
             tracing::warn!(
                 event = "packages.remote_refused",
@@ -167,6 +173,40 @@ pub fn install_packages(
         }
     }
 
+    // Install Ruby gems
+    if let Some(gem_config) = config.gem {
+        println!("\n  Installing Ruby gems...");
+        let handler = GemHandler::new(gem_config.clone());
+        if let Err(e) = handler.install() {
+            if telemetry_on {
+                tracing::warn!(
+                    event = "packages.install_failed",
+                    ecosystem = "gem",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
+            eprintln!("  Warning: gem install failed (see output above)");
+        }
+    }
+
+    // Install Go binaries
+    if let Some(go_config) = config.go {
+        println!("\n  Installing Go binaries...");
+        let handler = GoHandler::new(go_config.clone());
+        if let Err(e) = handler.install() {
+            if telemetry_on {
+                tracing::warn!(
+                    event = "packages.install_failed",
+                    ecosystem = "go",
+                    error_kind = e.kind(),
+                    error = %e,
+                );
+            }
+            eprintln!("  Warning: go install failed (see output above)");
+        }
+    }
+
     Ok(())
 }
 
@@ -185,6 +225,8 @@ mod tests {
             pip: None,
             cargo: None,
             nuget: Some(nuget),
+            gem: None,
+            go: None,
             origin,
             allow_remote_packages,
         }

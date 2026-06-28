@@ -209,6 +209,8 @@ pub fn validate_config(path: &str, strict: bool) -> ValidationResult {
         ("npm", "[npm]"),
         ("pip", "[pip]"),
         ("cargo", "[cargo]"),
+        ("gem", "[gem]"),
+        ("go", "[go]"),
     ] {
         if let Some(table) = parsed.get(section).and_then(|v| v.as_table()) {
             validate_package_section(table, section, purpose, &mut issues);
@@ -582,7 +584,7 @@ fn validate_package_section(
     issues: &mut Vec<ValidationIssue>,
 ) {
     use crate::packages::common::{validate_package_name, validate_package_version};
-    use crate::packages::{CARGO_KNOBS, NPM_KNOBS, NUGET_KNOBS, PIP_KNOBS};
+    use crate::packages::{CARGO_KNOBS, GEM_KNOBS, GO_KNOBS, NPM_KNOBS, NUGET_KNOBS, PIP_KNOBS};
 
     // Knob lists live on `crate::packages::config` and are pinned by
     // destructure tests against their owning `*Config` struct, so
@@ -594,6 +596,8 @@ fn validate_package_section(
         "pip" => PIP_KNOBS,
         "cargo" => CARGO_KNOBS,
         "nuget" => NUGET_KNOBS,
+        "gem" => GEM_KNOBS,
+        "go" => GO_KNOBS,
         _ => &[],
     };
 

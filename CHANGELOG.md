@@ -27,6 +27,140 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [Unreleased] — Close out PRD-011/013/014/037/038/039 + gem/go package handlers (2026-06-28)
+
+A documentation + maintainability + ecosystem-breadth pass that closes five
+long-open PRDs and adds Ruby gem and Go binary installation. No user-visible
+behavior changes for existing configs — additive surface for new
+`[gem]` / `[go]` sections plus a smaller, more navigable `src/main.rs`.
+
+### Added — language package ecosystems (PRD-039)
+
+- **`[gem]` section** installs Ruby gems via `gem install --no-document
+  <name> [-v <version>]` against the active ruby. `--no-document` is
+  unconditional — provisioning runs don't need RDoc/RI, and skipping the
+  build cuts install time from ~30s to ~3s on chatty gems like
+  `rubocop`.
+
+  ```toml
+  [gem]
+  bundler = "latest"
+  rubocop = "1.60.0"
+  ```
+
+- **`[go]` section** installs Go binaries via `go install <module>@<version>`
+  to the user's `GOBIN`. Module paths are full import paths (require
+  quoting in TOML); version is mandatory outside a `go.mod` tree, use
+  `"latest"` for floating installs.
+
+  ```toml
+  [go]
+  "github.com/golangci/golangci-lint/cmd/golangci-lint" = "latest"
+  "github.com/cosmtrek/air" = "v1.49.0"
+  ```
+
+- Both handlers wired into `PackagesConfigRef`, `install_packages`
+  dispatcher, `Config` struct, `TOP_LEVEL_SECTIONS`,
+  `validate_package_section`, and `run_packages_phase` telemetry.
+  `GEM_KNOBS` / `GO_KNOBS` slices pinned by destructure tests so adding
+  a future config knob without updating the slice fails compilation
+  instead of silently making the validator reject the new knob as a
+  hostile package name.
+
+- `packages.phase_started` / `packages.phase_completed` events now
+  carry `gem` and `go` booleans alongside the existing
+  `npm`/`pip`/`cargo`/`nuget` flags. `packages.phase_previewed` carries
+  matching `gem_count` / `go_count` for dry-run preview observability.
+
+- Per-package name + version validation (control bytes, leading-`-`,
+  URL schemes) inherits unchanged from `packages/common.rs`. The
+  trust-gate refusal of remote-config installs without
+  `[packages] allow_remote = true` now also covers `[gem]` / `[go]`.
+
+### Changed — `src/main.rs` extraction (PRD-037)
+
+- `src/main.rs` reduced 734 → 271 LOC (-63%). The original
+  1500-line `main()` match block is fully eliminated.
+
+- All CLI dispatch + 14 `handle_*` glue helpers moved to a new
+  `src/commands/dispatch.rs` (486 LOC). `main` now retains only
+  process init that genuinely belongs at the entry point: telemetry
+  config merge precedence (`env > project > global`), sandbox banner
+  muting, panic hook, OTLP flush at exit, and the
+  `extract_config_path` helper for early telemetry config loading.
+
+- Per-command modules already lived at `src/commands/*_cmd.rs` from
+  earlier PRD-037 phases; this round finishes the extraction by
+  taking the routing table out of `main` too.
+
+- Zero behavior change: same exit codes, same output, same flag
+  forwarding, same OTLP flush sequence. `cargo fmt`, `clippy
+  --all-features -- -D warnings`, 814 lib tests, and the full
+  integration test matrix are all green on the refactored layout.
+
+### Added — documentation (PRD-011)
+
+Closes the six remaining `docs/` gaps from the PRD-011 audit. All new
+pages match the existing flat layout (no new subdirectories) and the
+Material for MkDocs style (tabbed code blocks, admonitions, fenced
+code with `title=`):
+
+- `docs/installation.md` — full install guide for macOS, Linux,
+  Windows, and from-source. Covers winget / scoop / choco / brew /
+  cargo, verify steps, update channels, and clean-uninstall.
+- `docs/services.md` — operational guide for `[services]`: Docker
+  Compose, Tilt, inline service blocks, auto-start during `jarvy
+  setup`, CI auto-disable, and `--wait-healthy` patterns.
+- `docs/environment.md` — `[env]` guide: plain variables, tool-scoped
+  overrides, secret resolvers (prompt / `from_env` / 1Password /
+  Vault / AWS Secrets Manager), `.env` vs shell rc, trust boundaries.
+- `docs/tools-by-category.md` — 235+ tools grouped by purpose so
+  users browsing for "what's available" can scan instead of
+  `jarvy search`-ing blindly.
+- `docs/contributing-testing.md` — contributor testing guide: when to
+  reach for unit / integration / E2E layers, `assert_cmd` patterns,
+  `insta` snapshots, `JARVY_TEST_MODE` / `JARVY_FAST_TEST` /
+  `JARVY_E2E` flags, common pitfalls.
+- `docs/decisions.md` — architecture decisions index. Pointers to
+  the canonical sources (`prd/*.md` + `CLAUDE.md`) with one-line
+  summaries for the highest-leverage trust, architecture, and
+  convention decisions.
+
+- `docs/packages.md` updated with `[nuget]`, `[gem]`, `[go]`
+  sections matching the existing `[npm]` / `[pip]` / `[cargo]`
+  format; updated module-source line; expanded order-of-operations
+  to list all six ecosystems.
+
+- `mkdocs.yml` nav extended: Installation under Get Started;
+  Environment variables + Services under Guides; Tools by category +
+  Architecture decisions under Reference; Contributor testing guide
+  under Community.
+
+### Changed — PRD task tracker hygiene
+
+- Updated `tasks/prd-*.json` for nine PRDs whose JSON status had
+  drifted from on-disk reality: 002 (tool post-install hooks), 011
+  (documentation), 013 (235 tool dirs vs the 150 target), 014
+  (real-world testing — examples + smoke tests + e2e workflow ship),
+  021 (MCP server — `src/mcp/` ships), 027 (observability —
+  `src/observability/` ships), 037 (main.rs refactor), 038 (E2E
+  harness — Phase 1 GitHub-hosted ships; Phase 2 AWS EC2 deferred),
+  039 (language packages — gem/go added in this release).
+
+- Each updated JSON carries a `completionNote` field with verification
+  evidence: the on-disk files, the LOC delta, or the directory count
+  that demonstrates the work is actually shipped (not just intended).
+
+### Tracking
+
+- Closes PRD-011 (Comprehensive Documentation System)
+- Closes PRD-013 (Expand Tool Coverage)
+- Closes PRD-014 (Real-World Testing and Example Configurations)
+- Closes PRD-037 (Main.rs Code Maintainability Refactor)
+- Closes PRD-038 (Hybrid Cross-Platform E2E Testing Harness — Phase 1)
+- Closes PRD-039 (Language Package Dependencies)
+- Stale-status sync for PRD-002, PRD-021, PRD-027 (code shipped earlier)
+
 ## [v0.3.0] — Repo relocation to Cliftonz + MCP auto-register default-on (2026-06-26)
 
 First release under the new canonical home, `github.com/Cliftonz/Jarvy`.

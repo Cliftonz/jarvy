@@ -1,19 +1,19 @@
 //! Configuration types for package management
 //!
 //! Defines the configuration structures for the `[npm]`, `[pip]`, `[cargo]`,
-//! `[nuget]`, `[gem]`, and `[go]` sections in jarvy.toml.
+//! `[nuget]`, `[gem]`, and `[go]` sections in jarvy.toml. All six have
+//! shipping install handlers.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Top-level packages configuration containing all package manager configs.
 ///
-/// Retained for the public lib re-export (`jarvy::PackagesConfig`) and
-/// for the `gem` / `go` ecosystems that don't have install handlers
-/// yet — the owned struct still carries them. Internal call sites
-/// should prefer `PackagesConfigRef<'_>` plus `Config::packages_ref()`.
+/// Retained for the public lib re-export (`jarvy::PackagesConfig`).
+/// Internal call sites should prefer `PackagesConfigRef<'_>` plus
+/// `Config::packages_ref()`.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[allow(dead_code)] // Public-lib API + placeholder for gem/go
+#[allow(dead_code)] // Public-lib API surface
 pub struct PackagesConfig {
     /// npm/yarn/pnpm package configuration
     pub npm: Option<NpmConfig>,
@@ -23,9 +23,9 @@ pub struct PackagesConfig {
     pub cargo: Option<CargoConfig>,
     /// .NET global tool installation configuration
     pub nuget: Option<NugetConfig>,
-    /// gem/bundler configuration (future)
+    /// Ruby gem installation configuration
     pub gem: Option<GemConfig>,
-    /// go modules configuration (future)
+    /// Go binary installation configuration
     pub go: Option<GoConfig>,
 }
 
@@ -40,12 +40,14 @@ pub struct PackagesConfigRef<'a> {
     pub pip: Option<&'a PipConfig>,
     pub cargo: Option<&'a CargoConfig>,
     pub nuget: Option<&'a NugetConfig>,
+    pub gem: Option<&'a GemConfig>,
+    pub go: Option<&'a GoConfig>,
     /// Where the parent `Config` came from. `Remote` configs are
     /// refused at install time unless `allow_remote_packages` is true.
     pub origin: crate::ai_hooks::ConfigOrigin,
     /// `[packages] allow_remote` opt-in. False by default — a remote
-    /// config CANNOT install `[npm]/[pip]/[cargo]/[nuget]` entries
-    /// without the user explicitly setting this true.
+    /// config CANNOT install `[npm]/[pip]/[cargo]/[nuget]/[gem]/[go]`
+    /// entries without the user explicitly setting this true.
     pub allow_remote_packages: bool,
 }
 
@@ -215,6 +217,12 @@ pub const CARGO_KNOBS: &[&str] = &["locked"];
 /// test below catches the miss).
 pub const NUGET_KNOBS: &[&str] = &[];
 
+/// Non-package keys in `[gem]`. Empty today.
+pub const GEM_KNOBS: &[&str] = &[];
+
+/// Non-package keys in `[go]`. Empty today.
+pub const GO_KNOBS: &[&str] = &[];
+
 /// .NET global tool configuration (`dotnet tool install -g`).
 ///
 /// "NuGet" here covers the .NET tool ecosystem — CLI binaries published as
@@ -228,18 +236,24 @@ pub struct NugetConfig {
     pub packages: HashMap<String, PackageSpec>,
 }
 
-/// gem/bundler Ruby package configuration (future)
+/// gem/bundler Ruby package configuration.
+///
+/// Installs via `gem install <name> [-v <version>]` against the user's
+/// active ruby. Project-level `Gemfile.lock` workflows are out of scope;
+/// run `bundle install` from project bootstrap, not `jarvy setup`.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[allow(dead_code)] // Reserved for future Ruby gem support; placeholder
 pub struct GemConfig {
     /// Individual gems with versions
     #[serde(flatten)]
     pub packages: HashMap<String, PackageSpec>,
 }
 
-/// go modules configuration (future)
+/// Go binary installation configuration.
+///
+/// Installs via `go install <module>@<version>` to the user's `GOBIN`.
+/// Module paths are full import paths (e.g.
+/// `github.com/golangci/golangci-lint/cmd/golangci-lint`).
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[allow(dead_code)] // Reserved for future Go binary support; placeholder
 pub struct GoConfig {
     /// Individual go binaries to install
     #[serde(flatten)]
@@ -264,17 +278,14 @@ mod tests {
     // in one step, preventing the "validator rejects legitimate knob
     // as hostile package name" class of bug.
 
-    /// `PackagesConfigRef` deliberately borrows only the four ecosystems
-    /// that have working install handlers today (`npm/pip/cargo/nuget`).
-    /// `PackagesConfig` also carries `gem` and `go` for future use. This
-    /// test asserts the asymmetry is intentional — if a sixth ecosystem
-    /// gets a handler, both destructures must be updated together (the
-    /// owned-struct one will simply fail to compile because it gains
-    /// a new field). The ref-struct destructure failing to compile
-    /// signals "you added a ref field but forgot to wire it from
-    /// `Config::packages_ref()`."
+    /// `PackagesConfigRef` and `PackagesConfig` must carry the same six
+    /// ecosystems. If anyone adds a seventh, both destructures fail to
+    /// compile until they're updated together — the owned-struct one
+    /// because it gains a new field, the ref-struct because it doesn't.
+    /// Stops "added a ref field but forgot to wire it from
+    /// `Config::packages_ref()`" regressions.
     #[test]
-    fn packages_ref_field_set_intentionally_skips_gem_and_go() {
+    fn packages_ref_field_set_matches_owned_ecosystems() {
         fn _enforce_owned(c: PackagesConfig) {
             let PackagesConfig {
                 npm: _,
@@ -291,6 +302,8 @@ mod tests {
                 pip: _,
                 cargo: _,
                 nuget: _,
+                gem: _,
+                go: _,
                 origin: _,
                 allow_remote_packages: _,
             } = r;
@@ -370,6 +383,22 @@ mod tests {
         // added, both the destructure above AND NUGET_KNOBS must be
         // updated together.
         assert!(NUGET_KNOBS.is_empty(), "NugetConfig has no knobs yet");
+    }
+
+    #[test]
+    fn gem_knobs_match_gem_config_fields() {
+        fn _enforce(c: GemConfig) {
+            let GemConfig { packages: _ } = c;
+        }
+        assert!(GEM_KNOBS.is_empty(), "GemConfig has no knobs yet");
+    }
+
+    #[test]
+    fn go_knobs_match_go_config_fields() {
+        fn _enforce(c: GoConfig) {
+            let GoConfig { packages: _ } = c;
+        }
+        assert!(GO_KNOBS.is_empty(), "GoConfig has no knobs yet");
     }
 
     #[test]

@@ -298,6 +298,12 @@ pub struct Config {
     /// .NET global tool configuration (`[nuget]`)
     #[serde(default)]
     pub nuget: Option<crate::packages::NugetConfig>,
+    /// Ruby gem configuration (`[gem]`)
+    #[serde(default)]
+    pub gem: Option<crate::packages::GemConfig>,
+    /// Go binary configuration (`[go]`)
+    #[serde(default)]
+    pub go: Option<crate::packages::GoConfig>,
     /// Git configuration
     #[serde(default)]
     pub git: Option<crate::git::GitConfig>,
@@ -385,6 +391,8 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "pip",
     "cargo",
     "nuget",
+    "gem",
+    "go",
     "packages",
     "git",
     "drift",
@@ -733,6 +741,8 @@ impl Config {
             pip: self.pip.as_ref(),
             cargo: self.cargo.as_ref(),
             nuget: self.nuget.as_ref(),
+            gem: self.gem.as_ref(),
+            go: self.go.as_ref(),
             origin: self.origin,
             allow_remote_packages: self.packages.allow_remote,
         }
@@ -740,7 +750,12 @@ impl Config {
 
     /// Check if any packages are configured
     pub fn has_packages(&self) -> bool {
-        self.npm.is_some() || self.pip.is_some() || self.cargo.is_some() || self.nuget.is_some()
+        self.npm.is_some()
+            || self.pip.is_some()
+            || self.cargo.is_some()
+            || self.nuget.is_some()
+            || self.gem.is_some()
+            || self.go.is_some()
     }
 
     /// Get the git configuration
@@ -928,6 +943,8 @@ mod tests {
                 extends: _,
                 role: _,
                 tools: _,
+                gem: _,
+                go: _,
                 privileges: _,
                 hooks: _,
                 env: _,
@@ -968,6 +985,8 @@ mod tests {
             "pip",
             "cargo",
             "nuget",
+            "gem",
+            "go",
             "packages",
             "git",
             "drift",

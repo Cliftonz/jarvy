@@ -1,18 +1,18 @@
 ---
 title: "Language Packages - Jarvy"
-description: "Install npm, pip, and cargo packages alongside CLI tools. Auto-detect package managers, support virtualenvs, install from lockfiles."
+description: "Install npm, pip, cargo, nuget, gem, and go packages alongside CLI tools. Auto-detect package managers, support virtualenvs, install from lockfiles."
 ---
 
 # Language Packages
 
-`jarvy.toml` can install language-specific packages — `[npm]`, `[pip]`, `[cargo]` — alongside the CLI tools in `[provisioner]`. One config, one command, full project bootstrap.
+`jarvy.toml` can install language-specific packages — `[npm]`, `[pip]`, `[cargo]`, `[nuget]`, `[gem]`, `[go]` — alongside the CLI tools in `[provisioner]`. One config, one command, full project bootstrap.
 
 ## Why
 
 A typical project needs both:
 
-- System tools: `node`, `python`, `cargo`
-- Language packages: `typescript`, `pytest`, `cargo-watch`
+- System tools: `node`, `python`, `cargo`, `dotnet`, `ruby`, `go`
+- Language packages: `typescript`, `pytest`, `cargo-watch`, `dotnet-ef`, `rubocop`, `golangci-lint`
 
 Without Jarvy, that's two README sections and two onboarding scripts. With Jarvy, it's one `jarvy setup`.
 
@@ -130,13 +130,50 @@ some-tool = { version = "1.0", features = ["feature1", "feature2"] }
 git-tool = { git = "https://github.com/owner/repo", locked = true }
 ```
 
+## nuget (.NET global tools)
+
+```toml
+[nuget]
+dotnet-ef = "latest"
+csharpier = "0.30.0"
+dotnet-outdated-tool = "latest"
+```
+
+Installs CLI binaries published as NuGet packages via `dotnet tool update -g <name>`. `update` (not `install`) is used so re-runs are idempotent — `install` errors when the tool is already present.
+
+Project-level `<PackageReference>` deps in `.csproj` / `Directory.Packages.props` are NOT managed here; they're restored by `dotnet restore` during build.
+
+## gem (Ruby)
+
+```toml
+[gem]
+bundler = "latest"
+rubocop = "1.60.0"
+solargraph = "latest"
+```
+
+Installs via `gem install --no-document <name> [-v <version>]` against the active ruby (system ruby, or whatever rbenv / asdf currently selects). `--no-document` is unconditional — provisioning runs don't need RDoc/RI, and skipping the build cuts install time from ~30s to ~3s on chatty gems.
+
+Bundler workflows (`bundle install` against a project `Gemfile.lock`) are out of scope — run `bundle install` from project bootstrap instead.
+
+## go (Go binaries)
+
+```toml
+[go]
+"github.com/golangci/golangci-lint/cmd/golangci-lint" = "latest"
+"github.com/cosmtrek/air" = "v1.49.0"
+"golang.org/x/tools/gopls" = "latest"
+```
+
+Installs via `go install <module>@<version>` to the user's `GOBIN` (or `$GOPATH/bin`, or `$HOME/go/bin` fallback). Module paths are full import paths and require quoting in TOML when they contain `/` or `.`. Version is mandatory for Go's tooling outside a `go.mod` tree — use `"latest"` for floating installs.
+
 ## Order of Operations
 
 `jarvy setup` runs in this order:
 
 1. CLI tools from `[provisioner]` (parallelized)
 2. Per-tool hooks
-3. Language packages (`[npm]`, `[pip]`, `[cargo]`)
+3. Language packages (`[npm]`, `[pip]`, `[cargo]`, `[nuget]`, `[gem]`, `[go]`)
 4. Git config
 5. Environment variables
 6. Service start (if enabled)
@@ -163,5 +200,5 @@ jarvy doctor                         # Verifies installed packages
 ## Module
 
 - Source: `src/packages/`
-- Files: `config.rs`, `npm.rs`, `pip.rs`, `cargo_pkg.rs`, `common.rs`
-- Key types: `PackagesConfig`, `NpmConfig`, `PipConfig`, `CargoConfig`, `PackageSpec`
+- Files: `config.rs`, `npm.rs`, `pip.rs`, `cargo_pkg.rs`, `nuget.rs`, `gem.rs`, `go.rs`, `common.rs`
+- Key types: `PackagesConfig`, `NpmConfig`, `PipConfig`, `CargoConfig`, `NugetConfig`, `GemConfig`, `GoConfig`, `PackageSpec`

@@ -1044,8 +1044,14 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
     let has_pip = packages_ref.pip.is_some();
     let has_cargo = packages_ref.cargo.is_some();
     let has_nuget = packages_ref.nuget.is_some();
-    let backend_count =
-        (has_npm as u32) + (has_pip as u32) + (has_cargo as u32) + (has_nuget as u32);
+    let has_gem = packages_ref.gem.is_some();
+    let has_go = packages_ref.go.is_some();
+    let backend_count = (has_npm as u32)
+        + (has_pip as u32)
+        + (has_cargo as u32)
+        + (has_nuget as u32)
+        + (has_gem as u32)
+        + (has_go as u32);
 
     let _span = tracing::info_span!(
         "packages",
@@ -1054,6 +1060,8 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
         pip = %has_pip,
         cargo = %has_cargo,
         nuget = %has_nuget,
+        gem = %has_gem,
+        go = %has_go,
     )
     .entered();
 
@@ -1071,6 +1079,8 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
             pip = has_pip,
             cargo = has_cargo,
             nuget = has_nuget,
+            gem = has_gem,
+            go = has_go,
         );
     }
 
@@ -1102,6 +1112,8 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
                 pip_count = packages_ref.pip.map(|c| c.packages.len()).unwrap_or(0),
                 cargo_count = packages_ref.cargo.map(|c| c.packages.len()).unwrap_or(0),
                 nuget_count = packages_ref.nuget.map(|c| c.packages.len()).unwrap_or(0),
+                gem_count = packages_ref.gem.map(|c| c.packages.len()).unwrap_or(0),
+                go_count = packages_ref.go.map(|c| c.packages.len()).unwrap_or(0),
             );
         }
         // Symmetric preview across all four ecosystems: announce the
@@ -1136,6 +1148,16 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
                 "machine-global",
                 nuget.packages.keys().map(String::as_str),
             );
+        }
+        if let Some(gem) = packages_ref.gem {
+            preview_packages(
+                "gem",
+                "ruby-global",
+                gem.packages.keys().map(String::as_str),
+            );
+        }
+        if let Some(go) = packages_ref.go {
+            preview_packages("go", "GOBIN", go.packages.keys().map(String::as_str));
         }
     } else {
         println!("\n=== Installing Package Dependencies ===");

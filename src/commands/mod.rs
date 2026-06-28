@@ -48,6 +48,7 @@ pub mod bootstrap_cmd;
 pub mod ci_cmd;
 pub mod config_cmd;
 pub mod configure_cmd;
+pub mod dispatch;
 pub mod drift_cmd;
 pub mod ensure_cmd;
 pub mod env_cmd;

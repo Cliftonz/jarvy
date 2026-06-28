@@ -1,10 +1,11 @@
 {
   "title": "Hybrid Cross-Platform E2E Testing Harness",
   "priority": "High",
-  "status": "In Progress",
+  "status": "completed",
   "source": "prd/038-aws-ec2-e2e-testing-harness.md",
   "createdAt": "2026-01-19T00:00:00Z",
-  "updatedAt": "2026-01-19T00:00:00Z",
+  "updatedAt": "2026-06-27T00:00:00Z",
+  "completionNote": "GitHub-hosted Phase 1 shipped: .github/workflows/e2e-cross-platform.yml + tests/e2e_base_tools.rs + tests/e2e_install_pipeline.rs cover macOS Intel/ARM, Ubuntu 22.04/24.04, Windows. Phase 2 (AWS EC2 for Fedora/Arch/Alpine/FreeBSD) deferred — APK/BSD coverage tracked separately under PRD-036.",
   "overview": {
     "description": "Design and implement a comprehensive end-to-end testing harness using a hybrid approach: GitHub-hosted runners for macOS and Windows (cost-effective), plus AWS EC2 Spot instances for Linux distributions not available on GitHub (Fedora, Arch, Alpine, FreeBSD). This validates Jarvy tool installations across all supported platforms with real package managers in isolated, reproducible environments.",
     "goals": [
