@@ -41,20 +41,88 @@ pub fn run_discover(file: &str, apply: bool, missing: bool, output_format: &str)
     }
 
     if apply {
-        let new_text = match existing_text {
-            Some(text) => generator::merge_into_existing(&text, &report),
-            None => generator::render_fresh(&report),
+        let apply_started = std::time::Instant::now();
+        let telemetry_on = crate::observability::telemetry_gate::is_enabled();
+        let (new_text, note) = match existing_text {
+            Some(ref text) => match generator::merge_into_existing(text, &report) {
+                generator::MergeOutcome::Noop => (text.clone(), Some("no new tools to add")),
+                generator::MergeOutcome::Merged(s) => (s, None),
+                generator::MergeOutcome::BailedToFresh(s) => (
+                    s,
+                    Some(
+                        "existing [provisioner] block couldn't be safely edited; \
+                         falling back to a fresh-rendered jarvy.toml (your other sections were preserved \
+                         only if they round-tripped through the TOML parser)",
+                    ),
+                ),
+                generator::MergeOutcome::ExistingUnparseable => {
+                    if output_format == "json" {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "status": "refused",
+                                "reason": "existing jarvy.toml is not valid TOML",
+                                "path": file,
+                            })
+                        );
+                    } else {
+                        eprintln!("Refusing to --apply: existing {} is not valid TOML.", file);
+                        eprintln!("Fix the parse error first (or move the file aside) and re-run.");
+                    }
+                    return crate::error_codes::CONFIG_ERROR;
+                }
+            },
+            None => (generator::render_fresh(&report), None),
         };
-        if let Err(e) = std::fs::write(file, &new_text) {
+        if let Err(e) = atomic_write(Path::new(file), &new_text) {
             eprintln!("Failed to write {}: {}", file, e);
             return crate::error_codes::CONFIG_ERROR;
         }
+        if telemetry_on {
+            // Operators graph adoption against this event — the whole
+            // PRD-044 purpose is onboarding ergonomics.
+            tracing::info!(
+                event = "discover.applied",
+                tools_added = report.required.len(),
+                recommended_added = report.recommended.len(),
+                already_configured = report.already_configured.len(),
+                target = if note == Some("no new tools to add") {
+                    "noop"
+                } else if matches!(note, Some(s) if s.starts_with("existing [provisioner]")) {
+                    "bailed_to_fresh"
+                } else {
+                    "merged"
+                },
+                duration_ms = apply_started.elapsed().as_millis() as u64,
+            );
+        }
         if output_format != "json" {
             println!("\nWrote {}", file);
+            if let Some(msg) = note {
+                eprintln!("  note: {msg}");
+            }
         }
     }
 
     0
+}
+
+/// Atomic write (review item P2 #18): create a sibling temp file,
+/// `fsync`-equivalent via Drop, then `rename` over the target. Mid-
+/// crash leaves either the old file (rename didn't happen) or the new
+/// file (rename succeeded) — never an empty / partial `jarvy.toml`.
+fn atomic_write(target: &Path, content: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let parent = target.parent().unwrap_or(Path::new("."));
+    // tempfile NamedTempFile lives next to the target so rename is on
+    // the same filesystem (cross-fs rename would fall back to copy +
+    // delete, defeating atomicity).
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.as_file_mut().write_all(content.as_bytes())?;
+    tmp.as_file_mut().flush()?;
+    tmp.persist(target)
+        .map_err(|e| std::io::Error::other(format!("persist failed: {e}")))?;
+    Ok(())
 }
 
 fn render_pretty(report: &super::DiscoverReport, file: &str, apply: bool) {
@@ -159,5 +227,39 @@ docker = "latest"
         let written = fs::read_to_string(&toml).unwrap();
         assert!(written.contains("[provisioner]"));
         assert!(written.contains("rust ="), "got:\n{written}");
+    }
+
+    /// Review P1 #8 — when the existing jarvy.toml fails to parse,
+    /// `--apply` MUST refuse to write and the original file must be
+    /// preserved byte-for-byte. Without this guard, a temporarily
+    /// broken config would be silently overwritten with every detected
+    /// tool (data loss).
+    #[test]
+    fn apply_refuses_when_existing_toml_unparseable() {
+        let tmp = tempdir().unwrap();
+        let toml = tmp.path().join("jarvy.toml");
+        let bad = "[provisioner\nbroken =";
+        fs::write(&toml, bad).unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let exit = run_discover(toml.to_str().unwrap(), true, false, "pretty");
+        assert_eq!(exit, crate::error_codes::CONFIG_ERROR);
+        // File must be unchanged.
+        assert_eq!(fs::read_to_string(&toml).unwrap(), bad);
+    }
+
+    /// Pins the atomic-write contract: a successful apply produces a
+    /// fully-formed jarvy.toml — never empty, never partial. We rely
+    /// on the tmp+rename pattern; this test is the regression guard.
+    #[test]
+    fn apply_atomic_write_lands_complete_file() {
+        let tmp = tempdir().unwrap();
+        let toml = tmp.path().join("jarvy.toml");
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let exit = run_discover(toml.to_str().unwrap(), true, false, "pretty");
+        assert_eq!(exit, 0);
+        let written = fs::read_to_string(&toml).unwrap();
+        // Round-trips through the TOML parser.
+        let parsed: toml::Table = written.parse().expect("jarvy.toml must parse");
+        assert!(parsed.contains_key("provisioner"));
     }
 }

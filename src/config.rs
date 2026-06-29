@@ -643,15 +643,16 @@ impl Config {
             }
         };
 
+        let effective_inherit = ctx.workspace.effective_inherit();
         let merged =
-            crate::workspace::merge_configs(&root_value, &member_value, &ctx.workspace.inherit);
+            crate::workspace::merge_configs(&root_value, &member_value, &effective_inherit);
 
         match merged.try_into::<Config>() {
             Ok(config) => {
                 tracing::info!(
                     event = "workspace.config_merged",
                     member = ctx.current_member.as_deref().unwrap_or(""),
-                    inherit_count = ctx.workspace.inherit.len(),
+                    inherit_count = effective_inherit.len(),
                 );
                 telemetry::config_loaded(
                     config_path,

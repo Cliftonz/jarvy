@@ -40,6 +40,68 @@ the same format. PRD-049 (skills) rides on it; PRD-048 / 052 (git
 hooks, spinners) shipped earlier in the day. No user-visible behavior
 changes for existing configs — all new surface is additive.
 
+### Added — parallel-review hardening for PRD-044 / 047 / 051 (25 review items)
+
+Follow-up sweep against the parallel-code-review enhancement plan that
+ran against the three preceding PRDs. All 25 items addressed across
+7 batched commits. Highlights:
+
+- **Security (P0 #1, #2, #3; P2 #17, #18, #20, #21):** Strict allowlist
+  on extracted versions (`[A-Za-z0-9._+~:\-]`, ≤64 chars, BOM stripped)
+  closes TOML injection via `.python-version` / `rust-toolchain.toml` /
+  `.ruby-version`. Strict allowlist on `*.tf`-glob filename source
+  attribution closes the same threat via attacker-controllable
+  filenames. `jarvy workspace` refuses traversal members
+  (`members = ["../../etc"]`) — existence-oracle leak and external
+  jarvy.toml reads no longer possible. `jarvy discover --apply` now
+  uses atomic tmp+rename writes (no torn files on crash). Ticket-show
+  TTY path runs zip entry names through the existing ANSI sanitizer.
+- **UX / data safety (P0 #4; P1 #8, #14):** Empty `[workspace] inherit
+  = []` is treated as `["provisioner"]` by BOTH the CLI display and
+  the production setup resolver via a new
+  `WorkspaceConfig::effective_inherit()` helper — the previous
+  CLI-only widening was a "show advertises what setup won't do" bug.
+  `jarvy discover --apply` refuses to overwrite an existing jarvy.toml
+  that fails to parse as TOML (data-loss prevention). The
+  `[provisioner]` section detector in the merger now uses a TOML
+  parse instead of substring match, so a comment containing the
+  literal `[provisioner]` no longer confuses the splicer.
+- **Robustness (P1 #5):** The string-level TOML edit in
+  `discover/generator.rs::merge_into_existing` now re-parses its
+  output and falls back to a fresh `render_fresh` on any edge case
+  (`[provisioner.linux]` subtables, indented headers, `[[provisioner]]`
+  arrays-of-tables) — guarantee: NEVER write invalid TOML. Return
+  type widened to `MergeOutcome { Merged, Noop, BailedToFresh,
+  ExistingUnparseable }` so the CLI can produce a clear diagnostic.
+- **Observability (P1 #6, #7, #15):** New events
+  `workspace.validate_completed` (`info!`/`warn!` by error count) +
+  `workspace.member_invalid` (`error_kind` only — no member-name
+  leak), `discover.applied` (tools added, recommended, already
+  configured, target = "merged" | "noop" | "bailed_to_fresh",
+  duration_ms). All gated through `telemetry_gate::is_enabled()`.
+  CLAUDE.md taxonomy table updated. New CLI dispatch test pins the
+  stderr-pure contract when `--format json` + `JARVY_TELEMETRY=0`.
+- **Performance (P1 #9, #10, #11; P2 #22, #23, #24, #25):** Workspace
+  list/show parses root jarvy.toml once instead of per-member. Key
+  membership now uses `HashSet<&str>` borrowed from the parse instead
+  of cloning every value into a `BTreeMap`. drift_cmd's version
+  regex cached in `OnceLock`. discover::default_rules() cached in
+  `OnceLock` (no per-call rebuild of 12-rule vec). recommended_seen
+  checks before clone. detections moved into report instead of
+  cloned. Generator splicer uses `String::with_capacity` +
+  `push_str` instead of `Vec<String>`.
+- **QA (P1 #12, #13; P2 #19):** 13 new tests covering — extension-glob
+  determinism, hostile filename refusal, version sanitizer, BOM
+  strip, length cap, merge `[provisioner]`-in-comment edge case,
+  merge bail-to-fresh on broken splice, merge refuse-when-unparseable,
+  atomic-write completeness, traversal-member refusal,
+  `effective_inherit()` round-trips, ci-info/ticket/logs/discover/
+  workspace JSON-shape contracts, and stdout-pure JSON regression
+  guard. Test totals: 945 lib + 1400 bin (up from 907 / 1353).
+
+CHANGELOG note also includes `docs/discover.md` and `docs/workspace.md`
+in the doc set that surfaces these PRDs to end users.
+
 ### Added — PRD-044 / 047 / 051 (auto-discovery + monorepo + JSON output)
 
 Three PRDs closed in a single session, all additive (no existing

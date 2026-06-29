@@ -224,7 +224,12 @@ fn handle_ticket_show(ticket_arg: &str, output_format: &str) -> i32 {
 
     for i in 0..archive.len() {
         if let Ok(file) = archive.by_index(i) {
-            println!("  {} ({} bytes)", file.name(), file.size());
+            // Zip entry names from a third-party ticket are
+            // attacker-controllable. Strip ANSI / C0 controls before
+            // emitting to a TTY (review item P2 #21). The JSON path
+            // doesn't need this because serde_json escapes them.
+            let safe_name = crate::observability::sanitizer::redact_for_display(file.name());
+            println!("  {} ({} bytes)", safe_name, file.size());
         }
     }
 

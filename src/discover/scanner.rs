@@ -20,17 +20,18 @@ use std::path::{Path, PathBuf};
 /// invite false positives from vendored / `node_modules` content.
 pub fn find_first_match(project_dir: &Path, pattern: &str) -> Option<PathBuf> {
     if let Some(ext) = pattern.strip_prefix("*.") {
-        let entries = std::fs::read_dir(project_dir).ok()?;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if path.extension().and_then(|s| s.to_str()) == Some(ext) {
-                return Some(path);
-            }
-        }
-        return None;
+        // Collect-then-sort so the returned `source` attribution is
+        // stable across filesystems (review item P2 #19 —
+        // `read_dir` iteration order is FS-dependent).
+        let mut matches: Vec<std::path::PathBuf> = std::fs::read_dir(project_dir)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some(ext))
+            .collect();
+        matches.sort();
+        return matches.into_iter().next();
     }
 
     let candidate = project_dir.join(pattern);
@@ -70,6 +71,28 @@ mod tests {
         let tmp = tempdir().unwrap();
         assert!(find_first_match(tmp.path(), "Cargo.toml").is_none());
         assert!(find_first_match(tmp.path(), "*.tf").is_none());
+    }
+
+    /// Review P2 #19 — same input must produce the same match
+    /// regardless of `read_dir` order. Pin via repeated runs (the
+    /// sort + first() pattern is what makes this deterministic).
+    #[test]
+    fn extension_glob_returns_deterministic_match() {
+        let tmp = tempdir().unwrap();
+        for name in ["b.tf", "a.tf", "c.tf"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let first = find_first_match(tmp.path(), "*.tf").unwrap();
+        // The sort guarantees we get `a.tf` (lexicographically smallest).
+        assert_eq!(first.file_name().unwrap(), "a.tf");
+        // Three more runs — must produce the same answer every time.
+        for _ in 0..3 {
+            assert_eq!(
+                find_first_match(tmp.path(), "*.tf").unwrap(),
+                first,
+                "extension-glob matcher must be deterministic"
+            );
+        }
     }
 
     #[test]

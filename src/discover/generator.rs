@@ -43,15 +43,50 @@ fn render_tool_line(out: &mut String, tool: &ToolSuggestion) {
     ));
 }
 
+/// Outcome of `merge_into_existing` — distinguishes "no-op" from
+/// "merged" from "bail to fresh" so the CLI can produce a clear
+/// diagnostic and the caller can decide whether to atomic-write.
+#[derive(Debug)]
+pub enum MergeOutcome {
+    /// Existing text returned unchanged (no new tools to add).
+    Noop,
+    /// New text produced by string-level merge into the existing
+    /// `[provisioner]` block.
+    Merged(String),
+    /// String-level merge produced output that no longer parses as
+    /// valid TOML — we refuse to write it and fall back to a fresh
+    /// render. The caller should make sure the user knows this means
+    /// the existing file's non-`[provisioner]` content was discarded.
+    BailedToFresh(String),
+    /// Existing text failed to parse — we refuse to overwrite a
+    /// broken-but-user-authored config and pass the responsibility
+    /// to the caller (review item P1 #8).
+    ExistingUnparseable,
+}
+
 /// Merge `report.required` + `report.recommended` into the existing
 /// `[provisioner]` block of `existing`. Tools already present in
 /// `existing` are left alone; new tools are appended at the end of
 /// the block. If `[provisioner]` is missing, it's appended.
 ///
-/// Returns the rewritten file text. The diff is intentionally minimal
-/// — no reformat, no key reorder — so a user's hand-curated config
-/// survives a `jarvy discover --apply` run unscathed.
-pub fn merge_into_existing(existing: &str, report: &DiscoverReport) -> String {
+/// Returns the rewritten file text wrapped in a `MergeOutcome`. The
+/// diff is intentionally minimal — no reformat, no key reorder — so
+/// a user's hand-curated config survives a `jarvy discover --apply`
+/// run unscathed.
+///
+/// **Safety guarantees** (review items P1 #5, #8, #14):
+///
+/// - If `existing` fails to parse as TOML, we return
+///   `ExistingUnparseable` rather than overwrite a broken-but-user-
+///   authored config. The CLI surfaces this as a stderr error.
+/// - We locate the `[provisioner]` block via a TOML parse (not a
+///   substring match) so a comment like `# uses [provisioner] block`
+///   can't trick us into treating provisioner as absent.
+/// - After the string-level merge, we re-parse the result. If the
+///   parse fails (edge cases: indented headers, `[provisioner.foo]`
+///   subtables, `[[provisioner]]` array-of-tables), we fall back to
+///   `BailedToFresh` so we never write invalid TOML.
+pub fn merge_into_existing(existing: &str, report: &DiscoverReport) -> MergeOutcome {
     let new_lines: Vec<String> = report
         .required
         .iter()
@@ -60,17 +95,21 @@ pub fn merge_into_existing(existing: &str, report: &DiscoverReport) -> String {
         .collect();
 
     if new_lines.is_empty() {
-        return existing.to_string();
+        return MergeOutcome::Noop;
     }
 
     // Parse to figure out which keys already exist under `[provisioner]`.
-    let already: std::collections::HashSet<String> = match existing.parse::<toml::Table>() {
-        Ok(t) => match t.get("provisioner") {
-            Some(toml::Value::Table(p)) => p.keys().cloned().collect(),
-            _ => std::collections::HashSet::new(),
-        },
-        Err(_) => std::collections::HashSet::new(),
+    // A parse failure means the existing file is broken; refuse to
+    // overwrite (review item P1 #8).
+    let parsed: toml::Table = match existing.parse() {
+        Ok(t) => t,
+        Err(_) if existing.trim().is_empty() => toml::Table::new(),
+        Err(_) => return MergeOutcome::ExistingUnparseable,
     };
+    let provisioner_table = parsed.get("provisioner").and_then(|v| v.as_table());
+    let already: std::collections::HashSet<&str> = provisioner_table
+        .map(|p| p.keys().map(String::as_str).collect())
+        .unwrap_or_default();
 
     let filtered: Vec<String> = new_lines
         .into_iter()
@@ -81,25 +120,50 @@ pub fn merge_into_existing(existing: &str, report: &DiscoverReport) -> String {
         .collect();
 
     if filtered.is_empty() {
-        return existing.to_string();
+        return MergeOutcome::Noop;
     }
 
-    if !existing.contains("[provisioner]") {
-        let mut out = existing.trim_end().to_string();
-        if !out.is_empty() {
-            out.push_str("\n\n");
-        }
-        out.push_str("[provisioner]\n");
-        out.push_str("# Added by `jarvy discover`\n");
-        for line in &filtered {
-            out.push_str(line);
-            out.push('\n');
-        }
-        return out;
+    let merged_text = if provisioner_table.is_none() {
+        append_fresh_provisioner_block(existing, &filtered)
+    } else {
+        // Locate the next `[section]` after `[provisioner]` via a
+        // simple walker that operates on the SAME lines we'll edit.
+        // The previous version used `existing.contains("[provisioner]")`
+        // which matched comments containing the string verbatim
+        // (review item P1 #14); we now know provisioner exists from
+        // the parse above, so we can search confidently for the
+        // header line.
+        splice_into_provisioner(existing, &filtered)
+    };
+
+    // Defense in depth: refuse to write output that doesn't re-parse
+    // as valid TOML. Edge cases like `[provisioner.linux]` subtables
+    // (where our header walker doesn't find the bare `[provisioner]`)
+    // would otherwise produce structurally-broken output (review
+    // item P1 #5).
+    if merged_text.parse::<toml::Table>().is_err() {
+        let fresh = render_fresh(report);
+        return MergeOutcome::BailedToFresh(fresh);
     }
 
-    // Locate the next `[section]` after `[provisioner]` and insert
-    // before it. If there's no following section, append at EOF.
+    MergeOutcome::Merged(merged_text)
+}
+
+fn append_fresh_provisioner_block(existing: &str, filtered: &[String]) -> String {
+    let mut out = existing.trim_end().to_string();
+    if !out.is_empty() {
+        out.push_str("\n\n");
+    }
+    out.push_str("[provisioner]\n");
+    out.push_str("# Added by `jarvy discover`\n");
+    for line in filtered {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+fn splice_into_provisioner(existing: &str, filtered: &[String]) -> String {
     let lines: Vec<&str> = existing.lines().collect();
     let mut in_provisioner = false;
     let mut insert_at: Option<usize> = None;
@@ -115,31 +179,44 @@ pub fn merge_into_existing(existing: &str, report: &DiscoverReport) -> String {
         }
     }
 
-    let mut rebuilt: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
-    let block: Vec<String> = std::iter::once("# Added by `jarvy discover`".to_string())
-        .chain(filtered)
-        .collect();
+    // Pre-size: existing length + new content + a comment line.
+    let mut out = String::with_capacity(
+        existing.len() + filtered.iter().map(|l| l.len() + 1).sum::<usize>() + 32,
+    );
+    let block_header = "# Added by `jarvy discover`";
 
     match insert_at {
-        Some(i) => {
-            for (offset, new_line) in block.into_iter().enumerate() {
-                rebuilt.insert(i + offset, new_line);
+        Some(idx) => {
+            for (i, line) in lines.iter().enumerate() {
+                if i == idx {
+                    out.push_str(block_header);
+                    out.push('\n');
+                    for new_line in filtered {
+                        out.push_str(new_line);
+                        out.push('\n');
+                    }
+                }
+                out.push_str(line);
+                out.push('\n');
             }
         }
         None => {
-            if let Some(last) = rebuilt.last() {
-                if !last.trim().is_empty() {
-                    rebuilt.push(String::new());
-                }
+            for line in &lines {
+                out.push_str(line);
+                out.push('\n');
             }
-            rebuilt.extend(block);
+            if !out.is_empty() && !out.ends_with("\n\n") {
+                out.push('\n');
+            }
+            out.push_str(block_header);
+            out.push('\n');
+            for new_line in filtered {
+                out.push_str(new_line);
+                out.push('\n');
+            }
         }
     }
 
-    let mut out = rebuilt.join("\n");
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
     out
 }
 
@@ -175,10 +252,20 @@ mod tests {
         assert!(out.contains("cargo-watch = \"latest\""));
     }
 
+    fn merged_text(outcome: MergeOutcome) -> String {
+        match outcome {
+            MergeOutcome::Merged(s) | MergeOutcome::BailedToFresh(s) => s,
+            MergeOutcome::Noop => String::new(),
+            MergeOutcome::ExistingUnparseable => {
+                panic!("expected merge, got ExistingUnparseable")
+            }
+        }
+    }
+
     #[test]
     fn merge_into_existing_preserves_user_content() {
         let existing = "[provisioner]\ngit = \"latest\"\n\n[hooks]\nfoo = \"bar\"\n";
-        let merged = merge_into_existing(existing, &sample_report());
+        let merged = merged_text(merge_into_existing(existing, &sample_report()));
         assert!(merged.contains("git = \"latest\""), "got:\n{merged}");
         assert!(merged.contains("rust = \"1.85.0\""), "got:\n{merged}");
         assert!(merged.contains("[hooks]"), "got:\n{merged}");
@@ -191,7 +278,7 @@ mod tests {
     #[test]
     fn merge_skips_already_pinned_keys() {
         let existing = "[provisioner]\nrust = \"1.84.0\"\n";
-        let merged = merge_into_existing(existing, &sample_report());
+        let merged = merged_text(merge_into_existing(existing, &sample_report()));
         assert!(merged.contains("rust = \"1.84.0\""), "got:\n{merged}");
         assert!(!merged.contains("1.85.0"), "got:\n{merged}");
         // Recommended cargo-watch still added.
@@ -200,15 +287,79 @@ mod tests {
 
     #[test]
     fn merge_into_empty_file_creates_provisioner_section() {
-        let merged = merge_into_existing("", &sample_report());
+        let merged = merged_text(merge_into_existing("", &sample_report()));
         assert!(merged.contains("[provisioner]"));
         assert!(merged.contains("rust = \"1.85.0\""));
     }
 
     #[test]
-    fn empty_report_leaves_existing_unchanged() {
+    fn empty_report_returns_noop() {
         let existing = "[provisioner]\ngit = \"latest\"\n";
         let empty = DiscoverReport::default();
-        assert_eq!(merge_into_existing(existing, &empty), existing);
+        assert!(matches!(
+            merge_into_existing(existing, &empty),
+            MergeOutcome::Noop
+        ));
+    }
+
+    /// Review P1 #14 — a comment containing `[provisioner]` must NOT
+    /// be treated as the section header. Previous version used a
+    /// substring check and would append at EOF, leaving the new keys
+    /// outside any section (silently becoming root-level keys).
+    #[test]
+    fn merge_treats_provisioner_in_comment_as_absent() {
+        let existing = "# Uses [provisioner] block style\n[other]\nx = 1\n";
+        let merged = merged_text(merge_into_existing(existing, &sample_report()));
+        assert!(merged.contains("[provisioner]"), "got:\n{merged}");
+        assert!(merged.contains("rust = \"1.85.0\""), "got:\n{merged}");
+        // The comment must survive.
+        assert!(merged.contains("# Uses [provisioner] block style"));
+    }
+
+    /// Review P1 #8 — unparseable existing config must refuse to
+    /// overwrite, not silently treat it as "no keys pinned" and
+    /// emit every detected tool.
+    #[test]
+    fn merge_refuses_when_existing_unparseable() {
+        let existing = "[provisioner\nbroken =";
+        assert!(matches!(
+            merge_into_existing(existing, &sample_report()),
+            MergeOutcome::ExistingUnparseable
+        ));
+    }
+
+    /// Review P1 #5 — `[provisioner.linux]` style subtables aren't
+    /// findable by the simple header walker, so the splice would
+    /// produce invalid TOML. Defense in depth: re-parse the merged
+    /// text and fall back to `render_fresh` if it doesn't round-trip.
+    #[test]
+    fn merge_bails_to_fresh_when_splice_would_break_toml() {
+        // A `[provisioner.linux]` subtable means we never find the
+        // bare `[provisioner]` header — current splicer would still
+        // append at EOF. Verify the post-merge parse catches it. If
+        // the splicer happens to succeed here, the test still passes
+        // (Merged is acceptable too — the contract is "never produce
+        // invalid TOML", not "always bail").
+        let existing = "[provisioner.linux]\napt = \"yes\"\n";
+        let outcome = merge_into_existing(existing, &sample_report());
+        match outcome {
+            MergeOutcome::Merged(text) | MergeOutcome::BailedToFresh(text) => {
+                assert!(
+                    text.parse::<toml::Table>().is_ok(),
+                    "merged text must always be valid TOML, got:\n{text}"
+                );
+            }
+            other => panic!("expected Merged or BailedToFresh, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn merge_preserves_round_trip_through_toml_parser() {
+        // Pin: every successful merge output must re-parse cleanly.
+        // Guards against subtle whitespace / line-ending bugs in the
+        // splicer.
+        let existing = "[provisioner]\ngit = \"latest\"\n\n[hooks]\nfoo = \"bar\"\n";
+        let text = merged_text(merge_into_existing(existing, &sample_report()));
+        let _: toml::Table = text.parse().expect("merged output must be valid TOML");
     }
 }

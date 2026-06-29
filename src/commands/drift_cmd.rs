@@ -419,14 +419,21 @@ fn get_installed_version(tool: &str) -> Option<String> {
     extract_version(&output_str)
 }
 
-/// Extract version from command output
+/// Extract version from command output.
+///
+/// The regex is compiled once per process via `OnceLock` (review item
+/// P1 #11) — `drift accept` iterates every configured tool calling
+/// `get_installed_version` → `extract_version`, so re-compiling on
+/// each tool was O(N) wasted regex work.
 fn extract_version(output: &str) -> Option<String> {
-    let version_regex =
+    use std::sync::OnceLock;
+    static VERSION_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = VERSION_RE.get_or_init(|| {
         regex::Regex::new(r"(?i)v?(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9.]+)?(?:\+[a-zA-Z0-9.]+)?)")
-            .ok()?;
+            .expect("static version regex must compile")
+    });
 
-    version_regex
-        .captures(output)
+    re.captures(output)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
 }

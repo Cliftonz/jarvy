@@ -64,19 +64,21 @@ pub fn analyze(
     already_configured: &HashSet<String>,
     known_tools: &HashSet<String>,
 ) -> DiscoverReport {
-    let detections = rules::run(project_dir, &default_rules());
-    let mut report = DiscoverReport {
-        detections: detections.clone(),
-        ..Default::default()
-    };
+    let detections = rules::run(project_dir, default_rules());
 
-    let mut recommended_seen: HashSet<String> = HashSet::new();
+    let mut required: Vec<ToolSuggestion> = Vec::new();
+    let mut recommended: Vec<ToolSuggestion> = Vec::new();
+    let mut already_seen: Vec<String> = Vec::new();
+    // Borrow into the HashSet — keys live in `detections` for the
+    // lifetime of this function (review item P2 #23 — no clone-then-
+    // insert; check first, allocate only when we actually push).
+    let mut recommended_seen: HashSet<&str> = HashSet::new();
 
     for d in &detections {
         if already_configured.contains(&d.tool) {
-            report.already_configured.push(d.tool.clone());
+            already_seen.push(d.tool.clone());
         } else if known_tools.contains(&d.tool) {
-            report.required.push(ToolSuggestion {
+            required.push(ToolSuggestion {
                 name: d.tool.clone(),
                 version: d.version.clone().unwrap_or_else(|| "latest".to_string()),
                 reason: format!("detected from {}", d.source),
@@ -91,10 +93,10 @@ pub fn analyze(
             if !known_tools.contains(suggested) {
                 continue;
             }
-            if !recommended_seen.insert(suggested.clone()) {
+            if !recommended_seen.insert(suggested.as_str()) {
                 continue;
             }
-            report.recommended.push(ToolSuggestion {
+            recommended.push(ToolSuggestion {
                 name: suggested.clone(),
                 version: "latest".to_string(),
                 reason: format!("commonly used with {}", d.tool),
@@ -103,7 +105,14 @@ pub fn analyze(
         }
     }
 
-    report
+    // detections is MOVED into the report rather than cloned (review
+    // item P2 #24).
+    DiscoverReport {
+        detections,
+        required,
+        recommended,
+        already_configured: already_seen,
+    }
 }
 
 #[cfg(test)]

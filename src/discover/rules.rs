@@ -85,17 +85,36 @@ pub fn run(project_dir: &Path, rules: &[DetectionRule]) -> Vec<Detection> {
 
 /// First matching pattern wins; we return its source string so the
 /// suggestion explainer can cite a real file ("detected from Cargo.toml").
+///
+/// The source string flows into the rendered `# detected from ...`
+/// comment in `discover/generator.rs`. For pattern-supplied filenames
+/// (`Cargo.toml`, `package.json`, ...) that's a trusted rule-author
+/// literal. For `*.ext` glob matches the on-disk filename is
+/// attacker-controllable (POSIX filenames may contain newlines, `"`,
+/// and control bytes). We strict-allowlist the matched filename to
+/// printable ASCII without quotes/backslashes so a hostile filename
+/// like `x.tf\n[packages]\nallow_remote = true\n# .tf` can't inject
+/// a TOML section through the rendered comment (review item P0 #2).
 fn rule_match_source(project_dir: &Path, rule: &DetectionRule) -> Option<String> {
     for pattern in &rule.detect {
         match pattern {
             DetectionPattern::File { file } => {
                 if let Some(p) = find_first_match(project_dir, file) {
-                    return Some(p.file_name()?.to_string_lossy().into_owned());
+                    let name = p.file_name()?.to_string_lossy().into_owned();
+                    if let Some(safe) = sanitize_source(&name) {
+                        return Some(safe);
+                    }
+                    // Hostile filename — skip this pattern but still try
+                    // siblings so a `*.tf` rule isn't defeated by one
+                    // poisoned filename.
+                    continue;
                 }
             }
             DetectionPattern::Dir { dir } => {
                 if project_dir.join(dir).is_dir() {
-                    return Some(dir.clone());
+                    if let Some(safe) = sanitize_source(dir) {
+                        return Some(safe);
+                    }
                 }
             }
         }
@@ -103,11 +122,37 @@ fn rule_match_source(project_dir: &Path, rule: &DetectionRule) -> Option<String>
     None
 }
 
+/// Accept only ASCII-graphic + space — every other byte (newline,
+/// CR, NUL, ESC, DEL, `"`, `\`) is refused. Returning `None` on a
+/// hostile filename means the rule doesn't fire at all rather than
+/// allowing partial / sanitized attribution.
+fn sanitize_source(name: &str) -> Option<String> {
+    if name.is_empty() || name.len() > 255 {
+        return None;
+    }
+    if !name
+        .chars()
+        .all(|c| (c.is_ascii_graphic() && c != '"' && c != '\\') || c == ' ')
+    {
+        return None;
+    }
+    Some(name.to_string())
+}
+
 /// Built-in detection rules covering the ecosystems jarvy ships handlers
 /// for today. Names match the canonical jarvy tool name (lowercase,
 /// dash-separated) so `analyze()` can validate suggestions against
 /// `tools::registry::registered_tool_names()` without aliasing logic.
-pub fn default_rules() -> Vec<DetectionRule> {
+///
+/// Cached behind a `OnceLock` (review item P2 #22) — the ~50 String
+/// allocations are paid once per process, not per `analyze()` call.
+pub fn default_rules() -> &'static [DetectionRule] {
+    use std::sync::OnceLock;
+    static RULES: OnceLock<Vec<DetectionRule>> = OnceLock::new();
+    RULES.get_or_init(build_default_rules)
+}
+
+fn build_default_rules() -> Vec<DetectionRule> {
     vec![
         DetectionRule {
             name: "rust".into(),
@@ -326,4 +371,64 @@ pub fn default_rules() -> Vec<DetectionRule> {
             category: ToolCategory::Build,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    /// Review P0 #2 — hostile filename with newline + `[section]` must
+    /// not become a detection source string. The file-glob path is the
+    /// only attacker-controllable detection input; rule-author literals
+    /// are trusted.
+    #[test]
+    fn rejects_hostile_glob_match_filename() {
+        let tmp = tempdir().unwrap();
+        // Filename literally containing newline + section header.
+        fs::write(tmp.path().join("x.tf\n[packages]\nbad = true\n.tf"), "").unwrap();
+        let rule = DetectionRule {
+            name: "terraform".into(),
+            detect: vec![DetectionPattern::File {
+                file: "*.tf".into(),
+            }],
+            version_from: None,
+            suggests: vec![],
+            category: ToolCategory::Ops,
+        };
+        // Source MUST be None (no fallback to partial sanitization).
+        assert!(rule_match_source(tmp.path(), &rule).is_none());
+    }
+
+    #[test]
+    fn accepts_well_formed_filename_glob() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("main.tf"), "").unwrap();
+        let rule = DetectionRule {
+            name: "terraform".into(),
+            detect: vec![DetectionPattern::File {
+                file: "*.tf".into(),
+            }],
+            version_from: None,
+            suggests: vec![],
+            category: ToolCategory::Ops,
+        };
+        assert_eq!(
+            rule_match_source(tmp.path(), &rule).as_deref(),
+            Some("main.tf")
+        );
+    }
+
+    #[test]
+    fn sanitize_source_table() {
+        assert_eq!(sanitize_source("Cargo.toml").as_deref(), Some("Cargo.toml"));
+        assert_eq!(sanitize_source("k8s").as_deref(), Some("k8s"));
+        assert!(sanitize_source("").is_none());
+        assert!(sanitize_source("x\nbad").is_none());
+        assert!(sanitize_source("has\"quote").is_none());
+        assert!(sanitize_source("back\\slash").is_none());
+        assert!(sanitize_source("nul\0byte").is_none());
+        assert!(sanitize_source(&"x".repeat(256)).is_none());
+    }
 }

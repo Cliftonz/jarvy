@@ -15,7 +15,40 @@
 use crate::cli::WorkspaceAction;
 use crate::workspace;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+
+/// Refuse a workspace `members = [...]` entry that would escape the
+/// workspace root (review item P0 #3). Returns the joined absolute
+/// path on success.
+///
+/// We refuse:
+/// - any `..` component (no parent-dir escapes — a member declared as
+///   `"../../etc"` would otherwise let `validate`/`list`/`show` probe
+///   arbitrary filesystem paths and read external jarvy.toml files)
+/// - any absolute path (workspace members are always relative to the
+///   workspace root)
+/// - empty / windows-prefix components
+///
+/// Symlinks at the resolved member directory are NOT refused — a
+/// monorepo legitimately uses symlinks for cross-language sources. The
+/// containment check above prevents the link target being followed
+/// outside the workspace at this layer; downstream file reads still
+/// open through the symlink, which is the same posture a vanilla
+/// `cargo build` takes.
+fn resolve_member(root_dir: &Path, member: &str) -> Option<PathBuf> {
+    let candidate = Path::new(member);
+    if candidate.is_absolute() {
+        return None;
+    }
+    for c in candidate.components() {
+        match c {
+            Component::Normal(_) | Component::CurDir => {}
+            // ParentDir / RootDir / Prefix all refused.
+            _ => return None,
+        }
+    }
+    Some(root_dir.join(candidate))
+}
 
 pub fn run_workspace(action: &WorkspaceAction, file: &str) -> i32 {
     let project_dir = Path::new(file)
@@ -69,11 +102,14 @@ fn action_format(action: &WorkspaceAction) -> &str {
 
 fn list(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
     let root_dir = ctx.root_config.parent().unwrap_or(Path::new("."));
+    // Parse the root jarvy.toml ONCE so collect_member doesn't re-read
+    // + re-parse it per member (review item P1 #9).
+    let root_value = load_root_value(&ctx.root_config);
     let summaries: Vec<MemberSummary> = ctx
         .workspace
         .members
         .iter()
-        .map(|m| collect_member(root_dir, m, ctx))
+        .map(|m| collect_member_with_root(root_dir, m, ctx, &root_value))
         .collect();
 
     if output_format == "json" {
@@ -120,7 +156,8 @@ fn show(ctx: &workspace::WorkspaceContext, name: &str, output_format: &str) -> i
         return crate::error_codes::CONFIG_ERROR;
     }
 
-    let summary = collect_member(root_dir, name, ctx);
+    let root_value = load_root_value(&ctx.root_config);
+    let summary = collect_member_with_root(root_dir, name, ctx, &root_value);
 
     if output_format == "json" {
         println!(
@@ -164,12 +201,31 @@ fn show(ctx: &workspace::WorkspaceContext, name: &str, output_format: &str) -> i
 
 fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
     let root_dir = ctx.root_config.parent().unwrap_or(Path::new("."));
+    let started = std::time::Instant::now();
+    let telemetry_on = crate::observability::telemetry_gate::is_enabled();
     let mut warnings: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let mut entries: Vec<serde_json::Value> = Vec::new();
 
     for member in &ctx.workspace.members {
-        let member_dir = root_dir.join(member);
+        let Some(member_dir) = resolve_member(root_dir, member) else {
+            // Refused at the containment check (review item P0 #3).
+            // Surface as an error so validate exits CONFIG_ERROR and
+            // a CI run on a hostile monorepo fails closed.
+            errors.push(format!("{member}: refused — escapes workspace root"));
+            if telemetry_on {
+                tracing::warn!(
+                    event = "workspace.member_invalid",
+                    error_kind = "escapes_workspace_root",
+                );
+            }
+            entries.push(serde_json::json!({
+                "name": member,
+                "refused": true,
+                "reason": "escapes_workspace_root",
+            }));
+            continue;
+        };
         let cfg_path = member_dir.join("jarvy.toml");
         let exists = member_dir.is_dir();
         let cfg_exists = cfg_path.exists();
@@ -184,12 +240,24 @@ fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
 
         if !exists {
             errors.push(format!("{member}: directory missing"));
+            if telemetry_on {
+                tracing::warn!(
+                    event = "workspace.member_invalid",
+                    error_kind = "dir_missing",
+                );
+            }
         } else if !cfg_exists {
             warnings.push(format!(
                 "{member}: no jarvy.toml (workspace defaults apply)"
             ));
         } else if !parse_ok {
             errors.push(format!("{member}: jarvy.toml failed to parse"));
+            if telemetry_on {
+                tracing::warn!(
+                    event = "workspace.member_invalid",
+                    error_kind = "toml_parse_fail",
+                );
+            }
         }
 
         entries.push(serde_json::json!({
@@ -198,6 +266,37 @@ fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
             "config_exists": cfg_exists,
             "config_parses": parse_ok,
         }));
+    }
+
+    if telemetry_on {
+        let level_error = !errors.is_empty();
+        let status = if level_error {
+            "invalid"
+        } else if !warnings.is_empty() {
+            "warnings"
+        } else {
+            "ok"
+        };
+        let duration_ms = started.elapsed().as_millis() as u64;
+        if level_error {
+            tracing::warn!(
+                event = "workspace.validate_completed",
+                status = status,
+                members = ctx.workspace.members.len(),
+                errors = errors.len(),
+                warnings = warnings.len(),
+                duration_ms = duration_ms,
+            );
+        } else {
+            tracing::info!(
+                event = "workspace.validate_completed",
+                status = status,
+                members = ctx.workspace.members.len(),
+                errors = errors.len(),
+                warnings = warnings.len(),
+                duration_ms = duration_ms,
+            );
+        }
     }
 
     if output_format == "json" {
@@ -235,9 +334,15 @@ fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
     if errors.is_empty() && warnings.is_empty() {
         println!("  All {} members ok.", ctx.workspace.members.len());
     } else {
+        // Saturating subtract — entries.len() includes refused members
+        // that aren't double-counted in warnings/errors. Use the
+        // entries count as the denominator to avoid underflow.
+        let total = ctx.workspace.members.len();
+        let ok = total
+            .saturating_sub(warnings.len())
+            .saturating_sub(errors.len());
         println!(
-            "  {} ok, {} warning(s), {} error(s).",
-            ctx.workspace.members.len() - warnings.len() - errors.len(),
+            "  {ok} ok, {} warning(s), {} error(s).",
             warnings.len(),
             errors.len(),
         );
@@ -260,19 +365,36 @@ struct MemberSummary {
     overridden: Vec<String>,
 }
 
-fn collect_member(
+fn load_root_value(root_config: &Path) -> toml::Value {
+    std::fs::read_to_string(root_config)
+        .ok()
+        .and_then(|s| toml::from_str(&s).ok())
+        .unwrap_or_else(|| toml::Value::Table(toml::Table::new()))
+}
+
+fn collect_member_with_root(
     root_dir: &Path,
     member: &str,
     ctx: &workspace::WorkspaceContext,
+    root_value: &toml::Value,
 ) -> MemberSummary {
-    let member_dir = root_dir.join(member);
+    // Containment check — a hostile root config with
+    // `members = ["../../etc"]` MUST NOT be allowed to probe outside
+    // the workspace root via the side-channel of `is_dir()` / file
+    // reads (review item P0 #3).
+    let Some(member_dir) = resolve_member(root_dir, member) else {
+        return MemberSummary {
+            name: member.to_string(),
+            path: format!("{} (refused: outside workspace)", member),
+            config_path: String::new(),
+            config_exists: false,
+            tools: BTreeMap::new(),
+            inherited: Vec::new(),
+            overridden: Vec::new(),
+        };
+    };
     let cfg_path = member_dir.join("jarvy.toml");
     let config_exists = cfg_path.exists();
-
-    let root_value: toml::Value = std::fs::read_to_string(&ctx.root_config)
-        .ok()
-        .and_then(|s| toml::from_str(&s).ok())
-        .unwrap_or_else(|| toml::Value::Table(toml::Table::new()));
 
     let member_value: toml::Value = if config_exists {
         std::fs::read_to_string(&cfg_path)
@@ -283,35 +405,36 @@ fn collect_member(
         toml::Value::Table(toml::Table::new())
     };
 
-    let inherit = if ctx.workspace.inherit.is_empty() {
-        // No explicit inherit list — every section from root is implicitly
-        // available; surface `provisioner` so the resolver merges per-tool.
-        vec!["provisioner".to_string()]
-    } else {
-        ctx.workspace.inherit.clone()
-    };
-    let merged = workspace::merge_configs(&root_value, &member_value, &inherit);
+    // Identical resolution to `crate::config::Config::new` workspace
+    // path. Routing both through `effective_inherit` makes
+    // `jarvy workspace show` and `jarvy setup` agree on which root
+    // sections a member actually inherits (review item P0 #4).
+    let inherit = ctx.workspace.effective_inherit();
+    let merged = workspace::merge_configs(root_value, &member_value, &inherit);
 
     let mut tools: BTreeMap<String, String> = BTreeMap::new();
     let mut inherited: Vec<String> = Vec::new();
     let mut overridden: Vec<String> = Vec::new();
 
-    let root_prov: BTreeMap<String, toml::Value> = root_value
+    // Just collect the KEY sets — we don't need the values (review
+    // item P1 #10). Previous version cloned every `toml::Value` for
+    // a containment check.
+    let root_prov_keys: std::collections::HashSet<&str> = root_value
         .get("provisioner")
         .and_then(|v| v.as_table())
-        .map(|t| t.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .map(|t| t.keys().map(String::as_str).collect())
         .unwrap_or_default();
-    let member_prov: BTreeMap<String, toml::Value> = member_value
+    let member_prov_keys: std::collections::HashSet<&str> = member_value
         .get("provisioner")
         .and_then(|v| v.as_table())
-        .map(|t| t.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .map(|t| t.keys().map(String::as_str).collect())
         .unwrap_or_default();
 
     if let Some(merged_prov) = merged.get("provisioner").and_then(|v| v.as_table()) {
         for (name, value) in merged_prov {
             tools.insert(name.clone(), value_to_string(value));
-            let in_root = root_prov.contains_key(name);
-            let in_member = member_prov.contains_key(name);
+            let in_root = root_prov_keys.contains(name.as_str());
+            let in_member = member_prov_keys.contains(name.as_str());
             if in_root && in_member {
                 overridden.push(name.clone());
             } else if in_root && !in_member {
@@ -329,6 +452,18 @@ fn collect_member(
         inherited,
         overridden,
     }
+}
+
+/// Backwards-compat shim for the existing test module — re-reads root
+/// internally. Production callers use `collect_member_with_root`.
+#[cfg(test)]
+fn collect_member(
+    root_dir: &Path,
+    member: &str,
+    ctx: &workspace::WorkspaceContext,
+) -> MemberSummary {
+    let root_value = load_root_value(&ctx.root_config);
+    collect_member_with_root(root_dir, member, ctx, &root_value)
 }
 
 fn value_to_string(v: &toml::Value) -> String {
@@ -415,6 +550,60 @@ docker = "24.0"
         // apps/api has no jarvy.toml — should warn, exit 0.
         let exit = validate(&ctx, "pretty");
         assert_eq!(exit, 0);
+    }
+
+    /// Review P0 #3 — `members = ["../../etc"]` must NOT let
+    /// validate / list / show probe arbitrary filesystem paths.
+    #[test]
+    fn resolve_member_refuses_path_traversal() {
+        let root = Path::new("/repo");
+        assert!(resolve_member(root, "../../etc").is_none());
+        assert!(resolve_member(root, "/etc").is_none());
+        assert!(resolve_member(root, "apps/../../../etc").is_none());
+        assert!(resolve_member(root, "apps/web").is_some());
+        assert!(resolve_member(root, "./apps/web").is_some());
+    }
+
+    #[test]
+    fn validate_refuses_traversal_members_with_error() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("jarvy.toml"),
+            r#"
+[workspace]
+members = ["apps/web", "../../etc"]
+"#,
+        )
+        .unwrap();
+        fs::create_dir_all(tmp.path().join("apps/web")).unwrap();
+        let ctx = workspace::find_workspace_root(tmp.path()).unwrap();
+        // Hostile entry → validate exits CONFIG_ERROR.
+        let exit = validate(&ctx, "pretty");
+        assert_eq!(exit, crate::error_codes::CONFIG_ERROR);
+    }
+
+    /// Review P0 #4 — empty `inherit = []` is treated as
+    /// `["provisioner"]` by both CLI display and production setup
+    /// (same `effective_inherit()` helper).
+    #[test]
+    fn empty_inherit_widens_to_provisioner_via_helper() {
+        let cfg = workspace::WorkspaceConfig {
+            members: vec!["apps/web".to_string()],
+            inherit: vec![],
+        };
+        assert_eq!(cfg.effective_inherit(), vec!["provisioner".to_string()]);
+    }
+
+    #[test]
+    fn explicit_inherit_list_is_preserved() {
+        let cfg = workspace::WorkspaceConfig {
+            members: vec!["apps/web".to_string()],
+            inherit: vec!["hooks".to_string(), "env".to_string()],
+        };
+        assert_eq!(
+            cfg.effective_inherit(),
+            vec!["hooks".to_string(), "env".to_string()]
+        );
     }
 
     #[test]

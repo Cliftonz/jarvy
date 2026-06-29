@@ -12,9 +12,33 @@ pub struct WorkspaceConfig {
     /// Paths to workspace member directories (relative to root)
     #[serde(default)]
     pub members: Vec<String>,
-    /// Sections that members inherit from root config
+    /// Sections that members inherit from root config.
+    ///
+    /// **Use [`Self::effective_inherit`] when actually merging** — an
+    /// empty / omitted `inherit` list is treated as `["provisioner"]`
+    /// so the common monorepo case (members share the root toolset)
+    /// works without explicit config. Both the production setup
+    /// resolver (`config.rs`) and the `jarvy workspace` CLI surface
+    /// route through `effective_inherit` so they cannot disagree on
+    /// what a member inherits (review item P0 #4 — previously the
+    /// CLI display widened to provisioner but production did not).
     #[serde(default)]
     pub inherit: Vec<String>,
+}
+
+impl WorkspaceConfig {
+    /// Returns the inherit list to USE for resolution. Empty in-source
+    /// means "no explicit list — fall back to provisioner so the
+    /// common case just works." Set `inherit = ["provisioner",
+    /// "hooks"]` explicitly to opt in to additional sections, or
+    /// `inherit = ["custom"]` to opt OUT of provisioner inheritance.
+    pub fn effective_inherit(&self) -> Vec<String> {
+        if self.inherit.is_empty() {
+            vec!["provisioner".to_string()]
+        } else {
+            self.inherit.clone()
+        }
+    }
 }
 
 /// Resolved workspace context
