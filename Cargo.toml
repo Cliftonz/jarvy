@@ -80,6 +80,18 @@ tempfile = "3.27"
 which = "8.0"
 indicatif = "0.18"
 
+[features]
+# `test-bypass` exposes the loopback-HTTP + JARVY_TEST_HOME escape
+# hatches used by the integration test harness. Production release
+# builds are compiled WITHOUT this feature, so the
+# JARVY_LIBRARY_ALLOW_INSECURE_FETCH / JARVY_REGISTRY_ALLOW_INSECURE_FETCH /
+# JARVY_TEST_HOME env vars are inert in shipped binaries (review item 15).
+# Cargo enables a crate's dev-deps and all-targets-feature gates when
+# `cargo test` runs, so integration tests transparently pick up the
+# bypass; release.yml / publish-packages.yml omit the feature flag.
+default = []
+test-bypass = []
+
 [dev-dependencies]
 assert_cmd = "2.2"
 proptest = "1.11"
@@ -93,6 +105,46 @@ serial_test = "3.2"
 # it via `make test-sandbox` (cross-compiled aarch64-linux binary
 # mounted into an arm64 debian container, native, no emulation).
 testcontainers = { version = "0.27", features = ["blocking"] }
+
+# Integration tests that exercise the `test-bypass` escape hatches
+# (`JARVY_REGISTRY_ALLOW_INSECURE_FETCH`, `JARVY_LIBRARY_ALLOW_INSECURE_FETCH`).
+# Without `--features test-bypass`, cargo silently skips them so a local
+# `cargo test` run doesn't surface mysterious env-gated failures. CI
+# always runs with `--all-features` so the gate is implicit.
+[[test]]
+name = "registry_cli_smoke"
+path = "tests/registry_cli_smoke.rs"
+required-features = ["test-bypass"]
+
+[[test]]
+name = "library_registry_git_e2e"
+path = "tests/library_registry_git_e2e.rs"
+required-features = ["test-bypass"]
+
+[[test]]
+name = "registry_e2e_lifecycle"
+path = "tests/registry_e2e_lifecycle.rs"
+required-features = ["test-bypass"]
+
+[[test]]
+name = "registry_remote_integration"
+path = "tests/registry_remote_integration.rs"
+required-features = ["test-bypass"]
+
+[[test]]
+name = "registry_resilience"
+path = "tests/registry_resilience.rs"
+required-features = ["test-bypass"]
+
+[[test]]
+name = "registry_signature_e2e"
+path = "tests/registry_signature_e2e.rs"
+required-features = ["test-bypass"]
+
+[[test]]
+name = "registry_tracing_events"
+path = "tests/registry_tracing_events.rs"
+required-features = ["test-bypass"]
 
 [[bench]]
 name = "config_parsing"

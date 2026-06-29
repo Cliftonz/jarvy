@@ -19,6 +19,7 @@ mod common;
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
+use serial_test::serial;
 use std::process::Command;
 
 /// A minimal `jarvy` invocation that exercises `initialize` but exits
@@ -61,6 +62,7 @@ fn cmd_with_isolated_home() -> (Command, tempfile::TempDir) {
 }
 
 #[test]
+#[serial(jarvy_telemetry_disclosure)]
 fn first_run_surfaces_banner_and_persists_enabled_true() {
     // Test A from the parallel-code-review plan, item 3.
     // Fresh tempdir, no env override → first-run disclosure path.
@@ -92,6 +94,7 @@ fn first_run_surfaces_banner_and_persists_enabled_true() {
 }
 
 #[test]
+#[serial(jarvy_telemetry_disclosure)]
 fn second_run_does_not_repeat_banner() {
     // Test B: the "loud once" contract. After first run persists
     // `enabled = true`, a subsequent run on the same JARVY_HOME must
@@ -124,6 +127,7 @@ fn second_run_does_not_repeat_banner() {
 }
 
 #[test]
+#[serial(jarvy_telemetry_disclosure)]
 fn legacy_config_without_telemetry_section_triggers_disclosure() {
     // Test C: users whose `~/.jarvy/config.toml` pre-dates the
     // `[telemetry]` block (the block was introduced in commit d039d9b)
@@ -174,6 +178,7 @@ fn legacy_config_without_telemetry_section_triggers_disclosure() {
 }
 
 #[test]
+#[serial(jarvy_telemetry_disclosure)]
 fn nudge_text_pinned_for_undecided_setup_run() {
     // Pins the end-of-`jarvy setup` nudge wording (the secondary
     // disclosure surface) so a future i18n refactor cannot silently
@@ -233,6 +238,7 @@ fn nudge_text_pinned_for_undecided_setup_run() {
 }
 
 #[test]
+#[serial(jarvy_telemetry_disclosure)]
 fn explicit_disable_via_env_suppresses_banner_event_but_banner_still_prints() {
     // The boxed disclosure is a privacy disclosure, not a telemetry
     // signal — it must fire even if the user has telemetry disabled

@@ -240,16 +240,23 @@ pub fn save_global_config(config: &CliConfig) -> Result<(), String> {
 /// hook. `JARVY_TEST_HOME` is opt-in and Jarvy-namespaced; production
 /// environments will never set it.
 ///
+/// The `JARVY_TEST_HOME` branch is gated behind the `test-bypass` Cargo
+/// feature (review item 15) so release binaries can't be redirected at
+/// runtime even by a hostile parent env.
+///
 /// `JARVY_HOME` (handled inside `crate::paths::jarvy_home`) overrides
 /// the entire `~/.jarvy/` location and is honored ahead of the
 /// test-only override.
 pub fn global_config_path() -> Option<std::path::PathBuf> {
-    if let Ok(custom_home) = std::env::var("JARVY_TEST_HOME") {
-        return Some(
-            std::path::PathBuf::from(custom_home)
-                .join(".jarvy")
-                .join("config.toml"),
-        );
+    #[cfg(feature = "test-bypass")]
+    {
+        if let Ok(custom_home) = std::env::var("JARVY_TEST_HOME") {
+            return Some(
+                std::path::PathBuf::from(custom_home)
+                    .join(".jarvy")
+                    .join("config.toml"),
+            );
+        }
     }
     crate::paths::config_toml().ok()
 }

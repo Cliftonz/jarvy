@@ -71,10 +71,21 @@ pub fn bounded_fetch(
 }
 
 fn insecure_loopback_allowed(url: &str, env_var: &'static str) -> bool {
-    if std::env::var_os(env_var).is_none() {
-        return false;
+    // Hard refusal in release builds — the `test-bypass` Cargo feature
+    // gates the entire escape hatch out of shipped binaries (review
+    // item 15). Without the feature compiled in, the env var is inert.
+    #[cfg(not(feature = "test-bypass"))]
+    {
+        let _ = (url, env_var);
+        false
     }
-    is_plain_loopback_http(url)
+    #[cfg(feature = "test-bypass")]
+    {
+        if std::env::var_os(env_var).is_none() {
+            return false;
+        }
+        is_plain_loopback_http(url)
+    }
 }
 
 /// True iff `url` is `http://<loopback-host>[:port]/...` with NO
@@ -85,7 +96,9 @@ fn insecure_loopback_allowed(url: &str, env_var: &'static str) -> bool {
 /// `pub(crate)` so consumers cannot reach in and call the parser
 /// directly — they MUST go through `bounded_fetch` which also requires
 /// the env-var consent gate. Exposed module-wide for the local tests
-/// below.
+/// below. Gated behind `test-bypass` because the only legitimate
+/// caller is `insecure_loopback_allowed`, which is itself gated.
+#[cfg(any(feature = "test-bypass", test))]
 pub(crate) fn is_plain_loopback_http(url: &str) -> bool {
     let Some(after_scheme) = url.strip_prefix("http://") else {
         return false;

@@ -72,23 +72,34 @@ fn default_true() -> bool {
 /// The same userinfo-bypass concern applies — `http://127.0.0.1:80@attacker/`
 /// parses as host `attacker` per RFC 3986. Refuse any URL with a `@` in
 /// the authority.
+///
+/// Gated behind the `test-bypass` Cargo feature (review item 15) — in
+/// release builds the env var is inert.
 fn insecure_loopback_url_allowed(url: &str) -> bool {
-    if std::env::var_os("JARVY_REGISTRY_ALLOW_INSECURE_FETCH").is_none() {
-        return false;
+    #[cfg(not(feature = "test-bypass"))]
+    {
+        let _ = url;
+        false
     }
-    let Some(after_scheme) = url.strip_prefix("http://") else {
-        return false;
-    };
-    let authority_end = after_scheme
-        .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
-    let authority = &after_scheme[..authority_end];
-    if authority.contains('@') {
-        return false;
+    #[cfg(feature = "test-bypass")]
+    {
+        if std::env::var_os("JARVY_REGISTRY_ALLOW_INSECURE_FETCH").is_none() {
+            return false;
+        }
+        let Some(after_scheme) = url.strip_prefix("http://") else {
+            return false;
+        };
+        let authority_end = after_scheme
+            .find(['/', '?', '#'])
+            .unwrap_or(after_scheme.len());
+        let authority = &after_scheme[..authority_end];
+        if authority.contains('@') {
+            return false;
+        }
+        let host_end = authority.find(':').unwrap_or(authority.len());
+        let host = &authority[..host_end];
+        matches!(host, "127.0.0.1" | "localhost")
     }
-    let host_end = authority.find(':').unwrap_or(authority.len());
-    let host = &authority[..host_end];
-    matches!(host, "127.0.0.1" | "localhost")
 }
 
 impl Default for RegistryConfig {

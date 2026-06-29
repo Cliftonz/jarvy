@@ -7,15 +7,25 @@ Guidance for Claude Code working in this repo. Per-module deep dives live in `sr
 ## Build Commands
 
 ```bash
-cargo build                                       # Debug
-cargo build --release                             # Release
-cargo fmt --all                                   # Format
-cargo clippy --all-features -- -D warnings        # Lint (CI gate)
-cargo check --verbose                             # Type check
-cargo test --verbose -- --show-output             # All tests
-cargo test --test cli_dispatch -- --show-output   # Single integration test
-cargo run -p cargo-jarvy -- new-tool <name>       # Scaffold tool
+cargo build                                              # Debug
+cargo build --release                                    # Release (ships WITHOUT test-bypass — bypass env vars are inert)
+cargo fmt --all                                          # Format
+cargo clippy --all-features -- -D warnings               # Lint (CI gate)
+cargo check --verbose                                    # Type check
+cargo test --all-features --verbose -- --show-output     # All tests (CI uses --all-features; equivalent to --features test-bypass)
+cargo test --features test-bypass                        # Local-dev shorthand for the test-bypass-gated integration tests
+cargo test --test cli_dispatch -- --show-output          # Single integration test
+cargo run -p cargo-jarvy -- new-tool <name>              # Scaffold tool
 ```
+
+**`test-bypass` feature.** Several integration tests use loopback HTTP
+(`JARVY_LIBRARY_ALLOW_INSECURE_FETCH`, `JARVY_REGISTRY_ALLOW_INSECURE_FETCH`)
+or a redirected home (`JARVY_TEST_HOME`). Those escape hatches are
+compiled out of release builds (review item 15) — the env vars are
+inert in shipped binaries. `cargo test` without `--features test-bypass`
+silently skips the dependent integration tests (via `required-features`
+in `Cargo.toml`); CI invocations pass `--all-features` so the gate is
+automatic.
 
 ## Architecture
 
