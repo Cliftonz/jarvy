@@ -9,9 +9,19 @@ use std::path::{Component, Path, PathBuf};
 /// Workspace configuration section in jarvy.toml
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct WorkspaceConfig {
-    /// Paths to workspace member directories (relative to root)
+    /// Paths to workspace member directories (relative to root).
+    /// Supports simple `*` globs (e.g. `apps/*`, `packages/*`) — the
+    /// glob expands to every immediate subdirectory of the parent.
+    /// Exact paths are still supported and take precedence: an exact
+    /// `apps/web` AND a glob `apps/*` both selecting `apps/web` is
+    /// deduplicated.
     #[serde(default)]
     pub members: Vec<String>,
+    /// Glob patterns to exclude from member resolution. Applied after
+    /// glob expansion, so `apps/*` + `exclude = ["apps/legacy"]` yields
+    /// every sibling of `legacy` minus `legacy` itself.
+    #[serde(default)]
+    pub exclude: Vec<String>,
     /// Sections that members inherit from root config.
     ///
     /// **Use [`Self::effective_inherit`] when actually merging** — an
@@ -39,6 +49,111 @@ impl WorkspaceConfig {
             self.inherit.clone()
         }
     }
+
+    /// Expand every `members` entry against the workspace root,
+    /// turning `apps/*` glob entries into the list of immediate
+    /// subdirectories matching the pattern. Then drop anything that
+    /// matches a pattern in `self.exclude`.
+    ///
+    /// Returns relative paths (matching how members appear in the
+    /// config), sorted + deduplicated. Path containment is enforced
+    /// upstream by `commands::workspace_cmd::resolve_member` so glob
+    /// expansion is allowed to produce literal `apps/legacy` style
+    /// entries safely.
+    pub fn resolved_members(&self, root: &Path) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for raw in &self.members {
+            if raw.contains('*') {
+                if let Some(parent) = parent_of_glob(raw) {
+                    let parent_path = root.join(&parent);
+                    let suffix = raw.strip_prefix(&parent).unwrap_or(raw);
+                    let suffix = suffix.trim_start_matches('/');
+                    if suffix != "*" {
+                        // Only the simple `parent/*` shape is supported;
+                        // anything more complex (parent/*/x) is left
+                        // verbatim — the user can still use exact paths.
+                        out.push(raw.clone());
+                        continue;
+                    }
+                    if let Ok(entries) = std::fs::read_dir(&parent_path) {
+                        for entry in entries.flatten() {
+                            if !entry.path().is_dir() {
+                                continue;
+                            }
+                            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                                continue;
+                            };
+                            // Skip hidden / dotfile dirs — `apps/.git`,
+                            // `apps/.idea` aren't intended members.
+                            if name.starts_with('.') {
+                                continue;
+                            }
+                            if parent.is_empty() {
+                                out.push(name);
+                            } else {
+                                out.push(format!("{parent}/{name}"));
+                            }
+                        }
+                    }
+                }
+            } else {
+                out.push(raw.clone());
+            }
+        }
+        out.retain(|m| !self.is_excluded(m));
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    fn is_excluded(&self, member: &str) -> bool {
+        self.exclude.iter().any(|pat| glob_matches(pat, member))
+    }
+}
+
+/// Return the literal-path prefix of a glob, i.e. everything before
+/// the first `*`. `"apps/*"` → `"apps"`, `"packages/*"` → `"packages"`,
+/// `"*"` → `""`.
+fn parent_of_glob(pattern: &str) -> Option<String> {
+    let star = pattern.find('*')?;
+    let prefix = &pattern[..star];
+    Some(prefix.trim_end_matches('/').to_string())
+}
+
+/// Minimal `*`-only glob matcher. Supports `*` (any path-component
+/// run) but not `**`, `?`, or character classes. Sufficient for the
+/// `apps/*` / `packages/*-server` style patterns workspace users
+/// actually write.
+fn glob_matches(pattern: &str, candidate: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return pattern == candidate;
+    }
+    let mut pos = 0;
+    let first = parts[0];
+    if !candidate.starts_with(first) {
+        return false;
+    }
+    pos += first.len();
+    for (i, part) in parts[1..].iter().enumerate() {
+        if part.is_empty() {
+            // Trailing or consecutive `*` — accept any remainder.
+            if i + 1 == parts.len() - 1 {
+                return true;
+            }
+            continue;
+        }
+        match candidate[pos..].find(part) {
+            Some(idx) => pos += idx + part.len(),
+            None => return false,
+        }
+    }
+    // Last part must match the tail of the candidate (anchored).
+    let last = parts.last().copied().unwrap_or("");
+    if last.is_empty() {
+        return true;
+    }
+    candidate.ends_with(last)
 }
 
 /// Resolved workspace context
@@ -195,12 +310,71 @@ mod tests {
         assert!(table.contains_key("env"));
     }
 
+    /// PRD-047 phase 2 — `apps/*` expands to each immediate subdirectory.
+    #[test]
+    fn resolved_members_expands_glob() {
+        let tmp = tempfile::tempdir().unwrap();
+        for sub in ["apps/web", "apps/api", "apps/.git"] {
+            std::fs::create_dir_all(tmp.path().join(sub)).unwrap();
+        }
+        let ws = WorkspaceConfig {
+            members: vec!["apps/*".to_string()],
+            exclude: vec![],
+            inherit: vec![],
+        };
+        let resolved = ws.resolved_members(tmp.path());
+        assert_eq!(
+            resolved,
+            vec!["apps/api".to_string(), "apps/web".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolved_members_applies_exclude_patterns() {
+        let tmp = tempfile::tempdir().unwrap();
+        for sub in ["apps/web", "apps/api", "apps/legacy"] {
+            std::fs::create_dir_all(tmp.path().join(sub)).unwrap();
+        }
+        let ws = WorkspaceConfig {
+            members: vec!["apps/*".to_string()],
+            exclude: vec!["apps/legacy".to_string()],
+            inherit: vec![],
+        };
+        let resolved = ws.resolved_members(tmp.path());
+        assert!(!resolved.contains(&"apps/legacy".to_string()));
+        assert!(resolved.contains(&"apps/web".to_string()));
+        assert!(resolved.contains(&"apps/api".to_string()));
+    }
+
+    #[test]
+    fn resolved_members_dedups_exact_and_glob_overlap() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("apps/web")).unwrap();
+        let ws = WorkspaceConfig {
+            members: vec!["apps/web".to_string(), "apps/*".to_string()],
+            exclude: vec![],
+            inherit: vec![],
+        };
+        let resolved = ws.resolved_members(tmp.path());
+        assert_eq!(resolved, vec!["apps/web".to_string()]);
+    }
+
+    #[test]
+    fn glob_matches_table() {
+        assert!(glob_matches("apps/*", "apps/web"));
+        assert!(glob_matches("*-server", "api-server"));
+        assert!(!glob_matches("*-server", "api-client"));
+        assert!(glob_matches("apps/web", "apps/web"));
+        assert!(!glob_matches("apps/web", "apps/api"));
+    }
+
     #[test]
     fn determine_member_does_not_match_prefix_collision() {
         // Reproduces the previous string-prefix bug: members=["app"] should NOT
         // match a path like "apple/main.rs". Path-component matching prevents this.
         let workspace = WorkspaceConfig {
             members: vec!["app".to_string()],
+            exclude: vec![],
             inherit: vec![],
         };
         let root = Path::new("/repo");
@@ -212,6 +386,7 @@ mod tests {
     fn determine_member_matches_exact_first_component() {
         let workspace = WorkspaceConfig {
             members: vec!["app".to_string(), "service-a".to_string()],
+            exclude: vec![],
             inherit: vec![],
         };
         let root = Path::new("/repo");
@@ -233,6 +408,7 @@ mod tests {
     fn determine_member_handles_multi_segment_member_path() {
         let workspace = WorkspaceConfig {
             members: vec!["packages/web".to_string()],
+            exclude: vec![],
             inherit: vec![],
         };
         let root = Path::new("/repo");

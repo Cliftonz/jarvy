@@ -1,11 +1,121 @@
 //! `jarvy discover` CLI handler.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use super::{analyze, generator};
+use super::{analyze_with, config as discover_config, generator};
 
+/// Full-fat options bag for `run_discover_full`. The simpler
+/// `run_discover` wrapper below is kept so existing unit tests don't
+/// have to construct an opts struct.
+pub struct DiscoverOpts<'a> {
+    pub file: &'a str,
+    pub apply: bool,
+    pub missing: bool,
+    /// `--rules <path>` CLI override. Wins over `[discover] rules =
+    /// "..."` in jarvy.toml so a one-off custom rules pass is easy.
+    pub rules_override: Option<&'a str>,
+    /// `--watch` — block re-running on every notify event under the
+    /// project directory until interrupted.
+    pub watch: bool,
+    pub output_format: &'a str,
+}
+
+/// Notify-driven watch loop (PRD-044 phase 2 — `--watch`).
+///
+/// Subscribes to filesystem events under the project directory and
+/// re-runs discover after each event. Press Ctrl-C to exit.
+///
+/// Implementation note: `notify` emits one event per inode change,
+/// which would flood discover for `cargo build` output / git checkouts.
+/// We debounce with a 750ms quiet-period so editor saves and bulk
+/// rewrites only re-emit once.
+fn run_watch_loop(opts: &DiscoverOpts<'_>) -> i32 {
+    use notify::{Event, EventKind, RecursiveMode, Watcher};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let project_dir = Path::new(opts.file)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // First pass — surface current state immediately, then watch.
+    let exit = run_discover_once(opts);
+    if opts.output_format == "json" {
+        // JSON consumers don't want the loop; one pass and done.
+        return exit;
+    }
+
+    let (tx, rx) = mpsc::channel::<()>();
+    let mut watcher = match notify::recommended_watcher(move |res: notify::Result<Event>| {
+        if let Ok(ev) = res {
+            // Filter to events that could move the detection needle —
+            // create / modify / remove. Metadata-only events (touched
+            // mtime, attribute change) get dropped.
+            if matches!(
+                ev.kind,
+                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+            ) {
+                let _ = tx.send(());
+            }
+        }
+    }) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("Failed to start watcher: {e}");
+            return crate::error_codes::CONFIG_ERROR;
+        }
+    };
+    if let Err(e) = watcher.watch(&project_dir, RecursiveMode::Recursive) {
+        eprintln!("Failed to watch {}: {e}", project_dir.display());
+        return crate::error_codes::CONFIG_ERROR;
+    }
+
+    println!("\nWatching {} (Ctrl-C to exit)\n", project_dir.display());
+    loop {
+        // Block on the first event, then drain everything that's
+        // landed in a 750ms quiet period so a bulk rewrite (git
+        // checkout, npm install) re-runs discover only once.
+        if rx.recv().is_err() {
+            return 0;
+        }
+        let debounce_until = std::time::Instant::now() + Duration::from_millis(750);
+        while let Ok(()) =
+            rx.recv_timeout(debounce_until.saturating_duration_since(std::time::Instant::now()))
+        {
+            // Drain.
+        }
+        println!("--- re-scan ---");
+        let _ = run_discover_once(opts);
+    }
+}
+
+/// Thin wrapper preserving the simple call shape used by unit tests.
 pub fn run_discover(file: &str, apply: bool, missing: bool, output_format: &str) -> i32 {
+    run_discover_full(DiscoverOpts {
+        file,
+        apply,
+        missing,
+        rules_override: None,
+        watch: false,
+        output_format,
+    })
+}
+
+pub fn run_discover_full(opts: DiscoverOpts<'_>) -> i32 {
+    if opts.watch {
+        return run_watch_loop(&opts);
+    }
+    run_discover_once(&opts)
+}
+
+fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
+    let file = opts.file;
+    let apply = opts.apply;
+    let missing = opts.missing;
+    let output_format = opts.output_format;
     let project_dir: PathBuf = Path::new(file)
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -13,13 +123,38 @@ pub fn run_discover(file: &str, apply: bool, missing: bool, output_format: &str)
         .unwrap_or_else(|| PathBuf::from("."));
 
     let existing_text = std::fs::read_to_string(file).ok();
-    let already_configured = existing_text
+    let (already_configured, already_configured_versions) = existing_text
         .as_deref()
-        .map(parse_provisioner_keys)
+        .map(parse_provisioner_pins)
         .unwrap_or_default();
 
     let known = known_tool_set();
-    let report = analyze(&project_dir, &already_configured, &known);
+
+    // Pick up [discover] config (custom rules / ignore_dirs) and the
+    // built-in rules — combined and passed to the analyzer in one
+    // slice so a custom rule doesn't change anything else about the
+    // CLI surface. `--rules <path>` from the CLI wins over
+    // `[discover] rules = "..."`.
+    let mut discover_cfg = existing_text.as_deref().and_then(parse_discover_block);
+    if let Some(override_path) = opts.rules_override {
+        discover_cfg = Some(discover_config::DiscoverConfig {
+            rules: Some(override_path.to_string()),
+            ..discover_cfg.unwrap_or_default()
+        });
+    }
+    let (effective_rules, rule_advisories) =
+        discover_config::load_effective_rules(&project_dir, discover_cfg.as_ref());
+    for adv in &rule_advisories {
+        eprintln!("  warning: {adv}");
+    }
+
+    let report = analyze_with(
+        &project_dir,
+        &already_configured,
+        &already_configured_versions,
+        &known,
+        &effective_rules,
+    );
 
     if output_format == "json" {
         println!(
@@ -30,6 +165,7 @@ pub fn run_discover(file: &str, apply: bool, missing: bool, output_format: &str)
                 "required": &report.required,
                 "recommended": &report.recommended,
                 "already_configured": &report.already_configured,
+                "uninstallable": &report.uninstallable,
                 "applied": apply,
             }))
             .unwrap_or_else(|_| "{}".to_string())
@@ -163,6 +299,13 @@ fn render_pretty(report: &super::DiscoverReport, file: &str, apply: bool) {
         }
     }
 
+    if !report.uninstallable.is_empty() {
+        println!("\nDetected but jarvy has no first-party installer for these:");
+        for s in &report.uninstallable {
+            println!("  {:<14} (from {})  — {}", s.name, s.source, s.reason);
+        }
+    }
+
     if !apply {
         println!("\nRun `jarvy discover --apply --file {file}` to update jarvy.toml.");
     }
@@ -174,14 +317,49 @@ fn render_missing_only(report: &super::DiscoverReport) {
     }
 }
 
+#[cfg(test)]
 fn parse_provisioner_keys(text: &str) -> HashSet<String> {
-    match text.parse::<toml::Table>() {
-        Ok(t) => match t.get("provisioner") {
-            Some(toml::Value::Table(p)) => p.keys().cloned().collect(),
-            _ => HashSet::new(),
-        },
-        Err(_) => HashSet::new(),
+    parse_provisioner_pins(text).0
+}
+
+/// Parse `[provisioner]` into BOTH a key set (for membership) and a
+/// `name → version` map (for the version-range narrowing in `analyze_with`).
+/// Non-string version values (e.g. `node = { version = "20", features = [...] }`)
+/// get stringified via `to_string()` so the matcher sees the full
+/// spec verbatim.
+fn parse_provisioner_pins(text: &str) -> (HashSet<String>, HashMap<String, String>) {
+    let mut keys = HashSet::new();
+    let mut versions = HashMap::new();
+    if let Ok(t) = text.parse::<toml::Table>() {
+        if let Some(toml::Value::Table(p)) = t.get("provisioner") {
+            for (name, value) in p {
+                keys.insert(name.clone());
+                let version = match value {
+                    toml::Value::String(s) => s.clone(),
+                    // `node = { version = "20", ... }` shape.
+                    toml::Value::Table(t) => t
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    other => other.to_string(),
+                };
+                if !version.is_empty() {
+                    versions.insert(name.clone(), version);
+                }
+            }
+        }
     }
+    (keys, versions)
+}
+
+/// Pull out the `[discover]` block — returns None if absent or malformed.
+/// We never refuse to run discover because of a bad `[discover]`
+/// block; we'd rather fall back to built-ins-only with an advisory.
+fn parse_discover_block(text: &str) -> Option<discover_config::DiscoverConfig> {
+    let table = text.parse::<toml::Table>().ok()?;
+    let block = table.get("discover").cloned()?;
+    block.try_into().ok()
 }
 
 fn known_tool_set() -> HashSet<String> {

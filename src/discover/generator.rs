@@ -241,6 +241,7 @@ mod tests {
                 category: ToolCategory::Dev,
             }],
             already_configured: vec![],
+            uninstallable: vec![],
         }
     }
 

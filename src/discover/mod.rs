@@ -20,6 +20,7 @@
 //! `jarvy discover` (CLI) is a thin wrapper over [`analyze`].
 
 pub mod commands;
+pub mod config;
 pub mod generator;
 pub mod rules;
 pub mod scanner;
@@ -27,7 +28,7 @@ pub mod version;
 
 pub use rules::{Detection, ToolCategory, default_rules};
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// Final suggestion suitable for emitting into a `[provisioner]` entry.
@@ -39,6 +40,20 @@ pub struct ToolSuggestion {
     pub category: ToolCategory,
 }
 
+/// A tool jarvy can't actually install but detection still found.
+/// Surfaces so users know what's missing without us pretending we can
+/// fill the gap. Future ecosystems (Java, .NET, Gradle, …) land here
+/// until first-party handlers ship.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UninstallableSuggestion {
+    pub name: String,
+    pub source: String,
+    pub category: ToolCategory,
+    /// Why jarvy can't install this — typically
+    /// `"no jarvy handler"` or `"requires custom rule"`.
+    pub reason: String,
+}
+
 /// Result of an `analyze` call. Required / recommended / already_configured
 /// stay separate so the renderer can choose how to present them.
 #[derive(Debug, Default, serde::Serialize)]
@@ -47,6 +62,10 @@ pub struct DiscoverReport {
     pub required: Vec<ToolSuggestion>,
     pub recommended: Vec<ToolSuggestion>,
     pub already_configured: Vec<String>,
+    /// Detected tools jarvy doesn't yet have an installer for. Empty
+    /// when every detection mapped cleanly to a known tool.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uninstallable: Vec<UninstallableSuggestion>,
 }
 
 /// Scan `project_dir` and resolve detections to suggestions. Pure function
@@ -64,25 +83,75 @@ pub fn analyze(
     already_configured: &HashSet<String>,
     known_tools: &HashSet<String>,
 ) -> DiscoverReport {
-    let detections = rules::run(project_dir, default_rules());
+    analyze_with(
+        project_dir,
+        already_configured,
+        &HashMap::new(),
+        known_tools,
+        default_rules(),
+    )
+}
+
+/// Full-fat `analyze` variant. Beyond the public-API `analyze`:
+///
+/// - `already_configured_versions` lets the caller pass each pinned
+///   tool's version string so we can suppress suggestions that ALREADY
+///   satisfy the detected requirement (review: per-language version
+///   range narrowing — e.g. existing `node = "^20.0.0"` already
+///   satisfies a `.nvmrc` of `20`, so don't re-suggest `node = "20"`).
+/// - `rules` is the rule set to apply. Defaults to `default_rules()`
+///   but a custom rule file (`[discover] rules = "..."`) can extend
+///   the engine without touching jarvy itself.
+pub fn analyze_with(
+    project_dir: &Path,
+    already_configured: &HashSet<String>,
+    already_configured_versions: &HashMap<String, String>,
+    known_tools: &HashSet<String>,
+    rules: &[rules::DetectionRule],
+) -> DiscoverReport {
+    let detections = rules::run(project_dir, rules);
 
     let mut required: Vec<ToolSuggestion> = Vec::new();
     let mut recommended: Vec<ToolSuggestion> = Vec::new();
     let mut already_seen: Vec<String> = Vec::new();
-    // Borrow into the HashSet — keys live in `detections` for the
-    // lifetime of this function (review item P2 #23 — no clone-then-
-    // insert; check first, allocate only when we actually push).
+    let mut uninstallable: Vec<UninstallableSuggestion> = Vec::new();
     let mut recommended_seen: HashSet<&str> = HashSet::new();
 
     for d in &detections {
         if already_configured.contains(&d.tool) {
-            already_seen.push(d.tool.clone());
+            // Pinned at any version: if it already satisfies the
+            // detected version (or detection has no version), this
+            // is a clean already-configured. Otherwise, surface as
+            // override-suggestion.
+            let detected_version = d.version.as_deref();
+            let pinned = already_configured_versions.get(&d.tool).map(|s| s.as_str());
+            if version_already_satisfies(pinned, detected_version) {
+                already_seen.push(d.tool.clone());
+            } else if known_tools.contains(&d.tool) {
+                required.push(ToolSuggestion {
+                    name: d.tool.clone(),
+                    version: detected_version.unwrap_or("latest").to_string(),
+                    reason: format!(
+                        "detected from {} (pinned `{}` is more lax)",
+                        d.source,
+                        pinned.unwrap_or("?")
+                    ),
+                    category: d.category,
+                });
+            }
         } else if known_tools.contains(&d.tool) {
             required.push(ToolSuggestion {
                 name: d.tool.clone(),
                 version: d.version.clone().unwrap_or_else(|| "latest".to_string()),
                 reason: format!("detected from {}", d.source),
                 category: d.category,
+            });
+        } else {
+            uninstallable.push(UninstallableSuggestion {
+                name: d.tool.clone(),
+                source: d.source.clone(),
+                category: d.category,
+                reason: "no jarvy handler".to_string(),
             });
         }
 
@@ -105,14 +174,42 @@ pub fn analyze(
         }
     }
 
-    // detections is MOVED into the report rather than cloned (review
-    // item P2 #24).
     DiscoverReport {
         detections,
         required,
         recommended,
         already_configured: already_seen,
+        uninstallable,
     }
+}
+
+/// Per-language version range narrowing.
+///
+/// Returns `true` when `pinned` already covers the `detected` version.
+/// Conservative: when version info is missing on EITHER side we say
+/// `true` so the user's hand-curated pin survives the discover pass.
+/// We only flip to `false` (i.e. "your pin is too lax — here's a
+/// suggested update") when we have both a pinned spec AND a detected
+/// version AND the matcher can decide that the detected version
+/// doesn't satisfy the pin.
+fn version_already_satisfies(pinned: Option<&str>, detected: Option<&str>) -> bool {
+    let Some(pinned) = pinned else {
+        // Caller said "tool is configured" but didn't tell us the
+        // version. Trust the caller — no override.
+        return true;
+    };
+    let Some(detected) = detected else {
+        // No detected version pin — anything goes.
+        return true;
+    };
+    let trimmed = pinned.trim();
+    if trimmed.is_empty() || trimmed == "latest" || trimmed == "*" || trimmed == detected {
+        return true;
+    }
+    // Cheap structural check: if the pinned spec starts with a range
+    // operator (`^`, `~`, `>=`, `<`, `=`, `>`), assume it's a semver
+    // expression and ask the project's own semver matcher.
+    crate::tools::version::version_satisfies(detected, trimmed)
 }
 
 #[cfg(test)]
@@ -179,6 +276,77 @@ mod tests {
         let report = analyze(tmp.path(), &HashSet::new(), &registry_with(&["rust"]));
         let rust = report.required.iter().find(|s| s.name == "rust").unwrap();
         assert_eq!(rust.version, "1.85.0");
+    }
+
+    /// Version-narrowing — when the user has already pinned a semver
+    /// range that COVERS the detected version, don't re-suggest.
+    #[test]
+    fn pinned_range_covering_detected_version_does_not_re_suggest() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        fs::write(
+            tmp.path().join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"1.85.0\"",
+        )
+        .unwrap();
+        let mut configured: HashSet<String> = HashSet::new();
+        configured.insert("rust".to_string());
+        let mut versions: HashMap<String, String> = HashMap::new();
+        versions.insert("rust".to_string(), ">= 1.80, < 2.0".to_string());
+
+        let report = analyze_with(
+            tmp.path(),
+            &configured,
+            &versions,
+            &registry_with(&["rust"]),
+            default_rules(),
+        );
+        assert_eq!(report.already_configured, vec!["rust"]);
+        assert!(report.required.is_empty(), "got {:?}", report.required);
+    }
+
+    /// Version-narrowing — when the pinned spec does NOT cover the
+    /// detected version, surface as an override-suggestion.
+    #[test]
+    fn pinned_range_below_detected_version_surfaces_as_override() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        fs::write(
+            tmp.path().join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"1.85.0\"",
+        )
+        .unwrap();
+        let mut configured: HashSet<String> = HashSet::new();
+        configured.insert("rust".to_string());
+        let mut versions: HashMap<String, String> = HashMap::new();
+        versions.insert("rust".to_string(), "1.70.0".to_string());
+
+        let report = analyze_with(
+            tmp.path(),
+            &configured,
+            &versions,
+            &registry_with(&["rust"]),
+            default_rules(),
+        );
+        let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"rust"), "got required={names:?}");
+    }
+
+    /// Uninstallable bucket — detected tools we don't have a handler
+    /// for surface separately, not silently dropped.
+    #[test]
+    fn unknown_tool_lands_in_uninstallable_bucket() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        // Empty registry: every detection is uninstallable.
+        let report = analyze(tmp.path(), &HashSet::new(), &HashSet::new());
+        assert!(report.required.is_empty());
+        let names: Vec<&str> = report
+            .uninstallable
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(names.contains(&"rust"), "got {names:?}");
     }
 
     #[test]

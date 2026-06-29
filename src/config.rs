@@ -339,6 +339,15 @@ pub struct Config {
     /// without manual setup. Same trust boundary as `[ai_hooks]`.
     #[serde(default, rename = "mcp_register")]
     pub mcp_register: Option<crate::mcp_register::McpRegisterConfig>,
+    /// `[discover]` block — custom detection rules and ignore_dirs for
+    /// `jarvy discover` (PRD-044 phase 2). Built-in rules always run;
+    /// the custom rules file is APPENDED so a user tree can't silence
+    /// built-in detection. Consumed by `discover::commands` via direct
+    /// TOML parse (not through this struct) because discover is the
+    /// only reader and the indirection isn't worth the dep on Config.
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub discover: Option<crate::discover::config::DiscoverConfig>,
     /// Top-level `[packages]` trust knob. Mirrors `[ai_hooks]
     /// allow_custom_commands` and `[mcp_register] allow_custom_servers`
     /// for the package ecosystems. When `Config` is tagged
@@ -409,6 +418,7 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "workspace",
     "ai_hooks",
     "mcp_register",
+    "discover",
     // Parsed by src/observability/logging.rs, not Config — kept here so
     // jarvy validate accepts it without warning.
     "logging",
@@ -988,6 +998,7 @@ mod tests {
                 workspace: _,
                 ai_hooks: _,
                 mcp_register: _,
+                discover: _,
                 packages: _,
                 origin: _,
             } = c;

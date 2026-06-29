@@ -756,6 +756,12 @@ pub fn run_setup(
     // configured agent so terminal AIs can discover Jarvy's tools.
     run_mcp_register_phase(&config, dry_run);
 
+    // Continuous discovery — advisory only. Runs `jarvy discover`'s
+    // analyzer against the project tree and reports any new tools
+    // not already in `[provisioner]`. NEVER mutates jarvy.toml from
+    // setup; users must explicitly run `jarvy discover --apply`.
+    run_continuous_discover_phase(file);
+
     // Environment variable setup
     let env_config = config.get_env();
     let env_settings = &env_config.config;
@@ -1749,6 +1755,192 @@ fn capture_drift_baseline_borrowed(
     }
 }
 
+/// Auto-context detection (PRD-047 phase 2). When `jarvy setup` is
+/// invoked without `--project` AND cwd sits inside a declared
+/// workspace member, return that member's name so the caller can
+/// scope setup automatically. Returns `None` when:
+/// - the file argument's parent already IS the workspace root, OR
+/// - no `[workspace]` section is found walking up, OR
+/// - cwd doesn't sit inside any declared member.
+pub fn auto_detect_project(file: &str) -> Option<String> {
+    let project_dir = std::path::Path::new(file)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let ctx = crate::workspace::find_workspace_root(&project_dir)?;
+    let root_dir = ctx.root_config.parent()?;
+    // Only return Some(member) when the supplied `file` actually
+    // sits BELOW the workspace root — otherwise the user is already
+    // at the root and explicit `--project` is required.
+    let canonical_dir = project_dir.canonicalize().ok()?;
+    let canonical_root = root_dir.canonicalize().ok()?;
+    if canonical_dir == canonical_root {
+        return None;
+    }
+    ctx.current_member
+}
+
+/// Workspace-aware project resolution for `jarvy setup --project <name>`
+/// (PRD-047 phase 2).
+///
+/// Returns the path setup should read instead of the supplied `file`:
+///
+/// - If `name == "current"`: walk up from `cwd` to find a workspace
+///   root, then resolve the member that contains cwd. Errors when not
+///   inside any member.
+/// - If `name` matches an exact / glob-expanded member: return that
+///   member's `jarvy.toml` path.
+/// - If the member has no `jarvy.toml` of its own (workspace-defaults
+///   case): synthesize the merged root-only config into a tempfile and
+///   return that path. The tempfile lives until process exit — fine
+///   for setup which runs once and exits.
+/// - On any failure (no workspace, unknown member, traversal): return
+///   a structured error so dispatch can produce a clean diagnostic.
+pub fn resolve_workspace_project(
+    root_file: &str,
+    name: &str,
+) -> Result<std::path::PathBuf, String> {
+    let root_path = std::path::Path::new(root_file);
+    let project_dir = root_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    let ctx = crate::workspace::find_workspace_root(&project_dir).ok_or_else(|| {
+        format!(
+            "no [workspace] section found walking up from {}",
+            project_dir.display()
+        )
+    })?;
+    let workspace_root = ctx
+        .root_config
+        .parent()
+        .ok_or_else(|| "workspace root config has no parent".to_string())?
+        .to_path_buf();
+    let resolved = ctx.workspace.resolved_members(&workspace_root);
+
+    let target_member: String = if name == "current" {
+        let cwd = std::env::current_dir().map_err(|e| format!("cannot read current dir: {e}"))?;
+        ctx.current_member.clone().ok_or_else(|| {
+            format!(
+                "cwd {} is not inside any declared workspace member",
+                cwd.display()
+            )
+        })?
+    } else {
+        resolved
+            .into_iter()
+            .find(|m| m == name)
+            .ok_or_else(|| format!("`{name}` is not a declared workspace member"))?
+    };
+
+    // Containment + path-traversal refusal (P0 #3 in the parallel
+    // review applies here too).
+    let candidate = std::path::Path::new(&target_member);
+    if candidate.is_absolute()
+        || candidate
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!(
+            "member `{target_member}` would escape the workspace root"
+        ));
+    }
+    let member_dir = workspace_root.join(&target_member);
+    let member_toml = member_dir.join("jarvy.toml");
+
+    if member_toml.exists() {
+        return Ok(member_toml);
+    }
+
+    // No per-member jarvy.toml. Synthesize the merged config from the
+    // root and stash it in a tempfile.
+    let raw = std::fs::read_to_string(&ctx.root_config)
+        .map_err(|e| format!("read {}: {e}", ctx.root_config.display()))?;
+    let root_value: toml::Value =
+        toml::from_str(&raw).map_err(|e| format!("parse {}: {e}", ctx.root_config.display()))?;
+    let merged = crate::workspace::merge_configs(
+        &root_value,
+        &toml::Value::Table(toml::Table::new()),
+        &ctx.workspace.effective_inherit(),
+    );
+    let serialized =
+        toml::to_string_pretty(&merged).map_err(|e| format!("serialize merged config: {e}"))?;
+
+    use std::io::Write;
+    let mut tmp = tempfile::Builder::new()
+        .prefix("jarvy-setup-project-")
+        .suffix(".toml")
+        .tempfile()
+        .map_err(|e| format!("tempfile: {e}"))?;
+    tmp.write_all(serialized.as_bytes())
+        .map_err(|e| format!("write tempfile: {e}"))?;
+    let (_, path) = tmp.keep().map_err(|e| format!("persist tempfile: {e}"))?;
+    Ok(path)
+}
+
+/// Continuous discovery (PRD-044 phase 2). After `jarvy setup`
+/// finishes its install phases we run `discover::analyze` and warn
+/// when project marker files imply tools that aren't pinned in
+/// `[provisioner]`. NEVER mutates jarvy.toml — that requires an
+/// explicit `jarvy discover --apply`. Emits structured telemetry so
+/// dashboards can graph "setup runs that hint at missing tools."
+///
+/// Quiet by default when:
+/// - `JARVY_TEST_MODE=1` (test runs)
+/// - The setup ran in dry-run mode (we don't want to nudge during a
+///   preview)
+/// - There are no new suggestions
+fn run_continuous_discover_phase(file: &str) {
+    if std::env::var("JARVY_TEST_MODE").as_deref() == Ok("1") {
+        return;
+    }
+
+    let project_dir = std::path::Path::new(file)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    let existing_text = std::fs::read_to_string(file).ok();
+    let already_configured: std::collections::HashSet<String> = existing_text
+        .as_deref()
+        .and_then(|t| t.parse::<toml::Table>().ok())
+        .and_then(|t| t.get("provisioner").and_then(|v| v.as_table()).cloned())
+        .map(|t| t.keys().cloned().collect())
+        .unwrap_or_default();
+
+    let known: std::collections::HashSet<String> = crate::tools::registry::registered_tool_names()
+        .into_iter()
+        .collect();
+
+    let report = crate::discover::analyze(&project_dir, &already_configured, &known);
+    let new_count = report.required.len();
+    if new_count == 0 {
+        return;
+    }
+
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "discover.setup_advisory",
+            new_tools = new_count,
+            uninstallable = report.uninstallable.len(),
+        );
+    }
+
+    println!();
+    println!(
+        "Tip: `jarvy discover` found {new_count} additional tool(s) implied by your project files \
+         that aren't yet in [provisioner]:"
+    );
+    for tool in &report.required {
+        println!("  - {} ({})", tool.name, tool.reason);
+    }
+    println!("Run `jarvy discover --apply` to pin them.");
+}
+
 #[cfg(test)]
 mod tests {
     //! Smoke tests for the extracted phase helpers (review item 21 / item 8
@@ -2009,5 +2201,86 @@ mod tests {
         // tests/ai_hooks_integration.rs that asserts no settings file
         // is created, the contract is covered.
         run_ai_hooks_phase(&cfg, true);
+    }
+
+    // ----- PRD-047 phase 2: --project resolution ----------------------
+
+    #[test]
+    fn resolve_workspace_project_returns_member_toml_when_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("jarvy.toml"),
+            r#"
+[workspace]
+members = ["apps/web"]
+
+[provisioner]
+git = "latest"
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(tmp.path().join("apps/web")).unwrap();
+        std::fs::write(
+            tmp.path().join("apps/web/jarvy.toml"),
+            "[provisioner]\nnode = \"20\"\n",
+        )
+        .unwrap();
+        let root = tmp.path().join("jarvy.toml");
+        let resolved = resolve_workspace_project(root.to_str().unwrap(), "apps/web").unwrap();
+        assert_eq!(resolved, tmp.path().join("apps/web/jarvy.toml"));
+    }
+
+    #[test]
+    fn resolve_workspace_project_synthesizes_when_member_has_no_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("jarvy.toml"),
+            r#"
+[workspace]
+members = ["apps/api"]
+
+[provisioner]
+git = "latest"
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(tmp.path().join("apps/api")).unwrap();
+        // No apps/api/jarvy.toml — synthesize.
+        let root = tmp.path().join("jarvy.toml");
+        let resolved = resolve_workspace_project(root.to_str().unwrap(), "apps/api").unwrap();
+        assert!(resolved.exists());
+        let content = std::fs::read_to_string(&resolved).unwrap();
+        let parsed: toml::Value = toml::from_str(&content).unwrap();
+        assert!(
+            parsed.get("provisioner").is_some(),
+            "merged config must carry inherited provisioner"
+        );
+    }
+
+    #[test]
+    fn resolve_workspace_project_rejects_unknown_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("jarvy.toml"),
+            "[workspace]\nmembers = [\"apps/web\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(tmp.path().join("apps/web")).unwrap();
+        let root = tmp.path().join("jarvy.toml");
+        let err = resolve_workspace_project(root.to_str().unwrap(), "apps/ghost").unwrap_err();
+        assert!(err.contains("ghost"), "got: {err}");
+    }
+
+    #[test]
+    fn resolve_workspace_project_no_workspace_block_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("jarvy.toml"),
+            "[provisioner]\ngit = \"latest\"\n",
+        )
+        .unwrap();
+        let root = tmp.path().join("jarvy.toml");
+        let err = resolve_workspace_project(root.to_str().unwrap(), "apps/web").unwrap_err();
+        assert!(err.contains("workspace"), "got: {err}");
     }
 }

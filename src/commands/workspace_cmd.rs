@@ -102,12 +102,10 @@ fn action_format(action: &WorkspaceAction) -> &str {
 
 fn list(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
     let root_dir = ctx.root_config.parent().unwrap_or(Path::new("."));
-    // Parse the root jarvy.toml ONCE so collect_member doesn't re-read
-    // + re-parse it per member (review item P1 #9).
     let root_value = load_root_value(&ctx.root_config);
-    let summaries: Vec<MemberSummary> = ctx
-        .workspace
-        .members
+    // Expand `apps/*` globs + apply `exclude = [...]` (PRD-047 phase 2).
+    let members = ctx.workspace.resolved_members(root_dir);
+    let summaries: Vec<MemberSummary> = members
         .iter()
         .map(|m| collect_member_with_root(root_dir, m, ctx, &root_value))
         .collect();
@@ -144,7 +142,8 @@ fn list(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
 
 fn show(ctx: &workspace::WorkspaceContext, name: &str, output_format: &str) -> i32 {
     let root_dir = ctx.root_config.parent().unwrap_or(Path::new("."));
-    if !ctx.workspace.members.iter().any(|m| m == name) {
+    let resolved = ctx.workspace.resolved_members(root_dir);
+    if !resolved.iter().any(|m| m == name) {
         if output_format == "json" {
             println!(
                 "{}",
@@ -207,7 +206,8 @@ fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
     let mut errors: Vec<String> = Vec::new();
     let mut entries: Vec<serde_json::Value> = Vec::new();
 
-    for member in &ctx.workspace.members {
+    let resolved = ctx.workspace.resolved_members(root_dir);
+    for member in &resolved {
         let Some(member_dir) = resolve_member(root_dir, member) else {
             // Refused at the containment check (review item P0 #3).
             // Surface as an error so validate exits CONFIG_ERROR and
@@ -282,7 +282,7 @@ fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
             tracing::warn!(
                 event = "workspace.validate_completed",
                 status = status,
-                members = ctx.workspace.members.len(),
+                members = resolved.len(),
                 errors = errors.len(),
                 warnings = warnings.len(),
                 duration_ms = duration_ms,
@@ -291,7 +291,7 @@ fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
             tracing::info!(
                 event = "workspace.validate_completed",
                 status = status,
-                members = ctx.workspace.members.len(),
+                members = resolved.len(),
                 errors = errors.len(),
                 warnings = warnings.len(),
                 duration_ms = duration_ms,
@@ -332,12 +332,9 @@ fn validate(ctx: &workspace::WorkspaceContext, output_format: &str) -> i32 {
         println!("  err:  {line}");
     }
     if errors.is_empty() && warnings.is_empty() {
-        println!("  All {} members ok.", ctx.workspace.members.len());
+        println!("  All {} members ok.", resolved.len());
     } else {
-        // Saturating subtract — entries.len() includes refused members
-        // that aren't double-counted in warnings/errors. Use the
-        // entries count as the denominator to avoid underflow.
-        let total = ctx.workspace.members.len();
+        let total = resolved.len();
         let ok = total
             .saturating_sub(warnings.len())
             .saturating_sub(errors.len());
@@ -589,6 +586,7 @@ members = ["apps/web", "../../etc"]
     fn empty_inherit_widens_to_provisioner_via_helper() {
         let cfg = workspace::WorkspaceConfig {
             members: vec!["apps/web".to_string()],
+            exclude: vec![],
             inherit: vec![],
         };
         assert_eq!(cfg.effective_inherit(), vec!["provisioner".to_string()]);
@@ -598,6 +596,7 @@ members = ["apps/web", "../../etc"]
     fn explicit_inherit_list_is_preserved() {
         let cfg = workspace::WorkspaceConfig {
             members: vec!["apps/web".to_string()],
+            exclude: vec![],
             inherit: vec!["hooks".to_string(), "env".to_string()],
         };
         assert_eq!(

@@ -12,12 +12,14 @@ use crate::cli::DriftAction;
 use crate::config::Config;
 use crate::drift::{DriftDetector, DriftFixer, DriftReporter, DriftStatus, EnvironmentState};
 
-/// Handle drift subcommands
+/// Handle drift subcommands. When invoked from inside a workspace
+/// member (auto-detected via `setup_cmd::auto_detect_project`), drift
+/// reads the member's `jarvy.toml` so baseline state lives next to
+/// that member's `.jarvy/state.json` instead of the workspace root
+/// (PRD-047 phase 2).
 pub fn run_drift(file: &str, action: &DriftAction) -> i32 {
-    let project_dir = Path::new(file)
-        .parent()
-        .unwrap_or(Path::new("."))
-        .to_path_buf();
+    let (file, project_dir) = workspace_aware_path(file);
+    let file = file.as_str();
 
     match action {
         DriftAction::Check { output_format } => run_drift_check(&project_dir, file, output_format),
@@ -35,6 +37,27 @@ pub fn run_drift(file: &str, action: &DriftAction) -> i32 {
             output_format,
         } => run_drift_fix(&project_dir, file, *dry_run, output_format),
     }
+}
+
+/// Apply workspace auto-context (PRD-047 phase 2). Returns the
+/// effective config file path and the directory drift should treat
+/// as the project root (where `.jarvy/state.json` lives). If cwd
+/// sits inside a workspace member, we redirect to that member's
+/// `jarvy.toml`; otherwise the user-supplied path stands.
+fn workspace_aware_path(file: &str) -> (String, std::path::PathBuf) {
+    if let Some(member) = crate::commands::setup_cmd::auto_detect_project(file) {
+        if let Ok(resolved) = crate::commands::setup_cmd::resolve_workspace_project(file, &member) {
+            let dir = resolved.parent().unwrap_or(Path::new(".")).to_path_buf();
+            if let Some(s) = resolved.to_str() {
+                return (s.to_string(), dir);
+            }
+        }
+    }
+    let dir = Path::new(file)
+        .parent()
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
+    (file.to_string(), dir)
 }
 
 /// Run drift check command

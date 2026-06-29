@@ -27,9 +27,28 @@ pub struct DetectionRule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DetectionPattern {
-    File { file: String },
-    Dir { dir: String },
+    File {
+        file: String,
+    },
+    Dir {
+        dir: String,
+    },
+    /// Match a file whose contents contain a literal substring. Used
+    /// for ecosystems where the marker file is generic (`*.yaml`) but
+    /// the content is distinctive (`kind: Deployment` for Kubernetes,
+    /// `engines.node` for Node package manifests, etc.). Bounded
+    /// reads — only the first MAX_CONTAINING_BYTES (4 KiB) are
+    /// scanned per file, which is more than enough for header lines.
+    FileContaining {
+        file: String,
+        containing: String,
+    },
 }
+
+/// Cap how much of a file we inspect for `FileContaining`. Most
+/// markers we care about live in the first few lines; reading 4 KiB
+/// is plenty and bounds the cost of a malicious giant marker file.
+pub const MAX_CONTAINING_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VersionSource {
@@ -117,9 +136,32 @@ fn rule_match_source(project_dir: &Path, rule: &DetectionRule) -> Option<String>
                     }
                 }
             }
+            DetectionPattern::FileContaining { file, containing } => {
+                if let Some(p) = find_first_match(project_dir, file) {
+                    if let Ok(content) = read_bounded(&p, MAX_CONTAINING_BYTES) {
+                        if content.contains(containing) {
+                            let name = p.file_name()?.to_string_lossy().into_owned();
+                            if let Some(safe) = sanitize_source(&name) {
+                                return Some(safe);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     None
+}
+
+/// Read at most `cap` bytes of `path` and return as a UTF-8 string.
+/// Lossy decoding so a stray non-UTF8 byte doesn't kill the scan.
+fn read_bounded(path: &Path, cap: usize) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = vec![0u8; cap];
+    let n = file.read(&mut buf)?;
+    buf.truncate(n);
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// Accept only ASCII-graphic + space — every other byte (newline,
@@ -299,6 +341,18 @@ fn build_default_rules() -> Vec<DetectionRule> {
                 DetectionPattern::Dir {
                     dir: "manifests".into(),
                 },
+                // Catch repos that scatter k8s manifests at the root
+                // (no k8s/ dir) by looking for the marker fields inside
+                // a bare `*.yaml`. FileContaining is bounded to the
+                // first 4 KiB so it stays fast on large repos.
+                DetectionPattern::FileContaining {
+                    file: "*.yaml".into(),
+                    containing: "kind: Deployment".into(),
+                },
+                DetectionPattern::FileContaining {
+                    file: "*.yaml".into(),
+                    containing: "apiVersion: apps/v1".into(),
+                },
             ],
             version_from: None,
             suggests: vec!["helm".into(), "kustomize".into(), "k9s".into()],
@@ -369,6 +423,54 @@ fn build_default_rules() -> Vec<DetectionRule> {
             version_from: None,
             suggests: vec![],
             category: ToolCategory::Build,
+        },
+        // The following ecosystems trigger detection but typically
+        // land in the `uninstallable` bucket because jarvy doesn't
+        // ship first-party handlers yet. We still surface them so
+        // contributors see "jarvy noticed you have Java but can't
+        // install it for you" rather than silently doing nothing.
+        DetectionRule {
+            name: "maven".into(),
+            detect: vec![DetectionPattern::File {
+                file: "pom.xml".into(),
+            }],
+            version_from: None,
+            suggests: vec![],
+            category: ToolCategory::Build,
+        },
+        DetectionRule {
+            name: "gradle".into(),
+            detect: vec![
+                DetectionPattern::File {
+                    file: "build.gradle".into(),
+                },
+                DetectionPattern::File {
+                    file: "build.gradle.kts".into(),
+                },
+                DetectionPattern::File {
+                    file: "settings.gradle".into(),
+                },
+            ],
+            version_from: None,
+            suggests: vec![],
+            category: ToolCategory::Build,
+        },
+        DetectionRule {
+            name: "dotnet".into(),
+            detect: vec![
+                DetectionPattern::File {
+                    file: "*.csproj".into(),
+                },
+                DetectionPattern::File {
+                    file: "*.fsproj".into(),
+                },
+                DetectionPattern::File {
+                    file: "global.json".into(),
+                },
+            ],
+            version_from: None,
+            suggests: vec![],
+            category: ToolCategory::Runtime,
         },
     ]
 }

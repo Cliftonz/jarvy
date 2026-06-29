@@ -38,6 +38,13 @@ pub enum Commands {
         /// Path to the configuration file
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
+        /// Run setup against one workspace member only (PRD-047). Pass
+        /// the member name as it appears in `[workspace] members`,
+        /// or use `current` to auto-detect from the current directory.
+        /// Without `--project`, setup runs against the file at `--file`
+        /// as a single-project repo (unchanged behavior).
+        #[clap(short = 'P', long, value_name = "NAME")]
+        project: Option<String>,
         /// Fetch configuration from a URL (e.g., GitHub raw URL, gist, HTTP endpoint)
         #[clap(long, value_name = "URL")]
         from: Option<String>,
@@ -176,6 +183,17 @@ pub enum Commands {
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,
     },
+    /// Show the current execution context (workspace root, member,
+    /// resolved config path) so you can sanity-check what jarvy would
+    /// do from this directory. Read-only.
+    Context {
+        /// Path to the configuration file (default: walks up from cwd)
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
     /// Inspect / clean the shared library-registry cache (PRD-054 phase 6)
     Library {
         #[clap(subcommand)]
@@ -200,6 +218,15 @@ pub enum Commands {
         /// Show only tools that aren't already pinned (one `name = "version"` per line)
         #[clap(long)]
         missing: bool,
+        /// Path to a custom rules TOML file (overrides [discover] rules
+        /// in jarvy.toml). Custom rules append to — never replace — the
+        /// built-in set.
+        #[clap(long)]
+        rules: Option<String>,
+        /// Re-run discover whenever a project file changes (notify-driven
+        /// file-system watcher). Press Ctrl-C to exit.
+        #[clap(long)]
+        watch: bool,
         /// Output format: json, pretty
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,

@@ -40,6 +40,75 @@ the same format. PRD-049 (skills) rides on it; PRD-048 / 052 (git
 hooks, spinners) shipped earlier in the day. No user-visible behavior
 changes for existing configs — all new surface is additive.
 
+### Added — PRD-044 / 047 phase 2 (everything except interactive mode)
+
+Closes the remaining deferred work on the two PRDs plus several
+quality-of-life follow-ups that fell out of the dependency graph.
+
+**PRD-044 — auto-discovery phase 2:**
+- `[discover]` config block in `jarvy.toml` carrying `rules = "<path>"`
+  for custom rule files + `ignore_dirs`. Custom rules append to (never
+  replace) the built-in set so a user tree can't silence detection of
+  a real ecosystem.
+- `--rules <path>` CLI flag overrides the config-file path for one-off
+  runs.
+- `FileContaining { file, containing }` detection pattern — bounded
+  4 KiB scan, used today by the kubectl rule to catch
+  `kind: Deployment` / `apiVersion: apps/v1` in bare `*.yaml` files at
+  the repo root.
+- Per-language version-range narrowing: when the user has already
+  pinned a semver range that COVERS the detected version (e.g.
+  `node = "^20"` + `.nvmrc` says `20`), discover treats it as
+  already-configured instead of re-suggesting an exact-version pin.
+  Falls back to the prior "list as required" behavior when we can't
+  parse either side.
+- `uninstallable` bucket in `DiscoverReport` for tools jarvy detected
+  but doesn't have a first-party installer for (maven, gradle, dotnet
+  …). New CLI section + JSON field — users see what jarvy noticed and
+  can't help with, instead of silent drops.
+- `--watch` mode — `notify` filesystem watcher re-runs discover on
+  every relevant event with a 750ms debounce so editor saves /
+  bulk rewrites only re-emit once.
+- Continuous discovery on `jarvy setup` — emits a stderr advisory
+  + `discover.setup_advisory` event when project files imply tools
+  not pinned in `[provisioner]`. Read-only; never mutates jarvy.toml.
+
+**PRD-047 — monorepo phase 2:**
+- `[workspace] members = ["apps/*"]` glob expansion. `*`-only
+  patterns supported; subdirectory members under the parent are
+  enumerated and skipped if they start with `.`.
+- `[workspace] exclude = [...]` glob patterns applied AFTER
+  expansion. Pairs with globs to handle "everything except
+  apps/legacy."
+- `jarvy setup --project <name>` runs setup against ONE workspace
+  member. `name = "current"` auto-detects from cwd. Members without a
+  per-member jarvy.toml get a synthesized merged config written to a
+  tempfile so the existing single-project setup loop doesn't need to
+  know about workspaces.
+- Auto-context detection: when `jarvy setup` is invoked WITHOUT
+  `--project` AND cwd sits inside a declared member, setup scopes to
+  that member implicitly + prints an advisory line.
+- `jarvy context` standalone command — read-only diagnostic showing
+  cwd, detected workspace, members (current marked with `→`),
+  auto-detected project, and resolved setup file. Supports
+  `--format json`.
+- `jarvy drift` and `jarvy doctor` honor the same auto-context. cwd
+  inside a member → drift reads that member's merged config and
+  `.jarvy/state.json` lives next to the member; doctor checks the
+  merged inherited toolset. No new flags — the behavior emerges from
+  the shared `setup_cmd::auto_detect_project` helper.
+
+**Skipped on purpose:** `--interactive` confirm-each-suggestion mode
+for discover — user signal said it wasn't worth the friction; the
+existing dry-run-then-`--apply` two-step covers the same need.
+
+**Verification:** cargo fmt + clippy --all-features --all-targets -D
+warnings clean. 974 lib + 1442 bin tests green (+11 lib, +16 bin vs
+the prior baseline). New tests cover version-narrowing, uninstallable
+bucket, glob expansion, exclude patterns, glob_matches table,
+workspace-project resolution (4 cases including current / synthesize
+/ unknown / no-workspace), and context-cmd in a non-workspace.
+
 ### Added — close-out of every half-baked surface flagged in the audit
 
 A single bundled commit retires the partial-feature list surfaced by

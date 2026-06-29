@@ -31,6 +31,7 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
     match &cli.command {
         Some(Commands::Setup {
             file,
+            project,
             from,
             role,
             no_hooks,
@@ -42,20 +43,56 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             ignore_missing_deps,
             header,
             ..
-        }) => commands::setup_cmd::run_setup(
-            file,
-            from.as_deref(),
-            role.as_deref(),
-            *no_hooks,
-            *dry_run,
-            *ci,
-            *no_ci,
-            *jobs,
-            *sequential,
-            *ignore_missing_deps,
-            header,
-            global_config.settings.fingerprint.as_deref(),
-        ),
+        }) => {
+            // PRD-047 — `--project <name>` redirects setup to one
+            // workspace member; without it we still try auto-context
+            // detection (cwd inside a declared member → scope to that
+            // member implicitly). Explicit `--project` always wins
+            // over auto-detection.
+            let resolved_file_path: std::path::PathBuf;
+            let explicit_project = project.as_deref();
+            let auto_project: Option<String> = if explicit_project.is_none() {
+                commands::setup_cmd::auto_detect_project(file)
+            } else {
+                None
+            };
+            let effective_project = explicit_project.map(str::to_string).or(auto_project);
+            let resolved_file: &str = match effective_project.as_deref() {
+                Some(name) => {
+                    if explicit_project.is_none() {
+                        eprintln!(
+                            "  Detected workspace member `{name}` — scoping setup to this member. \
+                             Pass --project explicitly or run from the workspace root to disable."
+                        );
+                    }
+                    match commands::setup_cmd::resolve_workspace_project(file, name) {
+                        Ok(p) => {
+                            resolved_file_path = p;
+                            resolved_file_path.to_str().unwrap_or(file)
+                        }
+                        Err(e) => {
+                            eprintln!("Cannot resolve workspace project `{name}`: {e}");
+                            return error_codes::CONFIG_ERROR;
+                        }
+                    }
+                }
+                None => file,
+            };
+            commands::setup_cmd::run_setup(
+                resolved_file,
+                from.as_deref(),
+                role.as_deref(),
+                *no_hooks,
+                *dry_run,
+                *ci,
+                *no_ci,
+                *jobs,
+                *sequential,
+                *ignore_missing_deps,
+                header,
+                global_config.settings.fingerprint.as_deref(),
+            )
+        }
         Some(Commands::Bootstrap {}) => {
             commands::run_bootstrap();
             0
@@ -117,10 +154,25 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             file,
             apply,
             missing,
+            rules,
+            watch,
             output_format,
-        }) => crate::discover::commands::run_discover(file, *apply, *missing, output_format),
+        }) => {
+            crate::discover::commands::run_discover_full(crate::discover::commands::DiscoverOpts {
+                file,
+                apply: *apply,
+                missing: *missing,
+                rules_override: rules.as_deref(),
+                watch: *watch,
+                output_format,
+            })
+        }
         Some(Commands::Workspace { file, action }) => commands::run_workspace(action, file),
         Some(Commands::Library { action }) => commands::run_library(action),
+        Some(Commands::Context {
+            file,
+            output_format,
+        }) => commands::run_context(file, output_format),
         Some(Commands::Services { action, file }) => commands::run_services(action, file),
         Some(Commands::Doctor {
             file,
@@ -245,7 +297,20 @@ fn handle_doctor(
     extended: bool,
     report: &Option<String>,
 ) -> i32 {
-    let config = file.as_ref().map(|f| Config::new(f));
+    // PRD-047 phase 2 — when an explicit --file is given AND cwd is
+    // inside a declared workspace member, auto-redirect to that
+    // member's jarvy.toml. Without this the user would need to
+    // manually point `--file apps/web/jarvy.toml` every time.
+    let config = file.as_ref().map(|f| {
+        if let Some(member) = commands::setup_cmd::auto_detect_project(f) {
+            if let Ok(resolved) = commands::setup_cmd::resolve_workspace_project(f, &member) {
+                if let Some(s) = resolved.to_str() {
+                    return Config::new(s);
+                }
+            }
+        }
+        Config::new(f)
+    });
     let specific_tools = tools.as_ref().map(|t| {
         t.split(',')
             .map(|s| s.trim().to_string())

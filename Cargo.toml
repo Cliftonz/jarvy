@@ -79,6 +79,7 @@ shellexpand = "3.1"
 tempfile = "3.27"
 which = "8.0"
 indicatif = "0.18"
+notify = "8"
 
 [features]
 # `test-bypass` exposes the loopback-HTTP + JARVY_TEST_HOME escape
