@@ -68,6 +68,7 @@ pub mod team_cmd;
 pub mod telemetry_cmd;
 pub mod ticket_cmd;
 pub mod tools_cmd;
+pub mod workspace_cmd;
 
 // Public API re-exports - these modules may not be used directly by main.rs
 // but are part of the commands module's public interface
@@ -115,3 +116,4 @@ pub use team_cmd::*;
 pub use telemetry_cmd::*;
 pub use ticket_cmd::*;
 pub use tools_cmd::*;
+pub use workspace_cmd::*;

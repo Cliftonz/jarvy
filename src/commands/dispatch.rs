@@ -119,6 +119,7 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             missing,
             output_format,
         }) => crate::discover::commands::run_discover(file, *apply, *missing, output_format),
+        Some(Commands::Workspace { file, action }) => commands::run_workspace(action, file),
         Some(Commands::Services { action, file }) => commands::run_services(action, file),
         Some(Commands::Doctor {
             file,

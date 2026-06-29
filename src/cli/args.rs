@@ -176,6 +176,14 @@ pub enum Commands {
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,
     },
+    /// Inspect a monorepo workspace defined by `[workspace]` in jarvy.toml (PRD-047)
+    Workspace {
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+        #[clap(subcommand)]
+        action: WorkspaceAction,
+    },
     /// Scan the project for tooling and suggest a jarvy.toml (PRD-044)
     Discover {
         /// Path to the configuration file to read / update

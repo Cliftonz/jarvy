@@ -386,6 +386,30 @@ pub enum LogsAction {
     },
 }
 
+#[derive(Subcommand)]
+pub enum WorkspaceAction {
+    /// List all workspace members and their tools
+    List {
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+    /// Show the resolved tool set for one member (with inheritance applied)
+    Show {
+        /// Member name as declared in `[workspace] members`
+        name: String,
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+    /// Validate the workspace (members exist, each jarvy.toml parses)
+    Validate {
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+}
+
 #[derive(Clone, Subcommand)]
 pub enum TicketAction {
     /// Create a new debug ticket
