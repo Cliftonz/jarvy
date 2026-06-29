@@ -40,6 +40,7 @@ Cross-platform CLI that provisions dev environments from `jarvy.toml` using nati
 - `src/tools/` — `registry.rs` (global `OnceLock<RwLock<HashMap>>`), `common.rs` (`Os`, `InstallError`, `run`, `has`, `cmd_satisfies`), `spec.rs` (`ToolSpec` + `define_tool!` macro)
 - `src/packages/` — npm / pip / cargo / nuget / gem / go handlers
 - `src/roles/` — role-based config with inheritance (PRD-033)
+- `src/agents.rs` — canonical `Agent` enum shared across `ai_hooks`, `mcp_register`, and `skills`. The three former per-subsystem enums (`AgentTarget`, `McpAgentTarget`, `SkillAgent`) are now `pub use crate::agents::Agent as <Name>` aliases so call sites compile unchanged; a new agent variant lands in all three subsystems atomically.
 - `src/ai_hooks/` — guardrail hooks distributed to Claude Code, Cursor, Codex, Windsurf, Cline, Continue. See `docs/ai-hooks.md`.
 - `src/mcp_register/` — auto-registers Jarvy MCP server with the same 6 agents. See `docs/mcp-registration.md`.
 - `src/mcp/extended_tools.rs` — broader Jarvy surface exposed over MCP (drift / roles / templates / services). Mutating tools gated by `gate_mutation` + `MutationCtx` (rate limit → stderr TTY confirm → audit log). Workspace containment via `safety::resolve_within_workspace` (canonical-root check, refuses `..`, absolute escapes, endpoint symlinks). Workspace root = `JARVY_MCP_WORKSPACE` env or cwd.

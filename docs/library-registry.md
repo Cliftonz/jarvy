@@ -197,7 +197,7 @@ Teams that want to ship `library_sources` to every developer copy them into each
 
 ## Signature verification
 
-The config schema supports cosign:
+The config schema supports cosign + a sha256 manifest pin:
 
 ```toml
 [[ai_hooks.library_sources]]
@@ -205,11 +205,14 @@ url = "https://cdn.myorg.com/jarvy/manifest.json"
 require_signature = true                              # default
 identity_regexp = "^https://github\\.com/myorg/jarvy-library/.+$"
 oidc_issuer = "https://token.actions.githubusercontent.com"
+manifest_sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15ac1e289f66085"
 ```
 
-Signature verification is **scaffolded but not enforced in v1**. The fields parse and round-trip; `require_signature = false` emits a `library.signature_disabled` event today. Enforcement lands in a follow-up phase, gated on the same cosign integration used by `jarvy registry sync`.
+**Cosign verification is scaffolded but not enforced in v1.** The fields parse and round-trip; `require_signature = false` emits a `library.signature_disabled` event today, and `require_signature = true` (the default) emits a `library.signature_unenforced` warning every fetch so operators can't silently believe Sigstore protects them yet. Enforcement lands in a follow-up phase, gated on the same cosign integration used by `jarvy registry sync`.
 
-**For production use today**, treat `library_sources` like any other dependency you fetch over HTTPS: pin URLs you trust, audit publisher repos, and assume a malicious publisher can ship a malicious hook until cosign enforcement is in. The `library.signature_disabled` warning will surface the risk every fetch.
+**`manifest_sha256` is the strongest tamper-evidence available today.** When set, every sync recomputes the sha over the raw bytes the publisher served and refuses to apply if it doesn't match — even a publisher who silently re-publishes under the same URL cannot land new content without a visible config bump. On mismatch, `library.sync.failed` fires with `error_kind = "manifest_sha_mismatch"` and the cached copy is preserved.
+
+**For production use today**, pin `manifest_sha256` and bump it deliberately when you update the published manifest. Treat URLs without a sha pin like any other unsigned HTTPS dependency: audit the publisher and assume they could ship malicious content.
 
 ---
 
@@ -235,17 +238,21 @@ All events route through the existing OTEL pipeline. Stable contract:
 |-------|------|-----------|
 | `library.sync.started` | fetch begins | `url`, `require_signature` |
 | `library.sync.completed` | fetch + parse OK | `url`, `items_synced`, `ai_hook_count`, `mcp_server_count`, `skill_count`, `from_cache`, `signature_verified` |
+| `library.sync.failed` | every sync error path | `url`, `scheme = "manifest" \| "git"`, `error_kind`, `error` |
 | `library.fetch.cached_hit` | served from cache | `url`, `reason` |
 | `library.cache.write_failed` | disk-write best-effort failure | `url`, `error` |
 | `library.signature_disabled` | `require_signature = false` | `url` |
+| `library.signature_unenforced` | `require_signature = true` (cosign not yet enforced in v1) | `url`, `advice` |
 | `library.remote_refused` | trust-gate refusal | `consumer` |
 | `skills.installed` | per-skill install | `skill`, `version`, `agent_count`, `skipped_count` |
+
+The full envelope (including the git scheme events under `library.git.*`) lives in `CLAUDE.md::Telemetry/Event Taxonomy`.
 
 ---
 
 ## Bounds + safety
 
-- HTTPS-only. Non-HTTPS URLs refused at the fetch boundary. (Loopback HTTP is allowed only with `JARVY_LIBRARY_ALLOW_INSECURE_FETCH=1`, for integration tests.)
+- HTTPS-only. Non-HTTPS URLs refused at the fetch boundary. (Loopback HTTP is allowed only when the binary was built with the `test-bypass` Cargo feature AND `JARVY_LIBRARY_ALLOW_INSECURE_FETCH=1` is set. Release builds ship without the feature so the env var is inert.)
 - Manifest cap: 16 MiB. Per-companion-artifact cap: 1 MiB. Larger needs override or split into multiple libraries.
 - Userinfo bypass refused: `http://127.0.0.1:80@attacker/x` is parsed as authority + userinfo and rejected.
 - Process cache survives the run; disk cache survives across runs. Both are wiped by `jarvy library clean` (when shipped).

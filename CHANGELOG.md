@@ -40,6 +40,58 @@ the same format. PRD-049 (skills) rides on it; PRD-048 / 052 (git
 hooks, spinners) shipped earlier in the day. No user-visible behavior
 changes for existing configs — all new surface is additive.
 
+### Added — parallel-review enhancement plan (25 P0/P1 items + sweep)
+
+A multi-batch sweep against the parallel-code-review enhancement plan
+shipped as 12 commits (`6155056..HEAD`). Highlights:
+
+- **Security** (items 1, 2, 3, 12, 13, 14, 15): argv-injection refusal on
+  git refs, symlink-escape refusal on the clone walker, `file://` scoping
+  to the library cache root, `manifest_sha256` pin on library_sources
+  (refuses re-published manifests), loud `library.signature_unenforced`
+  warning when `require_signature = true` (cosign not yet enforced in v1),
+  `GitHooksConfig::default()` matches serde defaults instead of silently
+  disabling hooks, and a new `test-bypass` Cargo feature that compiles
+  `JARVY_{LIBRARY,REGISTRY}_ALLOW_INSECURE_FETCH` + `JARVY_TEST_HOME`
+  out of release builds (env vars are inert in shipped binaries).
+- **Trust gates** (items 4, 5): `[skills]` and `[git_hooks]` now propagate
+  `ConfigOrigin::Remote` from `Config::mark_remote` and enforce the
+  `allow_remote` opt-in on both subsystems.
+- **Observability** (items 6, 7, 8, 22, 23, 24): every
+  `library.*` / `library.git.*` / `skills.*` / `git_hooks.*` /
+  `package.*` event reads `telemetry_gate::is_enabled()` so opt-out
+  users don't ship breadcrumbs; `library.sync.failed` emit on every error
+  path (was silent); `library.sync` tracing span wraps each per-source
+  fetch; `git_hooks.{install,update}_{started,completed}` envelopes
+  carry `status`, `applied`, `framework`, `auto_update`,
+  `run_after_install`, `duration_ms` — same shape as
+  `ai_hook.phase_*` / `mcp_register.phase_*`.
+- **Maintainability** (items 16, 17, 18, 19): `library_registry::sync_all`
+  consolidates the three identical `prepare_library_sources` copies;
+  `packages::common::run_install_loop` consolidates the gem/go/cargo/nuget
+  install + telemetry loops behind a closure-based helper;
+  `net::bounded_fetch` collapses the two copies of HTTPS-only refusal +
+  bounded read + loopback-bypass parser (with per-consumer env-var
+  names preserved for test isolation); `agents::Agent` is the canonical
+  enum shared by `ai_hooks`, `mcp_register`, and `skills` (the three
+  former per-subsystem enums are now `pub use` aliases). Net 450 LOC
+  removed.
+- **Performance** (items 20, 21): library_registry caches `Arc<Manifest>`
+  so resolvers snapshot the cache and drop the mutex before walking
+  items; `cmd_satisfies` caches `<cmd> --version` stdout so per-tool
+  version probes don't refork the package manager. `detect_linux_pm`
+  / `detect_bsd_pm` dropped their local `has` closures that bypassed
+  the cached `has()`.
+- **QA** (items 9, 10, 11, 25): coverage tests for ai_hooks
+  `library_sources` resolution, `mcp_register::use_library` overrides,
+  `skills` sha-mismatch refusal, and `hooks_cmd` action exit-code
+  contract. Plus `#[serial(jarvy_telemetry_disclosure)]` on the
+  telemetry disclosure tests to prevent parallel-test flakes.
+
+User-visible config additions: `[[<subsystem>.library_sources]]` accepts
+an optional `manifest_sha256 = "<hex>"` pin. CLI exit codes and
+existing event names are unchanged.
+
 ### Added — git-shorthand for skill sources (PRD-055)
 
 - **`git+https://...@<ref>[#<subpath>]` URL scheme** on `[skills]
