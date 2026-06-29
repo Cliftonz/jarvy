@@ -432,19 +432,29 @@ fn doctor_outside_workspace_no_file_does_not_fail() {
     );
 }
 
-/// Sec F4 / item 5 — `[discover] rules = "/etc/hostname"` is refused
-/// before `read_to_string` so a hostile `jarvy.toml` cannot coerce a
-/// victim into reading arbitrary absolute paths.
+/// Sec F4 / item 5 — absolute rules paths are refused before
+/// `read_to_string`. Platform-appropriate absolute path; on Windows,
+/// `/etc/...` is NOT absolute (no drive letter), so the gate uses
+/// `Path::is_absolute()` semantics rather than a leading-slash check.
 #[test]
 fn discover_absolute_rules_path_is_refused() {
     let tmp = tempfile::tempdir().unwrap();
     let jarvy_toml = tmp.path().join("jarvy.toml");
+    let abs_path = if cfg!(windows) {
+        r"C:\Windows\System32\drivers\etc\hosts"
+    } else {
+        "/etc/hostname"
+    };
+    // Escape backslashes for TOML embedding.
+    let abs_path_toml = abs_path.replace('\\', "\\\\");
     std::fs::write(
         &jarvy_toml,
-        r#"
+        format!(
+            r#"
 [discover]
-rules = "/etc/hostname"
-"#,
+rules = "{abs_path_toml}"
+"#
+        ),
     )
     .unwrap();
 

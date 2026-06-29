@@ -190,11 +190,19 @@ file = ".custom-marker"
     /// before `read_to_string` runs. A hostile `jarvy.toml` (PR,
     /// scaffold template, dependency repo) shouldn't be able to
     /// coerce a victim into reading arbitrary absolute paths.
+    /// Uses a platform-appropriate absolute path (Unix: `/etc/...`,
+    /// Windows: `C:\Windows\...`) since `Path::is_absolute()` is
+    /// platform-specific — `/etc/...` is NOT absolute on Windows.
     #[test]
     fn absolute_rules_path_is_refused() {
         let tmp = tempdir().unwrap();
+        let abs_path = if cfg!(windows) {
+            r"C:\Windows\System32\drivers\etc\hosts"
+        } else {
+            "/etc/hostname"
+        };
         let cfg = DiscoverConfig {
-            rules: Some("/etc/hostname".into()),
+            rules: Some(abs_path.into()),
             ignore_dirs: vec![],
         };
         let (rules, adv) = load_effective_rules(tmp.path(), Some(&cfg));
