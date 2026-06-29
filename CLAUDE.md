@@ -52,6 +52,8 @@ Cross-platform CLI that provisions dev environments from `jarvy.toml` using nati
 - `src/library_registry/` — shared library-registry pattern (PRD-054) reused by `[ai_hooks] library_sources`, `[mcp_register] library_sources`, `[skills] library_sources`. Three URL schemes: `https://...` (manifest fetch), `git+https://...@<ref>[#<subpath>]` (PRD-055 git clone, skills-only), `github:owner/repo@<ref>` (shorthand). One manifest format (`{schema_version, publisher, items: [{kind: ai_hook|mcp_server|skill, ...}]}`), HTTPS-bounded fetch, on-disk cache at `~/.jarvy/library.d/<sha256-of-url>/` (+ `git/` subtree for git sources), in-process resolver. Remote-fetched configs CANNOT declare `library_sources` (`library_registry::check_origin` refusal). Cosign sig verify scaffolded but not enforced in v1.
 - `src/skills/` — AI agent skill installation (PRD-049 v1). `[skills]` block in `jarvy.toml` + `jarvy skills {install,list,status,agents}` CLI. Pulls `SKILL.md` from a library_sources manifest, sha-verifies, writes to `~/.{agent}/skills/<name>/SKILL.md` (claude-code, cursor, codex, windsurf, cline, continue). Per-skill agent narrowing + publisher `supported_agents` filter. `.jarvy-skill.json` sidecar for drift detection.
 - `src/progress.rs` — spinner abstraction over `indicatif` (PRD-052). Auto-disables on non-TTY, `--quiet`, `--format json`, sandbox / CI, `JARVY_NO_PROGRESS=1`. Used today by `jarvy update check` and `jarvy hooks {install,update}`; further integration follow-up.
+- `src/discover/` — project tool auto-discovery (PRD-044 MVP). `jarvy discover [--apply] [--missing] [--format json]` scans the project root for marker files (Cargo.toml, package.json, go.mod, Dockerfile, k8s/, *.tf, Makefile, Justfile, …), infers versions from `rust-toolchain.toml` / `.nvmrc` / `.python-version` / `go.mod`, and either prints suggestions or merges them into `jarvy.toml`. Suggestions are validated against `tools::registry::registered_tool_names()` so we never recommend a tool jarvy can't install. Built-in rules only in v1 (custom rules file deferred).
+- `src/workspace.rs` + `src/commands/workspace_cmd.rs` — monorepo support (PRD-047). `[workspace] members = [...]` declared in root `jarvy.toml`; per-member jarvy.toml inherits via `merge_configs` (provisioner table merges tool-by-tool with member winning). `jarvy workspace {list,show,validate}` is the read-only CLI surface — workspace-aware `jarvy setup --project <name>` orchestration is deferred. Empty `inherit = []` is treated as `["provisioner"]` for the show/list output so the common case "just works".
 - `src/update/` — self-updater. Detects install method (brew/cargo/apt/dnf/pacman/winget/choco/scoop/binary). Env: `JARVY_UPDATE`, `JARVY_UPDATE_CHANNEL`, `JARVY_PINNED_VERSION`. CI auto-disables.
 - `src/observability/` — tracing-subscriber wiring, sanitizer (`Cow<'_, str>` no-alloc on no-match), rolling appender (`tracing_appender::rolling` daily), `non_blocking` writer with `WorkerGuard` held in `analytics::FILE_LOGGER_GUARD`. `shutdown_logging()` flushes `SdkLoggerProvider` + worker guard before exit.
 - `src/logging/` — thin re-export over `observability/` + log-file helpers (`read_recent_logs`, `get_log_stats`, `clean_logs`)
@@ -202,6 +204,18 @@ fallback_issue_url, scaffold_cmd, exit_code, opt_in_bypassed
 - **Metric counter**: `jarvy.tool.unsupported` (renamed from `jarvy.tool.not_supported` to match event name).
 
 **Telemetry gate.** Every `package.*` / `packages.*` / `package_command.failed` event reads `observability::telemetry_gate::is_enabled()` before emitting — populated by `telemetry::init` at startup. Without it, prior implementation leaked package events to OTLP when `telemetry.enabled = false` but an endpoint was set for unrelated reasons. Broke documented opt-in contract.
+
+## Structured output (`--format json`)
+
+Every command that prints to stdout accepts `--format json` (PRD-051). The
+JSON is pretty-printed by default and routed through either the canonical
+`output::Outputable` trait (for handlers that ship a typed result struct)
+or an inline `serde_json::json!()` envelope. CLI exit codes are identical
+between human and JSON paths so `jq .` pipelines can rely on `$?` for
+control flow. Commands with subcommand actions (`drift`, `logs`, `ticket`,
+`services`, `workspace`) carry `--format` on each subcommand rather than
+the parent; this matches the existing pattern set by `drift check` /
+`logs view` and keeps clap parsing unsurprising.
 
 ## Testing
 

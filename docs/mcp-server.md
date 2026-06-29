@@ -217,6 +217,13 @@ These run without rate limiting or confirmation:
 | `jarvy_templates_list` / `jarvy_templates_show` | Enumerate built-in templates (`node-bun`, `python-uv`, `k8s-platform`, ...) and show one template's full tool list + metadata. |
 | `jarvy_validate_config` | Parse `jarvy.toml` and return whether it's valid plus a one-line summary (tool count, which subsystems are configured). Returns `error_type` (`missing` / `io` / `parse`) and `message` on failure. |
 
+**Not yet exposed as first-class MCP tools** (reachable via the CLI subprocess with `--format json` — see PRD-051 for the universal JSON contract):
+
+- `jarvy discover [--apply] [--missing] --format json` — auto-discover tools from project marker files (PRD-044). Shell out via the model's terminal tool; the JSON envelope is documented in `docs/discover.md`.
+- `jarvy workspace {list,show,validate} --format json` — monorepo inspection (PRD-047). See `docs/workspace.md`.
+
+These will likely get dedicated `jarvy_discover_*` / `jarvy_workspace_*` MCP tool wrappers in a follow-up — the CLI is the source of truth today.
+
 ### Mutating tools
 
 These default to `dry_run: true` (preview only). Set `dry_run: false` and the call goes through the shared mutation guard: rate limit → stderr confirmation prompt → audit log entry → execute. The prompt fails closed in non-interactive mode (stderr not a TTY) and returns `-32005` (user declined) so a headless agent cannot drive a mutation without a human in the loop.

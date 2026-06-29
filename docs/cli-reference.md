@@ -761,6 +761,51 @@ Options:
   -h, --help         Print help
 ```
 
+### `jarvy discover`
+
+```text
+Scan the project for tooling and suggest a jarvy.toml (PRD-044)
+
+Usage: jarvy discover [OPTIONS]
+
+Options:
+  -f, --file <FILE>          Path to the configuration file to read / update [default: ./jarvy.toml]
+      --apply                Write suggestions into jarvy.toml (creates if missing, merges if not)
+      --missing              Show only tools that aren't already pinned (one `name = "version"` per line)
+  -F, --format <OUTPUT_FORMAT>  Output format: json, pretty [default: pretty]
+  -h, --help                 Print help
+```
+
+Dry-run by default. `--apply` is append-only: hand-pinned tools in
+`[provisioner]` survive unchanged; new tools land after the existing
+block, before any subsequent `[section]`. See
+[`docs/discover.md`](discover.md) for the full detection rule list
+and trust posture.
+
+### `jarvy workspace`
+
+```text
+Inspect a monorepo workspace defined by `[workspace]` in jarvy.toml (PRD-047)
+
+Usage: jarvy workspace [OPTIONS] <COMMAND>
+
+Commands:
+  list      List all workspace members and their tools
+  show      Show the resolved tool set for one member (with inheritance applied)
+  validate  Validate the workspace (members exist, each jarvy.toml parses)
+
+Options:
+  -f, --file <FILE>  Path to the configuration file [default: ./jarvy.toml]
+  -h, --help         Print help
+```
+
+Read-only inspection of `[workspace] members = [...]` declarations.
+`show` annotates each tool with `(inherited)` / `(overridden)` so it's
+clear where each version came from. Workspace-aware `jarvy setup
+--project <name>` is deferred to a follow-up PRD. See
+[`docs/workspace.md`](workspace.md) for inheritance semantics and the
+deferred items.
+
 ### `jarvy help`
 
 ```text

@@ -40,6 +40,41 @@ the same format. PRD-049 (skills) rides on it; PRD-048 / 052 (git
 hooks, spinners) shipped earlier in the day. No user-visible behavior
 changes for existing configs — all new surface is additive.
 
+### Added — PRD-044 / 047 / 051 (auto-discovery + monorepo + JSON output)
+
+Three PRDs closed in a single session, all additive (no existing
+config changes).
+
+**PRD-051: `--format json` on every command.** Subcommands that
+previously only emitted human text now accept `--format json` and emit
+a structured envelope: `jarvy ci-info`, `jarvy drift {status,accept,
+fix}`, `jarvy logs {stats,clean,config}`, `jarvy ticket {create,show,
+list,clean}`, `jarvy services {start,stop,status,restart}`. CLI exit
+codes are identical between human and JSON paths so `$?` based
+control flow keeps working. See `docs/cli-reference.md` and the new
+"Structured output" section in `CLAUDE.md`.
+
+**PRD-044: `jarvy discover` project tool auto-discovery.** New
+top-level command that scans the project root for marker files
+(Cargo.toml, package.json, go.mod, Dockerfile, k8s/, *.tf, Makefile,
+Justfile, …), infers versions from `rust-toolchain.toml` / `.nvmrc`
+/ `.python-version` / `go.mod`, and either prints suggestions or
+merges them into `jarvy.toml` (`--apply`). The merge is append-only:
+hand-pinned tools survive unchanged. New module `src/discover/` with
+built-in `default_rules()` covering rust, node, python, go, ruby,
+docker, kubectl, helm, terraform, pre-commit, make, just. Custom rule
+files deferred. See `docs/discover.md`.
+
+**PRD-047: `jarvy workspace` monorepo inspection.** New CLI surface
+over the existing workspace foundation (`crate::workspace::
+find_workspace_root` + `merge_configs`). Three read-only subcommands
+— `list`, `show <member>`, `validate` — that resolve per-member
+configs via inheritance and surface the result with `(inherited)` /
+`(overridden)` provenance. Empty `[workspace] inherit = []` is
+treated as `["provisioner"]` for display so the common case works
+without explicit config. Workspace-aware `jarvy setup --project <name>`
+orchestration deferred. See `docs/workspace.md`.
+
 ### Added — parallel-review enhancement plan (25 P0/P1 items + sweep)
 
 A multi-batch sweep against the parallel-code-review enhancement plan
