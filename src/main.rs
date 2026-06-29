@@ -15,6 +15,7 @@ mod ci;
 pub mod cli;
 mod commands;
 mod config;
+mod discover;
 mod drift;
 mod env;
 mod error_codes;

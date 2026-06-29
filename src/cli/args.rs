@@ -176,6 +176,21 @@ pub enum Commands {
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,
     },
+    /// Scan the project for tooling and suggest a jarvy.toml (PRD-044)
+    Discover {
+        /// Path to the configuration file to read / update
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+        /// Write suggestions into jarvy.toml (creates the file if missing)
+        #[clap(long)]
+        apply: bool,
+        /// Show only tools that aren't already pinned (one `name = "version"` per line)
+        #[clap(long)]
+        missing: bool,
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
     /// Manage project services (docker-compose, tilt)
     Services {
         #[clap(subcommand)]

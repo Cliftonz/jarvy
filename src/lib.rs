@@ -2,6 +2,7 @@
 pub mod agents;
 pub mod ai_hooks;
 pub mod ci;
+pub mod discover;
 pub mod drift;
 pub mod error_codes;
 pub mod git;
