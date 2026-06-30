@@ -32,6 +32,11 @@ fn skill_drop_writes_skill_md_to_claude_dir() {
     std::fs::write(project.path().join("Cargo.toml"), "[package]\nname = \"x\"").unwrap();
 
     let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    // `JARVY_HOME` redirects `Agent::config_dir` (and thus
+    // `skills_dir`) so the SKILL.md writes never touch the
+    // developer's real `~/.claude/`. `JARVY_TEST_HOME` covers the
+    // separate test-bypass surface used by other subsystems.
+    c.env("JARVY_HOME", home.path());
     c.env("JARVY_TEST_HOME", home.path());
     c.env("JARVY_TEST_MODE", "1");
     c.env("JARVY_TELEMETRY", "0");
@@ -64,10 +69,15 @@ fn skill_drop_writes_skill_md_to_claude_dir() {
         path.ends_with("SKILL.md"),
         "skill_path must end with SKILL.md, got: {path}"
     );
-    // File actually exists.
+    // File actually exists AND lives under the redirected JARVY_HOME
+    // (not the developer's real `~/.claude/`).
     assert!(
         std::path::Path::new(path).exists(),
         "SKILL.md must be written to disk at {path}"
+    );
+    assert!(
+        path.starts_with(home.path().to_string_lossy().as_ref()),
+        "SKILL.md must land under JARVY_HOME-redirected dir; got: {path}"
     );
     let body = std::fs::read_to_string(path).unwrap();
     assert!(
@@ -88,6 +98,11 @@ fn greenfield_preview_runs_without_jarvy_toml() {
     std::fs::write(project.path().join("Cargo.toml"), "[package]\nname = \"x\"").unwrap();
 
     let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    // `JARVY_HOME` redirects `Agent::config_dir` (and thus
+    // `skills_dir`) so the SKILL.md writes never touch the
+    // developer's real `~/.claude/`. `JARVY_TEST_HOME` covers the
+    // separate test-bypass surface used by other subsystems.
+    c.env("JARVY_HOME", home.path());
     c.env("JARVY_TEST_HOME", home.path());
     c.env("JARVY_TEST_MODE", "1");
     c.env("JARVY_TELEMETRY", "0");

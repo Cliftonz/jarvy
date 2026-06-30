@@ -152,6 +152,11 @@ name = "wizard_integration"
 path = "tests/wizard_integration.rs"
 required-features = ["test-bypass"]
 
+[[test]]
+name = "wizard_e2e_happy_path"
+path = "tests/wizard_e2e_happy_path.rs"
+required-features = ["test-bypass"]
+
 [[bench]]
 name = "config_parsing"
 harness = false
