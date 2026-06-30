@@ -124,6 +124,51 @@ code-review enhancement plan that ran against the new surface.
   `~/.jarvy/cache/synthesized/`. The contents are equivalent; only
   the storage path changed.
 
+## [Unreleased] — PRD-056 agent-driven wizard (2026-06-30)
+
+`jarvy wizard` — hands the current project to your local AI coding
+agent (Claude Code, Codex, Cursor, Windsurf, Cline, Continue) to
+analyze + configure. Uses *your* subscription (no vendor LLM gateway,
+no API keys handled by Jarvy).
+
+**Two modes, auto-picked:**
+- **Headless CLI** for Claude Code (`claude -p`) and Codex
+  (`codex exec --`) — Jarvy spawns the agent with a system prompt +
+  project-context envelope on stdin; the agent calls Jarvy's MCP
+  tools inline.
+- **Skill drop** for the other four agents — writes
+  `~/.{agent}/skills/jarvy-setup/SKILL.md`; user opens their agent
+  and types "set up jarvy for this project".
+
+**Greenfield supported.** With no `jarvy.toml`, the wizard prompt
+explicitly instructs the agent to call `jarvy_discover_apply` with
+`apply=true` to bootstrap a starter file.
+
+**Quickstart fallback.** If no AI agent is installed, the wizard
+delegates to the existing `jarvy quickstart` flow — users without an
+agent aren't blocked.
+
+**Trust boundaries.** Refuses in sandbox / CI / non-TTY (headless) /
+against remote configs by default; `JARVY_WIZARD=1` overrides.
+
+**New MCP tool:** `jarvy_wizard_plan` — read-only proposal endpoint
+the agent calls before mutating. No new mutating MCP tools; existing
+gates (`MutationCtx` rate limit + TTY confirm + audit log) cover the
+change surface.
+
+**New events:** `wizard.started`, `wizard.skill_dropped`,
+`wizard.headless_spawned`, `wizard.headless_exit`, `wizard.refused`.
+All gated on `telemetry_gate::is_enabled()`.
+
+**Files:**
+- New: `src/wizard/{mod,context,prompt,headless,skill_drop}.rs`,
+  `src/commands/wizard_cmd.rs`, `assets/wizard-skill/SKILL.md`,
+  `prd/056-agent-driven-wizard.md`, `docs/wizard.md`.
+- Modified: `src/cli/args.rs` (adds `Wizard` subcommand),
+  `src/commands/dispatch.rs` (routing), `src/mcp/extended_tools.rs`
+  (`jarvy_wizard_plan` definition + handler),
+  `src/mcp/server.rs` (dispatch arm), `mkdocs.yml`, `CLAUDE.md`.
+
 ## [Unreleased] — Close out PRD-011/013/014/037/038/039/048/049/052/054/055 + library registry + git skill sources + skills + git hooks + progress (2026-06-28)
 
 A documentation + maintainability + ecosystem-breadth pass that closes

@@ -598,6 +598,29 @@ pub enum Commands {
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
     },
+    /// Agent-driven setup: hand the project to your local AI agent (Claude Code,
+    /// Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to
+    /// `jarvy quickstart` when no agent is installed.
+    Wizard {
+        /// Force a specific agent (claude-code | codex | cursor | windsurf | cline | continue).
+        /// Defaults to auto-detect: prefer headless-capable agents (claude, codex), fall
+        /// back to skill drop for GUI agents, fall back to `jarvy quickstart` if none.
+        #[clap(long, value_name = "AGENT")]
+        agent: Option<String>,
+        /// Always drop a skill into the agent's skills dir instead of shelling out to
+        /// the agent's CLI. Useful when the user prefers to drive the agent themselves.
+        #[clap(long)]
+        skill_only: bool,
+        /// Apply proposed changes. Without `--apply` the wizard previews only.
+        #[clap(long)]
+        apply: bool,
+        /// Output format: pretty (default) | json
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+    },
     /// Catch-all for unknown subcommands and their args
     #[clap(external_subcommand)]
     External(Vec<String>),

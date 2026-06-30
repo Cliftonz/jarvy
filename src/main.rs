@@ -57,6 +57,7 @@ mod templates;
 pub mod ticket;
 mod tools;
 mod update;
+mod wizard;
 mod workspace;
 
 use analytics::init_logging;

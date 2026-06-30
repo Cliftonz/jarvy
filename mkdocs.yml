@@ -182,6 +182,7 @@ nav:
     - AI hooks: ai-hooks.md
     - MCP registration: mcp-registration.md
     - AI agent skills: skills.md
+    - Agent-driven wizard (PRD-056): wizard.md
     - Library registry (PRD-054): library-registry.md
     - Tool auto-discovery (PRD-044): discover.md
     - Monorepo workspaces (PRD-047): workspace.md

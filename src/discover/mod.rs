@@ -56,7 +56,7 @@ pub struct UninstallableSuggestion {
 
 /// Result of an `analyze` call. Required / recommended / already_configured
 /// stay separate so the renderer can choose how to present them.
-#[derive(Debug, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct DiscoverReport {
     pub detections: Vec<Detection>,
     pub required: Vec<ToolSuggestion>,

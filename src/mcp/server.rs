@@ -437,6 +437,8 @@ impl McpServer {
             "jarvy_library_show" => {
                 crate::mcp::extended_tools::handle_library_show(params.arguments)
             }
+            // PRD-056 wizard
+            "jarvy_wizard_plan" => crate::mcp::extended_tools::handle_wizard_plan(params.arguments),
             _ => Err(McpError::method_not_found(format!(
                 "Unknown tool: {}",
                 params.name

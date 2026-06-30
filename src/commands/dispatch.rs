@@ -282,6 +282,19 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
         Some(Commands::McpRegister { action, file }) => commands::run_mcp_register(action, file),
         Some(Commands::Hooks { action, file }) => commands::run_hooks(action, file),
         Some(Commands::Skills { action, file }) => commands::run_skills(action, file),
+        Some(Commands::Wizard {
+            agent,
+            skill_only,
+            apply,
+            output_format,
+            file,
+        }) => commands::wizard_cmd::run(commands::wizard_cmd::WizardCliArgs {
+            agent: agent.as_deref(),
+            skill_only: *skill_only,
+            apply: *apply,
+            output_format,
+            file,
+        }),
         None => {
             interactive::user_select();
             0

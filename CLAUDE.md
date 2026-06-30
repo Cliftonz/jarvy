@@ -193,8 +193,13 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | `discover.setup_advisory` | `jarvy setup` ran the continuous-discovery scan and found new tools (PRD-044 phase 2) | `new_tools`, `uninstallable` |
 | `workspace.validate_completed` | `jarvy workspace validate` finished (PRD-047) | `status = "ok" \| "warnings" \| "invalid"`, `members`, `errors`, `warnings`, `duration_ms`. `warn!` level when `errors > 0`, else `info!` |
 | `workspace.member_invalid` | per-member validation failure | `error_kind = "escapes_workspace_root" \| "dir_missing" \| "toml_parse_fail"` (member name NOT logged — it's attacker-controllable in a hostile root config) |
+| `wizard.started` | `jarvy wizard` start (PRD-056) | `mode = "headless" \| "skill_drop" \| "quickstart_fallback"`, `agent`, `apply`, `skill_only` |
+| `wizard.skill_dropped` | wizard wrote a SKILL.md to the agent's skills dir | `agent`, `skill_path` |
+| `wizard.headless_spawned` | wizard spawned the agent's CLI in headless mode | `agent`, `cmd_argv0` (argv[0] only — args carry the prompt body) |
+| `wizard.headless_exit` | agent CLI returned | `agent`, `exit_code`, `wall_ms` |
+| `wizard.refused` | trust-boundary or runtime refusal | `reason = "sandbox" \| "ci" \| "non_tty" \| "remote_config" \| "no_agent_installed" \| "skill_drop_failed" \| "headless_spawn_failed"` |
 
-**Telemetry gate.** Every `library.*`, `library.git.*`, `library.git_skill.*`, `skills.*`, `git_hooks.*`, `package.*`, `discover.*`, and `workspace.*` event reads `observability::telemetry_gate::is_enabled()` before emitting. Users with `telemetry.enabled = false` don't ship event breadcrumbs even when the OTLP exporter is otherwise configured. Review item 7 (P0) — previously the new `library.git.*` / `skills.*` / `git_hooks.*` domains bypassed the gate; now consistent with `packages.*`.
+**Telemetry gate.** Every `library.*`, `library.git.*`, `library.git_skill.*`, `skills.*`, `git_hooks.*`, `package.*`, `discover.*`, `workspace.*`, and `wizard.*` event reads `observability::telemetry_gate::is_enabled()` before emitting. Users with `telemetry.enabled = false` don't ship event breadcrumbs even when the OTLP exporter is otherwise configured. Review item 7 (P0) — previously the new `library.git.*` / `skills.*` / `git_hooks.*` domains bypassed the gate; now consistent with `packages.*`.
 
 **`tool.unsupported` fields** (uniform across setup and `--request`):
 ```

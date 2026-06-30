@@ -371,6 +371,18 @@ pub fn extended_definitions() -> Vec<McpToolDefinition> {
                 "required": ["url"]
             }),
         ),
+        // ---- Wizard (PRD-056) ----------------------------------------
+        def(
+            "jarvy_wizard_plan",
+            "Produce the agent-driven setup plan for the current project: discover detections, required / recommended tools, and a greenfield-vs-refinement flag. Read-only — the agent uses this to present a plan before calling jarvy_discover_apply / jarvy_ai_hooks_apply / etc.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project_dir": { "type": "string", "description": "Path to the project root (default: cwd / workspace root)" },
+                    "config_path": { "type": "string", "description": "Path to jarvy.toml — used to set the greenfield flag and dedupe (default ./jarvy.toml)" }
+                }
+            }),
+        ),
     ]
 }
 
@@ -1530,6 +1542,73 @@ pub fn handle_library_show(arguments: Option<Value>) -> McpResult<Value> {
         })),
         None => envelope(json!({"status": "not_found", "url": args.url})),
     }
+}
+
+// ---------------------------------------------------------------------
+// Wizard (PRD-056)
+// ---------------------------------------------------------------------
+
+#[derive(Deserialize, Default)]
+struct WizardPlanArgs {
+    #[serde(default)]
+    project_dir: Option<String>,
+    #[serde(default)]
+    config_path: Option<String>,
+}
+
+/// Read-only plan generator for `jarvy wizard`. The agent calls this
+/// to get a structured proposal — detections, required / recommended
+/// tools, uninstallable bucket, plus a `greenfield` boolean — before
+/// invoking any mutating tool (`jarvy_discover_apply`, etc.). Mirrors
+/// the shape `wizard::context::ProjectContext` exposes to the headless
+/// prompt so both modes stay consistent.
+pub fn handle_wizard_plan(arguments: Option<Value>) -> McpResult<Value> {
+    let args: WizardPlanArgs = arguments
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| McpError::invalid_params(e.to_string()))?
+        .unwrap_or_default();
+    let project_dir = std::path::PathBuf::from(args.project_dir.unwrap_or_else(|| ".".into()));
+    let config_path = args
+        .config_path
+        .unwrap_or_else(|| crate::cli::DEFAULT_CONFIG_FILE.into());
+
+    let existing_text = std::fs::read_to_string(&config_path).ok();
+    let has_jarvy_toml = existing_text.is_some();
+    let already_configured: std::collections::HashSet<String> = existing_text
+        .as_deref()
+        .and_then(|t| t.parse::<toml::Table>().ok())
+        .and_then(|t| t.get("provisioner").and_then(|v| v.as_table()).cloned())
+        .map(|t| t.keys().cloned().collect())
+        .unwrap_or_default();
+
+    crate::tools::register_all();
+    let known_tools: std::collections::HashSet<String> =
+        crate::tools::registry::registered_tool_names()
+            .into_iter()
+            .collect();
+    let report = crate::discover::analyze(&project_dir, &already_configured, &known_tools);
+
+    envelope(json!({
+        "project_dir": project_dir.display().to_string(),
+        "config_path": config_path,
+        "has_jarvy_toml": has_jarvy_toml,
+        "greenfield": !has_jarvy_toml,
+        "detections": report.detections,
+        "required": report.required,
+        "recommended": report.recommended,
+        "already_configured": report.already_configured,
+        "uninstallable": report.uninstallable,
+        "next_actions": [
+            if has_jarvy_toml {
+                "Present this plan to the user. If they confirm, call jarvy_discover_apply (merge mode) to add missing tools to [provisioner]."
+            } else {
+                "Greenfield: present this plan to the user. If they confirm, call jarvy_discover_apply with apply=true to bootstrap a starter jarvy.toml."
+            },
+            "Then call jarvy_validate_config to confirm the resulting jarvy.toml parses cleanly.",
+            "Finally, remind the user to run `jarvy setup` themselves — don't run install commands from the wizard."
+        ]
+    }))
 }
 
 #[cfg(test)]
