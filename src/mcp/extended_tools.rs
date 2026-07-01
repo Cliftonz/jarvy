@@ -87,6 +87,43 @@ pub fn gate_mutation(
         return Ok(());
     }
 
+    // Wizard-session bypass. `jarvy wizard --apply` is itself the
+    // operator's explicit consent — it spawns the agent CLI with
+    // stdin piped (used for the prompt body), so the TTY prompt at
+    // `prompt_mutation_confirmation` has no way to read a "yes" and
+    // would fail closed, blocking the wizard mid-flight. Setting
+    // `JARVY_WIZARD_SESSION=1` on the agent spawn marks the
+    // descendant MCP server process as wizard-driven; gate_mutation
+    // skips the second-layer prompt for those calls only. Telemetry
+    // fires so the bypass is auditable.
+    //
+    // Threat model: the env var can be forged by anything running as
+    // the same user, but at that point the attacker already has
+    // user-level code-exec, which is strictly stronger than tricking
+    // the MCP gate. The bypass narrowly serves a usability gap
+    // inside `jarvy wizard`, not a privilege boundary.
+    if std::env::var("JARVY_WIZARD_SESSION").as_deref() == Ok("1") {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "mcp.mutation.wizard_bypass",
+                tool = tool_name,
+                client = ctx.client_name.unwrap_or("unknown"),
+            );
+        }
+        // Record the approval with the same shape as the
+        // `ConfirmationResult::Always` branch below so the audit
+        // trail uniformly reflects "permission granted" regardless
+        // of which path granted it.
+        ctx.audit_log.log_mcp_mutation(
+            ctx.client_name,
+            tool_name,
+            false,
+            true,
+            Some(effect_summary),
+        );
+        return Ok(());
+    }
+
     match prompt_mutation_confirmation(tool_name, effect_summary, ctx.client_name)? {
         ConfirmationResult::Yes => Ok(()),
         ConfirmationResult::No => {

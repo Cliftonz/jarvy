@@ -276,6 +276,16 @@ fn atomic_write(target: &Path, content: &str) -> std::io::Result<()> {
     tmp.as_file_mut().flush()?;
     tmp.persist(target)
         .map_err(|e| std::io::Error::other(format!("persist failed: {e}")))?;
+    // NamedTempFile writes with 0600 (tempfile's secure default). That's
+    // wrong for `jarvy.toml` — it's a repo-checked-in config, other
+    // collaborators (and CI) need to read it. Relax to 0644 so a fresh
+    // clone gives the same perms a hand-authored file would. Windows
+    // uses ACLs; nothing to do there.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o644));
+    }
     Ok(())
 }
 
@@ -385,9 +395,26 @@ fn known_tool_set() -> HashSet<String> {
     // self-contained (doesn't rely on caller invoking
     // `tools::register_all` first).
     crate::tools::register_all();
-    crate::tools::registry::registered_tool_names()
-        .into_iter()
-        .collect()
+    // Registered names are keyed lowercase, dash↔underscore aliasing
+    // lives inside `tools::registry::get_tool()`. Detection rule names
+    // conventionally use the dash form (matches how tools appear as
+    // TOML keys under `[provisioner]`), but the underlying tool struct
+    // often uses the underscore form (`RELEASE_PLZ` → `release_plz`)
+    // because Rust identifiers can't contain dashes. Populate both
+    // forms so `known_tools.contains(&d.tool)` in `analyze_with`
+    // resolves either way instead of dropping the detection as
+    // "unknown tool".
+    let mut set: HashSet<String> = HashSet::new();
+    for name in crate::tools::registry::registered_tool_names() {
+        if name.contains('_') {
+            set.insert(name.replace('_', "-"));
+        }
+        if name.contains('-') {
+            set.insert(name.replace('-', "_"));
+        }
+        set.insert(name);
+    }
+    set
 }
 
 #[cfg(test)]
@@ -457,5 +484,24 @@ docker = "latest"
         // Round-trips through the TOML parser.
         let parsed: toml::Table = written.parse().expect("jarvy.toml must parse");
         assert!(parsed.contains_key("provisioner"));
+    }
+
+    /// Regression: `NamedTempFile` writes with 0600 by default and
+    /// `persist` inherits that mode. A previous version of
+    /// `atomic_write` shipped that behaviour, producing a `jarvy.toml`
+    /// no other collaborator (or CI runner) could read after `git
+    /// clone`. Assert the perms land at 0644 so a hand-authored file
+    /// and a jarvy-written file are indistinguishable.
+    #[cfg(unix)]
+    #[test]
+    fn apply_writes_jarvy_toml_world_readable() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempdir().unwrap();
+        let toml = tmp.path().join("jarvy.toml");
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let exit = run_discover(toml.to_str().unwrap(), true, false, "pretty");
+        assert_eq!(exit, 0);
+        let mode = fs::metadata(&toml).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "jarvy.toml perms must be 0644, got {mode:o}");
     }
 }

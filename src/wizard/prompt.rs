@@ -31,39 +31,54 @@ pub fn build(ctx: &ProjectContext, agent: Agent) -> String {
 }
 
 /// Opening instruction. Greenfield gets the bootstrap nudge;
-/// refinement gets the merge-don't-replace nudge.
+/// refinement gets the merge-don't-replace nudge. Both branches
+/// assume the user already typed `jarvy wizard --apply` — that IS
+/// the approval. The spawned agent runs in single-turn non-interactive
+/// mode (`claude -p` / `codex exec`), so there is no opportunity to
+/// ask the user a follow-up question; do the work end-to-end and
+/// summarise.
 fn opening(ctx: &ProjectContext) -> &'static str {
     if ctx.has_jarvy_toml {
-        "You are helping the user refine an existing Jarvy configuration. The project \
-already has a `jarvy.toml`. Your job is to read it (via the MCP server's read tools), \
-compare it to what the discover output says is in the project, and propose targeted \
-additions. Do NOT replace the file — merge tool-by-tool into the existing \
-[provisioner] table via jarvy_discover_apply."
+        "You are refining an existing Jarvy configuration. The project already has a \
+`jarvy.toml`. Read it (via the MCP server's read tools), compare to the discover \
+output, and merge missing tools into the existing [provisioner] table via \
+jarvy_discover_apply (apply=true). Do NOT replace the file. The user already \
+approved by typing `jarvy wizard --apply`. You will NOT get a follow-up turn — \
+execute the playbook end-to-end and print a final summary."
     } else {
         "You are bootstrapping a fresh Jarvy setup for a project that has no jarvy.toml \
 yet. Call jarvy_discover_apply once with apply=true to write a starter jarvy.toml \
-covering every detected ecosystem. Then refine: ask the user clarifying questions \
-about roles, language packages, AI hooks, and CI."
+covering every detected ecosystem. The user already approved by typing \
+`jarvy wizard --apply`. You are running non-interactively (single turn) — DO NOT \
+ask the user questions; execute the playbook end-to-end and print a final summary \
+the user can read."
     }
 }
 
 /// MCP tool playbook — identical across greenfield + refinement.
+/// Designed for single-turn execution (`claude -p` / `codex exec`):
+/// no approval gates, no clarifying questions, no second turn.
 const PLAYBOOK: &str = "\
 ## Step playbook (idempotent — same inputs MUST produce same outputs)
 
-1. Call `jarvy_wizard_plan` first. It is read-only and returns the
-   proposed plan as JSON. Show it to the user before doing anything.
+You are running non-interactively. Execute every step in order. Do NOT
+stop to ask the user anything — they already typed
+`jarvy wizard --apply`, which is the approval.
+
+1. Call `jarvy_wizard_plan` first. Read-only; returns the proposed
+   plan as JSON. Use it to decide what tools to write.
 2. If `required` is empty AND `recommended` is empty, stop — the
-   project is already configured. Don't call any mutating tool.
-3. If the user approves, call `jarvy_discover_apply` ONCE to merge
+   project is already configured. Skip steps 3-6 and print a one-line
+   summary.
+3. Call `jarvy_discover_apply` ONCE with `apply=true` to write/merge
    tools into `[provisioner]`. The tool rate-limits and audit-logs.
    Repeated calls with the same input return `target = \"noop\"` —
-   if you see that, stop, don't retry.
-4. If the user wants AI hooks (lint-on-save, redact-secrets, etc.),
-   call `jarvy_ai_hooks_apply` ONCE with `dry_run=false`.
-5. If the user wants MCP servers registered across their other
-   agents, call `jarvy_mcp_register_apply` ONCE with `dry_run=false`.
-6. Always end with `jarvy_validate_config` and report the summary.
+   if you see that, move on, don't retry.
+4. Skip `jarvy_ai_hooks_apply` unless the project context obviously
+   needs hooks (e.g. lint-on-save for a TypeScript repo). Default is
+   to leave hooks for the user to opt into later.
+5. Skip `jarvy_mcp_register_apply` — that's a separate explicit step.
+6. End with `jarvy_validate_config` and print the summary.
 
 Do NOT loop these tools waiting for a different outcome — they are
 idempotent by design, and Jarvy's rate limiter will reject repeated
@@ -72,6 +87,10 @@ the terminal state.
 
 Do NOT run `jarvy setup` for the user; running install commands is a
 separate, explicit step the user types themselves.
+
+Final output: a short markdown summary of (a) what was written to
+`jarvy.toml`, (b) the `jarvy_validate_config` result, (c) suggested
+next commands (`jarvy setup`, etc.). Print it as your last response.
 ";
 
 /// Per-agent hard rules. The body is the same; only the agent name
@@ -124,10 +143,32 @@ mod tests {
     fn refinement_branch_calls_for_merge() {
         let p = build(&ctx(true), Agent::ClaudeCode);
         assert!(
-            p.contains("merge tool-by-tool"),
-            "refinement prompt must instruct the agent NOT to replace the file"
+            p.contains("merge missing tools") && p.contains("Do NOT replace"),
+            "refinement prompt must instruct the agent to merge, not replace"
         );
-        assert!(!p.contains("apply=true"));
+    }
+
+    #[test]
+    fn both_branches_skip_approval_gate() {
+        // `claude -p` / `codex exec` are single-turn — there's no
+        // follow-up turn for the user to approve. The prompt must
+        // tell the agent the user already approved by typing
+        // `jarvy wizard --apply` and to execute end-to-end without
+        // asking questions, or the agent prints a plan and exits
+        // without writing `jarvy.toml`.
+        for has_toml in [false, true] {
+            let p = build(&ctx(has_toml), Agent::ClaudeCode);
+            assert!(
+                p.contains("already approved") && p.contains("non-interactively"),
+                "playbook must signal pre-approval + single-turn execution \
+                 (has_jarvy_toml={has_toml})"
+            );
+            assert!(
+                !p.contains("If the user approves"),
+                "stale conversational approval gate leaked into prompt \
+                 (has_jarvy_toml={has_toml})"
+            );
+        }
     }
 
     #[test]

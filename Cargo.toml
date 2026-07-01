@@ -157,6 +157,11 @@ name = "wizard_e2e_happy_path"
 path = "tests/wizard_e2e_happy_path.rs"
 required-features = ["test-bypass"]
 
+[[test]]
+name = "wizard_e2e_repo_matrix"
+path = "tests/wizard_e2e_repo_matrix.rs"
+required-features = ["test-bypass"]
+
 [[bench]]
 name = "config_parsing"
 harness = false

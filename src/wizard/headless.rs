@@ -60,7 +60,17 @@ pub fn spawn_args(agent: Agent) -> Result<(&'static str, Vec<&'static str>), Hea
     match agent {
         // Claude Code: `-p` is non-interactive ("print mode"). Without
         // a positional argument, the prompt is read from stdin.
-        Agent::ClaudeCode => Ok(("claude", vec!["-p"])),
+        //
+        // `--allowedTools "mcp__jarvy"` pre-approves every tool exposed
+        // by the Jarvy MCP server (`jarvy_wizard_plan`,
+        // `jarvy_discover_apply`, `jarvy_ai_hooks_apply`,
+        // `jarvy_mcp_register_apply`, `jarvy_validate_config`, …).
+        // Without this, `-p` blocks on the first MCP call waiting for
+        // an interactive approval that never arrives, so the wizard
+        // appears to hang. The allowlist is scoped to the Jarvy server
+        // only — file edits, Bash, and other non-Jarvy tools still
+        // surface the usual prompts.
+        Agent::ClaudeCode => Ok(("claude", vec!["-p", "--allowedTools", "mcp__jarvy"])),
         // Codex: `exec` is the one-shot subcommand. `--` separates
         // flags from the prompt; with nothing after `--`, the prompt
         // is read from stdin.
@@ -78,8 +88,17 @@ pub fn spawn_args(agent: Agent) -> Result<(&'static str, Vec<&'static str>), Hea
 pub fn run(agent: Agent, prompt: &str) -> Result<ExitStatus, HeadlessError> {
     let (cmd, args) = spawn_args(agent)?;
 
+    // `JARVY_WIZARD_SESSION=1` is inherited by the agent CLI and, in
+    // turn, by any `jarvy mcp` server it spawns via its MCP-server
+    // config. The MCP mutation gate
+    // (`mcp::extended_tools::gate_mutation`) treats this as
+    // operator-pre-approved consent and skips the TTY confirmation
+    // prompt — which would otherwise fail closed because stdin on
+    // the agent is piped (used for the prompt body), leaving the
+    // gate's `read_line` no way to read a "yes".
     let mut child = Command::new(cmd)
         .args(&args)
+        .env("JARVY_WIZARD_SESSION", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -125,6 +144,28 @@ mod tests {
         assert!(
             args.contains(&"-p"),
             "claude must run in print/non-interactive mode"
+        );
+    }
+
+    #[test]
+    fn spawn_args_for_claude_preapproves_jarvy_mcp() {
+        // `-p` mode blocks on MCP permission prompts; the wizard's
+        // playbook fires `jarvy_wizard_plan` / `jarvy_discover_apply`
+        // / etc., so the Jarvy MCP server must be pre-allowlisted or
+        // the spawned agent appears to hang. Scoped to `mcp__jarvy`
+        // only — non-Jarvy tools still surface prompts.
+        let (_, args) = spawn_args(Agent::ClaudeCode).unwrap();
+        let allowed_pos = args.iter().position(|a| *a == "--allowedTools");
+        assert!(
+            allowed_pos.is_some(),
+            "claude headless invocation must pass --allowedTools"
+        );
+        let value = args
+            .get(allowed_pos.unwrap() + 1)
+            .expect("--allowedTools needs a value");
+        assert_eq!(
+            *value, "mcp__jarvy",
+            "allowlist must be scoped to the Jarvy MCP server"
         );
     }
 

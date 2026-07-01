@@ -174,6 +174,16 @@ pub fn analyze_with(
         }
     }
 
+    // A tool that qualifies as both required (via its own marker) AND
+    // recommended (as a companion of some other detection) would land
+    // twice in the generated `[provisioner]` block — which produces a
+    // duplicate-key TOML parse error on the next `jarvy discover` /
+    // `jarvy validate`. Required wins, so filter it out of
+    // recommended. Concrete case: `release-plz.toml` present (required)
+    // AND `.github/` present (release-plz is a companion of gh).
+    let required_names: HashSet<&str> = required.iter().map(|s| s.name.as_str()).collect();
+    recommended.retain(|s| !required_names.contains(s.name.as_str()));
+
     DiscoverReport {
         detections,
         required,
@@ -347,6 +357,267 @@ mod tests {
             .map(|s| s.name.as_str())
             .collect();
         assert!(names.contains(&"rust"), "got {names:?}");
+    }
+
+    /// A `.git/` directory in the project root should surface `git`
+    /// as a required tool. Prevents regressions where a fresh
+    /// container / Codespaces devcontainer / CI runner without git
+    /// pre-installed silently drops the requirement.
+    #[test]
+    fn detects_git_from_dot_git_dir() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir(tmp.path().join(".git")).unwrap();
+        let report = analyze(tmp.path(), &HashSet::new(), &registry_with(&["git"]));
+        let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"git"), "got {names:?}");
+    }
+
+    /// A `.github/` directory (workflows, issue templates, CODEOWNERS)
+    /// should surface `gh` as a required tool AND recommend
+    /// `release-plz` as a companion (release-plz is
+    /// GitHub-Action-driven).
+    #[test]
+    fn detects_gh_from_dot_github_dir() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir(tmp.path().join(".github")).unwrap();
+        let report = analyze(
+            tmp.path(),
+            &HashSet::new(),
+            &registry_with(&["gh", "release-plz"]),
+        );
+        let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(required.contains(&"gh"), "got required={required:?}");
+        let recommended: Vec<&str> = report
+            .recommended
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(
+            recommended.contains(&"release-plz"),
+            "got recommended={recommended:?}"
+        );
+    }
+
+    /// A `release-plz.toml` at the repo root triggers the release-plz
+    /// rule; even if the `.github/` heuristic surfaces release-plz as
+    /// a recommendation, the direct marker upgrades it to a required
+    /// entry.
+    #[test]
+    fn detects_release_plz_from_marker_toml() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("release-plz.toml"), "").unwrap();
+        let report = analyze(
+            tmp.path(),
+            &HashSet::new(),
+            &registry_with(&["release-plz"]),
+        );
+        let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"release-plz"), "got {names:?}");
+    }
+
+    /// Niche language coverage: every language with a first-party
+    /// jarvy tool must have a detection rule that resolves against
+    /// its canonical marker file. Data-driven so adding a new
+    /// language only requires one entry — no per-language `#[test]`.
+    #[test]
+    fn niche_languages_detect_from_canonical_markers() {
+        // (tool_name, marker_file_at_root)
+        let cases: &[(&str, &str)] = &[
+            ("deno", "deno.json"),
+            ("elixir", "mix.exs"),
+            ("erlang", "rebar.config"),
+            ("haskell", "cabal.project"),
+            ("crystal", "shard.yml"),
+            ("gleam", "gleam.toml"),
+            ("lua", ".lua-version"),
+            ("luarocks", "example.rockspec"),
+            ("nim", "example.nimble"),
+            ("ocaml", "dune-project"),
+            ("scala", "build.sbt"),
+            ("zig", "build.zig"),
+            ("julia", "Manifest.toml"),
+            ("cmake", "CMakeLists.txt"),
+            ("skaffold", "skaffold.yaml"),
+            ("bazelisk", "MODULE.bazel"),
+        ];
+        let known = registry_with(&[
+            "deno", "elixir", "erlang", "haskell", "crystal", "gleam", "lua", "luarocks",
+            "nim", "ocaml", "scala", "zig", "julia", "cmake", "skaffold", "bazelisk",
+        ]);
+        for (tool, marker) in cases {
+            let tmp = tempdir().unwrap();
+            fs::write(tmp.path().join(marker), "").unwrap();
+            let report = analyze(tmp.path(), &HashSet::new(), &known);
+            let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+            assert!(
+                names.contains(tool),
+                "{tool} not required after writing {marker}; got required={names:?}"
+            );
+        }
+    }
+
+    /// Elixir → Erlang companion: BEAM-targeting languages need the
+    /// Erlang runtime installed even when their own marker is
+    /// present. Guards against dropping `suggests: ["erlang"]` from
+    /// the elixir rule during a future edit.
+    #[test]
+    fn elixir_recommends_erlang_companion() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("mix.exs"), "").unwrap();
+        let report = analyze(
+            tmp.path(),
+            &HashSet::new(),
+            &registry_with(&["elixir", "erlang"]),
+        );
+        let recommended: Vec<&str> = report
+            .recommended
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(recommended.contains(&"erlang"), "got {recommended:?}");
+    }
+
+    /// Julia disambiguation: `Manifest.toml` is Julia-specific, but
+    /// `Project.toml` is NOT — many tools use that filename. Pin the
+    /// rule so we don't regress into detecting every `Project.toml`
+    /// as a Julia project.
+    #[test]
+    fn julia_does_not_falsely_match_bare_project_toml() {
+        let tmp = tempdir().unwrap();
+        // `Project.toml` alone (no `Manifest.toml`, no
+        // `JuliaProject.toml`) must NOT trigger julia detection.
+        fs::write(tmp.path().join("Project.toml"), "").unwrap();
+        let report = analyze(tmp.path(), &HashSet::new(), &registry_with(&["julia"]));
+        let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            !names.contains(&"julia"),
+            "bare `Project.toml` must NOT imply Julia (too ambiguous); \
+             got required={names:?}"
+        );
+    }
+
+    /// Polyglot end-to-end: a repo with Cargo.toml + package.json +
+    /// composer.json + go.mod plus lockfiles for pnpm and yarn (the
+    /// Node side of a monorepo sometimes ships both to accomodate
+    /// tooling in different workspaces) should surface every language
+    /// runtime AND its lockfile-implied package manager as required,
+    /// with rust companions (bacon, cargo-nextest) and go companions
+    /// (golangci-lint, air, delve) as recommendations.
+    ///
+    /// This is the exact scenario the audit asked about — pins the
+    /// full detection contract for a Node+PHP+Rust+Go project.
+    #[test]
+    fn polyglot_node_php_rust_go_detects_full_stack() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "[package]\nname=\"x\"").unwrap();
+        fs::write(tmp.path().join("package.json"), "{}").unwrap();
+        fs::write(tmp.path().join("pnpm-lock.yaml"), "").unwrap();
+        fs::write(tmp.path().join("composer.json"), "{}").unwrap();
+        fs::write(tmp.path().join("go.mod"), "module x\ngo 1.22\n").unwrap();
+
+        let known = registry_with(&[
+            "rust",
+            "node",
+            "php",
+            "go",
+            "pnpm",
+            "composer",
+            "bacon",
+            "cargo-nextest",
+            "golangci-lint",
+            "air",
+            "delve",
+        ]);
+        let report = analyze(tmp.path(), &HashSet::new(), &known);
+
+        let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        for expected in ["rust", "node", "php", "go", "pnpm", "composer"] {
+            assert!(
+                required.contains(&expected),
+                "polyglot required must include {expected}; got {required:?}"
+            );
+        }
+
+        let recommended: Vec<&str> = report
+            .recommended
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        for expected in ["bacon", "cargo-nextest", "golangci-lint", "air", "delve"] {
+            assert!(
+                recommended.contains(&expected),
+                "polyglot recommended must include {expected}; got {recommended:?}"
+            );
+        }
+    }
+
+    /// Lockfile precision: only `pnpm-lock.yaml` present → require
+    /// `pnpm`, not `yarn`. Prevents regressing the split from
+    /// "node.suggests = [pnpm, yarn]" (both always) to per-lockfile
+    /// required tools.
+    #[test]
+    fn only_pnpm_lockfile_requires_pnpm_not_yarn() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("package.json"), "{}").unwrap();
+        fs::write(tmp.path().join("pnpm-lock.yaml"), "").unwrap();
+        let report = analyze(
+            tmp.path(),
+            &HashSet::new(),
+            &registry_with(&["node", "pnpm", "yarn"]),
+        );
+        let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(required.contains(&"pnpm"), "got {required:?}");
+        assert!(
+            !required.contains(&"yarn"),
+            "yarn.lock absent — should not be required; got {required:?}"
+        );
+    }
+
+    /// PHP without a framework: only composer.json triggers php +
+    /// composer detection, no false positives.
+    #[test]
+    fn composer_json_alone_requires_php_and_composer() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("composer.json"), "{}").unwrap();
+        let report = analyze(
+            tmp.path(),
+            &HashSet::new(),
+            &registry_with(&["php", "composer"]),
+        );
+        let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(required.contains(&"php"), "got {required:?}");
+        assert!(required.contains(&"composer"), "got {required:?}");
+    }
+
+    /// When a tool qualifies as BOTH required (own marker) AND
+    /// recommended (companion of another detection), required wins
+    /// and the recommendation is dropped — otherwise the generated
+    /// `[provisioner]` block writes the same key twice, producing a
+    /// duplicate-key TOML parse error on the next discover / validate
+    /// pass. Concrete case: `release-plz.toml` (own marker) +
+    /// `.github/` (`gh` companion).
+    #[test]
+    fn required_drops_dup_from_recommended() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir(tmp.path().join(".github")).unwrap();
+        fs::write(tmp.path().join("release-plz.toml"), "").unwrap();
+        let report = analyze(
+            tmp.path(),
+            &HashSet::new(),
+            &registry_with(&["gh", "release-plz"]),
+        );
+        let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        assert!(required.contains(&"release-plz"), "got required={required:?}");
+        let recommended: Vec<&str> = report
+            .recommended
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(
+            !recommended.contains(&"release-plz"),
+            "release-plz was already required — recommended entry \
+             would produce a duplicate TOML key; got recommended={recommended:?}"
+        );
     }
 
     #[test]
