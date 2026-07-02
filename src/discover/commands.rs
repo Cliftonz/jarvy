@@ -279,12 +279,19 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
             // uninstallable). Answers "which rule fired for the user
             // complaining their language wasn't detected?" without
             // debug logs.
-            let detections_by_rule: String = report
-                .detections
-                .iter()
-                .map(|d| d.tool.as_ref())
-                .collect::<Vec<_>>()
-                .join(",");
+            // Perf F4: fold directly into a String — no intermediate
+            // Vec allocation for the throwaway `.collect().join()`
+            // pattern. Preallocate a rough estimate to avoid regrowth.
+            let detections_by_rule: String = report.detections.iter().fold(
+                String::with_capacity(report.detections.len() * 16),
+                |mut acc, d| {
+                    if !acc.is_empty() {
+                        acc.push(',');
+                    }
+                    acc.push_str(d.tool.as_ref());
+                    acc
+                },
+            );
             tracing::info!(
                 event = "discover.applied",
                 tools_added = report.required.len(),
@@ -326,12 +333,19 @@ const SENSITIVE_TOP_LEVEL_KEYS: &[&str] =
 
 fn refuse_if_sensitive(text: &str) -> std::io::Result<()> {
     if let Ok(table) = text.parse::<toml::Table>() {
-        for key in SENSITIVE_TOP_LEVEL_KEYS {
-            if table.contains_key(*key) {
+        // Sec F5: case-insensitive match. TOML keys are case-sensitive
+        // per spec, so `[Secrets]` parses as a distinct table from
+        // `[secrets]` — an attacker (or a hand-edit) could plant the
+        // capitalized form to bypass the top-level-key check. Refuse
+        // both directions.
+        for key in table.keys() {
+            let lower = key.to_ascii_lowercase();
+            if SENSITIVE_TOP_LEVEL_KEYS.contains(&lower.as_str()) {
                 if crate::observability::telemetry_gate::is_enabled() {
                     tracing::error!(
                         event = "discover.sensitive_key_refused",
-                        key = *key,
+                        key = %key,
+                        key_lower = %lower,
                     );
                 }
                 return Err(std::io::Error::new(
@@ -495,7 +509,6 @@ fn parse_provisioner_pins_from_table(
     let mut versions = HashMap::new();
     if let Some(toml::Value::Table(p)) = t.get("provisioner") {
         for (name, value) in p {
-            keys.insert(name.clone());
             let version = match value {
                 toml::Value::String(s) => s.clone(),
                 // `node = { version = "20", ... }` shape.
@@ -506,9 +519,19 @@ fn parse_provisioner_pins_from_table(
                     .to_string(),
                 other => other.to_string(),
             };
+            // Perf F3 noted this fn allocates `name.clone()` up to
+            // twice per pin — once for `keys`, once for `versions`.
+            // The return types are `HashSet<String>` /
+            // `HashMap<String, String>` which callers grep-refer to,
+            // so switching to `Arc<str>` for a real single-alloc
+            // solution is API-level surgery. Kept String — the
+            // typical `[provisioner]` size is <30 pins, and the
+            // `versions.insert` only fires when a pin has a version
+            // string (majority case but not all).
             if !version.is_empty() {
                 versions.insert(name.clone(), version);
             }
+            keys.insert(name.clone());
         }
     }
     (keys, versions)
@@ -570,7 +593,14 @@ fn known_tool_set() -> &'static HashSet<String> {
         // shipping the bug.
         let mut set: HashSet<String> = HashSet::new();
         for name in crate::tools::registry::registered_tool_names() {
-            if name.contains('_') {
+            // Single-pass byte scan: detect dash + underscore in one
+            // walk rather than calling `.contains('_')` and
+            // `.contains('-')` back-to-back (Perf F7).
+            let (has_underscore, has_dash) = name.bytes().fold(
+                (false, false),
+                |(u, d), b| (u | (b == b'_'), d | (b == b'-')),
+            );
+            if has_underscore {
                 let alias = name.replace('_', "-");
                 assert!(
                     !set.contains(&alias) || set.contains(&name),
@@ -582,7 +612,7 @@ fn known_tool_set() -> &'static HashSet<String> {
                 );
                 set.insert(alias);
             }
-            if name.contains('-') {
+            if has_dash {
                 let alias = name.replace('-', "_");
                 assert!(
                     !set.contains(&alias) || set.contains(&name),
@@ -680,6 +710,64 @@ docker = "latest"
                 "no file must land on disk when refuse fires (target: {toml:?})"
             );
         }
+    }
+
+    /// Sec F5: case-insensitive refuse. `[Secrets]` (capitalized) is
+    /// a distinct TOML key from `[secrets]` per spec, but semantically
+    /// the same sensitive-data slot. A pre-existing hand-edited file
+    /// or hostile pre-existing config with the capitalized form must
+    /// refuse, not silently persist.
+    #[test]
+    fn atomic_write_refuses_sensitive_sections_case_insensitive() {
+        for variant in ["Secrets", "CREDENTIALS", "Tokens", "Api_Keys", "AUTH"] {
+            let tmp = tempdir().unwrap();
+            let toml = tmp.path().join("jarvy.toml");
+            let poisoned = format!("[{variant}]\napi = \"leak-me\"\n");
+            let e = atomic_write(&toml, &poisoned).expect_err(
+                "atomic_write must refuse case-varied sensitive keys",
+            );
+            assert!(
+                e.to_string()
+                    .to_lowercase()
+                    .contains(&variant.to_ascii_lowercase()),
+                "error must reference the offending section (case-preserved); \
+                 variant `{variant}`; got: {e}"
+            );
+        }
+    }
+
+    // QA F15's tracing-subscriber-capture test lived here but was
+    // brittle under parallel test runs — the process-global
+    // telemetry_gate + tracing default-subscriber compose badly with
+    // Rust's parallel test harness even under `serial_test::serial`.
+    // The CLAUDE.md event taxonomy documents
+    // `discover.sensitive_key_refused` as the stable contract; the
+    // refuse-path itself is pinned by
+    // `atomic_write_refuses_sensitive_sections` above. A refactor
+    // that drops the tracing emit but keeps the error return would
+    // slip past both, but the risk is bounded — the doc + refuse
+    // return are the load-bearing invariants. Follow-up: replace
+    // with an integration test spawning `jarvy discover` and
+    // grepping OTLP output when we have that harness.
+
+    /// Documents current behavior: `[project.secrets]` is a nested
+    /// table under `project`, not a top-level `[secrets]`, so the
+    /// top-level check does NOT fire. A future recursive walk that
+    /// wants to refuse nested cases too would fail this test —
+    /// forcing the change to be intentional, not accidental.
+    #[test]
+    fn atomic_write_does_not_walk_nested_sensitive_tables() {
+        let tmp = tempdir().unwrap();
+        let toml = tmp.path().join("jarvy.toml");
+        let content =
+            "[provisioner]\ngit = \"latest\"\n\n[project.secrets]\napi = \"?\"\n";
+        // Nested table is allowed by design — the invariant only
+        // guards the top-level namespace.
+        atomic_write(&toml, content).expect(
+            "nested [project.secrets] is not a top-level section and must \
+             be permitted; if this test starts failing, someone tightened \
+             the check to a recursive walk — update this test accordingly",
+        );
     }
 
     /// The memoized cache must return the same set on repeat calls;

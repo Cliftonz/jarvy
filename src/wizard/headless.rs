@@ -58,6 +58,18 @@ pub enum HeadlessError {
         #[source]
         source: io::Error,
     },
+
+    /// Spawn succeeded but writing the prompt body to the child's
+    /// stdin failed. Distinguished from `Spawn` (Sec F6) so telemetry
+    /// / dashboards can tell "fork/exec failed" from "agent crashed
+    /// or closed stdin before we wrote" — the latter is the actionable
+    /// "agent exited early" signal.
+    #[error("stdin write `{cmd}`: {source}")]
+    StdinWrite {
+        cmd: String,
+        #[source]
+        source: io::Error,
+    },
 }
 
 /// Build the argv for a given agent's headless invocation.
@@ -183,17 +195,28 @@ fn send_prompt_to_child_stdin(
     prompt: &str,
     cmd_label: &str,
 ) -> Result<(), HeadlessError> {
-    if let Some(mut stdin) = child.stdin.take() {
+    if let Some(stdin) = child.stdin.take() {
         use std::io::Write;
-        stdin
-            .write_all(prompt.as_bytes())
-            .map_err(|e| HeadlessError::Spawn {
+        // Perf F2: wrap in BufWriter so a 20 KiB prompt goes out in
+        // one vectored write instead of PIPE_BUF-sized chunks (~4 KiB
+        // on Linux). Capacity capped at 64 KiB to bound the buffer.
+        let mut buf = std::io::BufWriter::with_capacity(
+            prompt.len().clamp(4096, 64 * 1024),
+            stdin,
+        );
+        buf.write_all(prompt.as_bytes())
+            .map_err(|e| HeadlessError::StdinWrite {
                 cmd: cmd_label.to_string(),
                 source: e,
             })?;
-        // Explicit drop is documentation — `stdin` would close on
-        // scope exit anyway; named drop pins the contract.
-        drop(stdin);
+        buf.flush().map_err(|e| HeadlessError::StdinWrite {
+            cmd: cmd_label.to_string(),
+            source: e,
+        })?;
+        // BufWriter's Drop closes the underlying ChildStdin — many
+        // CLI agents wait for EOF before processing. Explicit drop
+        // documents the sequence.
+        drop(buf);
     }
     Ok(())
 }
@@ -337,6 +360,51 @@ mod tests {
     /// runs on macOS + Linux in practice and this path is
     /// stdlib-only — the Windows behavior can only regress in ways
     /// that would also fail the Unix build.
+    /// A prompt larger than any platform's default pipe buffer must
+    /// still deliver byte-exact. Linux default PIPE_BUF is 64 KiB;
+    /// macOS is 16 KiB. Push 128 KiB through to prove the BufWriter
+    /// pattern handles the multi-chunk write correctly.
+    #[cfg(unix)]
+    #[test]
+    fn send_prompt_delivers_prompt_exceeding_pipe_buffer() {
+        use std::io::Read;
+        use std::process::{Command, Stdio};
+        let big: String = "x".repeat(128 * 1024);
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("cat must spawn on Unix");
+        send_prompt_to_child_stdin(&mut child, &big, "cat")
+            .expect("large-buffer write must succeed");
+        let mut got = String::new();
+        child.stdout.take().unwrap().read_to_string(&mut got).unwrap();
+        let status = child.wait().unwrap();
+        assert!(status.success());
+        assert_eq!(got.len(), big.len(), "large prompt byte count must match");
+        assert_eq!(got, big, "large prompt content must match");
+    }
+
+    /// Empty prompt must exit cleanly — `cat` receives EOF
+    /// immediately on the closed pipe and exits 0. A regression that
+    /// leaks the ChildStdin handle would hang cat forever.
+    #[cfg(unix)]
+    #[test]
+    fn send_prompt_handles_empty_prompt_without_hang() {
+        use std::process::{Command, Stdio};
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("cat must spawn on Unix");
+        send_prompt_to_child_stdin(&mut child, "", "cat")
+            .expect("empty prompt must succeed");
+        let status = child.wait().expect("cat must exit on EOF");
+        assert!(status.success(), "cat must exit cleanly on empty stdin");
+    }
+
     #[cfg(unix)]
     #[test]
     fn send_prompt_to_child_stdin_delivers_exact_bytes() {

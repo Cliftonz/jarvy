@@ -164,7 +164,7 @@ pub fn analyze_with(
         } else {
             uninstallable.push(UninstallableSuggestion {
                 name: d_tool.to_string(),
-                source: d.source.as_ref().to_string(),
+                source: d.source.clone(),
                 category: d.category,
                 reason: "no jarvy handler".to_string(),
             });

@@ -329,7 +329,7 @@ fn has_uncached(cmd: &str) -> bool {
 /// that had drifted into slightly-different wordings; centralising
 /// them here means a future edit to the hint (say, adding a `rustup`
 /// install pointer) lands once, not three-plus times.
-pub const RUST_TOOLCHAIN_MISSING_HINT: &str =
+pub(crate) const RUST_TOOLCHAIN_MISSING_HINT: &str =
     "cargo not found — install the Rust toolchain first \
      (add `rust = \"latest\"` under `[provisioner]` and re-run `jarvy setup`).";
 
@@ -353,8 +353,21 @@ pub fn install_via_cargo_install(crate_name: &'static str) -> Result<(), Install
     if !has("cargo") {
         return Err(InstallError::Prereq(RUST_TOOLCHAIN_MISSING_HINT));
     }
-    run("cargo", &["install", "--locked", crate_name])?;
+    let args = cargo_install_argv(crate_name);
+    run("cargo", &args)?;
     Ok(())
+}
+
+/// Argv builder for `cargo install --locked <crate>`. Extracted so
+/// the `--locked` supply-chain contract is testable at unit-test
+/// tier without needing a real cargo binary (QA F6). The docstring
+/// on `install_via_cargo_install` calls out `--locked` as
+/// non-negotiable — this fn is the single place where the flag lives.
+///
+/// Returns a fixed-length array so the test can assert on shape
+/// without lifetimes leaking into the caller.
+pub fn cargo_install_argv(crate_name: &'static str) -> [&'static str; 3] {
+    ["install", "--locked", crate_name]
 }
 
 pub fn has(cmd: &str) -> bool {
@@ -582,6 +595,27 @@ mod install_error_kind_tests {
     }
 
     /// Uniform error message + classification when cargo is missing.
+    /// QA F6 supply-chain contract: `--locked` MUST be in the argv.
+    /// The docstring on `install_via_cargo_install` explains why
+    /// dropping the flag defeats reproducibility — a refactor that
+    /// silently omits it (someone "cleaning up" to
+    /// `cargo install <crate>`) fails this test at unit-test tier
+    /// instead of shipping. Also pins the crate-name is the last arg
+    /// so a reorder ("cargo install --locked foo" → "cargo install
+    /// foo --locked" — which cargo tolerates but changes semantics
+    /// in some cargo-alias wrappers) trips the check.
+    #[test]
+    fn cargo_install_argv_pins_locked_flag() {
+        for crate_name in ["bacon", "cargo-nextest", "release-plz"] {
+            let args = cargo_install_argv(crate_name);
+            assert_eq!(
+                args,
+                ["install", "--locked", crate_name],
+                "cargo_install_argv({crate_name}) must be [install, --locked, {crate_name}]"
+            );
+        }
+    }
+
     /// Pinned so the three Rust-native cargo-install tools (bacon,
     /// cargo-nextest, release-plz) — plus any new tool that adopts
     /// the helper — surface an identical, telemetry-groupable

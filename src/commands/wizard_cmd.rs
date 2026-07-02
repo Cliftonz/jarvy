@@ -234,15 +234,6 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
         ""
     };
 
-    if crate::observability::telemetry_gate::is_enabled() {
-        tracing::info!(
-            event = "wizard.headless_spawned",
-            agent = agent.slug(),
-            cmd_argv0 = cli_command,
-            mcp_preapproval = mcp_preapproval,
-            wizard_session_env = true,
-        );
-    }
     // Per-invocation session UUID. Threaded through:
     //   1. `session::WizardSessionGuard::activate(session_id)` writes
     //      the marker file at ~/.jarvy/state/wizard-session-<id>.active
@@ -258,8 +249,23 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
     // env var. Those children fail `session::is_active()` and fall
     // through to the normal confirmation gate (or refuse if they
     // can't prompt).
+    //
+    // Generated BEFORE the spawned event so on-call can correlate the
+    // whole lifecycle (spawned → mcp.mutation.wizard_bypass →
+    // discover.applied → headless_exit) via a single UUID field.
     let session_id = super::super::wizard::headless::new_session_id();
     let _session_guard = crate::wizard::session::WizardSessionGuard::activate(&session_id);
+
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "wizard.headless_spawned",
+            agent = agent.slug(),
+            cmd_argv0 = cli_command,
+            mcp_preapproval = mcp_preapproval,
+            wizard_session_env = true,
+            wizard_session_id = %session_id,
+        );
+    }
 
     let start = std::time::Instant::now();
     let exit_status: std::process::ExitStatus = match headless::run(agent, &prompt_body, &session_id) {
@@ -291,6 +297,7 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
             jarvy_toml_before = jarvy_toml_before,
             jarvy_toml_after = jarvy_toml_after,
             terminal_state = terminal_state,
+            wizard_session_id = %session_id,
         );
     }
     exit_status.code().unwrap_or(error_codes::CONFIG_ERROR)
@@ -325,6 +332,18 @@ fn stat_jarvy_toml(path: &std::path::Path) -> JarvyTomlSnapshot {
     }
 }
 
+// Pinned string values for the `terminal_state` field on the
+// `wizard.headless_exit` telemetry event. On-call runbooks alert on
+// these strings — pinning them here means a refactor renaming
+// `"early_exit"` to something else breaks compile-time (via the
+// exhaustive test below) instead of silently rerouting every
+// downstream query. Referenced by CLAUDE.md event taxonomy for
+// `wizard.headless_exit`.
+pub const TERMINAL_STATE_PLAYBOOK_COMPLETED: &str = "playbook_completed";
+pub const TERMINAL_STATE_NOOP_ALREADY_CONFIGURED: &str = "noop_already_configured";
+pub const TERMINAL_STATE_EARLY_EXIT: &str = "early_exit";
+pub const TERMINAL_STATE_UNKNOWN: &str = "unknown";
+
 fn classify_headless_outcome(
     before: &JarvyTomlSnapshot,
     after: &JarvyTomlSnapshot,
@@ -346,17 +365,121 @@ fn classify_headless_outcome(
         (_, JarvyTomlSnapshot::Present { .. }, Some(0))
             if !matches!((before, after), (a, b) if a == b) =>
         {
-            "playbook_completed"
+            TERMINAL_STATE_PLAYBOOK_COMPLETED
         }
         // File unchanged + clean exit → step-2 no-op branch of the
         // playbook (project already configured).
-        (a, b, Some(0)) if a == b => "noop_already_configured",
+        (a, b, Some(0)) if a == b => TERMINAL_STATE_NOOP_ALREADY_CONFIGURED,
         // File unchanged + non-zero exit → agent errored before
         // touching state (recoverable, but on-call worth-a-look).
-        (a, b, code) if a == b && code != Some(0) => "early_exit",
-        _ => "unknown",
+        (a, b, code) if a == b && code != Some(0) => TERMINAL_STATE_EARLY_EXIT,
+        _ => TERMINAL_STATE_UNKNOWN,
     };
     (before_str, after_str, terminal_state)
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod classify_tests {
+    use super::*;
+
+    /// Table-driven exhaustive coverage of the 4-way outcome match.
+    /// A refactor that inverts an arm, "cleans up" the `matches!`
+    /// guard, or renames a terminal_state constant trips at least
+    /// one row.
+    #[test]
+    fn classify_headless_outcome_covers_all_terminal_states() {
+        let absent = JarvyTomlSnapshot::Absent;
+        let old = JarvyTomlSnapshot::Present {
+            bytes: 100,
+            mtime_secs: 1_000,
+        };
+        let new = JarvyTomlSnapshot::Present {
+            bytes: 200,
+            mtime_secs: 2_000,
+        };
+        // (before, after, exit) → (before_str, after_str, terminal_state)
+        #[allow(clippy::type_complexity)]
+        let cases: &[(
+            &JarvyTomlSnapshot,
+            &JarvyTomlSnapshot,
+            Option<i32>,
+            &str,
+            &str,
+            &str,
+        )] = &[
+            // Playbook completed: absent → created OR present → modified,
+            // both with exit 0.
+            (
+                &absent,
+                &new,
+                Some(0),
+                "absent",
+                "created",
+                TERMINAL_STATE_PLAYBOOK_COMPLETED,
+            ),
+            (
+                &old,
+                &new,
+                Some(0),
+                "present",
+                "modified",
+                TERMINAL_STATE_PLAYBOOK_COMPLETED,
+            ),
+            // Noop already configured: file unchanged AND clean exit.
+            (
+                &old,
+                &old,
+                Some(0),
+                "present",
+                "unchanged",
+                TERMINAL_STATE_NOOP_ALREADY_CONFIGURED,
+            ),
+            (
+                &absent,
+                &absent,
+                Some(0),
+                "absent",
+                "absent",
+                TERMINAL_STATE_NOOP_ALREADY_CONFIGURED,
+            ),
+            // Early exit: file unchanged AND non-zero exit.
+            (
+                &old,
+                &old,
+                Some(1),
+                "present",
+                "unchanged",
+                TERMINAL_STATE_EARLY_EXIT,
+            ),
+            (
+                &absent,
+                &absent,
+                Some(1),
+                "absent",
+                "absent",
+                TERMINAL_STATE_EARLY_EXIT,
+            ),
+            // Unknown: no exit code (signal-killed) with file changed.
+            (
+                &old,
+                &new,
+                None,
+                "present",
+                "modified",
+                TERMINAL_STATE_UNKNOWN,
+            ),
+        ];
+        for (before, after, exit, want_before, want_after, want_state) in cases {
+            let got = classify_headless_outcome(before, after, *exit);
+            assert_eq!(
+                got,
+                (*want_before, *want_after, *want_state),
+                "case (before={before:?}, after={after:?}, exit={exit:?}): \
+                 expected ({want_before}, {want_after}, {want_state}), got {got:?}"
+            );
+        }
+    }
 }
 
 /// Refuse with a structured advisory. Telemetry-gated. Returns

@@ -46,6 +46,15 @@ struct RepoShape {
     /// (companion) suggestions belong here — required tools are asked
     /// for in `required` above.
     recommended: &'static [&'static str],
+    /// Minimum `warning_count` this shape's discover output MUST
+    /// produce when passed through `jarvy validate`. `0` (the default
+    /// for shapes with no advisory-signal expectation) simply
+    /// tolerates any warnings; `>0` guards against a regression that
+    /// silently drops the warning emitter — e.g., the polyglot shape
+    /// intentionally warns about node-without-nvm, and a refactor
+    /// that stops emitting that warning would be invisible without
+    /// this pin.
+    min_warnings: u64,
 }
 
 /// Registry of repo shapes. Add a row here to grow coverage.
@@ -67,6 +76,12 @@ fn matrix() -> Vec<RepoShape> {
             dirs: &[],
             required: &["rust", "node", "pnpm", "php", "composer", "go"],
             recommended: &["bacon", "cargo-nextest", "golangci-lint", "air", "delve"],
+            // The polyglot shape has `node` present without `nvm` in
+            // `[provisioner]`, so `jarvy validate` emits an advisory
+            // warning per its convention. Pin `>= 1` so a refactor
+            // that stops emitting the advisory trips this test
+            // instead of silently regressing the operator signal.
+            min_warnings: 1,
         },
         // Yarn-Berry repo — pin the yarn.lock → yarn required path
         // and the negative case that pnpm doesn't sneak in.
@@ -75,7 +90,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["package.json", "yarn.lock"],
             dirs: &[],
             required: &["node", "yarn"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
         // Rust project on GitHub with release-plz automation. Pins
         // the .github/ + release-plz.toml + .git combo without
@@ -86,7 +101,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["Cargo.toml", "release-plz.toml"],
             dirs: &[".git", ".github"],
             required: &["rust", "git", "gh", "release-plz"],
-            recommended: &["bacon", "cargo-nextest"],
+            recommended: &["bacon", "cargo-nextest"], min_warnings: 0,
         },
         // Laravel PHP project — artisan + composer.json is the
         // canonical marker set. Verifies php + composer both required.
@@ -95,7 +110,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["composer.json", "composer.lock", "artisan"],
             dirs: &[],
             required: &["php", "composer"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
         // Bun-first Node project — bun.lockb elevates bun to required.
         RepoShape {
@@ -103,7 +118,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["package.json", "bun.lockb"],
             dirs: &[],
             required: &["node", "bun"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
         // BEAM ecosystem — Elixir + Gleam interop, both recommend
         // Erlang as a runtime companion. Guards the elixir + gleam
@@ -113,7 +128,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["mix.exs", "gleam.toml"],
             dirs: &[],
             required: &["elixir", "gleam"],
-            recommended: &["erlang"],
+            recommended: &["erlang"], min_warnings: 0,
         },
         // Haskell + Deno + Zig — three of the niche langs added in
         // the audit pass. Purely about "detected + required" wiring;
@@ -123,7 +138,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["cabal.project", "deno.json", "build.zig"],
             dirs: &[],
             required: &["haskell", "deno", "zig"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
         // OCaml + Nim + Crystal — another niche cluster.
         RepoShape {
@@ -131,7 +146,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["dune-project", "hello.nimble", "shard.yml"],
             dirs: &[],
             required: &["ocaml", "nim", "crystal"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
         // Bazel monorepo — MODULE.bazel (bzlmod) is the modern marker.
         RepoShape {
@@ -139,7 +154,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["MODULE.bazel", ".bazelversion"],
             dirs: &[],
             required: &["bazelisk"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
         // K8s-native project driven by Skaffold + Kustomize + Helm.
         // Verifies skaffold.yaml + k8s/ dir + Chart.yaml simultaneously.
@@ -148,7 +163,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["skaffold.yaml", "Chart.yaml"],
             dirs: &["k8s"],
             required: &["skaffold", "kubectl", "helm"],
-            recommended: &["kustomize", "k9s"],
+            recommended: &["kustomize", "k9s"], min_warnings: 0,
         },
         // C/C++ project with CMake + Docker.
         RepoShape {
@@ -156,7 +171,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["CMakeLists.txt", "Dockerfile"],
             dirs: &[],
             required: &["cmake", "docker"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
         // Python + Infisical + VSCode devcontainer. Verifies the
         // secret-manager + editor combo landing simultaneously.
@@ -165,7 +180,7 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["pyproject.toml", ".infisical.json"],
             dirs: &[".vscode"],
             required: &["python", "infisical", "vscode"],
-            recommended: &[],
+            recommended: &[], min_warnings: 0,
         },
     ]
 }
@@ -363,6 +378,20 @@ fn assert_shape(shape: &RepoShape) {
         serde_json::json!(0),
         "[{}] validate error_count must be zero (warnings OK); got: {validate_json}",
         shape.name
+    );
+    // QA F8: enforce the shape's `min_warnings` contract. Shapes
+    // that intentionally emit advisories (e.g. polyglot node-without-nvm)
+    // set min_warnings ≥ 1 so a refactor stopping the emission trips
+    // this test rather than silently dropping the operator signal.
+    let warn_count = validate_json["warning_count"].as_u64().unwrap_or(0);
+    assert!(
+        warn_count >= shape.min_warnings,
+        "[{}] validate warning_count must be ≥ {} (advisory-emission \
+         guard); got {}. Refactor may have silently dropped the warning \
+         path this shape exists to exercise.",
+        shape.name,
+        shape.min_warnings,
+        warn_count
     );
 
     // Idempotence — a second apply must produce byte-identical output.

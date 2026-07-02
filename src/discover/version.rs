@@ -53,18 +53,25 @@ static GO_MOD_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 
 /// Look up a compiled regex, hitting the fast path (LazyLock) for the
 /// two default-rule patterns and the RwLock cache for anything else.
-fn get_or_compile_regex(pattern: &str) -> Option<regex::Regex> {
+///
+/// Perf F1: returns `Cow<'static, Regex>` — the default-rule arms
+/// hand back `Cow::Borrowed(&RUST_TOOLCHAIN_RE)` (zero atomic RMWs
+/// on the internal Arc), custom patterns from the RwLock cache go
+/// through Owned. `regex::Regex::clone()` is an atomic increment +
+/// internal Arc alloc; pre-refactor we paid that on every hit
+/// including the LazyLock hits.
+fn get_or_compile_regex(pattern: &str) -> Option<std::borrow::Cow<'static, regex::Regex>> {
     if pattern == RUST_TOOLCHAIN_PATTERN {
-        return Some(RUST_TOOLCHAIN_RE.clone());
+        return Some(std::borrow::Cow::Borrowed(&RUST_TOOLCHAIN_RE));
     }
     if pattern == GO_MOD_PATTERN {
-        return Some(GO_MOD_RE.clone());
+        return Some(std::borrow::Cow::Borrowed(&GO_MOD_RE));
     }
     // Try read lock first — steady-state a custom pattern hits after
     // its first compile.
     if let Ok(guard) = REGEX_CACHE.read() {
         if let Some(re) = guard.get(pattern) {
-            return Some(re.clone());
+            return Some(std::borrow::Cow::Owned(re.clone()));
         }
     }
     // Miss: compile once, upgrade to write lock, insert.
@@ -74,7 +81,7 @@ fn get_or_compile_regex(pattern: &str) -> Option<regex::Regex> {
             .entry(pattern.to_string())
             .or_insert_with(|| compiled.clone());
     }
-    Some(compiled)
+    Some(std::borrow::Cow::Owned(compiled))
 }
 
 pub fn extract_version(project_dir: &Path, source: &VersionSource) -> Option<String> {

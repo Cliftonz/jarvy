@@ -198,6 +198,28 @@ impl AuditLog {
         }
         let _ = self.log(entry);
     }
+
+    /// Pre-flight audit record for a mutating MCP request. Emitted at
+    /// the top of `gate_mutation` before rate limiting / confirmation
+    /// / execution run. Distinct from `log_mcp_mutation` so an audit
+    /// query "what got applied?" doesn't include requests that
+    /// silently errored downstream (Sec F1 fix — previously the
+    /// pre-flight wrote `mcp_mutation success=true` making failed
+    /// mutations look successful).
+    pub fn log_mcp_mutation_requested(
+        &self,
+        client: Option<&str>,
+        tool: &str,
+        details: Option<&str>,
+    ) {
+        let mut entry = AuditEntry::new(AuditAction::McpMutationRequested)
+            .with_client(client)
+            .with_tool(tool);
+        if let Some(d) = details {
+            entry = entry.with_data("details", serde_json::json!(d));
+        }
+        let _ = self.log(entry);
+    }
 }
 
 /// Actions that can be logged
@@ -230,8 +252,19 @@ pub enum AuditAction {
     GetPrompt,
     /// Invocation of an extended mutating MCP tool (ai_hooks_apply,
     /// mcp_register_apply, services_start, templates_use). Records the
-    /// `dry_run` flag and the per-tool result.
+    /// `dry_run` flag and the per-tool result. Emitted only on a
+    /// completed mutation (`Ok(())` from `gate_mutation` and
+    /// downstream apply).
     McpMutation,
+    /// Pre-flight audit entry for a mutating MCP tool call — the
+    /// request has been received but rate-limit, confirmation, and
+    /// execution have not yet run. Recorded separately from
+    /// `McpMutation` so an audit query for "what actually got
+    /// applied" (grep for `mcp_mutation success=true`) doesn't
+    /// falsely include requests that were denied or that errored
+    /// downstream. See `mcp::extended_tools::gate_mutation` for the
+    /// call site.
+    McpMutationRequested,
 }
 
 /// A single audit log entry

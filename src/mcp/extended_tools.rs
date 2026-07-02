@@ -49,6 +49,40 @@ impl MutationCtx<'_> {
     }
 }
 
+/// Strip ANSI/control bytes from a caller-supplied effect summary
+/// before it flows into the audit log or tracing events.
+///
+/// Sec F7: `effect_summary` for tools like `jarvy_discover_apply`
+/// includes workspace paths, and workspace-root paths are
+/// attacker-controllable (via hostile repo directory names on
+/// `git clone`). A path containing ESC (0x1B) or CR/LF can inject
+/// fake log entries or clear the terminal when an operator
+/// pages the audit log with `less`.
+///
+/// Zero-cost path: iterating the bytes and finding nothing to strip
+/// returns `Cow::Borrowed(&input)` — no allocation. The common case
+/// (well-behaved paths) pays only for the scan.
+fn sanitize_effect_summary(input: &str) -> std::borrow::Cow<'_, str> {
+    if input
+        .bytes()
+        .all(|b| b >= 0x20 && b != 0x7F)
+    {
+        return std::borrow::Cow::Borrowed(input);
+    }
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        let b = c as u32;
+        // Refuse: ESC (0x1B), BEL (0x07), DEL (0x7F), NUL (0x00),
+        // CR (0x0D), LF (0x0A), and all other C0 controls.
+        if b < 0x20 || b == 0x7F {
+            out.push('?');
+        } else {
+            out.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// Whether the current process is a descendant of a **currently-live**
 /// `jarvy wizard --apply` invocation.
 ///
@@ -87,13 +121,22 @@ pub fn gate_mutation(
     tool_name: &str,
     effect_summary: &str,
 ) -> McpResult<()> {
-    // Audit the request itself before any rate-limit / confirmation
-    // decisions. Even a denial leaves a trail showing what was asked.
-    ctx.audit_log.log_mcp_mutation(
+    // Sanitize any effect_summary derived from workspace paths (which
+    // attacker-controlled repo authors can seed with ANSI escape
+    // sequences via directory names). Consistent with the
+    // `validate_package_name` ANSI-guard boundary at every other
+    // untrusted-input frontier. If the sanitizer would strip nothing,
+    // returns the original — zero-cost in the common case.
+    let effect_summary = sanitize_effect_summary(effect_summary);
+    let effect_summary = effect_summary.as_ref();
+
+    // Pre-flight audit — the REQUEST has been received. Distinct
+    // action from `McpMutation` (which is emitted on completed
+    // mutations only) so an audit query "what got applied?" isn't
+    // polluted with requests that failed downstream. See Sec F1.
+    ctx.audit_log.log_mcp_mutation_requested(
         ctx.client_name,
         tool_name,
-        false,
-        true,
         Some(effect_summary),
     );
 
@@ -106,6 +149,13 @@ pub fn gate_mutation(
     // disabled it globally or pre-approved with "always allow".
     let global_auto_approve = crate::init::initialize().mcp.auto_approve_installs;
     if !ctx.config.mcp.require_confirmation || global_auto_approve {
+        ctx.audit_log.log_mcp_mutation(
+            ctx.client_name,
+            tool_name,
+            false,
+            true,
+            Some(effect_summary),
+        );
         return Ok(());
     }
 
@@ -133,45 +183,75 @@ pub fn gate_mutation(
     // below carries the forensic detail. A previous version of this
     // arm double-logged `log_mcp_mutation`, producing indistinguishable
     // duplicate rows in the audit log — removed intentionally.
-    if is_wizard_session() {
+    // Wizard-session bypass. Sec F3: only fires for EXPECTED MCP
+    // clients (claude-code, codex). An unexpected client with the
+    // env + marker set (compromised same-user MCP client that
+    // enumerated `~/.jarvy/state/` or leaked the UUID) falls through
+    // to the normal confirmation gate — which fails-closed on
+    // non-TTY MCP servers, the correct outcome.
+    let expected_clients = ["claude-code", "codex"];
+    let client_unexpected = ctx
+        .client_name
+        .map(|c| !expected_clients.contains(&c))
+        .unwrap_or(true);
+    if is_wizard_session() && !client_unexpected {
         if crate::observability::telemetry_gate::is_enabled() {
             let session_id = std::env::var("JARVY_WIZARD_SESSION_ID")
-                .unwrap_or_else(|_| String::new());
+                .unwrap_or_default();
             let client_name = ctx.client_name.unwrap_or("unknown");
-            let expected_clients = ["claude-code", "codex"];
-            let client_unexpected = ctx
-                .client_name
-                .map(|c| !expected_clients.contains(&c))
-                .unwrap_or(true);
             tracing::info!(
                 event = "mcp.mutation.wizard_bypass",
                 tool = tool_name,
                 client = client_name,
-                client_unexpected = client_unexpected,
                 workspace = %ctx.workspace().display(),
                 effect = effect_summary,
                 pid = std::process::id(),
                 wizard_session_id = %session_id,
             );
-            if client_unexpected {
-                // Elevated log level: an unexpected MCP client
-                // exercising the wizard bypass is a forensic signal —
-                // legitimate wizard usage always presents as
-                // claude-code or codex.
-                tracing::warn!(
-                    event = "mcp.mutation.wizard_bypass_unexpected_client",
-                    tool = tool_name,
-                    client = client_name,
-                    workspace = %ctx.workspace().display(),
-                    wizard_session_id = %session_id,
-                );
-            }
         }
+        // Bypass grant IS a completed mutation-decision point —
+        // record the success entry now (the caller's actual apply
+        // may still fail downstream, at which point that handler
+        // logs its own error; audit trail shows both entries).
+        ctx.audit_log.log_mcp_mutation(
+            ctx.client_name,
+            tool_name,
+            false,
+            true,
+            Some(effect_summary),
+        );
         return Ok(());
     }
 
+    // Emit the unexpected-client warning event AFTER the bypass
+    // fall-through decision so the trace is fired even though we
+    // don't grant the bypass. Forensic signal — legitimate wizard
+    // usage always presents as claude-code or codex.
+    if is_wizard_session()
+        && client_unexpected
+        && crate::observability::telemetry_gate::is_enabled()
+    {
+        let session_id = std::env::var("JARVY_WIZARD_SESSION_ID").unwrap_or_default();
+        tracing::warn!(
+            event = "mcp.mutation.wizard_bypass_unexpected_client",
+            tool = tool_name,
+            client = ctx.client_name.unwrap_or("unknown"),
+            workspace = %ctx.workspace().display(),
+            wizard_session_id = %session_id,
+        );
+    }
+
     match prompt_mutation_confirmation(tool_name, effect_summary, ctx.client_name)? {
-        ConfirmationResult::Yes => Ok(()),
+        ConfirmationResult::Yes => {
+            ctx.audit_log.log_mcp_mutation(
+                ctx.client_name,
+                tool_name,
+                false,
+                true,
+                Some(effect_summary),
+            );
+            Ok(())
+        }
         ConfirmationResult::No => {
             ctx.audit_log.log_cancelled(ctx.client_name, tool_name);
             Err(McpError::user_cancelled())
@@ -182,18 +262,27 @@ pub fn gate_mutation(
             if let Err(e) = crate::init::modify_global_config(|cfg| {
                 cfg.mcp.auto_approve_installs = true;
             }) {
-                tracing::warn!(
-                    event = "mcp.auto_approve.persist_failed",
-                    tool = %tool_name,
-                    error = %e,
-                );
-            } else {
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "mcp.auto_approve.persist_failed",
+                        tool = %tool_name,
+                        error = %e,
+                    );
+                }
+            } else if crate::observability::telemetry_gate::is_enabled() {
                 tracing::info!(
                     event = "mcp.auto_approve.enabled",
                     tool = %tool_name,
                     client = ctx.client_name.unwrap_or("unknown"),
                 );
             }
+            ctx.audit_log.log_mcp_mutation(
+                ctx.client_name,
+                tool_name,
+                false,
+                true,
+                Some(effect_summary),
+            );
             Ok(())
         }
     }
@@ -2145,21 +2234,26 @@ agents = ["claude-code"]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn wizard_bypass_refuses_when_env_set_but_marker_missing() {
-        // Regression guard for the exact defense-in-depth boundary
-        // added in this commit. An ambient `JARVY_WIZARD_SESSION_ID`
-        // env var — inherited by a long-lived child that outlives the
-        // wizard itself (language server, docker daemon,
-        // `nohup`-detached tool) — must NOT bypass the mutation gate.
-        // The marker file's absence is what refuses.
+        // Regression guard for the defense-in-depth boundary. An
+        // ambient `JARVY_WIZARD_SESSION_ID` env var — inherited by a
+        // long-lived child that outlives the wizard (language server,
+        // docker daemon, `nohup`-detached tool) — must NOT bypass the
+        // mutation gate. Marker file's absence is what refuses.
+        //
+        // Prior version of this test accepted `Err(_)` OR panic as
+        // "expected" — that masked a real bypass regression because
+        // downstream stages (rate-limit, audit-log write) can produce
+        // Err after a silent bypass. This version pins the EXACT
+        // error code the fall-through path produces
+        // (McpError::user_cancelled = -32005), so a re-introduced
+        // bypass followed by an unrelated downstream Err would show
+        // as a distinct error code and fail this test.
         let dir = TempDir::new().unwrap();
         let mut tc = TestCtx::new(dir.path());
-        // Isolate JARVY_HOME to a tempdir so no marker file exists.
         let home = tempfile::TempDir::new().unwrap();
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("JARVY_HOME", home.path());
-            // Session ID present but no paired marker file — this is
-            // the exact "orphaned env carrier" case.
             std::env::set_var(
                 crate::wizard::session::SESSION_ID_ENV,
                 "orphaned-uuid",
@@ -2176,13 +2270,31 @@ agents = ["claude-code"]
         }
         match result {
             Ok(Ok(())) => panic!(
-                "wizard bypass fired despite missing marker file — this \
-                 is the exact ambient-env-carrier escape the marker-file \
-                 check exists to close. Something regressed \
-                 `session::is_active()`."
+                "wizard bypass fired despite missing marker file — the \
+                 ambient-env-carrier escape the marker-file check \
+                 exists to close has regressed."
             ),
-            Ok(Err(_)) => { /* expected: fell through, errored on TTY prompt */ }
-            Err(_) => { /* expected: fell through, panicked reading from non-TTY stdin */ }
+            Ok(Err(e)) => {
+                // Fall-through must produce user_cancelled (-32005)
+                // from `prompt_mutation_confirmation` reading EOF on
+                // non-TTY stdin. Any OTHER error code means we didn't
+                // reach the confirmation path — could be a rate-limit
+                // Err following a silent bypass, which is exactly the
+                // false-green failure mode this test guards against.
+                assert_eq!(
+                    e.code, -32005,
+                    "fall-through must reach the confirmation gate and \
+                     produce user_cancelled (-32005); got code {} which \
+                     may indicate a bypass fired then errored downstream. \
+                     Full error: {}",
+                    e.code, e.message
+                );
+            }
+            Err(_) => {
+                // Panic during the read is also acceptable evidence
+                // the confirmation path executed — a piped-stdin read
+                // can panic on some platforms.
+            }
         }
     }
 

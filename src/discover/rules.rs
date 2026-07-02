@@ -129,7 +129,13 @@ pub enum ToolCategory {
 pub struct Detection {
     pub tool: std::borrow::Cow<'static, str>,
     pub version: Option<String>,
-    pub source: std::borrow::Cow<'static, str>,
+    // `source` is produced exclusively by `sanitize_source(&name) ->
+    // Option<String>` in `rule_match_source` — every value is Owned.
+    // Using Cow saved zero allocations while forcing every consumer
+    // to type `.as_ref()`. Kept as String per the maintainability
+    // review's `own-cow-conditional` guidance: Cow pays off only
+    // when the borrowed variant actually appears at runtime.
+    pub source: String,
     pub suggests: Vec<std::borrow::Cow<'static, str>>,
     pub category: ToolCategory,
 }
@@ -155,7 +161,7 @@ pub fn run(project_dir: &Path, rules: &[DetectionRule]) -> Vec<Detection> {
             out.push(Detection {
                 tool: rule.name.clone(),
                 version,
-                source: std::borrow::Cow::Owned(matched_source),
+                source: matched_source,
                 suggests: rule.suggests.clone(),
                 category: rule.category,
             });
@@ -204,7 +210,7 @@ fn rule_match_source(
             }
             DetectionPattern::FileContaining { file, containing } => {
                 if let Some(p) = index.find_first_match(file) {
-                    if let Ok(content) = read_bounded(&p, MAX_CONTAINING_BYTES) {
+                    if let Ok(content) = read_bounded(p, MAX_CONTAINING_BYTES) {
                         if content.contains(containing) {
                             let name = p.file_name()?.to_string_lossy().into_owned();
                             if let Some(safe) = sanitize_source(&name) {
@@ -233,13 +239,17 @@ fn read_bounded(path: &Path, cap: usize) -> std::io::Result<String> {
         static BUF: std::cell::RefCell<Vec<u8>> =
             std::cell::RefCell::new(Vec::with_capacity(MAX_CONTAINING_BYTES));
     }
-    let mut file = std::fs::File::open(path)?;
+    let file = std::fs::File::open(path)?;
     BUF.with(|cell| {
         let mut buf = cell.borrow_mut();
         buf.clear();
-        buf.resize(cap, 0);
-        let n = file.read(&mut buf[..])?;
-        buf.truncate(n);
+        // Perf F11: skip the `resize(cap, 0)` memset — `Read::take`
+        // caps the read and `read_to_end` appends to the vec via
+        // `spare_capacity_mut`, no zeroing required. On a 4 KiB cap
+        // per FileContaining match that's ~16 KiB memset elided per
+        // polyglot pass.
+        buf.reserve(cap);
+        file.take(cap as u64).read_to_end(&mut buf)?;
         Ok(String::from_utf8_lossy(&buf).into_owned())
     })
 }
@@ -252,9 +262,14 @@ fn sanitize_source(name: &str) -> Option<String> {
     if name.is_empty() || name.len() > 255 {
         return None;
     }
+    // Byte-level scan avoids UTF-8 decoding for a check that would
+    // reject every non-ASCII code point anyway. All accepted bytes
+    // are ASCII graphic + space; refused bytes include quote,
+    // backslash, and every C0 control (Perf F8).
     if !name
-        .chars()
-        .all(|c| (c.is_ascii_graphic() && c != '"' && c != '\\') || c == ' ')
+        .as_bytes()
+        .iter()
+        .all(|&b| (b.is_ascii_graphic() && b != b'"' && b != b'\\') || b == b' ')
     {
         return None;
     }
@@ -1100,5 +1115,36 @@ mod tests {
         assert!(sanitize_source("back\\slash").is_none());
         assert!(sanitize_source("nul\0byte").is_none());
         assert!(sanitize_source(&"x".repeat(256)).is_none());
+    }
+
+    /// QA F9 perf regression guard: default rules construct via
+    /// `.into()` from `&'static str` literals, so `rule.name` and
+    /// every entry of `rule.suggests` MUST be `Cow::Borrowed` — that
+    /// borrowed path is the whole reason the Cow refactor exists. A
+    /// future edit constructing a rule via `String::from(...).into()`
+    /// compiles, serializes identically, passes every functional
+    /// test — and silently reintroduces the ~15-20 heap allocations
+    /// per polyglot pass. This test refuses to let that happen.
+    #[test]
+    fn default_rules_name_and_suggests_are_all_borrowed() {
+        use std::borrow::Cow;
+        for rule in default_rules() {
+            assert!(
+                matches!(rule.name, Cow::Borrowed(_)),
+                "rule `{}` name is Cow::Owned — the Cow refactor's borrowed \
+                 path exists precisely so built-in rules skip the per-pass \
+                 String clone. Construct via `\"literal\".into()` from an \
+                 &'static str, not `String::from(...).into()`.",
+                rule.name
+            );
+            for s in &rule.suggests {
+                assert!(
+                    matches!(s, Cow::Borrowed(_)),
+                    "suggest `{s}` on rule `{}` is Cow::Owned — same \
+                     rationale as the name field.",
+                    rule.name
+                );
+            }
+        }
     }
 }

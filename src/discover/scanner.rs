@@ -65,18 +65,23 @@ impl RootIndex {
 
     /// Cache-backed variant of `find_first_match`. Used by
     /// `rules::run()` inside the per-rule loop.
-    pub fn find_first_match(&self, pattern: &str) -> Option<PathBuf> {
+    ///
+    /// Returns `&Path` (borrowed from the index) — the caller reads
+    /// the filename, no need to own the path. Perf F5: pre-refactor
+    /// returned `Option<PathBuf>` which cloned per hit (5-15 clones
+    /// per polyglot pass just to drop them after `.file_name()`).
+    pub fn find_first_match(&self, pattern: &str) -> Option<&Path> {
         if let Some(ext) = pattern.strip_prefix("*.") {
             for path in &self.sorted_files {
                 if path.extension().and_then(|s| s.to_str()) == Some(ext) {
-                    return Some(path.clone());
+                    return Some(path);
                 }
             }
             return None;
         }
         self.files
             .get(std::ffi::OsStr::new(pattern))
-            .cloned()
+            .map(|p| p.as_path())
     }
 }
 
@@ -183,5 +188,94 @@ mod tests {
         // Nested Cargo.toml is intentionally NOT discovered — keeps
         // detection fast and avoids vendored / submodule noise.
         assert!(find_first_match(tmp.path(), "Cargo.toml").is_none());
+    }
+
+    // -----------------------------------------------------------------
+    // RootIndex direct coverage (QA F4). Production runs exclusively
+    // through RootIndex — the free-fn tests above cover the legacy
+    // #[cfg(test)] shape only. These tests exercise the OsString hash
+    // key, the file-type filter, the sorted-list determinism, and the
+    // empty-root fallback.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn root_index_exact_lookup_matches_written_files() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        fs::write(tmp.path().join("package.json"), "").unwrap();
+        let idx = RootIndex::build(tmp.path());
+        assert!(idx.find_first_match("Cargo.toml").is_some());
+        assert!(idx.find_first_match("package.json").is_some());
+        assert!(idx.find_first_match("nonexistent.toml").is_none());
+    }
+
+    #[test]
+    fn root_index_filters_directories() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir(tmp.path().join("subdir")).unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        let idx = RootIndex::build(tmp.path());
+        assert!(
+            idx.find_first_match("subdir").is_none(),
+            "RootIndex must filter directories from the file map — \
+             `subdir` is a dir, not a file, so exact-name lookup must \
+             miss even though `read_dir` returned the entry"
+        );
+        // Confirm the file still resolves.
+        assert!(idx.find_first_match("Cargo.toml").is_some());
+    }
+
+    #[test]
+    fn root_index_glob_is_deterministic_across_multiple_matches() {
+        let tmp = tempdir().unwrap();
+        for name in ["z.rockspec", "a.rockspec", "m.rockspec"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let idx = RootIndex::build(tmp.path());
+        let first = idx.find_first_match("*.rockspec").unwrap();
+        assert_eq!(
+            first.file_name().unwrap(),
+            "a.rockspec",
+            "glob must return lexicographically-smallest match"
+        );
+        for _ in 0..3 {
+            assert_eq!(
+                idx.find_first_match("*.rockspec").unwrap(),
+                first,
+                "repeat calls must be deterministic (sort invariant)"
+            );
+        }
+    }
+
+    #[test]
+    fn root_index_empty_dir_yields_empty_matches() {
+        let tmp = tempdir().unwrap();
+        let idx = RootIndex::build(tmp.path());
+        assert!(idx.find_first_match("Cargo.toml").is_none());
+        assert!(idx.find_first_match("*.tf").is_none());
+    }
+
+    #[test]
+    fn root_index_only_dirs_yields_empty() {
+        let tmp = tempdir().unwrap();
+        for name in ["a", "b", "c"] {
+            fs::create_dir(tmp.path().join(name)).unwrap();
+        }
+        let idx = RootIndex::build(tmp.path());
+        assert!(
+            idx.find_first_match("a").is_none(),
+            "RootIndex indexes files only — a root of pure directories \
+             produces an empty index"
+        );
+    }
+
+    #[test]
+    fn root_index_missing_project_dir_yields_empty_index() {
+        // `read_dir` on a nonexistent path returns Err — RootIndex
+        // must degrade to an empty index, matching pre-refactor
+        // `find_first_match` behavior of `.ok()?`.
+        let missing = std::path::Path::new("/this/does/not/exist/for/sure");
+        let idx = RootIndex::build(missing);
+        assert!(idx.find_first_match("Cargo.toml").is_none());
     }
 }

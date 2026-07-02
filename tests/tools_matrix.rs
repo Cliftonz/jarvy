@@ -81,3 +81,41 @@ fn dash_form_tool_names_resolve_via_aliasing() {
         );
     }
 }
+
+/// QA F7: negative test for the alias path. A dash-form name that
+/// doesn't correspond to any registered tool MUST return `None` —
+/// the fallback must not accidentally match unrelated tools by
+/// substring, prefix, or any other loose comparison.
+#[test]
+fn dash_form_alias_does_not_leak_to_bogus_names() {
+    jarvy::tools::register_all();
+    for bogus in ["bogus-tool", "bogus_tool", "not-a-real-tool", "release-plz-x"] {
+        assert!(
+            jarvy::tools::get_tool(bogus).is_none(),
+            "get_tool(`{bogus}`) MUST return None — the dash/underscore \
+             alias fallback must be strict, not a prefix or substring \
+             match. If this fails, the alias code may be over-matching."
+        );
+    }
+}
+
+/// QA F7 positive-case coverage for the 8 dash-free new tools. Their
+/// canonical registration form contains no dash or underscore
+/// difference from the TOML key, so they resolve via the exact-name
+/// path — no alias fallback needed. If a future rename introduces an
+/// underscore into any of these, the naive `get_tool(dash_form)`
+/// would silently miss without this test.
+#[test]
+fn canonical_dash_free_tools_resolve_directly() {
+    jarvy::tools::register_all();
+    for name in [
+        "pnpm", "yarn", "bun", "bazelisk", "composer", "infisical", "skaffold", "cmake",
+    ] {
+        assert!(
+            jarvy::tools::get_tool(name).is_some(),
+            "canonical `{name}` must resolve via exact-name path — if \
+             this fails, either the tool was renamed or the exact-name \
+             path in registry::get_tool() broke."
+        );
+    }
+}

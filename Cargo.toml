@@ -97,6 +97,11 @@ test-bypass = []
 assert_cmd = "2.2"
 proptest = "1.11"
 criterion = { version = "0.8", features = ["html_reports"] }
+# For forcing marker-file mtime in wizard session tests — the stable
+# `std` doesn't expose an mtime setter, so we pull `filetime` (small,
+# widely used, no transitive deps) rather than a per-platform unsafe
+# `utimensat`/`SetFileTime` block for one test.
+filetime = "0.2"
 serial_test = "3.2"
 
 # Integration tests for src/sandbox capability probe (PRD-053).
