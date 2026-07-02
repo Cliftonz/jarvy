@@ -49,30 +49,26 @@ impl MutationCtx<'_> {
     }
 }
 
-/// Whether the current process is a descendant of `jarvy wizard --apply`.
+/// Whether the current process is a descendant of a **currently-live**
+/// `jarvy wizard --apply` invocation.
 ///
-/// Read from `JARVY_WIZARD_SESSION` env var, which the wizard sets on
-/// the spawned agent CLI. Cached in a `LazyLock<bool>` because the env
-/// is process-stable and this check runs on every `gate_mutation`
-/// call — re-reading a lock-guarded env var here previously showed up
-/// in the wizard hot path.
+/// Two-layer check: the ambient `JARVY_WIZARD_SESSION=1` env flag
+/// alone is no longer sufficient — the wizard also writes a per-
+/// invocation marker file at `~/.jarvy/state/wizard-session-<uuid>
+/// .active` (Drop-guarded, so a graceful exit or panic removes it).
+/// `wizard::session::is_active()` reads the UUID from
+/// `JARVY_WIZARD_SESSION_ID` and verifies the paired marker file
+/// exists and is fresh (mtime within a 10-minute window).
 ///
-/// **Test override.** The bypass code path has no unit-testable seam
-/// otherwise — `std::env::set_var` is process-global and racy under
-/// parallel tests. Test builds honor a `#[cfg(test)]` re-read of the
-/// env var so the `serial_test`-guarded tests can toggle behavior
-/// per case; release builds get the memoized fast path.
-#[cfg(not(test))]
+/// The concrete gap this closes: a language server (or any long-lived
+/// child) the agent forked during the wizard session inherits the
+/// env var but is still running hours after the wizard exited. Before
+/// this check that child could bypass the mutation gate forever;
+/// with it, the marker file's absence refuses the bypass.
+///
+/// See `src/wizard/session.rs` for the threat model in full.
 fn is_wizard_session() -> bool {
-    use std::sync::LazyLock;
-    static WIZARD_SESSION: LazyLock<bool> =
-        LazyLock::new(|| std::env::var("JARVY_WIZARD_SESSION").as_deref() == Ok("1"));
-    *WIZARD_SESSION
-}
-
-#[cfg(test)]
-fn is_wizard_session() -> bool {
-    std::env::var("JARVY_WIZARD_SESSION").as_deref() == Ok("1")
+    crate::wizard::session::is_active()
 }
 
 /// Runs the shared MCP mutation guard before any extended tool mutates
@@ -2068,37 +2064,57 @@ agents = ["claude-code"]
     }
 
     // ---------------------------------------------------------------
-    // Wizard-session mutation-gate bypass. `JARVY_WIZARD_SESSION=1`
-    // marks descendant MCP-server processes as wizard-driven so
-    // `gate_mutation` can skip the TTY confirmation prompt (which
-    // has nothing to read from — the agent's stdin holds the wizard
-    // prompt body). See `is_wizard_session()` for the check.
+    // Wizard-session mutation-gate bypass. The bypass now requires
+    // BOTH a `JARVY_WIZARD_SESSION_ID=<uuid>` env AND a paired marker
+    // file at `~/.jarvy/state/wizard-session-<uuid>.active`. Tests
+    // wire both via `WizardActiveGuard` which composes an env guard
+    // + a `session::WizardSessionGuard` (Drop-guarded marker file).
     //
-    // Env-var manipulation is process-global, so these tests are
-    // `serial_test`-guarded and use a RAII guard to reset the env
-    // even on assertion failure. The `#[cfg(test)]` branch of
-    // `is_wizard_session` re-reads the env var on every call so
-    // parallel tests don't see each other's setting.
+    // Env / JARVY_HOME manipulation is process-global, so these
+    // tests are `serial_test`-guarded; the guards clean up on Drop
+    // even under panic.
     // ---------------------------------------------------------------
 
-    /// RAII guard: unset `JARVY_WIZARD_SESSION` on drop so a panicking
-    /// test cannot leak the env var into subsequent test cases.
-    struct WizardEnvGuard;
-    impl WizardEnvGuard {
+    /// RAII guard for a live wizard session in tests. Wraps three
+    /// things:
+    ///   1. Isolates `JARVY_HOME` to a per-test tempdir so
+    ///      `session::WizardSessionGuard` doesn't touch the
+    ///      developer's real `~/.jarvy/state/`.
+    ///   2. Exports `JARVY_WIZARD_SESSION_ID=<uuid>` (which
+    ///      `session::is_active()` reads).
+    ///   3. Activates the `session::WizardSessionGuard` that writes
+    ///      the paired marker file (removed on Drop).
+    struct WizardActiveGuard {
+        _home: tempfile::TempDir,
+        _session: crate::wizard::session::WizardSessionGuard,
+    }
+    impl WizardActiveGuard {
         #[allow(unsafe_code)]
-        fn set(value: &str) -> Self {
+        fn activate() -> Self {
+            let home = tempfile::TempDir::new().unwrap();
+            let uuid = uuid::Uuid::now_v7().to_string();
             // SAFETY: `serial_test::serial` around each caller prevents
             // parallel writes; env mutation is safe under that
             // guarantee.
-            unsafe { std::env::set_var("JARVY_WIZARD_SESSION", value) };
-            Self
+            unsafe { std::env::set_var("JARVY_HOME", home.path()) };
+            unsafe {
+                std::env::set_var(
+                    crate::wizard::session::SESSION_ID_ENV,
+                    &uuid,
+                )
+            };
+            let session = crate::wizard::session::WizardSessionGuard::activate(&uuid);
+            Self {
+                _home: home,
+                _session: session,
+            }
         }
     }
-    impl Drop for WizardEnvGuard {
+    impl Drop for WizardActiveGuard {
         #[allow(unsafe_code)]
         fn drop(&mut self) {
-            // SAFETY: same as `set` — serial_test guards ordering.
-            unsafe { std::env::remove_var("JARVY_WIZARD_SESSION") };
+            unsafe { std::env::remove_var(crate::wizard::session::SESSION_ID_ENV) };
+            unsafe { std::env::remove_var("JARVY_HOME") };
         }
     }
 
@@ -2114,11 +2130,11 @@ agents = ["claude-code"]
     }
 
     #[test]
-    #[serial_test::serial]
-    fn wizard_bypass_skips_prompt_when_env_set_exactly_to_one() {
+    #[serial_test::serial(jarvy_home_env)]
+    fn wizard_bypass_fires_when_env_and_marker_both_present() {
         let dir = TempDir::new().unwrap();
         let mut tc = TestCtx::new(dir.path());
-        let _guard = WizardEnvGuard::set("1");
+        let _guard = WizardActiveGuard::activate();
         // If the bypass fires, gate_mutation returns Ok(()) without
         // hitting `prompt_mutation_confirmation` (which would block
         // reading from a piped-stdin agent and fail closed).
@@ -2127,37 +2143,51 @@ agents = ["claude-code"]
     }
 
     #[test]
-    #[serial_test::serial]
-    fn wizard_bypass_ignores_non_exact_env_values() {
-        // Env var contract is EXACT match on "1". "0", "true", "YES",
-        // empty, and whitespace variants must all fall through to the
-        // normal confirmation path. This test only checks that the
-        // bypass branch is NOT taken — the fall-through into
-        // `prompt_mutation_confirmation` will error under a non-TTY
-        // test environment, and either an error OR a panic is
-        // acceptable evidence the bypass didn't fire. What is NOT
-        // acceptable is `Ok(())` — that would mean the bypass matched.
-        for bogus in ["0", "true", "TRUE", "YES", "yes", "", "1 ", " 1", "01"] {
-            let dir = TempDir::new().unwrap();
-            let mut tc = TestCtx::new(dir.path());
-            let _guard = WizardEnvGuard::set(bogus);
-            let ctx = ctx_requiring_confirmation(&mut tc);
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                gate_mutation(&ctx, "jarvy_discover_apply", "test")
-            }));
-            match result {
-                Ok(Ok(())) => panic!(
-                    "wizard bypass fired for non-exact env value `{bogus}` — \
-                     JARVY_WIZARD_SESSION must be exactly `1`"
-                ),
-                Ok(Err(_)) => { /* expected: fell through, errored on TTY prompt */ }
-                Err(_) => { /* expected: fell through, panicked reading from non-TTY stdin */ }
-            }
+    #[serial_test::serial(jarvy_home_env)]
+    fn wizard_bypass_refuses_when_env_set_but_marker_missing() {
+        // Regression guard for the exact defense-in-depth boundary
+        // added in this commit. An ambient `JARVY_WIZARD_SESSION_ID`
+        // env var — inherited by a long-lived child that outlives the
+        // wizard itself (language server, docker daemon,
+        // `nohup`-detached tool) — must NOT bypass the mutation gate.
+        // The marker file's absence is what refuses.
+        let dir = TempDir::new().unwrap();
+        let mut tc = TestCtx::new(dir.path());
+        // Isolate JARVY_HOME to a tempdir so no marker file exists.
+        let home = tempfile::TempDir::new().unwrap();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("JARVY_HOME", home.path());
+            // Session ID present but no paired marker file — this is
+            // the exact "orphaned env carrier" case.
+            std::env::set_var(
+                crate::wizard::session::SESSION_ID_ENV,
+                "orphaned-uuid",
+            );
+        }
+        let ctx = ctx_requiring_confirmation(&mut tc);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            gate_mutation(&ctx, "jarvy_discover_apply", "test")
+        }));
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var(crate::wizard::session::SESSION_ID_ENV);
+            std::env::remove_var("JARVY_HOME");
+        }
+        match result {
+            Ok(Ok(())) => panic!(
+                "wizard bypass fired despite missing marker file — this \
+                 is the exact ambient-env-carrier escape the marker-file \
+                 check exists to close. Something regressed \
+                 `session::is_active()`."
+            ),
+            Ok(Err(_)) => { /* expected: fell through, errored on TTY prompt */ }
+            Err(_) => { /* expected: fell through, panicked reading from non-TTY stdin */ }
         }
     }
 
     #[test]
-    #[serial_test::serial]
+    #[serial_test::serial(jarvy_home_env)]
     fn wizard_bypass_still_checks_rate_limit() {
         // The bypass is layered AFTER the rate-limit check in
         // `gate_mutation`. A saturated rate limiter must refuse the
@@ -2171,7 +2201,7 @@ agents = ["claude-code"]
         config.mcp.max_installs_per_minute = 0;
         tc.rate_limiter = RateLimiter::new(&config);
         tc.config = config;
-        let _guard = WizardEnvGuard::set("1");
+        let _guard = WizardActiveGuard::activate();
         let ctx = MutationCtx {
             config: &tc.config,
             rate_limiter: &tc.rate_limiter,
@@ -2188,7 +2218,7 @@ agents = ["claude-code"]
     }
 
     #[test]
-    #[serial_test::serial]
+    #[serial_test::serial(jarvy_home_env)]
     fn wizard_bypass_writes_single_audit_entry_not_two() {
         // Regression guard for the fixed double-audit bug: the
         // pre-flight `log_mcp_mutation` at the top of gate_mutation
@@ -2216,7 +2246,7 @@ agents = ["claude-code"]
             client_name: Some("claude-code"),
             workspace_root: dir.path().to_path_buf(),
         };
-        let _guard = WizardEnvGuard::set("1");
+        let _guard = WizardActiveGuard::activate();
         gate_mutation(&ctx, "jarvy_discover_apply", "write ./jarvy.toml").unwrap();
         drop(audit_log);
 
@@ -2236,13 +2266,14 @@ agents = ["claude-code"]
     }
 
     #[test]
+    #[serial_test::serial(jarvy_home_env)]
     #[allow(unsafe_code)]
-    fn is_wizard_session_returns_false_when_env_absent() {
-        // Under `#[cfg(test)]` the check re-reads the env var (no
-        // LazyLock), so removing the var right before the check is
-        // observable. Sanity-guard against future refactors that
-        // accidentally re-add memoization to the test path.
-        unsafe { std::env::remove_var("JARVY_WIZARD_SESSION") };
-        assert!(!is_wizard_session(), "no env var → no bypass");
+    fn is_wizard_session_returns_false_when_session_env_absent() {
+        // Sanity-guard against future refactors that accidentally
+        // reintroduce a "just check any env" heuristic.
+        unsafe {
+            std::env::remove_var(crate::wizard::session::SESSION_ID_ENV);
+        }
+        assert!(!is_wizard_session(), "no SESSION_ID_ENV → no bypass");
     }
 }

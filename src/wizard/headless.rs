@@ -138,10 +138,16 @@ pub fn build_command(agent: Agent, session_id: &str) -> Result<Command, Headless
 ///
 /// Returns the exit status — the caller maps non-zero to
 /// `error_codes::HOOK_FAILED` (or similar) and emits telemetry.
-pub fn run(agent: Agent, prompt: &str) -> Result<ExitStatus, HeadlessError> {
-    let session_id = new_session_id();
+///
+/// `session_id` is the per-invocation UUID exported via
+/// `JARVY_WIZARD_SESSION_ID`. The caller is expected to have
+/// activated a `session::WizardSessionGuard` for the same UUID
+/// before invoking — otherwise the MCP mutation-gate bypass in
+/// descendant `jarvy mcp` server processes will fail closed even
+/// though the env var is present.
+pub fn run(agent: Agent, prompt: &str, session_id: &str) -> Result<ExitStatus, HeadlessError> {
     let (cmd, _args) = spawn_args(agent)?;
-    let mut child = build_command(agent, &session_id)?
+    let mut child = build_command(agent, session_id)?
         .spawn()
         .map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => HeadlessError::CliMissing(cmd.to_string()),
@@ -151,26 +157,45 @@ pub fn run(agent: Agent, prompt: &str) -> Result<ExitStatus, HeadlessError> {
             },
         })?;
 
-    // Pipe the prompt body to the child's stdin and close — many CLI
-    // agents wait for EOF before processing. Dropping the handle
-    // closes the pipe cleanly.
+    send_prompt_to_child_stdin(&mut child, prompt, cmd)?;
+
+    child.wait().map_err(|e| HeadlessError::Wait {
+        cmd: cmd.to_string(),
+        source: e,
+    })
+}
+
+/// Pipe the prompt body to the child's stdin and close.
+///
+/// Extracted from `run()` so the write path has a unit-testable seam
+/// — `run()` itself needs a real Claude/Codex binary, but a
+/// `std::process::Command::new("cat")` child produces identical
+/// stdin semantics under Unix. See `stdin_write_test` below for the
+/// verification: bytes written here MUST equal bytes read back from
+/// the child's stdout (through `cat`).
+///
+/// Many CLI agents wait for EOF before processing — dropping the
+/// `ChildStdin` handle on scope exit closes the pipe. `_` on the
+/// returned tuple pins that: the write is the contract, not the
+/// handle lifetime.
+fn send_prompt_to_child_stdin(
+    child: &mut std::process::Child,
+    prompt: &str,
+    cmd_label: &str,
+) -> Result<(), HeadlessError> {
     if let Some(mut stdin) = child.stdin.take() {
         use std::io::Write;
         stdin
             .write_all(prompt.as_bytes())
             .map_err(|e| HeadlessError::Spawn {
-                cmd: cmd.to_string(),
+                cmd: cmd_label.to_string(),
                 source: e,
             })?;
         // Explicit drop is documentation — `stdin` would close on
         // scope exit anyway; named drop pins the contract.
         drop(stdin);
     }
-
-    child.wait().map_err(|e| HeadlessError::Wait {
-        cmd: cmd.to_string(),
-        source: e,
-    })
+    Ok(())
 }
 
 #[cfg(test)]
@@ -295,6 +320,60 @@ mod tests {
         assert_eq!(
             envs.get(std::ffi::OsStr::new(WIZARD_SESSION_ENV)),
             Some(&std::ffi::OsString::from("1"))
+        );
+    }
+
+    /// Verify the stdin-write path actually delivers the prompt bytes
+    /// to the child. The bug this exists to prevent: a merge-conflict
+    /// resolution "cleans up" the `stdin.write_all(prompt.as_bytes())`
+    /// line into `let _ = child.stdin.take();` or forgets to close
+    /// stdin — either would compile, ship, and cause every real
+    /// wizard invocation to hang on the child waiting for EOF (or
+    /// process an empty prompt).
+    ///
+    /// Uses `cat` as a fake agent: reads stdin, writes it back to
+    /// stdout, exits on EOF. Unix-only (Windows has no equivalent
+    /// stock binary that behaves identically), but the wizard itself
+    /// runs on macOS + Linux in practice and this path is
+    /// stdlib-only — the Windows behavior can only regress in ways
+    /// that would also fail the Unix build.
+    #[cfg(unix)]
+    #[test]
+    fn send_prompt_to_child_stdin_delivers_exact_bytes() {
+        use std::io::Read;
+        use std::process::{Command, Stdio};
+
+        let expected = "wizard prompt body — line one\nline two\nline three with unicode: αβγ\n";
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("cat must spawn on Unix — required for this test");
+
+        send_prompt_to_child_stdin(&mut child, expected, "cat")
+            .expect("write must succeed against a piped-stdin child");
+
+        // Read stdout — `cat` echoes stdin verbatim, so the bytes we
+        // wrote MUST come back out. Any regression in the write path
+        // (partial write, missing EOF close causing hang, encoding
+        // corruption) shows here.
+        let mut received = String::new();
+        child
+            .stdout
+            .take()
+            .expect("cat stdout was piped")
+            .read_to_string(&mut received)
+            .expect("read from cat stdout");
+        let status = child.wait().expect("cat must exit cleanly on EOF");
+        assert!(
+            status.success(),
+            "cat must exit success after receiving EOF; got: {status:?}"
+        );
+        assert_eq!(
+            received, expected,
+            "bytes read from child stdout must equal bytes written to \
+             child stdin — the write path lost or corrupted data"
         );
     }
 

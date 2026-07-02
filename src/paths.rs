@@ -127,6 +127,13 @@ pub fn backup_dir() -> Result<PathBuf, NoHomeDir> {
     Ok(jarvy_home()?.join("backup"))
 }
 
+/// `~/.jarvy/state/` — runtime state files (wizard-session tokens,
+/// scratch flags). Distinct from `cache/` because contents here are
+/// per-invocation and not safe to preserve across process restarts.
+pub fn state_dir() -> Result<PathBuf, NoHomeDir> {
+    Ok(jarvy_home()?.join("state"))
+}
+
 /// `~/.jarvy/tools.d/` — user plugin tool definitions.
 pub fn plugins_dir() -> Result<PathBuf, NoHomeDir> {
     Ok(jarvy_home()?.join("tools.d"))

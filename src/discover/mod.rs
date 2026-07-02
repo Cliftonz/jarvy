@@ -132,18 +132,19 @@ pub fn analyze_with(
     let mut recommended_seen: HashSet<&str> = HashSet::new();
 
     for d in &detections {
-        if already_configured.contains(&d.tool) {
+        let d_tool: &str = d.tool.as_ref();
+        if already_configured.contains(d_tool) {
             // Pinned at any version: if it already satisfies the
             // detected version (or detection has no version), this
             // is a clean already-configured. Otherwise, surface as
             // override-suggestion.
             let detected_version = d.version.as_deref();
-            let pinned = already_configured_versions.get(&d.tool).map(|s| s.as_str());
+            let pinned = already_configured_versions.get(d_tool).map(|s| s.as_str());
             if version_already_satisfies(pinned, detected_version) {
-                already_seen.push(d.tool.clone());
-            } else if known_tools.contains(&d.tool) {
+                already_seen.push(d_tool.to_string());
+            } else if known_tools.contains(d_tool) {
                 required.push(ToolSuggestion {
-                    name: d.tool.clone(),
+                    name: d_tool.to_string(),
                     version: detected_version.unwrap_or("latest").to_string(),
                     reason: format!(
                         "detected from {} (pinned `{}` is more lax)",
@@ -153,34 +154,35 @@ pub fn analyze_with(
                     category: d.category,
                 });
             }
-        } else if known_tools.contains(&d.tool) {
+        } else if known_tools.contains(d_tool) {
             required.push(ToolSuggestion {
-                name: d.tool.clone(),
+                name: d_tool.to_string(),
                 version: d.version.clone().unwrap_or_else(|| "latest".to_string()),
                 reason: format!("detected from {}", d.source),
                 category: d.category,
             });
         } else {
             uninstallable.push(UninstallableSuggestion {
-                name: d.tool.clone(),
-                source: d.source.clone(),
+                name: d_tool.to_string(),
+                source: d.source.as_ref().to_string(),
                 category: d.category,
                 reason: "no jarvy handler".to_string(),
             });
         }
 
         for suggested in &d.suggests {
-            if already_configured.contains(suggested) {
+            let suggested_str: &str = suggested.as_ref();
+            if already_configured.contains(suggested_str) {
                 continue;
             }
-            if !known_tools.contains(suggested) {
+            if !known_tools.contains(suggested_str) {
                 continue;
             }
-            if !recommended_seen.insert(suggested.as_str()) {
+            if !recommended_seen.insert(suggested_str) {
                 continue;
             }
             recommended.push(ToolSuggestion {
-                name: suggested.clone(),
+                name: suggested_str.to_string(),
                 version: "latest".to_string(),
                 reason: format!("commonly used with {}", d.tool),
                 category: ToolCategory::Dev,

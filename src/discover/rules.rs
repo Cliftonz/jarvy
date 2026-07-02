@@ -14,12 +14,20 @@ use super::version::extract_version;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionRule {
-    pub name: String,
+    // Cow<'static, str> lets built-in rules (declared inline in
+    // `build_default_rules()` with `.into()` from string literals)
+    // store `Cow::Borrowed(&'static str)` — zero-allocation. Custom
+    // rules loaded from user config land as `Cow::Owned(String)` via
+    // serde with no source changes needed. `Detection` mirrors the
+    // same shape so `rules::run()` can clone by ref-count (Borrowed
+    // clone is a pointer copy), eliminating the per-matched-rule
+    // String allocs called out as Perf F3 in the review.
+    pub name: std::borrow::Cow<'static, str>,
     pub detect: Vec<DetectionPattern>,
     #[serde(default)]
     pub version_from: Option<VersionSource>,
     #[serde(default)]
-    pub suggests: Vec<String>,
+    pub suggests: Vec<std::borrow::Cow<'static, str>>,
     pub category: ToolCategory,
 }
 
@@ -105,12 +113,24 @@ pub enum ToolCategory {
 /// `source` field is human-readable (e.g. "Cargo.toml") and surfaces in
 /// the `--format pretty` output so users can see why a tool was
 /// suggested.
+///
+/// `tool` and `source` are `Cow<'static, str>` so the common path —
+/// built-in rules whose names are OnceLock-owned `String`s — can be
+/// referenced by borrow instead of heap-cloning per matched rule. The
+/// legacy `String::from` at construction sites still works via
+/// `Cow::Owned`, and Serde's `Cow` impl produces identical JSON.
+///
+/// See `Perf F3` in the parallel-code-review plan for the motivation:
+/// pre-refactor, every matched rule ran `rule.name.clone() +
+/// rule.suggests.clone()` — ~15-20 String heap allocations per
+/// polyglot discover pass. This refactor keeps the allocs bounded to
+/// the source strings' first construction.
 #[derive(Debug, Clone, Serialize)]
 pub struct Detection {
-    pub tool: String,
+    pub tool: std::borrow::Cow<'static, str>,
     pub version: Option<String>,
-    pub source: String,
-    pub suggests: Vec<String>,
+    pub source: std::borrow::Cow<'static, str>,
+    pub suggests: Vec<std::borrow::Cow<'static, str>>,
     pub category: ToolCategory,
 }
 
@@ -135,7 +155,7 @@ pub fn run(project_dir: &Path, rules: &[DetectionRule]) -> Vec<Detection> {
             out.push(Detection {
                 tool: rule.name.clone(),
                 version,
-                source: matched_source,
+                source: std::borrow::Cow::Owned(matched_source),
                 suggests: rule.suggests.clone(),
                 category: rule.category,
             });

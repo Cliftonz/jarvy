@@ -32,6 +32,7 @@
 pub mod context;
 pub mod headless;
 pub mod prompt;
+pub mod session;
 pub mod skill_drop;
 
 use crate::agents::Agent;

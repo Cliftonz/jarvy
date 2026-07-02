@@ -282,7 +282,7 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
             let detections_by_rule: String = report
                 .detections
                 .iter()
-                .map(|d| d.tool.as_str())
+                .map(|d| d.tool.as_ref())
                 .collect::<Vec<_>>()
                 .join(",");
             tracing::info!(

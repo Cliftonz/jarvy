@@ -243,8 +243,26 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
             wizard_session_env = true,
         );
     }
+    // Per-invocation session UUID. Threaded through:
+    //   1. `session::WizardSessionGuard::activate(session_id)` writes
+    //      the marker file at ~/.jarvy/state/wizard-session-<id>.active
+    //      and removes it on Drop (including panic unwinds).
+    //   2. `headless::run(agent, prompt, session_id)` exports the UUID
+    //      via `JARVY_WIZARD_SESSION_ID` on the agent spawn.
+    //   3. Descendant `jarvy mcp` server processes read the env var
+    //      + verify the marker still exists (and is fresh) via
+    //      `session::is_active()` in `gate_mutation`.
+    //
+    // The guard is scoped to this function — dropping it removes the
+    // marker even if the agent leaves long-lived children carrying the
+    // env var. Those children fail `session::is_active()` and fall
+    // through to the normal confirmation gate (or refuse if they
+    // can't prompt).
+    let session_id = super::super::wizard::headless::new_session_id();
+    let _session_guard = crate::wizard::session::WizardSessionGuard::activate(&session_id);
+
     let start = std::time::Instant::now();
-    let exit_status: std::process::ExitStatus = match headless::run(agent, &prompt_body) {
+    let exit_status: std::process::ExitStatus = match headless::run(agent, &prompt_body, &session_id) {
         Ok(st) => st,
         Err(e) => {
             eprintln!("wizard: headless spawn failed: {e}");
