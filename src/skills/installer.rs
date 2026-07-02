@@ -21,7 +21,12 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SkillError {
-    #[error("skill `{0}` not found in any configured library_source")]
+    #[error(
+        "skill `{0}` not found in any configured library_source. \
+         Verify the source URL resolves to a manifest.json OR a git repo containing \
+         `SKILL.md` files with YAML frontmatter (name, version required). \
+         See https://jarvy.dev/skills/#authoring"
+    )]
     NotInLibrary(String),
 
     #[error(

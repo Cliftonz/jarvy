@@ -92,6 +92,18 @@ pub fn sync_git(
     let items = walk_skills(&scan_root)?;
     let skills_discovered = items.len();
 
+    if skills_discovered == 0 {
+        eprintln!(
+            "  Warning: no SKILL.md files discovered in {}@{}{}.\n  \
+             A skill repo must contain `SKILL.md` files with YAML frontmatter \
+             (`name`, `version` required).\n  \
+             See: https://jarvy.dev/library-registry/ and https://jarvy.dev/skills/",
+            crate::network::redact_credentials(repo),
+            git_ref,
+            subpath.map(|s| format!("#{s}")).unwrap_or_default(),
+        );
+    }
+
     let publisher = derive_publisher(repo);
     let manifest = Manifest {
         schema_version: MANIFEST_SCHEMA_VERSION,
@@ -373,10 +385,18 @@ fn walk_dir(
             match build_skill_item(canon_root, &canon_path) {
                 Ok(item) => items.push(LibraryItem::Skill(item)),
                 Err(reason) => {
+                    let rel = canon_path
+                        .strip_prefix(canon_root)
+                        .unwrap_or(&canon_path)
+                        .display();
+                    eprintln!(
+                        "  Warning: skipped SKILL.md at {rel}: {reason}. \
+                         See https://jarvy.dev/library-registry/#skill-item"
+                    );
                     if crate::observability::telemetry_gate::is_enabled() {
                         tracing::info!(
                             event = "library.git_skill.skipped",
-                            path = %canon_path.strip_prefix(canon_root).unwrap_or(&canon_path).display(),
+                            path = %rel,
                             reason = %reason,
                         );
                     }
