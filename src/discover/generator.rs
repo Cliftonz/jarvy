@@ -242,6 +242,7 @@ mod tests {
             }],
             already_configured: vec![],
             uninstallable: vec![],
+            recommended_dropped_dup: 0,
         }
     }
 

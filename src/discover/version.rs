@@ -10,6 +10,7 @@
 //!   `.ruby-version`.
 
 use std::path::Path;
+use std::sync::LazyLock;
 
 use super::rules::VersionSource;
 
@@ -19,12 +20,69 @@ use super::rules::VersionSource;
 /// values escaping into the config (review item P2 #17).
 const MAX_VERSION_LEN: usize = 64;
 
+/// Cache for user-supplied regex patterns. `default_rules()` uses two
+/// hard-coded patterns (rust-toolchain, go.mod) — those are hoisted
+/// into their own `LazyLock<Regex>` below and short-circuit this map
+/// entirely. Custom rules loaded from `[discover] rules = "..."` land
+/// here so a `--watch` loop firing 100× on filesystem events doesn't
+/// pay 100× the `Regex::new` NFA/DFA compile cost.
+///
+/// `RwLock<HashMap>` intentional: reads dominate writes (steady-state
+/// after the first firing of each custom rule), and `Mutex` would
+/// serialize the hot read path.
+static REGEX_CACHE: LazyLock<std::sync::RwLock<std::collections::HashMap<String, regex::Regex>>> =
+    LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
+
+/// Compile-cached regexes for the two default-rule patterns. Hoisting
+/// these to `LazyLock<Regex>` avoids paying `Regex::new` (~30-100 µs +
+/// several kB per compile) on every discover pass that touches a Rust
+/// or Go project. The strings are the exact literals used in
+/// `default_rules()`; the tests below pin the pairing so a
+/// rules.rs edit that diverges the pattern hits a compile-time-loud
+/// failure.
+const RUST_TOOLCHAIN_PATTERN: &str = r#"channel\s*=\s*"([^"]+)""#;
+const GO_MOD_PATTERN: &str = r"^go\s+(\d+\.\d+(?:\.\d+)?)";
+
+static RUST_TOOLCHAIN_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(RUST_TOOLCHAIN_PATTERN)
+        .expect("built-in rust-toolchain pattern must compile")
+});
+static GO_MOD_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(GO_MOD_PATTERN).expect("built-in go.mod pattern must compile")
+});
+
+/// Look up a compiled regex, hitting the fast path (LazyLock) for the
+/// two default-rule patterns and the RwLock cache for anything else.
+fn get_or_compile_regex(pattern: &str) -> Option<regex::Regex> {
+    if pattern == RUST_TOOLCHAIN_PATTERN {
+        return Some(RUST_TOOLCHAIN_RE.clone());
+    }
+    if pattern == GO_MOD_PATTERN {
+        return Some(GO_MOD_RE.clone());
+    }
+    // Try read lock first — steady-state a custom pattern hits after
+    // its first compile.
+    if let Ok(guard) = REGEX_CACHE.read() {
+        if let Some(re) = guard.get(pattern) {
+            return Some(re.clone());
+        }
+    }
+    // Miss: compile once, upgrade to write lock, insert.
+    let compiled = regex::Regex::new(pattern).ok()?;
+    if let Ok(mut guard) = REGEX_CACHE.write() {
+        guard
+            .entry(pattern.to_string())
+            .or_insert_with(|| compiled.clone());
+    }
+    Some(compiled)
+}
+
 pub fn extract_version(project_dir: &Path, source: &VersionSource) -> Option<String> {
     let path = project_dir.join(&source.file);
     let content = std::fs::read_to_string(&path).ok()?;
 
     let raw = if let Some(pattern) = &source.pattern {
-        let re = regex::Regex::new(pattern).ok()?;
+        let re = get_or_compile_regex(pattern)?;
         let caps = re.captures(&content)?;
         caps.get(1)?.as_str().to_string()
     } else {

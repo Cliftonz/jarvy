@@ -15,22 +15,15 @@
 //! respecting the upstream `Cargo.lock` for supply-chain integrity.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallError, install_via_cargo_install};
 
-/// `cargo install --locked release-plz`. `--locked` uses the crate's
-/// committed `Cargo.lock` so the resulting binary is byte-reproducible
-/// against upstream CI — dropping the flag would let cargo re-resolve
-/// transitive deps and defeat the guarantee.
+// Canonical publisher: Marco Ieni — <https://crates.io/crates/release-plz>.
+// Owner unchanged since v0.1. If a future ownership transfer lands,
+// re-verify the maintainer matches release-plz.dev before shipping
+// a bump — a hostile transfer would let a malicious binary reach
+// every Rust project whose wizard-run recommends release-plz.
 fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
-    if !has("cargo") {
-        return Err(InstallError::Prereq(
-            "cargo not found — install the Rust toolchain first \
-             (add `rust = \"latest\"` under `[provisioner]` and \
-             re-run `jarvy setup`).",
-        ));
-    }
-    run("cargo", &["install", "--locked", "release-plz"])?;
-    Ok(())
+    install_via_cargo_install("release-plz")
 }
 
 define_tool!(RELEASE_PLZ, {

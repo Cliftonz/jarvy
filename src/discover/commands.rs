@@ -141,9 +141,16 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
     let project_dir: PathBuf = crate::paths::config_parent_dir(file);
 
     let existing_text = std::fs::read_to_string(file).ok();
-    let (already_configured, already_configured_versions) = existing_text
-        .as_deref()
-        .map(parse_provisioner_pins)
+    // Parse the existing jarvy.toml exactly ONCE. `parse_provisioner_pins`
+    // and `parse_discover_block` used to each call `text.parse::<
+    // toml::Table>()` on the same source — two full tokenizer passes
+    // + two DOM allocations per discover invocation. Hoist to a single
+    // `Option<toml::Table>` and thread it through both extractors.
+    let existing_table: Option<toml::Table> =
+        existing_text.as_deref().and_then(|t| t.parse().ok());
+    let (already_configured, already_configured_versions) = existing_table
+        .as_ref()
+        .map(parse_provisioner_pins_from_table)
         .unwrap_or_default();
 
     let known = known_tool_set();
@@ -153,7 +160,9 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
     // slice so a custom rule doesn't change anything else about the
     // CLI surface. `--rules <path>` from the CLI wins over
     // `[discover] rules = "..."`.
-    let mut discover_cfg = existing_text.as_deref().and_then(parse_discover_block);
+    let mut discover_cfg = existing_table
+        .as_ref()
+        .and_then(parse_discover_block_from_table);
     if let Some(override_path) = opts.rules_override {
         discover_cfg = Some(discover_config::DiscoverConfig {
             rules: Some(override_path.to_string()),
@@ -166,11 +175,33 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
         eprintln!("  warning: {adv}");
     }
 
+    // Once-per-process gauge: how many detection rules are loaded?
+    // A future refactor accidentally scoping half of `build_default_rules()`
+    // behind a `#[cfg]` guard, or a custom-rules-file load silently
+    // failing, would drop the rule count without a per-rule test
+    // catching it. The event's rate limiter (`OnceLock`) makes it
+    // cheap to leave on across the fleet — one event per process, no
+    // matter how many discover passes run.
+    if crate::observability::telemetry_gate::is_enabled() {
+        static EMITTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        let _ = EMITTED.get_or_init(|| {
+            let default_count = super::rules::default_rules().len();
+            let total_count = effective_rules.len();
+            let custom_count = total_count.saturating_sub(default_count);
+            tracing::debug!(
+                event = "discover.rules_loaded",
+                default_rule_count = default_count,
+                custom_rule_count = custom_count,
+                total_rule_count = total_count,
+            );
+        });
+    }
+
     let report = analyze_with(
         &project_dir,
         &already_configured,
         &already_configured_versions,
-        &known,
+        known,
         &effective_rules,
     );
 
@@ -235,11 +266,32 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
         if telemetry_on {
             // Operators graph adoption against this event — the whole
             // PRD-044 purpose is onboarding ergonomics.
+            //
+            // `recommended_dropped_dup` surfaces the count of companion
+            // suggestions that were suppressed because they were also
+            // required (own-marker fired). Distinguishes "rule didn't
+            // generate a companion" from "companion was outranked by
+            // a required entry" without needing debug-level logs.
+            //
+            // `detections_by_rule` is a comma-joined list of every
+            // rule that fired, in each rule's detection bucket
+            // (required / recommended / already_configured /
+            // uninstallable). Answers "which rule fired for the user
+            // complaining their language wasn't detected?" without
+            // debug logs.
+            let detections_by_rule: String = report
+                .detections
+                .iter()
+                .map(|d| d.tool.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
             tracing::info!(
                 event = "discover.applied",
                 tools_added = report.required.len(),
                 recommended_added = report.recommended.len(),
                 already_configured = report.already_configured.len(),
+                recommended_dropped_dup = report.recommended_dropped_dup,
+                detections_by_rule = %detections_by_rule,
                 target = if note == Some("no new tools to add") {
                     "noop"
                 } else if matches!(note, Some(s) if s.starts_with("existing [provisioner]")) {
@@ -261,11 +313,50 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
     0
 }
 
+/// Top-level TOML sections that MUST NOT appear in `jarvy.toml`
+/// written by discover. `jarvy.toml` is chmod'd to 0644 (world-readable)
+/// on the correct assumption that discover writes only tool names +
+/// versions — both sanitized. If a future contributor adds a
+/// `[secrets]`, `[credentials]`, `[tokens]`, or `[api_keys]` section
+/// (perhaps under the "discover can also cache X" pretext), the 0644
+/// chmod becomes a data leak. Panic in tests, error out in release —
+/// there is no valid path where discover writes user secrets.
+const SENSITIVE_TOP_LEVEL_KEYS: &[&str] =
+    &["secrets", "credentials", "tokens", "api_keys", "auth"];
+
+fn refuse_if_sensitive(text: &str) -> std::io::Result<()> {
+    if let Ok(table) = text.parse::<toml::Table>() {
+        for key in SENSITIVE_TOP_LEVEL_KEYS {
+            if table.contains_key(*key) {
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::error!(
+                        event = "discover.sensitive_key_refused",
+                        key = *key,
+                    );
+                }
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "refusing to write jarvy.toml containing top-level \
+                         `[{key}]` section — the file is chmod'd 0644 \
+                         (world-readable) on the invariant that discover \
+                         writes only sanitized tool names + versions. If \
+                         you need to persist secrets, use a separate \
+                         file with 0600 perms (see src/env/secrets.rs)."
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Atomic write (review item P2 #18): create a sibling temp file,
 /// `fsync`-equivalent via Drop, then `rename` over the target. Mid-
 /// crash leaves either the old file (rename didn't happen) or the new
 /// file (rename succeeded) — never an empty / partial `jarvy.toml`.
 fn atomic_write(target: &Path, content: &str) -> std::io::Result<()> {
+    refuse_if_sensitive(content)?;
     use std::io::Write;
     let parent = target.parent().unwrap_or(Path::new("."));
     // tempfile NamedTempFile lives next to the target so rename is on
@@ -281,10 +372,40 @@ fn atomic_write(target: &Path, content: &str) -> std::io::Result<()> {
     // collaborators (and CI) need to read it. Relax to 0644 so a fresh
     // clone gives the same perms a hand-authored file would. Windows
     // uses ACLs; nothing to do there.
+    //
+    // Some filesystems silently ignore `chmod` (NFS with `no_root_squash`,
+    // drvfs / WSL, exFAT, network mounts under some Kubernetes CSI
+    // drivers). If `set_permissions` succeeds but the effective mode
+    // stays at 0600, we've quietly shipped the exact bug this branch
+    // exists to prevent. Verify + emit telemetry so operators see the
+    // regression on their dashboard instead of debugging "CI cloned
+    // my repo and jarvy.toml is unreadable" one-off. Mirrors the
+    // `registry.cache.index_perms_unsafe` pattern in `tools/plugins.rs`.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o644));
+        if let Err(e) =
+            std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o644))
+        {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "discover.jarvy_toml_perms_unsafe",
+                    target = %target.display(),
+                    error = %e,
+                    fs_hint = "chmod_failed",
+                );
+            }
+        } else if let Ok(meta) = std::fs::metadata(target) {
+            let mode = meta.permissions().mode() & 0o777;
+            if mode != 0o644 && crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "discover.jarvy_toml_perms_unsafe",
+                    target = %target.display(),
+                    mode = format!("{mode:o}"),
+                    fs_hint = "chmod_ignored",
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -355,26 +476,38 @@ fn parse_provisioner_keys(text: &str) -> HashSet<String> {
 /// Non-string version values (e.g. `node = { version = "20", features = [...] }`)
 /// get stringified via `to_string()` so the matcher sees the full
 /// spec verbatim.
+#[cfg(test)]
 fn parse_provisioner_pins(text: &str) -> (HashSet<String>, HashMap<String, String>) {
+    // Test-only entry point: exercises the text→table→pins path used
+    // by the pre-hoist call site. Production callers go through
+    // `parse_provisioner_pins_from_table` (which reuses the already-
+    // parsed `toml::Table`, avoiding the duplicate parse).
+    text.parse::<toml::Table>()
+        .as_ref()
+        .map(parse_provisioner_pins_from_table)
+        .unwrap_or_default()
+}
+
+fn parse_provisioner_pins_from_table(
+    t: &toml::Table,
+) -> (HashSet<String>, HashMap<String, String>) {
     let mut keys = HashSet::new();
     let mut versions = HashMap::new();
-    if let Ok(t) = text.parse::<toml::Table>() {
-        if let Some(toml::Value::Table(p)) = t.get("provisioner") {
-            for (name, value) in p {
-                keys.insert(name.clone());
-                let version = match value {
-                    toml::Value::String(s) => s.clone(),
-                    // `node = { version = "20", ... }` shape.
-                    toml::Value::Table(t) => t
-                        .get("version")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    other => other.to_string(),
-                };
-                if !version.is_empty() {
-                    versions.insert(name.clone(), version);
-                }
+    if let Some(toml::Value::Table(p)) = t.get("provisioner") {
+        for (name, value) in p {
+            keys.insert(name.clone());
+            let version = match value {
+                toml::Value::String(s) => s.clone(),
+                // `node = { version = "20", ... }` shape.
+                toml::Value::Table(t) => t
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                other => other.to_string(),
+            };
+            if !version.is_empty() {
+                versions.insert(name.clone(), version);
             }
         }
     }
@@ -384,37 +517,84 @@ fn parse_provisioner_pins(text: &str) -> (HashSet<String>, HashMap<String, Strin
 /// Pull out the `[discover]` block — returns None if absent or malformed.
 /// We never refuse to run discover because of a bad `[discover]`
 /// block; we'd rather fall back to built-ins-only with an advisory.
+#[cfg(test)]
+#[allow(dead_code)]
 fn parse_discover_block(text: &str) -> Option<discover_config::DiscoverConfig> {
     let table = text.parse::<toml::Table>().ok()?;
+    parse_discover_block_from_table(&table)
+}
+
+fn parse_discover_block_from_table(
+    table: &toml::Table,
+) -> Option<discover_config::DiscoverConfig> {
     let block = table.get("discover").cloned()?;
     block.try_into().ok()
 }
 
-fn known_tool_set() -> HashSet<String> {
-    // Lazy: register tools on first call so the discover command is
-    // self-contained (doesn't rely on caller invoking
-    // `tools::register_all` first).
-    crate::tools::register_all();
-    // Registered names are keyed lowercase, dash↔underscore aliasing
-    // lives inside `tools::registry::get_tool()`. Detection rule names
-    // conventionally use the dash form (matches how tools appear as
-    // TOML keys under `[provisioner]`), but the underlying tool struct
-    // often uses the underscore form (`RELEASE_PLZ` → `release_plz`)
-    // because Rust identifiers can't contain dashes. Populate both
-    // forms so `known_tools.contains(&d.tool)` in `analyze_with`
-    // resolves either way instead of dropping the detection as
-    // "unknown tool".
-    let mut set: HashSet<String> = HashSet::new();
-    for name in crate::tools::registry::registered_tool_names() {
-        if name.contains('_') {
-            set.insert(name.replace('_', "-"));
+/// Cache for `known_tool_set` — populated once at first call, reused
+/// on every subsequent discover pass. The registered-tool set is
+/// process-stable (registration happens at startup via `register_all`),
+/// so a per-call rebuild that allocates ~300 `String`s for a ~100-entry
+/// registry was pure waste on the discover hot path (called per
+/// filesystem event under `--watch`, per matrix row under CI).
+///
+/// Returns `&'static HashSet<&'static str>` via `Box::leak` — the
+/// leaked strings live for the process lifetime, which matches the
+/// registry lifetime. Zero-allocation lookups on every subsequent
+/// discover pass.
+static KNOWN_TOOLS_CACHE: std::sync::OnceLock<HashSet<String>> =
+    std::sync::OnceLock::new();
+
+fn known_tool_set() -> &'static HashSet<String> {
+    KNOWN_TOOLS_CACHE.get_or_init(|| {
+        // Lazy: register tools on first call so the discover command is
+        // self-contained (doesn't rely on caller invoking
+        // `tools::register_all` first).
+        crate::tools::register_all();
+        // Registered names are keyed lowercase, dash↔underscore aliasing
+        // lives inside `tools::registry::get_tool()`. Detection rule
+        // names conventionally use the dash form (matches how tools
+        // appear as TOML keys under `[provisioner]`), but the
+        // underlying tool struct often uses the underscore form
+        // (`RELEASE_PLZ` → `release_plz`) because Rust identifiers
+        // can't contain dashes. Populate both forms so
+        // `known_tools.contains(&d.tool)` in `analyze_with` resolves
+        // either way instead of dropping the detection as
+        // "unknown tool".
+        //
+        // Collision guard: if a future contributor adds two registered
+        // tools whose names normalise to the same dash/underscore form
+        // (e.g. `foo_bar` + `foo-bar` as two distinct entries), a
+        // detection rule referring to either could silently install
+        // the wrong tool. Startup-panic on the collision rather than
+        // shipping the bug.
+        let mut set: HashSet<String> = HashSet::new();
+        for name in crate::tools::registry::registered_tool_names() {
+            if name.contains('_') {
+                let alias = name.replace('_', "-");
+                assert!(
+                    !set.contains(&alias) || set.contains(&name),
+                    "dash/underscore alias collision: `{alias}` conflicts \
+                     with an existing registered tool. Two distinct tool \
+                     names must not normalise to the same dash/underscore \
+                     form — detection rules matching either would silently \
+                     dispatch to whichever registered first."
+                );
+                set.insert(alias);
+            }
+            if name.contains('-') {
+                let alias = name.replace('-', "_");
+                assert!(
+                    !set.contains(&alias) || set.contains(&name),
+                    "dash/underscore alias collision: `{alias}` conflicts \
+                     with an existing registered tool."
+                );
+                set.insert(alias);
+            }
+            set.insert(name);
         }
-        if name.contains('-') {
-            set.insert(name.replace('-', "_"));
-        }
-        set.insert(name);
-    }
-    set
+        set
+    })
 }
 
 #[cfg(test)]
@@ -438,6 +618,87 @@ docker = "latest"
         let keys = parse_provisioner_keys(text);
         assert!(keys.contains("git"));
         assert!(keys.contains("docker"));
+    }
+
+    /// Detection rules commonly reference the dash form of a tool
+    /// name (`release-plz` in the rule, because that's what appears
+    /// as a TOML key under `[provisioner]`); the underlying handler
+    /// is registered under the underscore form (`release_plz`, from
+    /// the `RELEASE_PLZ` static — Rust identifiers can't hold
+    /// dashes). `known_tool_set()` populates BOTH so
+    /// `known_tools.contains(&d.tool)` in `analyze_with` resolves
+    /// either spelling; a refactor that scoped one alias direction
+    /// behind a feature flag or removed it would silently drop
+    /// detections.
+    #[test]
+    fn known_tool_set_contains_both_dash_and_underscore_forms() {
+        let s = known_tool_set();
+        for (dash, under) in [
+            ("release-plz", "release_plz"),
+            ("cargo-nextest", "cargo_nextest"),
+            ("golangci-lint", "golangci_lint"),
+        ] {
+            assert!(
+                s.contains(dash),
+                "known_tool_set missing dash form `{dash}` — detection \
+                 rules use the dash form; without this alias the rule \
+                 would silently drop its detection as `unknown tool`"
+            );
+            assert!(
+                s.contains(under),
+                "known_tool_set missing underscore form `{under}` — the \
+                 handler is registered under the underscore form; \
+                 without this alias, rule-name → handler dispatch fails"
+            );
+        }
+    }
+
+    /// `atomic_write` must refuse to persist a config that contains
+    /// any top-level `SENSITIVE_TOP_LEVEL_KEYS` section. The file is
+    /// chmod'd 0644 on the invariant that discover only ever writes
+    /// tool names + versions — both sanitized. A future contributor
+    /// adding a `[secrets]` section (perhaps for "discover can also
+    /// cache X") would silently expose those bytes to any git-clone-
+    /// r reader; this test refuses to let that happen.
+    #[test]
+    fn atomic_write_refuses_sensitive_sections() {
+        for sensitive_key in ["secrets", "credentials", "tokens", "api_keys", "auth"] {
+            let tmp = tempdir().unwrap();
+            let toml = tmp.path().join("jarvy.toml");
+            let poisoned = format!(
+                "[provisioner]\ngit = \"latest\"\n\n[{sensitive_key}]\napi = \"leak-me\"\n"
+            );
+            let e = atomic_write(&toml, &poisoned).expect_err(
+                "atomic_write must refuse a config containing sensitive sections",
+            );
+            assert!(
+                e.to_string().contains(sensitive_key),
+                "error must name the offending section `{sensitive_key}`; got: {e}"
+            );
+            assert!(
+                !toml.exists(),
+                "no file must land on disk when refuse fires (target: {toml:?})"
+            );
+        }
+    }
+
+    /// The memoized cache must return the same set on repeat calls;
+    /// pins the `OnceLock` contract. If a future refactor
+    /// accidentally rebuilds per-call (dropping the perf win), a
+    /// separate pointer would be returned on the second call and
+    /// this passes-because-values-are-equal, so we assert on identity
+    /// by construction: the address of the returned reference must be
+    /// stable across calls.
+    #[test]
+    fn known_tool_set_is_memoized_across_calls() {
+        let a = known_tool_set() as *const _;
+        let b = known_tool_set() as *const _;
+        assert_eq!(
+            a, b,
+            "known_tool_set must return the SAME address across calls \
+             — a rebuild-per-call regression would produce different \
+             pointers even when the values match"
+        );
     }
 
     #[test]

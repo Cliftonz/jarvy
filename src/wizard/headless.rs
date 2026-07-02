@@ -15,6 +15,21 @@ use crate::agents::Agent;
 use std::io;
 use std::process::{Command, ExitStatus, Stdio};
 
+/// Environment variables the wizard exports to the spawned agent CLI.
+/// Exposed publicly so tests + `commands::wizard_cmd` can reference the
+/// exact names without repeating string literals (drift risk on refactor).
+pub const WIZARD_SESSION_ENV: &str = "JARVY_WIZARD_SESSION";
+pub const WIZARD_SESSION_ID_ENV: &str = "JARVY_WIZARD_SESSION_ID";
+
+/// Generate a per-invocation session ID (UUID v7 — time-ordered for
+/// log-stream correlation) exported via `WIZARD_SESSION_ID_ENV`. The
+/// same UUID is threaded through telemetry so on-call can correlate
+/// `wizard.headless_spawned` → `mcp.mutation.wizard_bypass` →
+/// `discover.applied` → `wizard.headless_exit` across a single run.
+pub fn new_session_id() -> String {
+    uuid::Uuid::now_v7().to_string()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum HeadlessError {
     /// `claude` / `codex` not on PATH after we said it was. Shouldn't
@@ -79,6 +94,44 @@ pub fn spawn_args(agent: Agent) -> Result<(&'static str, Vec<&'static str>), Hea
     }
 }
 
+/// Build a fully-configured `Command` for the agent's headless spawn.
+///
+/// Hoisted out of `run()` so tests can inspect argv and env without
+/// actually forking. Test-visible seam: `get_envs()` on the returned
+/// `Command` proves `JARVY_WIZARD_SESSION` / `JARVY_WIZARD_SESSION_ID`
+/// were set — otherwise the whole bug this commit fixes could regress
+/// silently on a merge conflict resolution that drops the `.env()`
+/// lines.
+///
+/// `session_id` is a per-invocation UUID exported to the child so
+/// downstream telemetry (`mcp.mutation.wizard_bypass`,
+/// `discover.applied` fired from inside the wizard) can correlate to
+/// the enclosing wizard run — otherwise concurrent wizard invocations
+/// (dev + CI) produce indistinguishable events.
+pub fn build_command(agent: Agent, session_id: &str) -> Result<Command, HeadlessError> {
+    let (cmd, args) = spawn_args(agent)?;
+    let mut command = Command::new(cmd);
+    command
+        .args(&args)
+        // `JARVY_WIZARD_SESSION=1` is inherited by the agent CLI and,
+        // in turn, by any `jarvy mcp` server it spawns via its MCP-
+        // server config. The MCP mutation gate
+        // (`mcp::extended_tools::gate_mutation`) treats this as
+        // operator-pre-approved consent and skips the TTY confirmation
+        // prompt — which would otherwise fail closed because stdin on
+        // the agent is piped (used for the prompt body), leaving the
+        // gate's `read_line` no way to read a "yes".
+        .env(WIZARD_SESSION_ENV, "1")
+        // Per-invocation UUID — used only for telemetry correlation.
+        // Empty when the caller hasn't generated one yet (backwards
+        // compat with older callers; new callers always populate).
+        .env(WIZARD_SESSION_ID_ENV, session_id)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    Ok(command)
+}
+
 /// Run the agent against the supplied prompt. Streams stdout/stderr
 /// straight to the user's terminal (inherited stdio) so they see
 /// the conversation live. Blocks until the agent exits.
@@ -86,22 +139,9 @@ pub fn spawn_args(agent: Agent) -> Result<(&'static str, Vec<&'static str>), Hea
 /// Returns the exit status — the caller maps non-zero to
 /// `error_codes::HOOK_FAILED` (or similar) and emits telemetry.
 pub fn run(agent: Agent, prompt: &str) -> Result<ExitStatus, HeadlessError> {
-    let (cmd, args) = spawn_args(agent)?;
-
-    // `JARVY_WIZARD_SESSION=1` is inherited by the agent CLI and, in
-    // turn, by any `jarvy mcp` server it spawns via its MCP-server
-    // config. The MCP mutation gate
-    // (`mcp::extended_tools::gate_mutation`) treats this as
-    // operator-pre-approved consent and skips the TTY confirmation
-    // prompt — which would otherwise fail closed because stdin on
-    // the agent is piped (used for the prompt body), leaving the
-    // gate's `read_line` no way to read a "yes".
-    let mut child = Command::new(cmd)
-        .args(&args)
-        .env("JARVY_WIZARD_SESSION", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+    let session_id = new_session_id();
+    let (cmd, _args) = spawn_args(agent)?;
+    let mut child = build_command(agent, &session_id)?
         .spawn()
         .map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => HeadlessError::CliMissing(cmd.to_string()),
@@ -154,19 +194,120 @@ mod tests {
         // / etc., so the Jarvy MCP server must be pre-allowlisted or
         // the spawned agent appears to hang. Scoped to `mcp__jarvy`
         // only — non-Jarvy tools still surface prompts.
-        let (_, args) = spawn_args(Agent::ClaudeCode).unwrap();
-        let allowed_pos = args.iter().position(|a| *a == "--allowedTools");
-        assert!(
-            allowed_pos.is_some(),
-            "claude headless invocation must pass --allowedTools"
+        //
+        // Full-argv equality (not just `contains`) — Claude Code's CLI
+        // requires `-p` in a specific position for stdin-mode
+        // detection in some releases; reordering the args silently
+        // breaks the wizard. Pin the exact order so a future edit
+        // that "cleans up" the argv order trips a compile-time-loud
+        // test failure instead of an on-call-loud production failure.
+        let (cmd, args) = spawn_args(Agent::ClaudeCode).unwrap();
+        assert_eq!(cmd, "claude");
+        assert_eq!(
+            args,
+            vec!["-p", "--allowedTools", "mcp__jarvy"],
+            "argv order for claude must be [-p, --allowedTools, mcp__jarvy] \
+             — Claude Code's flag parser is order-sensitive"
         );
+    }
+
+    /// The `--allowedTools mcp__jarvy` value is passed verbatim to
+    /// Claude Code, which interprets `mcp__<server>` as a server-name
+    /// prefix allowlist. If a future contributor "cleans up" the
+    /// value to a bare `jarvy` (or an unrelated pattern), the scope
+    /// silently broadens (any `mcp__*` server matches) or narrows to
+    /// nothing (wizard hangs). Pin the exact prefix + the double-
+    /// underscore delimiter so a drift-inducing edit trips a
+    /// compile-time-loud test failure.
+    ///
+    /// Threat model call-out: even if a third-party tool were to
+    /// register itself as `jarvy-experimental` MCP server (starting
+    /// with `jarvy` but distinct), Claude Code's `mcp__jarvy` scope
+    /// matches on the exact server name after the `mcp__` prefix, not
+    /// a substring — verified against Claude Code docs 2026-07.
+    /// Future release-note review needed if that behavior changes.
+    #[test]
+    fn allowed_tools_scope_pins_exact_jarvy_server_prefix() {
+        let (_, args) = spawn_args(Agent::ClaudeCode).unwrap();
         let value = args
-            .get(allowed_pos.unwrap() + 1)
-            .expect("--allowedTools needs a value");
+            .iter()
+            .position(|a| *a == "--allowedTools")
+            .and_then(|i| args.get(i + 1))
+            .expect("--allowedTools has a value");
+        assert!(
+            value.starts_with("mcp__"),
+            "allowedTools must use the `mcp__<server>` grammar; got: {value}"
+        );
+        assert!(
+            value.contains("__jarvy"),
+            "scope must reference the `jarvy` server explicitly, not \
+             a naked prefix that could match `jarvy-experimental` or \
+             `jarvy-labs` — got: {value}"
+        );
         assert_eq!(
             *value, "mcp__jarvy",
-            "allowlist must be scoped to the Jarvy MCP server"
+            "scope must be EXACTLY `mcp__jarvy` — no whitespace, no \
+             trailing wildcard, no other suffix. Any deviation risks \
+             silent scope broadening in future Claude Code releases."
         );
+    }
+
+    #[test]
+    fn build_command_for_claude_sets_wizard_session_env() {
+        // Regression guard for the exact bug the wizard-runtime fix
+        // ships: without JARVY_WIZARD_SESSION=1 propagating to the
+        // spawned agent, its descendant `jarvy mcp` server falls
+        // back to the TTY prompt (which fails closed because stdin
+        // carries the prompt body). A merge-conflict resolution that
+        // deletes the `.env()` line compiles + ships + silently
+        // reverts the fix. This test proves the env is set.
+        let session_id = "test-session-uuid";
+        let cmd = build_command(Agent::ClaudeCode, session_id).unwrap();
+        let envs: std::collections::HashMap<_, _> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| v.map(|vv| (k.to_owned(), vv.to_owned())))
+            .collect();
+        assert_eq!(
+            envs.get(std::ffi::OsStr::new(WIZARD_SESSION_ENV)),
+            Some(&std::ffi::OsString::from("1")),
+            "JARVY_WIZARD_SESSION=1 MUST be set on the spawn — this \
+             is what marks descendant MCP-server processes as \
+             wizard-driven and bypasses the mutation-confirmation TTY \
+             prompt. Reverting the .env() line silently reverts the \
+             fix; this test refuses to let that happen."
+        );
+        assert_eq!(
+            envs.get(std::ffi::OsStr::new(WIZARD_SESSION_ID_ENV)),
+            Some(&std::ffi::OsString::from(session_id)),
+            "JARVY_WIZARD_SESSION_ID must be threaded so telemetry \
+             events emitted from descendants can correlate to the \
+             enclosing wizard invocation"
+        );
+    }
+
+    #[test]
+    fn build_command_for_codex_sets_wizard_session_env() {
+        let cmd = build_command(Agent::Codex, "codex-session").unwrap();
+        let envs: std::collections::HashMap<_, _> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| v.map(|vv| (k.to_owned(), vv.to_owned())))
+            .collect();
+        assert_eq!(
+            envs.get(std::ffi::OsStr::new(WIZARD_SESSION_ENV)),
+            Some(&std::ffi::OsString::from("1"))
+        );
+    }
+
+    #[test]
+    fn new_session_id_is_unique_across_calls() {
+        // UUID v7 is time-ordered but must be per-invocation unique so
+        // concurrent wizard runs (dev + CI) produce distinct
+        // correlation IDs. Two same-millisecond calls: both non-empty,
+        // different, valid UUID shape.
+        let a = new_session_id();
+        let b = new_session_id();
+        assert_ne!(a, b, "session ids must be per-invocation unique");
+        assert_eq!(a.len(), 36, "UUID stringified length is 36");
     }
 
     #[test]

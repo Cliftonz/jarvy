@@ -11,18 +11,15 @@
 //! — every user has cargo by definition, so route uniformly.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallError, install_via_cargo_install};
 
+// Canonical publisher: Denys Séguret / dystroy — <https://crates.io/crates/bacon>.
+// If the crates.io ownership changes upstream, revisit this pin: a
+// hostile transfer would ship a malicious binary the next time Jarvy
+// runs `cargo install --locked bacon` for a Rust project. As of
+// 2026-07 the owner is unchanged since the crate's first release.
 fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
-    if !has("cargo") {
-        return Err(InstallError::Prereq(
-            "cargo not found — install the Rust toolchain first \
-             (add `rust = \"latest\"` under `[provisioner]` and \
-             re-run `jarvy setup`).",
-        ));
-    }
-    run("cargo", &["install", "--locked", "bacon"])?;
-    Ok(())
+    install_via_cargo_install("bacon")
 }
 
 define_tool!(BACON, {

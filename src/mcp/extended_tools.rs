@@ -49,6 +49,32 @@ impl MutationCtx<'_> {
     }
 }
 
+/// Whether the current process is a descendant of `jarvy wizard --apply`.
+///
+/// Read from `JARVY_WIZARD_SESSION` env var, which the wizard sets on
+/// the spawned agent CLI. Cached in a `LazyLock<bool>` because the env
+/// is process-stable and this check runs on every `gate_mutation`
+/// call — re-reading a lock-guarded env var here previously showed up
+/// in the wizard hot path.
+///
+/// **Test override.** The bypass code path has no unit-testable seam
+/// otherwise — `std::env::set_var` is process-global and racy under
+/// parallel tests. Test builds honor a `#[cfg(test)]` re-read of the
+/// env var so the `serial_test`-guarded tests can toggle behavior
+/// per case; release builds get the memoized fast path.
+#[cfg(not(test))]
+fn is_wizard_session() -> bool {
+    use std::sync::LazyLock;
+    static WIZARD_SESSION: LazyLock<bool> =
+        LazyLock::new(|| std::env::var("JARVY_WIZARD_SESSION").as_deref() == Ok("1"));
+    *WIZARD_SESSION
+}
+
+#[cfg(test)]
+fn is_wizard_session() -> bool {
+    std::env::var("JARVY_WIZARD_SESSION").as_deref() == Ok("1")
+}
+
 /// Runs the shared MCP mutation guard before any extended tool mutates
 /// state. Mirrors `handle_install_tool`'s flow:
 ///
@@ -102,25 +128,49 @@ pub fn gate_mutation(
     // user-level code-exec, which is strictly stronger than tricking
     // the MCP gate. The bypass narrowly serves a usability gap
     // inside `jarvy wizard`, not a privilege boundary.
-    if std::env::var("JARVY_WIZARD_SESSION").as_deref() == Ok("1") {
+    //
+    // Audit trail: the pre-flight `log_mcp_mutation` call at the top
+    // of this function already records the request. The `Yes` and
+    // `Always` confirmation arms record NO extra audit entry (they
+    // only emit tracing events for the operator's decision). The
+    // wizard-bypass arm follows that pattern — the tracing event
+    // below carries the forensic detail. A previous version of this
+    // arm double-logged `log_mcp_mutation`, producing indistinguishable
+    // duplicate rows in the audit log — removed intentionally.
+    if is_wizard_session() {
         if crate::observability::telemetry_gate::is_enabled() {
+            let session_id = std::env::var("JARVY_WIZARD_SESSION_ID")
+                .unwrap_or_else(|_| String::new());
+            let client_name = ctx.client_name.unwrap_or("unknown");
+            let expected_clients = ["claude-code", "codex"];
+            let client_unexpected = ctx
+                .client_name
+                .map(|c| !expected_clients.contains(&c))
+                .unwrap_or(true);
             tracing::info!(
                 event = "mcp.mutation.wizard_bypass",
                 tool = tool_name,
-                client = ctx.client_name.unwrap_or("unknown"),
+                client = client_name,
+                client_unexpected = client_unexpected,
+                workspace = %ctx.workspace().display(),
+                effect = effect_summary,
+                pid = std::process::id(),
+                wizard_session_id = %session_id,
             );
+            if client_unexpected {
+                // Elevated log level: an unexpected MCP client
+                // exercising the wizard bypass is a forensic signal —
+                // legitimate wizard usage always presents as
+                // claude-code or codex.
+                tracing::warn!(
+                    event = "mcp.mutation.wizard_bypass_unexpected_client",
+                    tool = tool_name,
+                    client = client_name,
+                    workspace = %ctx.workspace().display(),
+                    wizard_session_id = %session_id,
+                );
+            }
         }
-        // Record the approval with the same shape as the
-        // `ConfirmationResult::Always` branch below so the audit
-        // trail uniformly reflects "permission granted" regardless
-        // of which path granted it.
-        ctx.audit_log.log_mcp_mutation(
-            ctx.client_name,
-            tool_name,
-            false,
-            true,
-            Some(effect_summary),
-        );
         return Ok(());
     }
 
@@ -2015,5 +2065,184 @@ agents = ["claude-code"]
         .unwrap();
         let text = resp["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("\"dry_run\": true"));
+    }
+
+    // ---------------------------------------------------------------
+    // Wizard-session mutation-gate bypass. `JARVY_WIZARD_SESSION=1`
+    // marks descendant MCP-server processes as wizard-driven so
+    // `gate_mutation` can skip the TTY confirmation prompt (which
+    // has nothing to read from — the agent's stdin holds the wizard
+    // prompt body). See `is_wizard_session()` for the check.
+    //
+    // Env-var manipulation is process-global, so these tests are
+    // `serial_test`-guarded and use a RAII guard to reset the env
+    // even on assertion failure. The `#[cfg(test)]` branch of
+    // `is_wizard_session` re-reads the env var on every call so
+    // parallel tests don't see each other's setting.
+    // ---------------------------------------------------------------
+
+    /// RAII guard: unset `JARVY_WIZARD_SESSION` on drop so a panicking
+    /// test cannot leak the env var into subsequent test cases.
+    struct WizardEnvGuard;
+    impl WizardEnvGuard {
+        #[allow(unsafe_code)]
+        fn set(value: &str) -> Self {
+            // SAFETY: `serial_test::serial` around each caller prevents
+            // parallel writes; env mutation is safe under that
+            // guarantee.
+            unsafe { std::env::set_var("JARVY_WIZARD_SESSION", value) };
+            Self
+        }
+    }
+    impl Drop for WizardEnvGuard {
+        #[allow(unsafe_code)]
+        fn drop(&mut self) {
+            // SAFETY: same as `set` — serial_test guards ordering.
+            unsafe { std::env::remove_var("JARVY_WIZARD_SESSION") };
+        }
+    }
+
+    fn ctx_requiring_confirmation<'a>(tc: &'a mut TestCtx) -> MutationCtx<'a> {
+        tc.config.mcp.require_confirmation = true;
+        MutationCtx {
+            config: &tc.config,
+            rate_limiter: &tc.rate_limiter,
+            audit_log: &tc.audit_log,
+            client_name: Some("claude-code"),
+            workspace_root: tc.workspace_root.clone(),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn wizard_bypass_skips_prompt_when_env_set_exactly_to_one() {
+        let dir = TempDir::new().unwrap();
+        let mut tc = TestCtx::new(dir.path());
+        let _guard = WizardEnvGuard::set("1");
+        // If the bypass fires, gate_mutation returns Ok(()) without
+        // hitting `prompt_mutation_confirmation` (which would block
+        // reading from a piped-stdin agent and fail closed).
+        let ctx = ctx_requiring_confirmation(&mut tc);
+        gate_mutation(&ctx, "jarvy_discover_apply", "write ./jarvy.toml").unwrap();
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn wizard_bypass_ignores_non_exact_env_values() {
+        // Env var contract is EXACT match on "1". "0", "true", "YES",
+        // empty, and whitespace variants must all fall through to the
+        // normal confirmation path. This test only checks that the
+        // bypass branch is NOT taken — the fall-through into
+        // `prompt_mutation_confirmation` will error under a non-TTY
+        // test environment, and either an error OR a panic is
+        // acceptable evidence the bypass didn't fire. What is NOT
+        // acceptable is `Ok(())` — that would mean the bypass matched.
+        for bogus in ["0", "true", "TRUE", "YES", "yes", "", "1 ", " 1", "01"] {
+            let dir = TempDir::new().unwrap();
+            let mut tc = TestCtx::new(dir.path());
+            let _guard = WizardEnvGuard::set(bogus);
+            let ctx = ctx_requiring_confirmation(&mut tc);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                gate_mutation(&ctx, "jarvy_discover_apply", "test")
+            }));
+            match result {
+                Ok(Ok(())) => panic!(
+                    "wizard bypass fired for non-exact env value `{bogus}` — \
+                     JARVY_WIZARD_SESSION must be exactly `1`"
+                ),
+                Ok(Err(_)) => { /* expected: fell through, errored on TTY prompt */ }
+                Err(_) => { /* expected: fell through, panicked reading from non-TTY stdin */ }
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn wizard_bypass_still_checks_rate_limit() {
+        // The bypass is layered AFTER the rate-limit check in
+        // `gate_mutation`. A saturated rate limiter must refuse the
+        // call regardless of the wizard bypass — otherwise the bypass
+        // becomes a rate-limit escape hatch.
+        let dir = TempDir::new().unwrap();
+        let mut tc = TestCtx::new(dir.path());
+        // Zero-permit rate limiter so any call is denied.
+        let mut config = McpConfig::default();
+        config.mcp.require_confirmation = true;
+        config.mcp.max_installs_per_minute = 0;
+        tc.rate_limiter = RateLimiter::new(&config);
+        tc.config = config;
+        let _guard = WizardEnvGuard::set("1");
+        let ctx = MutationCtx {
+            config: &tc.config,
+            rate_limiter: &tc.rate_limiter,
+            audit_log: &tc.audit_log,
+            client_name: Some("claude-code"),
+            workspace_root: tc.workspace_root.clone(),
+        };
+        let result = gate_mutation(&ctx, "jarvy_discover_apply", "test");
+        assert!(
+            result.is_err(),
+            "wizard bypass must NOT skip the rate-limit gate — \
+             saturated limiter must refuse the call"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn wizard_bypass_writes_single_audit_entry_not_two() {
+        // Regression guard for the fixed double-audit bug: the
+        // pre-flight `log_mcp_mutation` at the top of gate_mutation
+        // records the request. The wizard-bypass arm used to emit a
+        // second, indistinguishable `log_mcp_mutation` — auditors
+        // saw two rows per wizard-driven mutation, forensically
+        // useless. The fix drops the redundant call. This test uses
+        // an audit log wired to a temp file (not `AuditLog::disabled`)
+        // and counts entries after one bypass call.
+        let dir = TempDir::new().unwrap();
+        let audit_dir = dir.path().join("audit");
+        std::fs::create_dir_all(&audit_dir).unwrap();
+        let mut config = McpConfig::default();
+        config.mcp.require_confirmation = true;
+        config.mcp.audit_log = audit_dir
+            .join("audit.log")
+            .to_string_lossy()
+            .into_owned();
+        let rate_limiter = RateLimiter::new(&config);
+        let audit_log = AuditLog::new(&config).expect("audit log must init");
+        let ctx = MutationCtx {
+            config: &config,
+            rate_limiter: &rate_limiter,
+            audit_log: &audit_log,
+            client_name: Some("claude-code"),
+            workspace_root: dir.path().to_path_buf(),
+        };
+        let _guard = WizardEnvGuard::set("1");
+        gate_mutation(&ctx, "jarvy_discover_apply", "write ./jarvy.toml").unwrap();
+        drop(audit_log);
+
+        let audit_content = std::fs::read_to_string(audit_dir.join("audit.log"))
+            .unwrap_or_default();
+        // Each entry is a single JSON line. Count `mcp_mutation` rows.
+        let mutation_count = audit_content
+            .lines()
+            .filter(|l| l.contains("\"action\":\"mcp_mutation\""))
+            .count();
+        assert_eq!(
+            mutation_count, 1,
+            "wizard-bypass must produce exactly ONE mcp_mutation audit \
+             entry (the pre-flight one). The old code double-logged. \
+             Audit log contents:\n{audit_content}"
+        );
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn is_wizard_session_returns_false_when_env_absent() {
+        // Under `#[cfg(test)]` the check re-reads the env var (no
+        // LazyLock), so removing the var right before the check is
+        // observable. Sanity-guard against future refactors that
+        // accidentally re-add memoization to the test path.
+        unsafe { std::env::remove_var("JARVY_WIZARD_SESSION") };
+        assert!(!is_wizard_session(), "no env var → no bypass");
     }
 }

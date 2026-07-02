@@ -15,17 +15,5 @@ define_tool!(SKAFFOLD, {
     windows: { winget: "Google.ContainerTools.Skaffold" },
 });
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn skaffold_registration_shape() {
-        assert_eq!(SKAFFOLD.command, "skaffold");
-        assert_eq!(SKAFFOLD.macos.unwrap().brew, Some("skaffold"));
-        assert_eq!(
-            SKAFFOLD.windows.unwrap().winget,
-            Some("Google.ContainerTools.Skaffold")
-        );
-    }
-}
+// Registration-shape test deleted per Maint F3 — `define_tool!`
+// already type-checks the field assignments at compile time.

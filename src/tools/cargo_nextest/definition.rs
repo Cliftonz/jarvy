@@ -13,18 +13,14 @@
 //! established by `release-plz`.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallError, install_via_cargo_install};
 
+// Canonical publisher: nextest-rs / Rain — <https://crates.io/crates/cargo-nextest>.
+// The nextest-rs GitHub org holds the crate; a future ownership
+// transfer would need re-verification. As of 2026-07 the crates.io
+// owner has not changed since v0.9.
 fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
-    if !has("cargo") {
-        return Err(InstallError::Prereq(
-            "cargo not found — install the Rust toolchain first \
-             (add `rust = \"latest\"` under `[provisioner]` and \
-             re-run `jarvy setup`).",
-        ));
-    }
-    run("cargo", &["install", "--locked", "cargo-nextest"])?;
-    Ok(())
+    install_via_cargo_install("cargo-nextest")
 }
 
 define_tool!(CARGO_NEXTEST, {

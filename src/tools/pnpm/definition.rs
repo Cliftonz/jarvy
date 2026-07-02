@@ -14,14 +14,5 @@ define_tool!(PNPM, {
     windows: { winget: "pnpm.pnpm" },
 });
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pnpm_registration_shape() {
-        assert_eq!(PNPM.command, "pnpm");
-        assert_eq!(PNPM.macos.unwrap().brew, Some("pnpm"));
-        assert_eq!(PNPM.windows.unwrap().winget, Some("pnpm.pnpm"));
-    }
-}
+// Registration-shape test deleted per Maint F3 — `define_tool!`
+// already type-checks the field assignments at compile time.

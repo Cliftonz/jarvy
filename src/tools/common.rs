@@ -323,6 +323,40 @@ fn has_uncached(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Canonical error message emitted when a cargo-installed tool
+/// (`bacon`, `cargo-nextest`, `release-plz`, …) finds no `cargo` on
+/// PATH. Deduped from three per-tool `InstallError::Prereq(...)` sites
+/// that had drifted into slightly-different wordings; centralising
+/// them here means a future edit to the hint (say, adding a `rustup`
+/// install pointer) lands once, not three-plus times.
+pub const RUST_TOOLCHAIN_MISSING_HINT: &str =
+    "cargo not found — install the Rust toolchain first \
+     (add `rust = \"latest\"` under `[provisioner]` and re-run `jarvy setup`).";
+
+/// `cargo install --locked <crate>`. Shared install path for Rust-
+/// native CLIs that ship no first-party PM packaging (`bacon`,
+/// `cargo-nextest`, `release-plz`, …).
+///
+/// - `--locked` forces cargo to use the crate's committed `Cargo.lock`
+///   so the produced binary is reproducible against upstream CI. Drop
+///   the flag and cargo re-resolves the entire dep graph, defeating
+///   the supply-chain guarantee.
+/// - Depends on `cargo` being on PATH; the canonical `rust` tool
+///   under `[provisioner]` is the intended dependency (declared via
+///   `depends_on: &["rust"]` on each tool that uses this helper).
+///
+/// Uniform error surface: `Err(InstallError::Prereq)` when cargo is
+/// missing, with the shared `RUST_TOOLCHAIN_MISSING_HINT` message, so
+/// telemetry `error_kind = "prereq_missing"` groups these failures
+/// with any other cargo-dependent tool that adopts the helper later.
+pub fn install_via_cargo_install(crate_name: &'static str) -> Result<(), InstallError> {
+    if !has("cargo") {
+        return Err(InstallError::Prereq(RUST_TOOLCHAIN_MISSING_HINT));
+    }
+    run("cargo", &["install", "--locked", crate_name])?;
+    Ok(())
+}
+
 pub fn has(cmd: &str) -> bool {
     if let Ok(read) = has_cache().read() {
         if let Some(&hit) = read.get(cmd) {
@@ -545,6 +579,40 @@ mod install_error_kind_tests {
             stderr: "Error: formula not found".to_string(),
         };
         assert_eq!(e.kind(), "install_command_failed");
+    }
+
+    /// Uniform error message + classification when cargo is missing.
+    /// Pinned so the three Rust-native cargo-install tools (bacon,
+    /// cargo-nextest, release-plz) — plus any new tool that adopts
+    /// the helper — surface an identical, telemetry-groupable
+    /// prereq-missing error. Prior to the extraction each tool had a
+    /// slightly-different wording that broke `error_kind` grouping.
+    #[test]
+    #[serial_test::serial]
+    #[allow(unsafe_code)]
+    fn install_via_cargo_install_prereq_when_cargo_absent() {
+        // PATH manipulation is process-global — serialise with other
+        // env-sensitive tests. Restore on scope exit via RAII.
+        struct PathGuard(Option<std::ffi::OsString>);
+        impl Drop for PathGuard {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(orig) => unsafe { std::env::set_var("PATH", orig) },
+                    None => unsafe { std::env::remove_var("PATH") },
+                }
+            }
+        }
+        let _guard = PathGuard(std::env::var_os("PATH"));
+        unsafe { std::env::set_var("PATH", "") };
+        let e = install_via_cargo_install("bacon").expect_err(
+            "cargo absent → must Err(Prereq)",
+        );
+        assert_eq!(e.kind(), "prereq_missing");
+        assert_eq!(
+            e.to_string(),
+            format!("prerequisite missing: {RUST_TOOLCHAIN_MISSING_HINT}"),
+            "Prereq message must be the canonical hint"
+        );
     }
 }
 

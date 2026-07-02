@@ -57,6 +57,42 @@ pub struct VersionSource {
     pub pattern: Option<String>,
 }
 
+/// Bucket a detected tool falls into. Used only for reporting +
+/// telemetry (the `discover.applied` event's `detections_by_rule`
+/// field, the `--format pretty` output's category grouping). The
+/// value has no runtime effect on install behavior.
+///
+/// # Rubric — pick ONE
+///
+/// - **`Runtime`** — a language interpreter, compiler, or VM. Examples:
+///   `rust`, `node`, `python`, `go`, `php`, `deno`, `julia`, `elixir`,
+///   `haskell`, `zig`, `crystal`. If removing the tool means the
+///   project's source code stops running, it's `Runtime`.
+/// - **`Build`** — produces artifacts (binaries, packages, container
+///   images) but is not itself required to interpret the source.
+///   Examples: `cmake`, `bazelisk`, `composer`, `pnpm`, `yarn`, `bun`,
+///   `luarocks`, `just`, `make`. Package managers count here because
+///   their output — the installed dep graph — is the build artifact
+///   the runtime consumes.
+/// - **`Dev`** — human-in-the-loop developer workflow tooling. Not
+///   required to build or run the code, but improves the developer's
+///   productivity. Examples: `git`, `gh`, `vscode`, `pre-commit`,
+///   `release-plz`, `bacon`, `cargo-nextest`, `skaffold` (the dev
+///   inner-loop for k8s), `infisical` (secret injection during dev).
+/// - **`Ops`** — production lifecycle tools. Examples: `kubectl`,
+///   `helm`, `docker` (production runtime, not a build tool),
+///   `terraform`, `opentofu`. If the tool is the one an SRE runs
+///   against production, it's `Ops`.
+///
+/// # Ambiguity resolution
+///
+/// - **skaffold** — inner dev loop for Kubernetes. `Dev`, not `Ops`,
+///   despite the k8s association: the operator only ever runs it
+///   against a dev cluster, not prod.
+/// - **release-plz** — release automation, not a build tool. `Dev`.
+/// - **docker** — production runtime + local dev, but every Dockerfile
+///   in a project is compile-once produce-artifact. Categorised `Ops`
+///   because the artifact runs in prod.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolCategory {
@@ -155,13 +191,27 @@ fn rule_match_source(project_dir: &Path, rule: &DetectionRule) -> Option<String>
 
 /// Read at most `cap` bytes of `path` and return as a UTF-8 string.
 /// Lossy decoding so a stray non-UTF8 byte doesn't kill the scan.
+///
+/// Reuses a thread-local `Vec<u8>` buffer across calls so a discover
+/// pass with N FileContaining rules doesn't allocate + zero-fill N
+/// fresh 4KB buffers. The buffer grows to the largest observed `cap`
+/// and stays there — bounded by `MAX_CONTAINING_BYTES` so it can't
+/// grow unbounded from a poisoned custom rule.
 fn read_bounded(path: &Path, cap: usize) -> std::io::Result<String> {
     use std::io::Read;
+    thread_local! {
+        static BUF: std::cell::RefCell<Vec<u8>> =
+            std::cell::RefCell::new(Vec::with_capacity(MAX_CONTAINING_BYTES));
+    }
     let mut file = std::fs::File::open(path)?;
-    let mut buf = vec![0u8; cap];
-    let n = file.read(&mut buf)?;
-    buf.truncate(n);
-    Ok(String::from_utf8_lossy(&buf).into_owned())
+    BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        buf.clear();
+        buf.resize(cap, 0);
+        let n = file.read(&mut buf[..])?;
+        buf.truncate(n);
+        Ok(String::from_utf8_lossy(&buf).into_owned())
+    })
 }
 
 /// Accept only ASCII-graphic + space — every other byte (newline,
@@ -668,6 +718,11 @@ fn build_default_rules() -> Vec<DetectionRule> {
         // also implies Kubernetes tooling is expected (kubectl, helm,
         // etc.) — but the `kubectl` rule below covers that from its
         // own markers, so we don't double-emit here.
+        //
+        // Categorised `Dev`, not `Ops` (per the `ToolCategory` rubric):
+        // Skaffold is the inner-dev-loop CLI operators run against
+        // dev clusters, not against production. `kubectl` / `helm` /
+        // `terraform` — those are `Ops`.
         DetectionRule {
             name: "skaffold".into(),
             detect: vec![DetectionPattern::File {
@@ -675,7 +730,7 @@ fn build_default_rules() -> Vec<DetectionRule> {
             }],
             version_from: None,
             suggests: vec![],
-            category: ToolCategory::Ops,
+            category: ToolCategory::Dev,
         },
         // Bazelisk (Bazel launcher). Bazel projects always ship at
         // least one of these markers at the repo root: `WORKSPACE` /

@@ -14,14 +14,5 @@ define_tool!(YARN, {
     windows: { winget: "Yarn.Yarn" },
 });
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn yarn_registration_shape() {
-        assert_eq!(YARN.command, "yarn");
-        assert_eq!(YARN.macos.unwrap().brew, Some("yarn"));
-        assert_eq!(YARN.windows.unwrap().winget, Some("Yarn.Yarn"));
-    }
-}
+// Registration-shape test deleted per Maint F3 — `define_tool!`
+// already type-checks the field assignments at compile time.

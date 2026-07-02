@@ -66,6 +66,20 @@ pub struct DiscoverReport {
     /// when every detection mapped cleanly to a known tool.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uninstallable: Vec<UninstallableSuggestion>,
+    /// How many `recommended` companion entries were suppressed
+    /// because they were also present in `required` (their own
+    /// direct marker fired). Emitted on the `discover.applied`
+    /// telemetry event so operators can distinguish "rule bug never
+    /// generated the recommendation" from "recommendation dropped in
+    /// favour of the stronger required signal" without running with
+    /// debug logging. Skipped from JSON output when zero to keep the
+    /// common case tidy.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub recommended_dropped_dup: usize,
+}
+
+fn is_zero_usize(n: &usize) -> bool {
+    *n == 0
 }
 
 /// Scan `project_dir` and resolve detections to suggestions. Pure function
@@ -181,8 +195,34 @@ pub fn analyze_with(
     // `jarvy validate`. Required wins, so filter it out of
     // recommended. Concrete case: `release-plz.toml` present (required)
     // AND `.github/` present (release-plz is a companion of gh).
-    let required_names: HashSet<&str> = required.iter().map(|s| s.name.as_str()).collect();
-    recommended.retain(|s| !required_names.contains(s.name.as_str()));
+    //
+    // Linear scan over `required` rather than a HashSet: with `required`
+    // typically < 20 entries, `iter().any()` beats a HashSet build
+    // (RandomState init + bucket allocation) on wall time AND drops the
+    // allocation from the hot path (Perf F7).
+    //
+    // Emit a debug-level `discover.recommended_dropped` event for each
+    // suppressed recommendation so on-call answering "why isn't
+    // release-plz listed as a companion?" can distinguish "dropped in
+    // favour of a required entry" from "rule bug never generated it"
+    // (Obs F6). Also surface a `recommended_dropped_dup` count on the
+    // parent `discover.applied` event via the returned report's
+    // `recommended_dropped_dup` field.
+    let mut recommended_dropped_dup: usize = 0;
+    recommended.retain(|s| {
+        let is_dup = required.iter().any(|r| r.name == s.name);
+        if is_dup {
+            recommended_dropped_dup += 1;
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::debug!(
+                    event = "discover.recommended_dropped",
+                    name = %s.name,
+                    promoted_to = "required",
+                );
+            }
+        }
+        !is_dup
+    });
 
     DiscoverReport {
         detections,
@@ -190,6 +230,7 @@ pub fn analyze_with(
         recommended,
         already_configured: already_seen,
         uninstallable,
+        recommended_dropped_dup,
     }
 }
 
@@ -359,18 +400,9 @@ mod tests {
         assert!(names.contains(&"rust"), "got {names:?}");
     }
 
-    /// A `.git/` directory in the project root should surface `git`
-    /// as a required tool. Prevents regressions where a fresh
-    /// container / Codespaces devcontainer / CI runner without git
-    /// pre-installed silently drops the requirement.
-    #[test]
-    fn detects_git_from_dot_git_dir() {
-        let tmp = tempdir().unwrap();
-        fs::create_dir(tmp.path().join(".git")).unwrap();
-        let report = analyze(tmp.path(), &HashSet::new(), &registry_with(&["git"]));
-        let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"git"), "got {names:?}");
-    }
+    // `detects_git_from_dot_git_dir` was folded into the
+    // `dir_marker_rules_detect_from_canonical_dirs` data-driven table.
+    // See that test for the git / gh / vscode dir markers.
 
     /// A `.github/` directory (workflows, issue templates, CODEOWNERS)
     /// should surface `gh` as a required tool AND recommend
@@ -398,22 +430,10 @@ mod tests {
         );
     }
 
-    /// A `release-plz.toml` at the repo root triggers the release-plz
-    /// rule; even if the `.github/` heuristic surfaces release-plz as
-    /// a recommendation, the direct marker upgrades it to a required
-    /// entry.
-    #[test]
-    fn detects_release_plz_from_marker_toml() {
-        let tmp = tempdir().unwrap();
-        fs::write(tmp.path().join("release-plz.toml"), "").unwrap();
-        let report = analyze(
-            tmp.path(),
-            &HashSet::new(),
-            &registry_with(&["release-plz"]),
-        );
-        let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"release-plz"), "got {names:?}");
-    }
+    // `detects_release_plz_from_marker_toml` folded into the
+    // niche-languages file-marker table. The `.github/` +
+    // release-plz.toml overlap is separately covered by
+    // `required_drops_dup_from_recommended`.
 
     /// Niche language coverage: every language with a first-party
     /// jarvy tool must have a detection rule that resolves against
@@ -439,10 +459,19 @@ mod tests {
             ("cmake", "CMakeLists.txt"),
             ("skaffold", "skaffold.yaml"),
             ("bazelisk", "MODULE.bazel"),
+            // Additional file-marker rules previously covered only via
+            // e2e matrix rows — now pinned at the fast unit-test tier
+            // so removing e.g. `bun.lockb` from the bun rule trips
+            // immediately, not after the slow e2e run.
+            ("bun", "bun.lockb"),
+            ("infisical", ".infisical.json"),
+            ("release-plz", "release-plz.toml"),
+            ("composer", "composer.json"),
         ];
         let known = registry_with(&[
             "deno", "elixir", "erlang", "haskell", "crystal", "gleam", "lua", "luarocks",
-            "nim", "ocaml", "scala", "zig", "julia", "cmake", "skaffold", "bazelisk",
+            "nim", "ocaml", "scala", "zig", "julia", "cmake", "skaffold", "bazelisk", "bun",
+            "infisical", "release-plz", "composer", "php",
         ]);
         for (tool, marker) in cases {
             let tmp = tempdir().unwrap();
@@ -452,6 +481,67 @@ mod tests {
             assert!(
                 names.contains(tool),
                 "{tool} not required after writing {marker}; got required={names:?}"
+            );
+        }
+    }
+
+    /// Dir-marker detections — `.git`, `.github`, `.vscode` — kept in
+    /// their own table because `fs::create_dir` isn't `fs::write`.
+    /// Data-driven for the same reason as the file-marker table:
+    /// adding a new dir marker (e.g. `.svn`, `.hg`) is one row.
+    #[test]
+    fn dir_marker_rules_detect_from_canonical_dirs() {
+        let cases: &[(&str, &str)] = &[
+            ("git", ".git"),
+            ("gh", ".github"),
+            ("vscode", ".vscode"),
+        ];
+        let known = registry_with(&["git", "gh", "vscode", "release-plz"]);
+        for (tool, dir) in cases {
+            let tmp = tempdir().unwrap();
+            fs::create_dir(tmp.path().join(dir)).unwrap();
+            let report = analyze(tmp.path(), &HashSet::new(), &known);
+            let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+            assert!(
+                names.contains(tool),
+                "{tool} not required after creating {dir}/; got required={names:?}"
+            );
+        }
+    }
+
+    /// Regression guard: hostile repos could try to smuggle detection
+    /// triggers by planting marker files INSIDE `.git/` — a
+    /// `.git/package.json`, `.git/mix.exs`, etc. The current scanner
+    /// only checks the top-level directory (see
+    /// `find_first_match` — no recursion), so this is defense-in-depth
+    /// against a future refactor that walks into subdirs. If the scan
+    /// starts recursing without excluding `.git/`, this test fires.
+    #[test]
+    fn discover_does_not_walk_into_dot_git() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir(tmp.path().join(".git")).unwrap();
+        // Plant hostile "markers" inside .git/ that would trigger
+        // node / elixir rules if the scanner walked into them.
+        fs::write(tmp.path().join(".git/package.json"), "{}").unwrap();
+        fs::write(tmp.path().join(".git/mix.exs"), "").unwrap();
+        fs::write(tmp.path().join(".git/Cargo.toml"), "[package]\nname=\"x\"").unwrap();
+
+        let report = analyze(
+            tmp.path(),
+            &HashSet::new(),
+            &registry_with(&["git", "node", "elixir", "rust"]),
+        );
+        let names: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
+        // git rule fires on `.git/` — that's expected.
+        assert!(names.contains(&"git"), "got {names:?}");
+        // But NONE of the languages implied by files INSIDE .git/
+        // should surface — the scanner must not walk into it.
+        for hostile in ["node", "elixir", "rust"] {
+            assert!(
+                !names.contains(&hostile),
+                "hostile marker inside `.git/{hostile}-marker` must NOT \
+                 trigger `{hostile}` detection — scanner must stay at \
+                 project root. Got: {names:?}"
             );
         }
     }
@@ -594,30 +684,95 @@ mod tests {
     /// and the recommendation is dropped — otherwise the generated
     /// `[provisioner]` block writes the same key twice, producing a
     /// duplicate-key TOML parse error on the next discover / validate
-    /// pass. Concrete case: `release-plz.toml` (own marker) +
-    /// `.github/` (`gh` companion).
+    /// pass.
+    ///
+    /// Data-driven: each row is one overlap scenario. Adding a new
+    /// rule whose `suggests` overlaps with another rule's own-marker
+    /// is one row here plus a paired rules.rs entry — no per-scenario
+    /// `#[test]` boilerplate.
     #[test]
     fn required_drops_dup_from_recommended() {
-        let tmp = tempdir().unwrap();
-        fs::create_dir(tmp.path().join(".github")).unwrap();
-        fs::write(tmp.path().join("release-plz.toml"), "").unwrap();
-        let report = analyze(
-            tmp.path(),
-            &HashSet::new(),
-            &registry_with(&["gh", "release-plz"]),
-        );
-        let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
-        assert!(required.contains(&"release-plz"), "got required={required:?}");
-        let recommended: Vec<&str> = report
-            .recommended
-            .iter()
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(
-            !recommended.contains(&"release-plz"),
-            "release-plz was already required — recommended entry \
-             would produce a duplicate TOML key; got recommended={recommended:?}"
-        );
+        struct DedupCase {
+            /// Files to `touch` in the fixture root.
+            markers: &'static [&'static str],
+            /// Dirs to `create_dir` in the fixture root.
+            dirs: &'static [&'static str],
+            /// Tool that MUST land in `required` AND MUST NOT land in
+            /// `recommended` (would double-write in `[provisioner]`).
+            tool: &'static str,
+            /// Human-readable why-does-this-overlap explanation for
+            /// failure output.
+            why: &'static str,
+        }
+
+        let cases: &[DedupCase] = &[
+            DedupCase {
+                markers: &["release-plz.toml"],
+                dirs: &[".github"],
+                tool: "release-plz",
+                why: "own marker `release-plz.toml` + companion via `.github` \
+                      (gh suggests release-plz)",
+            },
+            // Node lockfile precision: if a future refactor makes the
+            // node rule suggest pnpm/yarn AGAIN, the presence of the
+            // matching lockfile would trigger dedup — pin the invariant.
+            DedupCase {
+                markers: &["package.json", "pnpm-lock.yaml"],
+                dirs: &[],
+                tool: "pnpm",
+                why: "own marker `pnpm-lock.yaml` — must dedup vs. \
+                      any future node-side suggest of pnpm",
+            },
+            DedupCase {
+                markers: &["package.json", "yarn.lock"],
+                dirs: &[],
+                tool: "yarn",
+                why: "own marker `yarn.lock` — same rationale for yarn",
+            },
+        ];
+
+        for case in cases {
+            let tmp = tempdir().unwrap();
+            for dir in case.dirs {
+                fs::create_dir(tmp.path().join(dir)).unwrap();
+            }
+            for marker in case.markers {
+                fs::write(tmp.path().join(marker), "").unwrap();
+            }
+            let report = analyze(
+                tmp.path(),
+                &HashSet::new(),
+                &registry_with(&[
+                    "gh",
+                    "release-plz",
+                    "node",
+                    "pnpm",
+                    "yarn",
+                    "bun",
+                ]),
+            );
+            let required: Vec<&str> =
+                report.required.iter().map(|s| s.name.as_str()).collect();
+            let recommended: Vec<&str> =
+                report.recommended.iter().map(|s| s.name.as_str()).collect();
+            assert!(
+                required.contains(&case.tool),
+                "{}: expected `{}` in required (own marker present); \
+                 got required={:?} recommended={:?}",
+                case.why,
+                case.tool,
+                required,
+                recommended
+            );
+            assert!(
+                !recommended.contains(&case.tool),
+                "{}: `{}` must be dedup'd out of recommended (would \
+                 duplicate the `[provisioner]` key); got recommended={:?}",
+                case.why,
+                case.tool,
+                recommended
+            );
+        }
     }
 
     #[test]

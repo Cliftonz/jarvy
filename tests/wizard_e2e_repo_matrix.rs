@@ -324,6 +324,47 @@ fn assert_shape(shape: &RepoShape) {
         );
     }
 
+    // `jarvy validate` must accept the discover-emitted config.
+    // `toml::Table::parse` alone accepts any well-formed TOML, but
+    // `jarvy validate` runs the `validate_package_name` /
+    // `validate_package_version` guardrails, the `TOP_LEVEL_SECTIONS`
+    // schema check, and the remote-config trust-boundary logic — much
+    // stronger evidence that a regression didn't sneak in a name with
+    // a control byte, a mis-aliased dash/underscore, or a version
+    // string that fails our sanitisation.
+    //
+    // Tolerate advisory warnings (exit 1) as long as `valid=true`.
+    // The polyglot Node+PHP+Rust+Go shape emits a "node requires nvm"
+    // warning by design — that's advisory guidance, not a hard error;
+    // failing the assertion would gate CI on an intentional warning.
+    // Only `error_count > 0` (exit 2) is a real regression signal.
+    let mut validate = jarvy(home.path(), project.path());
+    validate.args(["validate", "--format", "json"]);
+    let output = validate.output().expect("validate must spawn");
+    let validate_stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_ne!(
+        output.status.code(),
+        Some(2),
+        "[{}] jarvy validate returned CONFIG_ERROR (exit 2) — discover \
+         emitted a config that fails schema validation. stdout:\n{validate_stdout}",
+        shape.name
+    );
+    let validate_json: serde_json::Value = serde_json::from_str(validate_stdout.trim())
+        .unwrap_or_else(|e| {
+            panic!("[{}] jarvy validate must emit JSON: {e}", shape.name)
+        });
+    assert_eq!(
+        validate_json["valid"], true,
+        "[{}] jarvy validate must report valid=true; got: {validate_json}",
+        shape.name
+    );
+    assert_eq!(
+        validate_json["error_count"],
+        serde_json::json!(0),
+        "[{}] validate error_count must be zero (warnings OK); got: {validate_json}",
+        shape.name
+    );
+
     // Idempotence — a second apply must produce byte-identical output.
     // Matches the contract the SKILL.md pins for wizard reruns.
     let bytes_before = std::fs::read(&jarvy_toml).unwrap();
@@ -336,6 +377,58 @@ fn assert_shape(shape: &RepoShape) {
         "[{}] second apply must be a byte-for-byte no-op",
         shape.name
     );
+}
+
+/// Negative shape: an empty repo (no language markers, no infra
+/// markers) must produce a report with zero required tools and — per
+/// the discover apply logic — no jarvy.toml write, exit 0. Guards
+/// against a regression where a spurious catch-all rule (or a walk
+/// that leaks into `.git/` / vendored deps) surfaces detections in
+/// a truly-empty project. Also validates that the wizard's "step 2 —
+/// stop if project is already configured" no-op branch behaves
+/// correctly when the plan is empty.
+#[test]
+fn wizard_discover_over_empty_repo_writes_nothing() {
+    let home = TempDir::new().unwrap();
+    let project = TempDir::new().unwrap();
+    // Deliberately no markers, no dirs, no `.git`.
+
+    let mut preview = jarvy(home.path(), project.path());
+    preview.args(["discover", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(
+        &preview.assert().success().get_output().stdout.clone(),
+    )
+    .to_string();
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("preview must emit JSON");
+    let required = json["required"].as_array().expect("required array");
+    assert!(
+        required.is_empty(),
+        "empty repo must have zero required tools; got {required:?}"
+    );
+
+    // Apply against an empty repo — behavior is either "no file written"
+    // or "file written but empty [provisioner]". Either is acceptable
+    // per the current UX; assert only that the exit is clean and, if
+    // the file does exist, it round-trips through TOML.
+    let mut apply = jarvy(home.path(), project.path());
+    apply.args(["discover", "--apply", "--format", "json"]);
+    apply.assert().success();
+    let jarvy_toml = project.path().join("jarvy.toml");
+    if jarvy_toml.exists() {
+        let text = std::fs::read_to_string(&jarvy_toml).unwrap();
+        let parsed: toml::Table = text
+            .parse()
+            .expect("if written, jarvy.toml must round-trip through TOML");
+        let provisioner_empty = parsed
+            .get("provisioner")
+            .and_then(|v| v.as_table())
+            .is_none_or(|t| t.is_empty());
+        assert!(
+            provisioner_empty,
+            "empty repo apply must write no [provisioner] entries; got:\n{text}"
+        );
+    }
 }
 
 #[test]

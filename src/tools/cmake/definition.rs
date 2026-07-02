@@ -16,14 +16,5 @@ define_tool!(CMAKE, {
     bsd: { pkg: "cmake" },
 });
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cmake_registration_shape() {
-        assert_eq!(CMAKE.command, "cmake");
-        assert_eq!(CMAKE.macos.unwrap().brew, Some("cmake"));
-        assert_eq!(CMAKE.windows.unwrap().winget, Some("Kitware.CMake"));
-    }
-}
+// Registration-shape test deleted per Maint F3 — `define_tool!`
+// already type-checks the field assignments at compile time.

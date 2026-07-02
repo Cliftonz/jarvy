@@ -18,14 +18,10 @@ define_tool!(BAZELISK, {
     windows: { winget: "Bazel.Bazelisk" },
 });
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bazelisk_registration_shape() {
-        assert_eq!(BAZELISK.command, "bazelisk");
-        assert_eq!(BAZELISK.macos.unwrap().brew, Some("bazelisk"));
-        assert_eq!(BAZELISK.windows.unwrap().winget, Some("Bazel.Bazelisk"));
-    }
-}
+// Per the maintainability audit: a `bazelisk_registration_shape` test
+// that re-asserts `TOOL.command == "bazelisk"`, `TOOL.macos.brew ==
+// Some("bazelisk")`, etc. is a macro-tautology — the `define_tool!`
+// invocation above already type-checks those field assignments at
+// compile time. Deleted rather than extracted into a shared helper
+// (Maint F3): if the macro expansion regresses, the whole build
+// fails at type-check, not at test-time.

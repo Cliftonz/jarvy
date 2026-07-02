@@ -211,11 +211,36 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
         return 0;
     }
 
+    // Stat `jarvy.toml` before + after the spawn so
+    // `wizard.headless_exit` can distinguish silent-success paths:
+    //   - agent honored the "already configured" step-2 no-op → file unchanged
+    //   - agent completed the playbook → file modified
+    //   - agent crashed mid-call → file unchanged, exit non-zero
+    //   - agent misread the plan → file unchanged, exit zero (bug signal)
+    // Without these fields, on-call debugging "why did the wizard
+    // exit 0 without writing jarvy.toml?" has literally no signal to
+    // correlate against (Obs F3).
+    let jarvy_toml_path = std::path::PathBuf::from(&opts.config_file);
+    let before_state = stat_jarvy_toml(&jarvy_toml_path);
+
+    // `mcp_preapproval` records what allowlist scope was passed to
+    // the child agent's CLI — mirrors the actual argv, not the docs.
+    // CLAUDE.md event taxonomy for `wizard.headless_spawned` was
+    // updated as part of this fix: `cmd_argv0` alone is no longer
+    // sufficient once we silently add `--allowedTools`.
+    let mcp_preapproval = if agent == crate::agents::Agent::ClaudeCode {
+        "mcp__jarvy"
+    } else {
+        ""
+    };
+
     if crate::observability::telemetry_gate::is_enabled() {
         tracing::info!(
             event = "wizard.headless_spawned",
             agent = agent.slug(),
             cmd_argv0 = cli_command,
+            mcp_preapproval = mcp_preapproval,
+            wizard_session_env = true,
         );
     }
     let start = std::time::Instant::now();
@@ -234,15 +259,86 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
         }
     };
     let wall_ms = start.elapsed().as_millis() as u64;
+
+    let after_state = stat_jarvy_toml(&jarvy_toml_path);
+    let (jarvy_toml_before, jarvy_toml_after, terminal_state) =
+        classify_headless_outcome(&before_state, &after_state, exit_status.code());
+
     if crate::observability::telemetry_gate::is_enabled() {
         tracing::info!(
             event = "wizard.headless_exit",
             agent = agent.slug(),
             exit_code = exit_status.code().unwrap_or(-1),
             wall_ms,
+            jarvy_toml_before = jarvy_toml_before,
+            jarvy_toml_after = jarvy_toml_after,
+            terminal_state = terminal_state,
         );
     }
     exit_status.code().unwrap_or(error_codes::CONFIG_ERROR)
+}
+
+/// Snapshot of `jarvy.toml` state used to classify wizard outcomes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum JarvyTomlSnapshot {
+    /// File didn't exist at the time of stat.
+    Absent,
+    /// File exists; carry byte length + last-modified secs as a cheap
+    /// fingerprint. `sha256` would be more precise but is overkill for
+    /// distinguishing "file wasn't touched" from "file was rewritten".
+    Present { bytes: u64, mtime_secs: i64 },
+}
+
+fn stat_jarvy_toml(path: &std::path::Path) -> JarvyTomlSnapshot {
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            let mtime_secs = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            JarvyTomlSnapshot::Present {
+                bytes: meta.len(),
+                mtime_secs,
+            }
+        }
+        Err(_) => JarvyTomlSnapshot::Absent,
+    }
+}
+
+fn classify_headless_outcome(
+    before: &JarvyTomlSnapshot,
+    after: &JarvyTomlSnapshot,
+    exit_code: Option<i32>,
+) -> (&'static str, &'static str, &'static str) {
+    let before_str = match before {
+        JarvyTomlSnapshot::Absent => "absent",
+        JarvyTomlSnapshot::Present { .. } => "present",
+    };
+    let after_str = match (before, after) {
+        (_, JarvyTomlSnapshot::Absent) => "absent",
+        (JarvyTomlSnapshot::Absent, JarvyTomlSnapshot::Present { .. }) => "created",
+        (a, b) if a == b => "unchanged",
+        _ => "modified",
+    };
+    let terminal_state = match (before, after, exit_code) {
+        // Playbook wrote/modified jarvy.toml AND exited cleanly →
+        // typical happy path.
+        (_, JarvyTomlSnapshot::Present { .. }, Some(0))
+            if !matches!((before, after), (a, b) if a == b) =>
+        {
+            "playbook_completed"
+        }
+        // File unchanged + clean exit → step-2 no-op branch of the
+        // playbook (project already configured).
+        (a, b, Some(0)) if a == b => "noop_already_configured",
+        // File unchanged + non-zero exit → agent errored before
+        // touching state (recoverable, but on-call worth-a-look).
+        (a, b, code) if a == b && code != Some(0) => "early_exit",
+        _ => "unknown",
+    };
+    (before_str, after_str, terminal_state)
 }
 
 /// Refuse with a structured advisory. Telemetry-gated. Returns
