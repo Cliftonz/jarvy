@@ -10,7 +10,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use super::scanner::find_first_match;
 use super::version::extract_version;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,10 +117,17 @@ pub struct Detection {
 /// Walk every rule against `project_dir` and return one `Detection` per
 /// matched rule. Stable iteration order matches `rules` for
 /// deterministic output.
+///
+/// Perf: builds a `RootIndex` once at the top of the pass so N `File`/
+/// glob patterns share one `read_dir` syscall + one sort, instead of
+/// N syscalls + N sorts. On a fixture with 100 root files and 20+
+/// rules that's the difference between a few ms and a few tens of ms
+/// under `--watch` filesystem-event bursts.
 pub fn run(project_dir: &Path, rules: &[DetectionRule]) -> Vec<Detection> {
+    let index = super::scanner::RootIndex::build(project_dir);
     let mut out = Vec::new();
     for rule in rules {
-        if let Some(matched_source) = rule_match_source(project_dir, rule) {
+        if let Some(matched_source) = rule_match_source(project_dir, &index, rule) {
             let version = rule
                 .version_from
                 .as_ref()
@@ -150,11 +156,15 @@ pub fn run(project_dir: &Path, rules: &[DetectionRule]) -> Vec<Detection> {
 /// printable ASCII without quotes/backslashes so a hostile filename
 /// like `x.tf\n[packages]\nallow_remote = true\n# .tf` can't inject
 /// a TOML section through the rendered comment (review item P0 #2).
-fn rule_match_source(project_dir: &Path, rule: &DetectionRule) -> Option<String> {
+fn rule_match_source(
+    project_dir: &Path,
+    index: &super::scanner::RootIndex,
+    rule: &DetectionRule,
+) -> Option<String> {
     for pattern in &rule.detect {
         match pattern {
             DetectionPattern::File { file } => {
-                if let Some(p) = find_first_match(project_dir, file) {
+                if let Some(p) = index.find_first_match(file) {
                     let name = p.file_name()?.to_string_lossy().into_owned();
                     if let Some(safe) = sanitize_source(&name) {
                         return Some(safe);
@@ -173,7 +183,7 @@ fn rule_match_source(project_dir: &Path, rule: &DetectionRule) -> Option<String>
                 }
             }
             DetectionPattern::FileContaining { file, containing } => {
-                if let Some(p) = find_first_match(project_dir, file) {
+                if let Some(p) = index.find_first_match(file) {
                     if let Ok(content) = read_bounded(&p, MAX_CONTAINING_BYTES) {
                         if content.contains(containing) {
                             let name = p.file_name()?.to_string_lossy().into_owned();
@@ -1038,7 +1048,7 @@ mod tests {
             category: ToolCategory::Ops,
         };
         // Source MUST be None (no fallback to partial sanitization).
-        assert!(rule_match_source(tmp.path(), &rule).is_none());
+        assert!(rule_match_source(tmp.path(), &super::super::scanner::RootIndex::build(tmp.path()), &rule).is_none());
     }
 
     #[test]
@@ -1055,7 +1065,7 @@ mod tests {
             category: ToolCategory::Ops,
         };
         assert_eq!(
-            rule_match_source(tmp.path(), &rule).as_deref(),
+            rule_match_source(tmp.path(), &super::super::scanner::RootIndex::build(tmp.path()), &rule).as_deref(),
             Some("main.tf")
         );
     }

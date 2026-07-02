@@ -24,3 +24,60 @@ fn tools_matrix_is_registered_and_sorted() {
         "registered tool names should be sorted deterministically"
     );
 }
+
+/// The 10 tools added in the wizard/polyglot commit-pair must survive
+/// registration into `tools::register_all()`. A future refactor that
+/// splits `mod.rs` or gates a tool behind a `#[cfg]` flag would
+/// silently drop it — this test names each one so the failure points
+/// at the specific missing tool, not a bulk "tools_matrix broken"
+/// message.
+///
+/// Complements the per-tool `_registration_shape` tests that were
+/// deleted as macro-tautologies: those re-asserted the `define_tool!`
+/// field assignments (already type-checked at compile time), whereas
+/// this test asserts the registration side-effect actually landed.
+#[test]
+fn new_polyglot_tools_are_registered() {
+    jarvy::tools::register_all();
+    let names = jarvy::tools::registered_tool_names();
+    for tool in [
+        "bacon",
+        "bazelisk",
+        "cargo_nextest",
+        "cmake",
+        "composer",
+        "infisical",
+        "pnpm",
+        "release_plz",
+        "skaffold",
+        "yarn",
+    ] {
+        assert!(
+            names.iter().any(|n| n == tool),
+            "tool `{tool}` must be in the registered set — did `mod.rs` \
+             drop the `pub mod {tool};` line? got: {names:?}"
+        );
+    }
+}
+
+/// The dash/underscore alias resolution in `tools::registry::get_tool()`
+/// must find every new tool whose canonical form uses an underscore
+/// (Rust identifiers can't contain dashes). Users typing the natural
+/// `cargo-nextest = "latest"` in `jarvy.toml` must resolve to the
+/// underscore-keyed `cargo_nextest` handler.
+#[test]
+fn dash_form_tool_names_resolve_via_aliasing() {
+    jarvy::tools::register_all();
+    for (dash, expected_underscore) in [
+        ("cargo-nextest", "cargo_nextest"),
+        ("release-plz", "release_plz"),
+    ] {
+        assert!(
+            jarvy::tools::get_tool(dash).is_some(),
+            "get_tool(`{dash}`) should resolve via dash→underscore \
+             fallback to `{expected_underscore}` — the alias path in \
+             registry::get_tool() covers this. If this test fails, the \
+             alias code was removed or the tool was renamed."
+        );
+    }
+}
