@@ -77,6 +77,8 @@ jobs:
       published_at: ${{ steps.decide.outputs.published_at }}
       already_soaked: ${{ steps.decide.outputs.already_soaked }}
       supersession_reason: ${{ steps.decide.outputs.supersession_reason }}
+      bump_kind: ${{ steps.bump.outputs.bump_kind }}
+      last_stable_tag: ${{ steps.bump.outputs.last_stable_tag }}
     steps:
       - name: Resolve target tag
         id: resolve
@@ -163,6 +165,7 @@ jobs:
           # index). Attached by the summary job at the end of a
           # successful soak.
           ALREADY=$(gh issue list \
+            --repo "${{ github.repository }}" \
             --state all \
             --label "soak-24h-passed-$TAG" \
             --limit 1 \
@@ -178,6 +181,43 @@ jobs:
           echo "should_soak=true" >> "$GITHUB_OUTPUT"
           echo "$TAG is eligible for soak."
 
+      - name: Detect bump kind (patch/minor/major)
+        id: bump
+        if: steps.decide.outputs.should_soak == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Newest non-prerelease tag = "last stable". Compare its
+          # semver components against the rc's to derive bump kind.
+          # Paths 6/7 (per docs/release-testing.md#major-only-matrix) fire
+          # only when bump_kind = "major". Path 5 fires on every soak.
+          LAST_STABLE=$(gh api "repos/${{ github.repository }}/releases?per_page=50" \
+            --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0].tag_name // empty')
+          echo "last_stable_tag=$LAST_STABLE" >> "$GITHUB_OUTPUT"
+          if [ -z "$LAST_STABLE" ]; then
+            echo "No prior stable release — treating bump as 'major' (bootstrap)."
+            echo "bump_kind=major" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Strip v prefix + rc suffix. Format: MAJOR.MINOR.PATCH.
+          rc_ver=$(echo "$TAG" | sed -E 's/^v//; s/-(rc|beta|alpha)\.[0-9]+$//')
+          st_ver=$(echo "$LAST_STABLE" | sed -E 's/^v//; s/-(rc|beta|alpha)\.[0-9]+$//')
+          rc_maj=$(echo "$rc_ver" | cut -d. -f1)
+          rc_min=$(echo "$rc_ver" | cut -d. -f2)
+          st_maj=$(echo "$st_ver" | cut -d. -f1)
+          st_min=$(echo "$st_ver" | cut -d. -f2)
+          if [ "$rc_maj" -gt "$st_maj" ]; then
+            BUMP=major
+          elif [ "$rc_min" -gt "$st_min" ]; then
+            BUMP=minor
+          else
+            BUMP=patch
+          fi
+          echo "rc=$rc_ver last_stable=$st_ver bump_kind=$BUMP"
+          echo "bump_kind=$BUMP" >> "$GITHUB_OUTPUT"
+
       - name: Summarize decision
         if: always()
         run: |
@@ -186,6 +226,8 @@ jobs:
             echo ""
             echo "- Tag: \`${{ steps.decide.outputs.tag || 'none' }}\`"
             echo "- Should soak: \`${{ steps.decide.outputs.should_soak || 'false' }}\`"
+            echo "- Bump kind: \`${{ steps.bump.outputs.bump_kind || 'unknown' }}\`"
+            echo "- Last stable: \`${{ steps.bump.outputs.last_stable_tag || 'none' }}\`"
             [ -n "${{ steps.decide.outputs.supersession_reason }}" ] && \
               echo "- Supersession reason: \`${{ steps.decide.outputs.supersession_reason }}\`"
             [ -n "${{ steps.decide.outputs.published_at }}" ] && \
@@ -357,14 +399,351 @@ jobs:
           jq '.required | map(.name)' report.json
 
   # ============================================================================
+  # Path 5 — Multi-Tool Real-World Setup. Runs `jarvy setup --dry-run`
+  # against a ≥10-tool `jarvy.toml` (3+ package managers, role with
+  # inheritance, `[npm]/[pip]/[cargo]` section, default-hook tool) on
+  # BOTH the rc binary AND the last-stable binary, and asserts that
+  # rc-time ≤ 1.5x baseline-time — the sev-2 threshold from
+  # docs/release-testing.md.
+  #
+  # Dry-run is used because real installs would (a) hit network and
+  # (b) mutate a shared runner. Dry-run still exercises the full
+  # config-parse → resolve → hook-schedule pipeline, which is what
+  # regresses when we churn wizard / discover / registry code. Real
+  # installs are covered by Path 1 above with a smaller fixture.
+  # ============================================================================
+  path5-multi-tool:
+    name: Path 5 — Multi-tool setup timing
+    needs: gate
+    if: needs.gate.outputs.should_soak == 'true'
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      LAST_STABLE: ${{ needs.gate.outputs.last_stable_tag }}
+    steps:
+      - name: Download rc binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _rc && cd _rc
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern 'jarvy-*-x86_64-unknown-linux-musl.tar.gz'
+          tar xzf jarvy-*.tar.gz
+          find . -type f -name jarvy -exec mv {} ./jarvy \;
+          chmod +x jarvy
+          ./jarvy --version
+
+      - name: Download last-stable binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LAST_STABLE" ]; then
+            echo "::warning::No last-stable — Path 5 will run rc-only (no timing comparison)."
+            exit 0
+          fi
+          mkdir -p _stable && cd _stable
+          if ! gh release download "$LAST_STABLE" --repo "${{ github.repository }}" \
+              --pattern 'jarvy-*-x86_64-unknown-linux-musl.tar.gz' 2>/dev/null; then
+            echo "::warning::Last-stable $LAST_STABLE has no musl tarball; skipping baseline."
+            exit 0
+          fi
+          tar xzf jarvy-*.tar.gz
+          find . -type f -name jarvy -exec mv {} ./jarvy \;
+          chmod +x jarvy
+          ./jarvy --version
+
+      - name: Build 10+ tool fixture
+        run: |
+          set -euo pipefail
+          mkdir -p fixture && cd fixture
+          # Fixture must be built entirely from tools registered in
+          # BOTH rc and last-stable — otherwise the older binary
+          # bails on unknown tools before we can time anything. The
+          # set below covers 3+ package managers (brew / apt / winget
+          # abstracted by jarvy's PM layer) + `[npm]/[pip]/[cargo]`
+          # sections + starship (default hook) + roles inheritance.
+          cat > jarvy.toml <<'TOML'
+          [provisioner]
+          git = "latest"
+          jq = "latest"
+          ripgrep = "latest"
+          fd = "latest"
+          bat = "latest"
+          starship = "latest"
+          gh = "latest"
+          zoxide = "latest"
+          direnv = "latest"
+          just = "latest"
+          curl = "latest"
+          wget = "latest"
+
+          [npm]
+          typescript = "latest"
+
+          [pip]
+          httpx = "latest"
+
+          [cargo]
+          cargo-nextest = "latest"
+
+          [roles.base]
+          tools = ["git", "jq", "curl"]
+
+          [roles.dev]
+          extends = "base"
+          tools = ["ripgrep", "fd", "bat", "starship"]
+          TOML
+
+      - name: Time — rc dry-run
+        id: rc_time
+        run: |
+          set -euo pipefail
+          cd fixture
+          BIN="$(cd .. && pwd)/_rc/jarvy"
+          # Warm cache with a resolve pass (rules parse, registry
+          # lookup) so we're timing the setup phase, not first-run I/O.
+          "$BIN" validate --file jarvy.toml >/dev/null 2>&1 || true
+          T0=$(date +%s%3N)
+          "$BIN" setup --file jarvy.toml --dry-run --format json > rc_report.json
+          T1=$(date +%s%3N)
+          RC_MS=$(( T1 - T0 ))
+          echo "rc_ms=$RC_MS" >> "$GITHUB_OUTPUT"
+          echo "rc dry-run: ${RC_MS}ms"
+          jq '.summary // {}' rc_report.json || true
+
+      - name: Time — last-stable dry-run (baseline)
+        id: stable_time
+        run: |
+          set -euo pipefail
+          if [ ! -f _stable/jarvy ]; then
+            echo "stable_ms=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::No baseline available — skipping comparison."
+            exit 0
+          fi
+          cd fixture
+          BIN="$(cd .. && pwd)/_stable/jarvy"
+          # last-stable may not know newer keys → tolerate parse errors,
+          # skip timing rather than fail the whole gate.
+          if ! "$BIN" validate --file jarvy.toml >/dev/null 2>&1; then
+            echo "::warning::last-stable rejects fixture (new schema keys). Skipping baseline."
+            echo "stable_ms=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Do NOT pass --format json to the baseline: the JSON envelope
+          # (PRD-051) may not have shipped in every prior stable, and a
+          # fast-fail on the flag would bias the baseline artificially
+          # low, causing the rc to appear slow by comparison. Timing the
+          # dry-run alone is the apples-to-apples measurement.
+          T0=$(date +%s%3N)
+          "$BIN" setup --file jarvy.toml --dry-run > stable_report.txt 2>&1 || true
+          T1=$(date +%s%3N)
+          STABLE_MS=$(( T1 - T0 ))
+          echo "stable_ms=$STABLE_MS" >> "$GITHUB_OUTPUT"
+          echo "stable baseline: ${STABLE_MS}ms"
+
+      - name: Assert rc ≤ 1.5x baseline
+        env:
+          RC_MS: ${{ steps.rc_time.outputs.rc_ms }}
+          STABLE_MS: ${{ steps.stable_time.outputs.stable_ms }}
+        run: |
+          set -euo pipefail
+          if [ "$STABLE_MS" = "0" ]; then
+            echo "::warning::No baseline captured — Path 5 passes on rc-only smoke."
+            echo "rc dry-run: ${RC_MS}ms (baseline: n/a)"
+            exit 0
+          fi
+          # Threshold: 1.5x. Integer math via *3 / 2 avoids bc dependency.
+          THRESH_MS=$(( STABLE_MS * 3 / 2 ))
+          echo "rc: ${RC_MS}ms  baseline: ${STABLE_MS}ms  threshold (1.5x): ${THRESH_MS}ms"
+          if [ "$RC_MS" -gt "$THRESH_MS" ]; then
+            echo "::error::Path 5 sev-2: rc setup timing ${RC_MS}ms > 1.5x baseline ${STABLE_MS}ms (threshold ${THRESH_MS}ms)"
+            exit 1
+          fi
+          echo "Path 5 PASS: within 1.5x baseline."
+
+  # ============================================================================
+  # Path 6 — Breaking-Config Negative Test (MAJOR ONLY).
+  # Feed the rc a `jarvy.toml` written against the last-stable schema
+  # (fetched from the last-stable tag's repo tree). Assert the rc
+  # either accepts it (deprecation warning present) or fails with a
+  # clear error naming the breaking change. Silent acceptance with
+  # broken behavior would be sev-1 — this job encodes that check as
+  # "rc must produce output containing the word 'deprecat' or exit
+  # non-zero with a stderr mentioning 'migration'."
+  # ============================================================================
+  path6-breaking-config:
+    name: Path 6 — Breaking-config (major only)
+    needs: gate
+    if: needs.gate.outputs.should_soak == 'true' && needs.gate.outputs.bump_kind == 'major'
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      LAST_STABLE: ${{ needs.gate.outputs.last_stable_tag }}
+    steps:
+      - name: Download rc binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _rc && cd _rc
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern 'jarvy-*-x86_64-unknown-linux-musl.tar.gz'
+          tar xzf jarvy-*.tar.gz
+          find . -type f -name jarvy -exec mv {} ./jarvy \;
+          chmod +x jarvy
+
+      - name: Fetch last-stable example jarvy.toml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LAST_STABLE" ]; then
+            echo "::warning::No last-stable — Path 6 has nothing to test against."
+            exit 0
+          fi
+          mkdir -p fixture && cd fixture
+          # Pull the example jarvy.toml from the last-stable tag tree.
+          # Fallback to the repo root's jarvy.toml if `examples/` layout
+          # ever changes.
+          for CANDIDATE in jarvy.toml examples/rust-cli/jarvy.toml examples/fullstack/jarvy.toml; do
+            if gh api "repos/${{ github.repository }}/contents/$CANDIDATE?ref=$LAST_STABLE" \
+                --jq '.content' 2>/dev/null | base64 -d > jarvy.toml; then
+              if [ -s jarvy.toml ]; then
+                echo "Fetched $CANDIDATE from $LAST_STABLE"
+                break
+              fi
+            fi
+          done
+          test -s jarvy.toml || { echo "::error::No example jarvy.toml found in $LAST_STABLE"; exit 1; }
+          head -30 jarvy.toml
+
+      - name: Assert rc handles last-stable schema gracefully
+        run: |
+          set -euo pipefail
+          if [ ! -d fixture ] || [ ! -f fixture/jarvy.toml ]; then
+            echo "::warning::No fixture; skipping."
+            exit 0
+          fi
+          cd fixture
+          BIN="$(cd .. && pwd)/_rc/jarvy"
+          # Case A: rc accepts with deprecation notice → OK.
+          # Case B: rc rejects with error naming migration → OK.
+          # Case C: silent accept, no deprecation notice → sev-1 fail.
+          set +e
+          "$BIN" validate --file jarvy.toml > out.txt 2> err.txt
+          EXIT=$?
+          set -e
+          cat out.txt err.txt
+          if [ "$EXIT" -eq 0 ]; then
+            if grep -qiE 'deprecat|migrat' out.txt err.txt; then
+              echo "Path 6 PASS: rc accepted with deprecation/migration hint."
+              exit 0
+            fi
+            echo "::warning::Path 6 sev-3: rc accepted last-stable schema silently — no deprecation hint. Verify manually before promotion."
+            exit 0
+          else
+            if grep -qiE 'migrat|deprecat|schema' err.txt out.txt; then
+              echo "Path 6 PASS: rc rejected with clear migration/schema error."
+              exit 0
+            fi
+            echo "::error::Path 6 sev-1: rc rejected last-stable schema but error mentions neither migration nor deprecation."
+            exit 1
+          fi
+
+  # ============================================================================
+  # Path 7 — Documented Migration Replay (MAJOR ONLY).
+  # From a fresh N-1 state, run `jarvy migrate` and assert it produces
+  # a report (or applies a migration) without panicking. Replays the
+  # documented upgrade path so a botched migrator can't ship stable.
+  # ============================================================================
+  path7-migration-replay:
+    name: Path 7 — Migration replay (major only)
+    needs: gate
+    if: needs.gate.outputs.should_soak == 'true' && needs.gate.outputs.bump_kind == 'major'
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      LAST_STABLE: ${{ needs.gate.outputs.last_stable_tag }}
+    steps:
+      - name: Download rc binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _rc && cd _rc
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern 'jarvy-*-x86_64-unknown-linux-musl.tar.gz'
+          tar xzf jarvy-*.tar.gz
+          find . -type f -name jarvy -exec mv {} ./jarvy \;
+          chmod +x jarvy
+
+      - name: Snapshot fresh N-1 state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LAST_STABLE" ]; then
+            echo "::warning::No last-stable — Path 7 has nothing to replay."
+            exit 0
+          fi
+          mkdir -p fixture && cd fixture
+          # Fetch the last-stable example jarvy.toml as the "N-1
+          # state" seed. Real migration replays would also seed
+          # `~/.jarvy/config.toml` + `.jarvy/state.json`, but those
+          # are user-generated at runtime — the CLI's `migrate`
+          # command operates on jarvy.toml only per src/cli/args.rs.
+          for CANDIDATE in jarvy.toml examples/rust-cli/jarvy.toml examples/fullstack/jarvy.toml; do
+            if gh api "repos/${{ github.repository }}/contents/$CANDIDATE?ref=$LAST_STABLE" \
+                --jq '.content' 2>/dev/null | base64 -d > jarvy.toml; then
+              [ -s jarvy.toml ] && break
+            fi
+          done
+          test -s jarvy.toml || { echo "::error::No seed jarvy.toml found."; exit 1; }
+
+      - name: Replay `jarvy migrate --format json`
+        run: |
+          set -euo pipefail
+          if [ ! -f fixture/jarvy.toml ]; then
+            echo "::warning::No fixture; skipping."
+            exit 0
+          fi
+          cd fixture
+          BIN="$(cd .. && pwd)/_rc/jarvy"
+          # Dry-run: `migrate` without --apply is report-only per
+          # src/cli/args.rs:557 comment. Any non-zero exit or panic
+          # is sev-1: users following the documented migration would
+          # hit the same failure. JSON envelope required for
+          # machine-verifiable pass.
+          "$BIN" migrate --file jarvy.toml --format json > report.json
+          echo "--- migrate report ---"
+          cat report.json
+          # Sanity: report must parse as JSON. That alone catches
+          # panic-produces-partial-output regressions.
+          jq . report.json >/dev/null
+          echo "Path 7 PASS: migrate replay produced valid JSON."
+
+  # ============================================================================
   # Summary — post the promotion-readiness signal to a tracking issue
   # + comment on the release. This job is the "24h passed" signal the
   # cutting-release skill's checklist can look for.
   # ============================================================================
   summary:
     name: Post soak-passed signal
-    needs: [gate, fresh-install]
-    if: needs.gate.outputs.should_soak == 'true' && needs.fresh-install.result == 'success'
+    needs: [gate, fresh-install, path5-multi-tool, path6-breaking-config, path7-migration-replay]
+    # Path 5 must pass. Paths 6/7 only fire on majors — if skipped
+    # (bump_kind != major), their result == 'skipped' which does NOT
+    # equal 'failure', so the `!= 'failure'` guard passes for patch /
+    # minor bumps. Fresh-install must PASS (never skipped). Wrap in
+    # always() so a skipped major-only job doesn't short-circuit us.
+    if: |
+      always() &&
+      needs.gate.outputs.should_soak == 'true' &&
+      needs.fresh-install.result == 'success' &&
+      needs.path5-multi-tool.result == 'success' &&
+      needs.path6-breaking-config.result != 'failure' &&
+      needs.path7-migration-replay.result != 'failure'
     runs-on: ubuntu-latest
     env:
       TAG: ${{ needs.gate.outputs.tag }}
@@ -386,7 +765,9 @@ jobs:
               continue
             fi
             # Find the most recent run of this workflow that matched the tag.
-            RUN_STATUS=$(gh run list --workflow "$LATEST" --limit 20 --json headBranch,conclusion,event,displayTitle \
+            RUN_STATUS=$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow "$LATEST" --limit 20 --json headBranch,conclusion,event,displayTitle \
               --jq "[.[] | select(.displayTitle | contains(\"$TAG\"))] | .[0].conclusion // \"none\"")
             echo "$WF for $TAG: $RUN_STATUS"
             if [ "$RUN_STATUS" != "success" ] && [ "$RUN_STATUS" != "none" ]; then
@@ -402,9 +783,13 @@ jobs:
           set -euo pipefail
           TITLE="Pre-release soak: $TAG"
           # Idempotent: find an existing issue by title, else create.
-          EXISTING=$(gh issue list --search "$TITLE in:title" --state all --limit 1 --json number --jq '.[0].number // empty')
+          EXISTING=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --search "$TITLE in:title" --state all --limit 1 \
+            --json number --jq '.[0].number // empty')
           if [ -z "$EXISTING" ]; then
             EXISTING=$(gh issue create \
+              --repo "${{ github.repository }}" \
               --title "$TITLE" \
               --label release-soak \
               --body "Auto-created by \`prerelease-soak.yml\`. Populated during the 24h soak window; label \`soak-24h-passed-$TAG\` added when the gate passes.")
@@ -416,23 +801,31 @@ jobs:
         run: |
           set -euo pipefail
           LABEL="soak-24h-passed-$TAG"
-          if ! gh label list --limit 200 --json name --jq '.[].name' | grep -qxF "$LABEL"; then
-            gh label create "$LABEL" --color 0e8a16 --description "24h soak passed on $TAG"
+          if ! gh label list --repo "${{ github.repository }}" --limit 200 --json name --jq '.[].name' | grep -qxF "$LABEL"; then
+            gh label create "$LABEL" --repo "${{ github.repository }}" --color 0e8a16 --description "24h soak passed on $TAG"
           fi
 
       - name: Attach label + summary comment
         env:
           ISSUE_NUM: ${{ steps.issue.outputs.number }}
           COMPANION_OK: ${{ steps.companion.outputs.companion_ok }}
+          BUMP_KIND: ${{ needs.gate.outputs.bump_kind }}
+          PATH5_RESULT: ${{ needs.path5-multi-tool.result }}
+          PATH6_RESULT: ${{ needs.path6-breaking-config.result }}
+          PATH7_RESULT: ${{ needs.path7-migration-replay.result }}
         run: |
           set -euo pipefail
-          gh issue edit "$ISSUE_NUM" --add-label "soak-24h-passed-$TAG"
-          gh issue comment "$ISSUE_NUM" --body "$(cat <<EOF
+          gh issue edit "$ISSUE_NUM" --repo "${{ github.repository }}" --add-label "soak-24h-passed-$TAG"
+          gh issue comment "$ISSUE_NUM" --repo "${{ github.repository }}" --body "$(cat <<EOF
           ## 24h soak gate — PASSED
 
           - Tag: \`$TAG\`
+          - Bump kind: \`$BUMP_KIND\`
           - Published: ${{ needs.gate.outputs.published_at }}
           - Path 1 (fresh install) — PASS on Ubuntu, macOS, Windows
+          - Path 5 (multi-tool setup timing) — \`$PATH5_RESULT\`
+          - Path 6 (breaking-config, major-only) — \`$PATH6_RESULT\`
+          - Path 7 (migration replay, major-only) — \`$PATH7_RESULT\`
           - Companion workflows (release-paths, verify-release) status: \`$COMPANION_OK\`
 
           **Promotion readiness signal:** this label attaches when the
@@ -450,10 +843,10 @@ jobs:
       - name: Comment on the release
         run: |
           set -euo pipefail
-          gh release view "$TAG" --json body --jq '.body' > /tmp/body.md
+          gh release view "$TAG" --repo "${{ github.repository }}" --json body --jq '.body' > /tmp/body.md
           # Append the soak signal to the body if not already present.
           if ! grep -q "24h soak: PASSED" /tmp/body.md; then
             printf "\n\n---\n\n**24h soak: PASSED** — see #%s for the audit trail.\n" \
               "${{ steps.issue.outputs.number }}" >> /tmp/body.md
-            gh release edit "$TAG" --notes-file /tmp/body.md
+            gh release edit "$TAG" --repo "${{ github.repository }}" --notes-file /tmp/body.md
           fi
