@@ -90,7 +90,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["package.json", "yarn.lock"],
             dirs: &[],
             required: &["node", "yarn"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
         // Rust project on GitHub with release-plz automation. Pins
         // the .github/ + release-plz.toml + .git combo without
@@ -101,7 +102,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["Cargo.toml", "release-plz.toml"],
             dirs: &[".git", ".github"],
             required: &["rust", "git", "gh", "release-plz"],
-            recommended: &["bacon", "cargo-nextest"], min_warnings: 0,
+            recommended: &["bacon", "cargo-nextest"],
+            min_warnings: 0,
         },
         // Laravel PHP project — artisan + composer.json is the
         // canonical marker set. Verifies php + composer both required.
@@ -110,7 +112,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["composer.json", "composer.lock", "artisan"],
             dirs: &[],
             required: &["php", "composer"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
         // Bun-first Node project — bun.lockb elevates bun to required.
         RepoShape {
@@ -118,7 +121,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["package.json", "bun.lockb"],
             dirs: &[],
             required: &["node", "bun"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
         // BEAM ecosystem — Elixir + Gleam interop, both recommend
         // Erlang as a runtime companion. Guards the elixir + gleam
@@ -128,7 +132,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["mix.exs", "gleam.toml"],
             dirs: &[],
             required: &["elixir", "gleam"],
-            recommended: &["erlang"], min_warnings: 0,
+            recommended: &["erlang"],
+            min_warnings: 0,
         },
         // Haskell + Deno + Zig — three of the niche langs added in
         // the audit pass. Purely about "detected + required" wiring;
@@ -138,7 +143,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["cabal.project", "deno.json", "build.zig"],
             dirs: &[],
             required: &["haskell", "deno", "zig"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
         // OCaml + Nim + Crystal — another niche cluster.
         RepoShape {
@@ -146,7 +152,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["dune-project", "hello.nimble", "shard.yml"],
             dirs: &[],
             required: &["ocaml", "nim", "crystal"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
         // Bazel monorepo — MODULE.bazel (bzlmod) is the modern marker.
         RepoShape {
@@ -154,7 +161,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["MODULE.bazel", ".bazelversion"],
             dirs: &[],
             required: &["bazelisk"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
         // K8s-native project driven by Skaffold + Kustomize + Helm.
         // Verifies skaffold.yaml + k8s/ dir + Chart.yaml simultaneously.
@@ -163,7 +171,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["skaffold.yaml", "Chart.yaml"],
             dirs: &["k8s"],
             required: &["skaffold", "kubectl", "helm"],
-            recommended: &["kustomize", "k9s"], min_warnings: 0,
+            recommended: &["kustomize", "k9s"],
+            min_warnings: 0,
         },
         // C/C++ project with CMake + Docker.
         RepoShape {
@@ -171,7 +180,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["CMakeLists.txt", "Dockerfile"],
             dirs: &[],
             required: &["cmake", "docker"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
         // Python + Infisical + VSCode devcontainer. Verifies the
         // secret-manager + editor combo landing simultaneously.
@@ -180,7 +190,8 @@ fn matrix() -> Vec<RepoShape> {
             markers: &["pyproject.toml", ".infisical.json"],
             dirs: &[".vscode"],
             required: &["python", "infisical", "vscode"],
-            recommended: &[], min_warnings: 0,
+            recommended: &[],
+            min_warnings: 0,
         },
     ]
 }
@@ -234,15 +245,9 @@ fn assert_shape(shape: &RepoShape) {
     // separately catches drift between the two code paths.
     let mut preview = jarvy(home.path(), project.path());
     preview.args(["discover", "--format", "json"]);
-    let preview_stdout = String::from_utf8_lossy(
-        &preview
-            .assert()
-            .success()
-            .get_output()
-            .stdout
-            .clone(),
-    )
-    .to_string();
+    let preview_stdout =
+        String::from_utf8_lossy(&preview.assert().success().get_output().stdout.clone())
+            .to_string();
     let preview_json: serde_json::Value = serde_json::from_str(preview_stdout.trim())
         .unwrap_or_else(|e| panic!("[{}] preview must emit JSON: {e}", shape.name));
 
@@ -276,10 +281,8 @@ fn assert_shape(shape: &RepoShape) {
     // Apply — the wizard's `jarvy_discover_apply` MCP surface.
     let mut apply = jarvy(home.path(), project.path());
     apply.args(["discover", "--apply", "--format", "json"]);
-    let apply_stdout = String::from_utf8_lossy(
-        &apply.assert().success().get_output().stdout.clone(),
-    )
-    .to_string();
+    let apply_stdout =
+        String::from_utf8_lossy(&apply.assert().success().get_output().stdout.clone()).to_string();
     let apply_json: serde_json::Value = serde_json::from_str(apply_stdout.trim())
         .unwrap_or_else(|e| panic!("[{}] apply must emit JSON: {e}", shape.name));
     assert_eq!(
@@ -365,9 +368,7 @@ fn assert_shape(shape: &RepoShape) {
         shape.name
     );
     let validate_json: serde_json::Value = serde_json::from_str(validate_stdout.trim())
-        .unwrap_or_else(|e| {
-            panic!("[{}] jarvy validate must emit JSON: {e}", shape.name)
-        });
+        .unwrap_or_else(|e| panic!("[{}] jarvy validate must emit JSON: {e}", shape.name));
     assert_eq!(
         validate_json["valid"], true,
         "[{}] jarvy validate must report valid=true; got: {validate_json}",
@@ -424,10 +425,8 @@ fn wizard_discover_over_empty_repo_writes_nothing() {
 
     let mut preview = jarvy(home.path(), project.path());
     preview.args(["discover", "--format", "json"]);
-    let stdout = String::from_utf8_lossy(
-        &preview.assert().success().get_output().stdout.clone(),
-    )
-    .to_string();
+    let stdout = String::from_utf8_lossy(&preview.assert().success().get_output().stdout.clone())
+        .to_string();
     let json: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("preview must emit JSON");
     let required = json["required"].as_array().expect("required array");

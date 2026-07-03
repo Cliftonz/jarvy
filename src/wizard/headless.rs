@@ -200,10 +200,7 @@ fn send_prompt_to_child_stdin(
         // Perf F2: wrap in BufWriter so a 20 KiB prompt goes out in
         // one vectored write instead of PIPE_BUF-sized chunks (~4 KiB
         // on Linux). Capacity capped at 64 KiB to bound the buffer.
-        let mut buf = std::io::BufWriter::with_capacity(
-            prompt.len().clamp(4096, 64 * 1024),
-            stdin,
-        );
+        let mut buf = std::io::BufWriter::with_capacity(prompt.len().clamp(4096, 64 * 1024), stdin);
         buf.write_all(prompt.as_bytes())
             .map_err(|e| HeadlessError::StdinWrite {
                 cmd: cmd_label.to_string(),
@@ -379,7 +376,12 @@ mod tests {
         send_prompt_to_child_stdin(&mut child, &big, "cat")
             .expect("large-buffer write must succeed");
         let mut got = String::new();
-        child.stdout.take().unwrap().read_to_string(&mut got).unwrap();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut got)
+            .unwrap();
         let status = child.wait().unwrap();
         assert!(status.success());
         assert_eq!(got.len(), big.len(), "large prompt byte count must match");
@@ -399,8 +401,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("cat must spawn on Unix");
-        send_prompt_to_child_stdin(&mut child, "", "cat")
-            .expect("empty prompt must succeed");
+        send_prompt_to_child_stdin(&mut child, "", "cat").expect("empty prompt must succeed");
         let status = child.wait().expect("cat must exit on EOF");
         assert!(status.success(), "cat must exit cleanly on empty stdin");
     }

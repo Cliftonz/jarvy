@@ -63,10 +63,7 @@ impl MutationCtx<'_> {
 /// returns `Cow::Borrowed(&input)` — no allocation. The common case
 /// (well-behaved paths) pays only for the scan.
 fn sanitize_effect_summary(input: &str) -> std::borrow::Cow<'_, str> {
-    if input
-        .bytes()
-        .all(|b| b >= 0x20 && b != 0x7F)
-    {
+    if input.bytes().all(|b| b >= 0x20 && b != 0x7F) {
         return std::borrow::Cow::Borrowed(input);
     }
     let mut out = String::with_capacity(input.len());
@@ -134,11 +131,8 @@ pub fn gate_mutation(
     // action from `McpMutation` (which is emitted on completed
     // mutations only) so an audit query "what got applied?" isn't
     // polluted with requests that failed downstream. See Sec F1.
-    ctx.audit_log.log_mcp_mutation_requested(
-        ctx.client_name,
-        tool_name,
-        Some(effect_summary),
-    );
+    ctx.audit_log
+        .log_mcp_mutation_requested(ctx.client_name, tool_name, Some(effect_summary));
 
     // Reuse the install rate-limit bucket for any non-read MCP call.
     ctx.rate_limiter.check_install_limit().inspect_err(|_| {
@@ -196,8 +190,7 @@ pub fn gate_mutation(
         .unwrap_or(true);
     if is_wizard_session() && !client_unexpected {
         if crate::observability::telemetry_gate::is_enabled() {
-            let session_id = std::env::var("JARVY_WIZARD_SESSION_ID")
-                .unwrap_or_default();
+            let session_id = std::env::var("JARVY_WIZARD_SESSION_ID").unwrap_or_default();
             let client_name = ctx.client_name.unwrap_or("unknown");
             tracing::info!(
                 event = "mcp.mutation.wizard_bypass",
@@ -2186,12 +2179,7 @@ agents = ["claude-code"]
             // parallel writes; env mutation is safe under that
             // guarantee.
             unsafe { std::env::set_var("JARVY_HOME", home.path()) };
-            unsafe {
-                std::env::set_var(
-                    crate::wizard::session::SESSION_ID_ENV,
-                    &uuid,
-                )
-            };
+            unsafe { std::env::set_var(crate::wizard::session::SESSION_ID_ENV, &uuid) };
             let session = crate::wizard::session::WizardSessionGuard::activate(&uuid);
             Self {
                 _home: home,
@@ -2254,10 +2242,7 @@ agents = ["claude-code"]
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("JARVY_HOME", home.path());
-            std::env::set_var(
-                crate::wizard::session::SESSION_ID_ENV,
-                "orphaned-uuid",
-            );
+            std::env::set_var(crate::wizard::session::SESSION_ID_ENV, "orphaned-uuid");
         }
         let ctx = ctx_requiring_confirmation(&mut tc);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2345,10 +2330,7 @@ agents = ["claude-code"]
         std::fs::create_dir_all(&audit_dir).unwrap();
         let mut config = McpConfig::default();
         config.mcp.require_confirmation = true;
-        config.mcp.audit_log = audit_dir
-            .join("audit.log")
-            .to_string_lossy()
-            .into_owned();
+        config.mcp.audit_log = audit_dir.join("audit.log").to_string_lossy().into_owned();
         let rate_limiter = RateLimiter::new(&config);
         let audit_log = AuditLog::new(&config).expect("audit log must init");
         let ctx = MutationCtx {
@@ -2362,8 +2344,8 @@ agents = ["claude-code"]
         gate_mutation(&ctx, "jarvy_discover_apply", "write ./jarvy.toml").unwrap();
         drop(audit_log);
 
-        let audit_content = std::fs::read_to_string(audit_dir.join("audit.log"))
-            .unwrap_or_default();
+        let audit_content =
+            std::fs::read_to_string(audit_dir.join("audit.log")).unwrap_or_default();
         // Each entry is a single JSON line. Count `mcp_mutation` rows.
         let mutation_count = audit_content
             .lines()

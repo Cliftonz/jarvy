@@ -361,8 +361,8 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &session_id).unwrap();
         // Backdate the marker's mtime past the staleness window.
-        let old = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(MAX_TOKEN_AGE_SECS + 60);
+        let old =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(MAX_TOKEN_AGE_SECS + 60);
         filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(old))
             .expect("set_file_mtime must succeed on the temp file");
         unsafe { std::env::set_var(SESSION_ID_ENV, &session_id) };
@@ -396,13 +396,9 @@ mod tests {
         std::fs::write(&path, &session_id).unwrap();
         // Set mtime 24 hours in the future — no legitimate wizard
         // start produces this.
-        let far_future = std::time::SystemTime::now()
-            + std::time::Duration::from_secs(24 * 60 * 60);
-        filetime::set_file_mtime(
-            &path,
-            filetime::FileTime::from_system_time(far_future),
-        )
-        .unwrap();
+        let far_future =
+            std::time::SystemTime::now() + std::time::Duration::from_secs(24 * 60 * 60);
+        filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(far_future)).unwrap();
         unsafe { std::env::set_var(SESSION_ID_ENV, &session_id) };
         assert!(
             !is_active(),

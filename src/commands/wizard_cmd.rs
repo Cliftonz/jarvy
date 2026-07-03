@@ -268,20 +268,21 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
     }
 
     let start = std::time::Instant::now();
-    let exit_status: std::process::ExitStatus = match headless::run(agent, &prompt_body, &session_id) {
-        Ok(st) => st,
-        Err(e) => {
-            eprintln!("wizard: headless spawn failed: {e}");
-            if crate::observability::telemetry_gate::is_enabled() {
-                tracing::warn!(
-                    event = "wizard.refused",
-                    reason = "headless_spawn_failed",
-                    error = %e,
-                );
+    let exit_status: std::process::ExitStatus =
+        match headless::run(agent, &prompt_body, &session_id) {
+            Ok(st) => st,
+            Err(e) => {
+                eprintln!("wizard: headless spawn failed: {e}");
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "wizard.refused",
+                        reason = "headless_spawn_failed",
+                        error = %e,
+                    );
+                }
+                return error_codes::CONFIG_ERROR;
             }
-            return error_codes::CONFIG_ERROR;
-        }
-    };
+        };
     let wall_ms = start.elapsed().as_millis() as u64;
 
     let after_state = stat_jarvy_toml(&jarvy_toml_path);
@@ -362,9 +363,7 @@ fn classify_headless_outcome(
     let terminal_state = match (before, after, exit_code) {
         // Playbook wrote/modified jarvy.toml AND exited cleanly →
         // typical happy path.
-        (_, JarvyTomlSnapshot::Present { .. }, Some(0))
-            if !matches!((before, after), (a, b) if a == b) =>
-        {
+        (_, JarvyTomlSnapshot::Present { .. }, Some(0)) if !matches!((before, after), (a, b) if a == b) => {
             TERMINAL_STATE_PLAYBOOK_COMPLETED
         }
         // File unchanged + clean exit → step-2 no-op branch of the

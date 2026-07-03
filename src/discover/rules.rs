@@ -479,11 +479,7 @@ fn build_default_rules() -> Vec<DetectionRule> {
             // tools, so `known_tools.contains(...)` in `analyze_with`
             // will surface them as recommended companions rather than
             // silently dropping them.
-            suggests: vec![
-                "golangci-lint".into(),
-                "air".into(),
-                "delve".into(),
-            ],
+            suggests: vec!["golangci-lint".into(), "air".into(), "delve".into()],
             category: ToolCategory::Runtime,
         },
         DetectionRule {
@@ -1083,7 +1079,14 @@ mod tests {
             category: ToolCategory::Ops,
         };
         // Source MUST be None (no fallback to partial sanitization).
-        assert!(rule_match_source(tmp.path(), &super::super::scanner::RootIndex::build(tmp.path()), &rule).is_none());
+        assert!(
+            rule_match_source(
+                tmp.path(),
+                &super::super::scanner::RootIndex::build(tmp.path()),
+                &rule
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -1100,7 +1103,12 @@ mod tests {
             category: ToolCategory::Ops,
         };
         assert_eq!(
-            rule_match_source(tmp.path(), &super::super::scanner::RootIndex::build(tmp.path()), &rule).as_deref(),
+            rule_match_source(
+                tmp.path(),
+                &super::super::scanner::RootIndex::build(tmp.path()),
+                &rule
+            )
+            .as_deref(),
             Some("main.tf")
         );
     }

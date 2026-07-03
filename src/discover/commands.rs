@@ -146,8 +146,7 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
     // toml::Table>()` on the same source — two full tokenizer passes
     // + two DOM allocations per discover invocation. Hoist to a single
     // `Option<toml::Table>` and thread it through both extractors.
-    let existing_table: Option<toml::Table> =
-        existing_text.as_deref().and_then(|t| t.parse().ok());
+    let existing_table: Option<toml::Table> = existing_text.as_deref().and_then(|t| t.parse().ok());
     let (already_configured, already_configured_versions) = existing_table
         .as_ref()
         .map(parse_provisioner_pins_from_table)
@@ -328,8 +327,7 @@ fn run_discover_once(opts: &DiscoverOpts<'_>) -> i32 {
 /// (perhaps under the "discover can also cache X" pretext), the 0644
 /// chmod becomes a data leak. Panic in tests, error out in release —
 /// there is no valid path where discover writes user secrets.
-const SENSITIVE_TOP_LEVEL_KEYS: &[&str] =
-    &["secrets", "credentials", "tokens", "api_keys", "auth"];
+const SENSITIVE_TOP_LEVEL_KEYS: &[&str] = &["secrets", "credentials", "tokens", "api_keys", "auth"];
 
 fn refuse_if_sensitive(text: &str) -> std::io::Result<()> {
     if let Ok(table) = text.parse::<toml::Table>() {
@@ -398,9 +396,7 @@ fn atomic_write(target: &Path, content: &str) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Err(e) =
-            std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o644))
-        {
+        if let Err(e) = std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o644)) {
             if crate::observability::telemetry_gate::is_enabled() {
                 tracing::warn!(
                     event = "discover.jarvy_toml_perms_unsafe",
@@ -547,9 +543,7 @@ fn parse_discover_block(text: &str) -> Option<discover_config::DiscoverConfig> {
     parse_discover_block_from_table(&table)
 }
 
-fn parse_discover_block_from_table(
-    table: &toml::Table,
-) -> Option<discover_config::DiscoverConfig> {
+fn parse_discover_block_from_table(table: &toml::Table) -> Option<discover_config::DiscoverConfig> {
     let block = table.get("discover").cloned()?;
     block.try_into().ok()
 }
@@ -565,8 +559,7 @@ fn parse_discover_block_from_table(
 /// leaked strings live for the process lifetime, which matches the
 /// registry lifetime. Zero-allocation lookups on every subsequent
 /// discover pass.
-static KNOWN_TOOLS_CACHE: std::sync::OnceLock<HashSet<String>> =
-    std::sync::OnceLock::new();
+static KNOWN_TOOLS_CACHE: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
 
 fn known_tool_set() -> &'static HashSet<String> {
     KNOWN_TOOLS_CACHE.get_or_init(|| {
@@ -596,10 +589,9 @@ fn known_tool_set() -> &'static HashSet<String> {
             // Single-pass byte scan: detect dash + underscore in one
             // walk rather than calling `.contains('_')` and
             // `.contains('-')` back-to-back (Perf F7).
-            let (has_underscore, has_dash) = name.bytes().fold(
-                (false, false),
-                |(u, d), b| (u | (b == b'_'), d | (b == b'-')),
-            );
+            let (has_underscore, has_dash) = name.bytes().fold((false, false), |(u, d), b| {
+                (u | (b == b'_'), d | (b == b'-'))
+            });
             if has_underscore {
                 let alias = name.replace('_', "-");
                 assert!(
@@ -698,9 +690,8 @@ docker = "latest"
             let poisoned = format!(
                 "[provisioner]\ngit = \"latest\"\n\n[{sensitive_key}]\napi = \"leak-me\"\n"
             );
-            let e = atomic_write(&toml, &poisoned).expect_err(
-                "atomic_write must refuse a config containing sensitive sections",
-            );
+            let e = atomic_write(&toml, &poisoned)
+                .expect_err("atomic_write must refuse a config containing sensitive sections");
             assert!(
                 e.to_string().contains(sensitive_key),
                 "error must name the offending section `{sensitive_key}`; got: {e}"
@@ -723,9 +714,8 @@ docker = "latest"
             let tmp = tempdir().unwrap();
             let toml = tmp.path().join("jarvy.toml");
             let poisoned = format!("[{variant}]\napi = \"leak-me\"\n");
-            let e = atomic_write(&toml, &poisoned).expect_err(
-                "atomic_write must refuse case-varied sensitive keys",
-            );
+            let e = atomic_write(&toml, &poisoned)
+                .expect_err("atomic_write must refuse case-varied sensitive keys");
             assert!(
                 e.to_string()
                     .to_lowercase()
@@ -759,8 +749,7 @@ docker = "latest"
     fn atomic_write_does_not_walk_nested_sensitive_tables() {
         let tmp = tempdir().unwrap();
         let toml = tmp.path().join("jarvy.toml");
-        let content =
-            "[provisioner]\ngit = \"latest\"\n\n[project.secrets]\napi = \"?\"\n";
+        let content = "[provisioner]\ngit = \"latest\"\n\n[project.secrets]\napi = \"?\"\n";
         // Nested table is allowed by design — the invariant only
         // guards the top-level namespace.
         atomic_write(&toml, content).expect(

@@ -329,8 +329,7 @@ fn has_uncached(cmd: &str) -> bool {
 /// that had drifted into slightly-different wordings; centralising
 /// them here means a future edit to the hint (say, adding a `rustup`
 /// install pointer) lands once, not three-plus times.
-pub(crate) const RUST_TOOLCHAIN_MISSING_HINT: &str =
-    "cargo not found — install the Rust toolchain first \
+pub(crate) const RUST_TOOLCHAIN_MISSING_HINT: &str = "cargo not found — install the Rust toolchain first \
      (add `rust = \"latest\"` under `[provisioner]` and re-run `jarvy setup`).";
 
 /// `cargo install --locked <crate>`. Shared install path for Rust-
@@ -638,9 +637,7 @@ mod install_error_kind_tests {
         }
         let _guard = PathGuard(std::env::var_os("PATH"));
         unsafe { std::env::set_var("PATH", "") };
-        let e = install_via_cargo_install("bacon").expect_err(
-            "cargo absent → must Err(Prereq)",
-        );
+        let e = install_via_cargo_install("bacon").expect_err("cargo absent → must Err(Prereq)");
         assert_eq!(e.kind(), "prereq_missing");
         assert_eq!(
             e.to_string(),

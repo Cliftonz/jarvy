@@ -44,8 +44,7 @@ const RUST_TOOLCHAIN_PATTERN: &str = r#"channel\s*=\s*"([^"]+)""#;
 const GO_MOD_PATTERN: &str = r"^go\s+(\d+\.\d+(?:\.\d+)?)";
 
 static RUST_TOOLCHAIN_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(RUST_TOOLCHAIN_PATTERN)
-        .expect("built-in rust-toolchain pattern must compile")
+    regex::Regex::new(RUST_TOOLCHAIN_PATTERN).expect("built-in rust-toolchain pattern must compile")
 });
 static GO_MOD_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(GO_MOD_PATTERN).expect("built-in go.mod pattern must compile")

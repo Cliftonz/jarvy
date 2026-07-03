@@ -89,7 +89,12 @@ fn dash_form_tool_names_resolve_via_aliasing() {
 #[test]
 fn dash_form_alias_does_not_leak_to_bogus_names() {
     jarvy::tools::register_all();
-    for bogus in ["bogus-tool", "bogus_tool", "not-a-real-tool", "release-plz-x"] {
+    for bogus in [
+        "bogus-tool",
+        "bogus_tool",
+        "not-a-real-tool",
+        "release-plz-x",
+    ] {
         assert!(
             jarvy::tools::get_tool(bogus).is_none(),
             "get_tool(`{bogus}`) MUST return None — the dash/underscore \
@@ -109,7 +114,14 @@ fn dash_form_alias_does_not_leak_to_bogus_names() {
 fn canonical_dash_free_tools_resolve_directly() {
     jarvy::tools::register_all();
     for name in [
-        "pnpm", "yarn", "bun", "bazelisk", "composer", "infisical", "skaffold", "cmake",
+        "pnpm",
+        "yarn",
+        "bun",
+        "bazelisk",
+        "composer",
+        "infisical",
+        "skaffold",
+        "cmake",
     ] {
         assert!(
             jarvy::tools::get_tool(name).is_some(),

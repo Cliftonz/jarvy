@@ -421,11 +421,7 @@ mod tests {
         );
         let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
         assert!(required.contains(&"gh"), "got required={required:?}");
-        let recommended: Vec<&str> = report
-            .recommended
-            .iter()
-            .map(|s| s.name.as_str())
-            .collect();
+        let recommended: Vec<&str> = report.recommended.iter().map(|s| s.name.as_str()).collect();
         assert!(
             recommended.contains(&"release-plz"),
             "got recommended={recommended:?}"
@@ -471,9 +467,27 @@ mod tests {
             ("composer", "composer.json"),
         ];
         let known = registry_with(&[
-            "deno", "elixir", "erlang", "haskell", "crystal", "gleam", "lua", "luarocks",
-            "nim", "ocaml", "scala", "zig", "julia", "cmake", "skaffold", "bazelisk", "bun",
-            "infisical", "release-plz", "composer", "php",
+            "deno",
+            "elixir",
+            "erlang",
+            "haskell",
+            "crystal",
+            "gleam",
+            "lua",
+            "luarocks",
+            "nim",
+            "ocaml",
+            "scala",
+            "zig",
+            "julia",
+            "cmake",
+            "skaffold",
+            "bazelisk",
+            "bun",
+            "infisical",
+            "release-plz",
+            "composer",
+            "php",
         ]);
         for (tool, marker) in cases {
             let tmp = tempdir().unwrap();
@@ -493,11 +507,7 @@ mod tests {
     /// adding a new dir marker (e.g. `.svn`, `.hg`) is one row.
     #[test]
     fn dir_marker_rules_detect_from_canonical_dirs() {
-        let cases: &[(&str, &str)] = &[
-            ("git", ".git"),
-            ("gh", ".github"),
-            ("vscode", ".vscode"),
-        ];
+        let cases: &[(&str, &str)] = &[("git", ".git"), ("gh", ".github"), ("vscode", ".vscode")];
         let known = registry_with(&["git", "gh", "vscode", "release-plz"]);
         for (tool, dir) in cases {
             let tmp = tempdir().unwrap();
@@ -561,11 +571,7 @@ mod tests {
             &HashSet::new(),
             &registry_with(&["elixir", "erlang"]),
         );
-        let recommended: Vec<&str> = report
-            .recommended
-            .iter()
-            .map(|s| s.name.as_str())
-            .collect();
+        let recommended: Vec<&str> = report.recommended.iter().map(|s| s.name.as_str()).collect();
         assert!(recommended.contains(&"erlang"), "got {recommended:?}");
     }
 
@@ -630,11 +636,7 @@ mod tests {
             );
         }
 
-        let recommended: Vec<&str> = report
-            .recommended
-            .iter()
-            .map(|s| s.name.as_str())
-            .collect();
+        let recommended: Vec<&str> = report.recommended.iter().map(|s| s.name.as_str()).collect();
         for expected in ["bacon", "cargo-nextest", "golangci-lint", "air", "delve"] {
             assert!(
                 recommended.contains(&expected),
@@ -744,17 +746,9 @@ mod tests {
             let report = analyze(
                 tmp.path(),
                 &HashSet::new(),
-                &registry_with(&[
-                    "gh",
-                    "release-plz",
-                    "node",
-                    "pnpm",
-                    "yarn",
-                    "bun",
-                ]),
+                &registry_with(&["gh", "release-plz", "node", "pnpm", "yarn", "bun"]),
             );
-            let required: Vec<&str> =
-                report.required.iter().map(|s| s.name.as_str()).collect();
+            let required: Vec<&str> = report.required.iter().map(|s| s.name.as_str()).collect();
             let recommended: Vec<&str> =
                 report.recommended.iter().map(|s| s.name.as_str()).collect();
             assert!(
