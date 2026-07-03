@@ -253,19 +253,19 @@ jobs:
             asset_pattern: 'jarvy-*-x86_64-unknown-linux-musl.tar.gz'
             binary: jarvy
             archive_kind: tar
-          - os: macos-14
-            name: macOS arm64
-            # No aarch64 tarball ships today — use the .dmg's inner
-            # binary. If tarballs land per issue #30, swap the pattern.
-            asset_pattern: 'jarvy-*-aarch64-apple-darwin.tar.gz'
-            binary: jarvy
-            archive_kind: tar
-            fallback_asset_pattern: 'jarvy_*_aarch64.dmg'
-          - os: windows-latest
-            name: Windows x86_64
-            asset_pattern: 'jarvy-*-x86_64-pc-windows-msvc.zip'
-            binary: jarvy.exe
-            archive_kind: zip
+          # macOS + Windows disabled until issue #30 ships plain
+          # tarballs / zips on those platforms. Current release only
+          # publishes `.dmg` (mac) + `.msi` / `x64-setup.exe`
+          # (Windows) via the Tauri bundler — those cannot be silently
+          # extracted in CI without either notarization prompts
+          # (hdiutil attach canceled on macos-14 runner) or msi/exe
+          # installer execution. Linux musl tarball is the
+          # authoritative Path 1 signal in the interim.
+          #
+          # When #30 lands binary tarballs across all three OSes,
+          # restore:
+          #   - macos-14   / jarvy-*-aarch64-apple-darwin.tar.gz
+          #   - windows-latest / jarvy-*-x86_64-pc-windows-msvc.zip
     runs-on: ${{ matrix.os }}
     env:
       TAG: ${{ needs.gate.outputs.tag }}
@@ -505,13 +505,17 @@ jobs:
           # Warm cache with a resolve pass (rules parse, registry
           # lookup) so we're timing the setup phase, not first-run I/O.
           "$BIN" validate --file jarvy.toml >/dev/null 2>&1 || true
+          # `jarvy setup` doesn't accept `--format` (that's on inspection
+          # subcommands like validate/discover/schema). Setup only has
+          # global `--log-format`, which routes tracing output, not
+          # stdout envelope. Time the plain dry-run.
           T0=$(date +%s%3N)
-          "$BIN" setup --file jarvy.toml --dry-run --format json > rc_report.json
+          "$BIN" setup --file jarvy.toml --dry-run > rc_report.txt 2>&1
           T1=$(date +%s%3N)
           RC_MS=$(( T1 - T0 ))
           echo "rc_ms=$RC_MS" >> "$GITHUB_OUTPUT"
           echo "rc dry-run: ${RC_MS}ms"
-          jq '.summary // {}' rc_report.json || true
+          tail -20 rc_report.txt || true
 
       - name: Time — last-stable dry-run (baseline)
         id: stable_time
@@ -822,7 +826,7 @@ jobs:
           - Tag: \`$TAG\`
           - Bump kind: \`$BUMP_KIND\`
           - Published: ${{ needs.gate.outputs.published_at }}
-          - Path 1 (fresh install) — PASS on Ubuntu, macOS, Windows
+          - Path 1 (fresh install) — PASS on Ubuntu (mac/win pending issue #30)
           - Path 5 (multi-tool setup timing) — \`$PATH5_RESULT\`
           - Path 6 (breaking-config, major-only) — \`$PATH6_RESULT\`
           - Path 7 (migration replay, major-only) — \`$PATH7_RESULT\`
