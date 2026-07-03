@@ -4,13 +4,13 @@ name: Release Paths Validation (2/3/4)
 # (Rollback) of docs/release-testing.md. Exercises `jarvy update --version`
 # + `jarvy rollback` end-to-end on each supported cohort platform.
 #
-# Bootstrap mode: until release.yml ships .tar.gz / .zip binary tarballs
-# as release assets (tracked in #30), the BinaryInstaller path has no
-# artifact to consume and `jarvy update --method binary` cannot run. The
-# workflow detects this — N-1 or target release missing tarballs for the
-# matrix triple — and emits a `::warning::` instead of failing. Once #30
-# lands and the first release ships tarballs, the bootstrap branch is
-# skipped and the gate hard-fails on regression.
+# Post-#30 (closed): TARGET releases MUST ship tarballs. The bootstrap
+# check hard-fails when the target has 0 tarballs for a matrix triple —
+# treats that as a release.yml regression rather than silently skipping.
+# N-1 / N-2 stables predating #30 (v0.4.0 and earlier) legitimately have
+# no tarballs; those still warn + skip so the workflow stays green until
+# the historical baseline catches up (Path 2 needs N-1 ≥ v0.5.0; Path 3
+# needs N-2 ≥ v0.5.0).
 #
 # Triggers:
 #   - release: published      — fires once per rc / stable cut, the canonical
@@ -157,8 +157,16 @@ jobs:
           }
           NM1_HAS=$(count_for "$NM1")
           TARGET_HAS=$(count_for "$TARGET")
-          if [ "$NM1_HAS" = "0" ] || [ "$TARGET_HAS" = "0" ]; then
-            echo "::warning::Bootstrap mode — N-1 ($NM1) has $NM1_HAS tarballs, target ($TARGET) has $TARGET_HAS for triple $TRIPLE. Tracked in #30. Skipping Path 2+4 binary-update test; will hard-fail once tarballs ship."
+          # Post-#30: TARGET must ship tarballs — missing = regression in
+          # release.yml, hard-fail. N-1 predating #30 is legitimate and
+          # remains warn+skip (v0.4.0 has no tarballs; upgrade from it via
+          # binary can't be exercised until N-1 is v0.5.0+).
+          if [ "$TARGET_HAS" = "0" ]; then
+            echo "::error::Target release $TARGET has 0 tarballs for triple $TRIPLE — release.yml is not shipping the expected asset. #30 is closed; this is a regression."
+            exit 1
+          fi
+          if [ "$NM1_HAS" = "0" ]; then
+            echo "::warning::N-1 ($NM1) predates #30 (0 tarballs for triple $TRIPLE); Path 2+4 binary-update test skipped until N-1 ships tarballs."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -407,8 +415,14 @@ jobs:
           }
           NM2_HAS=$(count_for "$NM2")
           TARGET_HAS=$(count_for "$TARGET")
-          if [ "$NM2_HAS" = "0" ] || [ "$TARGET_HAS" = "0" ]; then
-            echo "::warning::Bootstrap mode — N-2 ($NM2) has $NM2_HAS tarballs, target ($TARGET) has $TARGET_HAS for triple $TRIPLE. Tracked in #30."
+          # Post-#30: TARGET missing tarballs = release.yml regression → fail.
+          # N-2 predating #30 = legitimate → warn + skip.
+          if [ "$TARGET_HAS" = "0" ]; then
+            echo "::error::Target release $TARGET has 0 tarballs for triple $TRIPLE — release.yml is not shipping the expected asset. #30 is closed; this is a regression."
+            exit 1
+          fi
+          if [ "$NM2_HAS" = "0" ]; then
+            echo "::warning::N-2 ($NM2) predates #30 (0 tarballs for triple $TRIPLE); Path 3 skip-version test skipped until N-2 ships tarballs."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"

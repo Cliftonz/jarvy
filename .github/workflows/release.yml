@@ -791,3 +791,22 @@ jobs:
             gh release edit "${VERSION}" --draft=false --latest
             echo "Stable release ${VERSION} published and pinned as Latest."
           fi
+
+      # `release: published` does NOT fire for downstream workflows when
+      # the transition is driven by `GITHUB_TOKEN` — GitHub blocks
+      # workflow-to-workflow triggering via the built-in token to prevent
+      # recursion. `workflow_dispatch` is the documented exception, so
+      # dispatch `release-paths.yml` explicitly. Without this, Paths 2/3/4
+      # silently skip every release we cut (verified missing on rc.1, rc.4
+      # while rc.8 of v0.2.1 — which was published by a human PAT — did
+      # fire the event).
+      - name: Dispatch release-paths validation (Paths 2/3/4)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run release-paths.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${VERSION}" \
+            -f target_tag="${VERSION}"
+          echo "Dispatched release-paths.yml against ${VERSION}."
