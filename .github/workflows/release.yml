@@ -796,17 +796,48 @@ jobs:
       # the transition is driven by `GITHUB_TOKEN` — GitHub blocks
       # workflow-to-workflow triggering via the built-in token to prevent
       # recursion. `workflow_dispatch` is the documented exception, so
-      # dispatch `release-paths.yml` explicitly. Without this, Paths 2/3/4
-      # silently skip every release we cut (verified missing on rc.1, rc.4
-      # while rc.8 of v0.2.1 — which was published by a human PAT — did
-      # fire the event).
-      - name: Dispatch release-paths validation (Paths 2/3/4)
+      # every downstream validation workflow keyed on `release: published`
+      # must be dispatched explicitly. Without this, Paths 1/2/3/4/5/8
+      # silently skip every release we cut (verified missing on rc.1,
+      # rc.4 while rc.8 of v0.2.1 — which was published by a human PAT —
+      # did fire the event).
+      #
+      # Coverage map (per docs/release-testing.md):
+      #   release-paths.yml   → Paths 2 (upgrade), 3 (skip-version), 4 (rollback)
+      #   verify-release.yml  → Path 8 (asset download sweep)
+      #   prerelease-soak.yml → Paths 1 (fresh install), 5 (multi-tool),
+      #                         6/7 (MAJOR-only). Force=true bypasses the
+      #                         24h age gate so the soak workflow also
+      #                         doubles as immediate per-tag validation;
+      #                         the scheduled cron still re-runs at 24h+
+      #                         for the wall-clock endurance signal.
+      - name: Dispatch downstream validation workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Paths 2/3/4 — upgrade / skip-version / rollback.
           gh workflow run release-paths.yml \
             --repo "${{ github.repository }}" \
             --ref "${VERSION}" \
             -f target_tag="${VERSION}"
           echo "Dispatched release-paths.yml against ${VERSION}."
+
+          # Path 8 — asset download sweep. Hard-fails on any missing
+          # checksum, signature, or SBOM entry.
+          gh workflow run verify-release.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${VERSION}" \
+            -f tag="${VERSION}"
+          echo "Dispatched verify-release.yml against ${VERSION}."
+
+          # Paths 1/5 (and 6/7 on MAJOR bumps) — dispatch with
+          # `force=true` so the workflow skips its own 24h supersession
+          # gate. The scheduled cron continues to fire at t≥24h as the
+          # wall-clock endurance check.
+          gh workflow run prerelease-soak.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${VERSION}" \
+            -f tag="${VERSION}" \
+            -f force=true
+          echo "Dispatched prerelease-soak.yml against ${VERSION} (force=true)."
