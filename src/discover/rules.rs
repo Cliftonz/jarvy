@@ -1064,6 +1064,13 @@ mod tests {
     /// not become a detection source string. The file-glob path is the
     /// only attacker-controllable detection input; rule-author literals
     /// are trusted.
+    ///
+    /// Unix-only: the attack requires a filesystem that accepts `\n`
+    /// in filenames. NTFS rejects newlines + reserved chars outright
+    /// (`fs::write` returns "Invalid argument"), so the vector doesn't
+    /// exist on Windows and the test itself would panic before it
+    /// could exercise the sanitizer.
+    #[cfg(unix)]
     #[test]
     fn rejects_hostile_glob_match_filename() {
         let tmp = tempdir().unwrap();

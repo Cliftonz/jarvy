@@ -7,6 +7,8 @@
 // - On macOS and Windows, GUI/cask installers (e.g., Docker Desktop) or winget prompts
 //   may cause flakiness in CI, so we scope this test to Linux only.
 
+#![cfg(target_os = "linux")]
+
 #[test]
 fn install_git_docker_jq_in_parallel() {
     use std::thread;

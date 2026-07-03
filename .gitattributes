@@ -1,0 +1,25 @@
+# Force LF line endings for source, config, and bundled assets so
+# `include_str!()` bakes deterministic bytes into the binary on all
+# platforms. Without this, a Windows `git clone` with default
+# `core.autocrlf=true` normalizes LF→CRLF in the working tree, which
+# breaks frontmatter parsers that anchor on `---\n` and produces
+# CRLF-carrying artifacts in cross-platform tests.
+
+* text=auto eol=lf
+
+# Windows-native shell/PS/batch scripts must stay CRLF.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary assets — never let Git touch them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.tgz  binary

@@ -120,24 +120,34 @@ mod auto_detect_tests {
 
     static HOME_MUTEX: Mutex<()> = Mutex::new(());
 
-    /// Override `$HOME` for the duration of the closure so detection
-    /// looks at a controlled tempdir, then restore — the unit tests
-    /// would otherwise be impossible without globally trashing the
-    /// developer's real home.
+    /// Override `$HOME` (and `USERPROFILE` on Windows) for the duration
+    /// of the closure so detection looks at a controlled tempdir, then
+    /// restore — the unit tests would otherwise be impossible without
+    /// globally trashing the developer's real home.
+    ///
+    /// `dirs::home_dir()` reads `USERPROFILE` on Windows, not `HOME`;
+    /// overriding only `HOME` leaves detection pointed at the runner's
+    /// real user profile and every positive-detection assertion fails.
     fn with_fake_home<F: FnOnce(&std::path::Path)>(f: F) {
         let _guard = HOME_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::TempDir::new().expect("tempdir");
-        let prev = std::env::var("HOME").ok();
+        let prev_home = std::env::var("HOME").ok();
+        let prev_userprofile = std::env::var("USERPROFILE").ok();
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("HOME", tmp.path());
+            std::env::set_var("USERPROFILE", tmp.path());
         }
         f(tmp.path());
         #[allow(unsafe_code)]
         unsafe {
-            match prev {
+            match prev_home {
                 Some(v) => std::env::set_var("HOME", v),
                 None => std::env::remove_var("HOME"),
+            }
+            match prev_userprofile {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
             }
         }
     }

@@ -140,12 +140,67 @@ struct E2EFixture {
     home_path: PathBuf,
 }
 
+/// Convert a filesystem path to the path component of a `file://` URL.
+///
+/// - Unix: `/tmp/foo` → `/tmp/foo` (unchanged).
+/// - Windows: `C:\Users\x\Temp` → `/C:/Users/x/Temp`. Result plugs into
+///   `format!("file://{}", ...)` yielding a valid `file:///C:/...` URL
+///   that git accepts. Without this, the raw `path.display()` embeds
+///   backslashes in the URL and git errors with "Invalid path" or the
+///   underlying tempdir prefix `\\?\` derails work-tree creation.
+fn path_to_file_url_component(p: &Path) -> String {
+    let s = p.display().to_string();
+    #[cfg(windows)]
+    {
+        // Strip verbatim prefix defensively — callers should already
+        // have run `simplified_canonicalize` but this keeps the URL
+        // helper standalone-correct.
+        let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        let forward = s.replace('\\', "/");
+        // Windows absolute paths need a leading `/` before the drive
+        // letter so the URL is `file:///C:/...` (three slashes).
+        if forward.chars().nth(1) == Some(':') {
+            return format!("/{forward}");
+        }
+        return forward;
+    }
+    #[cfg(not(windows))]
+    {
+        s
+    }
+}
+
+/// Canonicalize + strip the Windows extended-length `\\?\` prefix.
+///
+/// `std::fs::canonicalize` on Windows returns paths with the `\\?\`
+/// prefix (verbatim/UNC form). That prefix:
+///   1. embedded in `file://\\?\C:\...` URLs, no version of git can
+///      parse the result;
+///   2. propagated as the git-clone dest, git rejects it with
+///      "could not create work tree dir ... : Invalid argument".
+///
+/// Both failure modes hit us before we even reach the code under test.
+/// Strip the prefix on Windows so the fixture behaves like Unix (where
+/// `canonicalize` yields a plain absolute path).
+fn simplified_canonicalize(p: &Path) -> PathBuf {
+    let canon = p.canonicalize().expect("canonicalize");
+    #[cfg(windows)]
+    {
+        if let Some(s) = canon.to_str() {
+            if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                return PathBuf::from(stripped);
+            }
+        }
+    }
+    canon
+}
+
 impl E2EFixture {
     fn new() -> Self {
         let repo = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
-        let repo_path = repo.path().canonicalize().unwrap();
-        let home_path = home.path().canonicalize().unwrap();
+        let repo_path = simplified_canonicalize(repo.path());
+        let home_path = simplified_canonicalize(home.path());
         E2EFixture {
             _repo: repo,
             _home: home,
@@ -155,7 +210,10 @@ impl E2EFixture {
     }
 
     fn url(&self, git_ref: &str, subpath: Option<&str>) -> String {
-        let base = format!("git+file://{}@{git_ref}", self.repo_path.display());
+        let base = format!(
+            "git+file://{}@{git_ref}",
+            path_to_file_url_component(&self.repo_path)
+        );
         match subpath {
             Some(sp) => format!("{base}#{sp}"),
             None => base,
@@ -441,7 +499,7 @@ fn e2e_unpinned_url_refused() {
     let fx = E2EFixture::new();
     set_test_env(&fx.home_path);
 
-    let url = format!("git+file://{}", fx.repo_path.display()); // no @<ref>
+    let url = format!("git+file://{}", path_to_file_url_component(&fx.repo_path)); // no @<ref>
     let err = library_registry::sync(&fx.source(&url)).unwrap_err();
     let msg = format!("{err}");
     assert!(msg.contains("@<ref>"), "got: {msg}");
