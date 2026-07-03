@@ -27,6 +27,258 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.5.0] — Agent-driven wizard + polyglot detection + two review-plan sweeps (2026-07-02)
+
+The wizard graduates from "spawn an agent and hope" to a hardened trust
+boundary — per-invocation session UUID, Drop-guarded marker file at
+`~/.jarvy/state/wizard-session-<uuid>.active`, single-turn playbook
+that actually completes end-to-end. Alongside: a big polyglot
+detection sweep (Node + PHP + Rust + Go all first-class, 13 niche
+languages, 3 build systems, ~20 new rules, 10 new tools) and the
+back-to-back execution of two full parallel-code-review enhancement
+plans (32 + 38 items) that hardened almost every corner of the
+diff.
+
+**Wizard runtime — from "hangs on MCP prompt" to production-ready:**
+
+- **Single-turn agent execution.** Prompt rewritten for
+  `claude -p` / `codex exec --` — no interactive follow-up gates, no
+  "await user approval" loops that never resolve. The agent runs the
+  playbook top-to-bottom and prints a summary.
+- **MCP mutation-gate bypass** (`JARVY_WIZARD_SESSION_ID=<uuid>` +
+  marker file). Previous behaviour: agents piping stdin would fail
+  closed on `prompt_mutation_confirmation`'s TTY read. New behaviour:
+  descendant `jarvy mcp` server processes verify both the env AND a
+  paired Drop-guarded marker file AND freshness (≤10 min) via
+  `wizard::session::is_active()`. Orphaned env carriers (language
+  servers, `nohup`-detached daemons that outlive the wizard) fail
+  the check and fall through to the normal confirmation gate.
+- **Trust boundary hardening.** `~/.jarvy/state/` created 0700
+  (was 0755 — leaked session UUIDs to local users). Marker chmod'd
+  0600 with chmod-failed / chmod-ignored telemetry. Bypass now
+  refuses unexpected MCP clients (falls through to confirmation gate
+  for anything outside `{claude-code, codex}`) instead of just
+  warn-logging. Future-mtime capped at 5s clock skew.
+- **`--allowedTools "mcp__jarvy"`** pre-approval on `claude -p` so
+  the wizard doesn't hang on the first MCP call. Full argv pinned by
+  test.
+- **Silent-success debuggability.** `wizard.headless_exit` now
+  carries `jarvy_toml_before / _after / terminal_state`
+  (`playbook_completed | noop_already_configured | early_exit |
+  unknown`) so on-call can distinguish "agent honored step-2 no-op"
+  from "agent crashed" from "agent misread plan" without reading
+  source.
+
+**Polyglot detection — from "Rust + Node + Docker + Make" to full
+first-class support for four ecosystems + 13 niche languages:**
+
+- **Full 4-lang polyglot.** New rules for **PHP** (`composer.json` /
+  `composer.lock` / `artisan` / `symfony.lock`), **Go** companions
+  wired (`golangci-lint`, `air`, `delve` — were registered but had
+  empty suggests), Rust companions wired (`bacon`, `cargo-nextest` —
+  registered, previously silently dropped by the unknown-tool filter),
+  lockfile-precise Node PMs (`pnpm-lock.yaml → pnpm`, `yarn.lock →
+  yarn`, `bun.lockb → bun` become **required**, not blanket
+  suggestions).
+- **13 niche languages** — `deno`, `elixir` (+ erlang companion),
+  `erlang`, `haskell`, `crystal`, `gleam` (+ erlang), `lua`
+  (+ luarocks), `luarocks`, `nim`, `ocaml`, `scala` (+ Mill via
+  `build.sc`), `zig`, `julia` (careful to only match
+  `Manifest.toml` / `JuliaProject.toml`, not the ambiguous bare
+  `Project.toml`).
+- **Build systems + infrastructure** — `cmake` (`CMakeLists.txt`),
+  `skaffold` (`skaffold.yaml`), `bazelisk` (Bazel launcher, catches
+  `MODULE.bazel` / `WORKSPACE*` / `BUILD.bazel` / `.bazelrc`),
+  `release-plz` (`release-plz.toml` + `cargo install --locked`
+  install path), `git` (`.git/`), `gh` (`.github/`), `vscode`
+  (`.vscode/`), `infisical` (`.infisical.json` / `.env.infisical`).
+- **10 new tools** total: `bacon`, `cargo-nextest`, `release-plz`
+  (cargo-install via new `install_via_cargo_install` helper),
+  `composer`, `pnpm`, `yarn`, `cmake`, `skaffold`, `bazelisk`,
+  `infisical`. Publisher-pin comments on the cargo-install trio
+  document canonical crates.io owners for supply-chain traceability.
+
+**Discover trust + perf hardening:**
+
+- **`atomic_write` sensitive-key policy.** Refuses to persist any
+  `jarvy.toml` containing top-level `[secrets] / [credentials] /
+  [tokens] / [api_keys] / [auth]` — case-insensitive. `jarvy.toml`
+  is chmod'd 0644 (world-readable) on the invariant that discover
+  writes only sanitized tool names + versions; the refusal is
+  belt-and-braces against a future contributor adding a
+  `discover-can-also-cache-X` codepath. Emits
+  `discover.sensitive_key_refused` at ERROR level.
+- **`atomic_write` perms telemetry.** `jarvy.toml` now explicitly
+  chmod'd 0644 (was inheriting `NamedTempFile`'s 0600 default —
+  fresh clones + CI couldn't read the file). `discover.jarvy_toml_
+  perms_unsafe` fires on chmod failure OR chmod-ignored (NFS /
+  drvfs / exFAT silently drop).
+- **Duplicate `[provisioner]` key fix.** A tool that was BOTH
+  required (own marker) AND recommended (companion of another
+  detection) — concrete case `release-plz.toml` + `.github/` —
+  would land twice in `[provisioner]`, producing a duplicate-key
+  TOML parse error on the next `jarvy discover` / `jarvy validate`.
+  Dedup lives in `analyze_with` post-loop; `recommended_dropped_dup`
+  count surfaces on `discover.applied`.
+- **Dash / underscore name normalization.** Detection rules
+  conventionally use dash (`release-plz`) — matches TOML keys under
+  `[provisioner]` — while handlers register underscore
+  (`RELEASE_PLZ → release_plz`, since Rust identifiers can't hold
+  dashes). `known_tool_set()` now populates both forms so
+  `known_tools.contains(...)` in `analyze_with` resolves either
+  spelling. Startup-panic on collision.
+- **`RootIndex` batches root `read_dir` once per pass** — was `N`
+  syscalls + `O(dir_size)` allocations across 11 glob rules;
+  now one syscall + `HashMap<OsString, PathBuf>` for exact lookups
+  + pre-sorted `Vec<PathBuf>` for globs. On a 200-file root with
+  20+ rules, ~35× syscall reduction.
+- **`LazyLock<Regex>`** for `rust-toolchain.toml` and `go.mod`
+  version patterns. Was `Regex::new` per version extraction — a
+  30-100 µs compile paid per discover pass. Custom-rule patterns
+  cache in a `RwLock<HashMap>`. Fast path returns
+  `Cow<'static, Regex>` (borrowed) so even the LazyLock arms skip
+  atomic RMWs.
+- **`DetectionRule` / `Detection` Cow refactor.** `name` and
+  `suggests` land as `Cow::Borrowed(&'static str)` for built-in
+  rules constructed via `.into()` from string literals — zero
+  allocations per matched rule. Custom rules deserialize as
+  `Cow::Owned` via serde with no source changes. Regression guard
+  test asserts every default-rule name + suggest is Borrowed.
+- **`known_tool_set` memoization.** OnceLock cache — was rebuilding
+  ~300 Strings per discover pass (register_all + name clones +
+  dash / underscore aliasing). Startup-panic on alias collision so
+  two tools normalising to the same form fail loudly at boot, not
+  silently mis-dispatch.
+
+**Wizard e2e infrastructure:**
+
+- **`wizard_e2e_repo_matrix.rs`** — data-driven 12-shape matrix
+  covering polyglot Node+PHP+Rust+Go, Laravel PHP, Bazel monorepo,
+  K8s + skaffold, Elixir/Gleam BEAM, niche-lang clusters, Python +
+  Infisical + VSCode, empty-repo negative shape. Each row
+  asserts: preview JSON → apply JSON → `jarvy.toml` round-trips
+  → 0644 perms → `jarvy validate` accepts → byte-identical second
+  apply. Adding a shape = one row.
+- **`polyglot_node_php_rust_go` shape** pinned at `min_warnings: 1`
+  (node-without-nvm advisory) so a refactor stopping the emission
+  trips instead of silently regressing the operator signal.
+- **New niche-language + dir-marker table tests** in
+  `discover::mod::tests` — 13 language markers, 3 dir markers, plus
+  a `discover_does_not_walk_into_dot_git` regression guard that
+  plants hostile `Cargo.toml` / `mix.exs` / `package.json` inside
+  `.git/` and asserts they DON'T trigger detection.
+
+**Observability contract:**
+
+- **9 new events** (all telemetry-gated): `mcp.mutation.wizard_bypass`,
+  `mcp.mutation.wizard_bypass_unexpected_client`,
+  `wizard.session_token_activate_failed`,
+  `wizard.session_token_perms_unsafe`, `wizard.session.bypass_refused`,
+  `discover.recommended_dropped`, `discover.rules_loaded`,
+  `discover.jarvy_toml_perms_unsafe`, `discover.sensitive_key_refused`.
+- **6+ new fields on existing events**: `wizard.headless_spawned` gets
+  `mcp_preapproval`, `wizard_session_env`, `wizard_session_id`;
+  `wizard.headless_exit` gets `jarvy_toml_before / _after /
+  terminal_state / wizard_session_id`; `discover.applied` gets
+  `recommended_dropped_dup / detections_by_rule`.
+- **`terminal_state` pinned via `pub const`** — four constants
+  (`TERMINAL_STATE_PLAYBOOK_COMPLETED / _NOOP_ALREADY_CONFIGURED /
+  _EARLY_EXIT / _UNKNOWN`) so alerting has a stable contract.
+- **`mcp.auto_approve.*` events** now honour `telemetry_gate::
+  is_enabled()` — closes a documented opt-in contract hole.
+- **CLAUDE.md event taxonomy** fully updated with every new event +
+  field addition. Stable contract for on-call queries.
+
+**MCP audit trail correctness:**
+
+- **`AuditAction::McpMutationRequested`** — pre-flight audit is now
+  a distinct action from `McpMutation` (which is emitted only on
+  completed mutations). Pre-fix, `gate_mutation` wrote
+  `mcp_mutation success=true` BEFORE rate-limit / confirmation /
+  execution, meaning failed mutations appeared successful in
+  audit-log queries. Success entries now land at the three actual
+  completion sites (Yes / Always / wizard-bypass).
+- **Wizard-bypass double-audit fixed.** Pre-fix, the bypass arm
+  wrote `log_mcp_mutation` twice per grant (once pre-flight, once
+  in the arm), producing indistinguishable duplicate rows. The
+  arm's log removed; pre-flight covers the request; the tracing
+  event on grant carries forensic detail.
+- **`effect_summary` ANSI-sanitized** before flowing to audit + tracing.
+  Workspace-root paths are attacker-controllable via hostile repo
+  directory names on `git clone`; a path containing ESC or CR/LF
+  could inject fake log entries or clear the terminal when an
+  operator pages the audit log.
+
+**Perf sweep (execution of both review plans):**
+
+- `BufWriter` around `ChildStdin` in `send_prompt_to_child_stdin` —
+  20 KiB prompts now go out in one vectored write instead of
+  PIPE_BUF chunks.
+- `RootIndex::find_first_match` returns `Option<&Path>` — index
+  outlives the loop by construction. Pre-fix cloned `PathBuf` per
+  hit.
+- `read_bounded` uses `Read::take + read_to_end` — skips the
+  `resize(cap, 0)` memset. ~16 KiB per polyglot pass.
+- `sanitize_source` byte-level — skips UTF-8 decode for an
+  ASCII-only check.
+- `known_tool_set` collision check uses a byte-fold single-walk.
+- Toml parsed exactly ONCE per `discover` pass — was two full
+  `toml::Table` parses (`parse_provisioner_pins` +
+  `parse_discover_block` each parsed the same source).
+- `detections_by_rule` fold-into-String — no throwaway `Vec<&str>`
+  between `collect` and `join`.
+- Session-check span (`debug_span!("wizard.session.check")`) — makes
+  slow home directories (network mounts, macOS synced drives)
+  visible to on-call.
+
+**Test hardening:**
+
+- **Two full parallel-code-review sweeps** (5 personas each: Rust
+  perf, security, QA, observability, maintainability/DRY) — 32
+  items in the first, 38 in the second. Every P0 and P1 closed
+  across both.
+- **Wizard-bypass code path** — was untested (a security-relevant
+  trust hole). Now 5 unit tests + one integration test cover
+  env-set → bypass fires, non-exact env values ignored,
+  rate-limit still enforced, single-audit-row invariant,
+  session::is_active helper. Plus a `filetime`-driven test that
+  actually forces old mtime so the 10-minute staleness window is
+  covered (pre-fix the test admitted it couldn't and asserted the
+  opposite).
+- **`RootIndex` direct coverage** — 6 new tests: exact lookup, dir
+  filter, glob determinism, empty dir, only-dirs, missing project
+  dir.
+- **Cow perf regression guard** —
+  `default_rules_name_and_suggests_are_all_borrowed` refuses to let
+  a future `String::from(...).into()` construction silently reintroduce
+  the ~15-20 heap allocations per polyglot pass.
+- **`cargo_install_argv_pins_locked_flag`** — supply-chain contract
+  for bacon / cargo-nextest / release-plz.
+- **`classify_headless_outcome`** — table-driven exhaustive
+  coverage of the 4-way terminal_state match.
+
+**Breaking-shape additions (all opt-in, no existing config breaks):**
+
+- New `~/.jarvy/state/` directory created 0700 on first
+  wizard invocation. Nothing at 0.4.0 wrote here; nothing else
+  reads it. Users downgrading to 0.4.0 after using 0.5.0's wizard
+  will leave harmless orphan `.active` marker files behind.
+- New env vars: `JARVY_WIZARD_SESSION` (bool), `JARVY_WIZARD_SESSION_ID`
+  (UUID) set on wizard-spawned agents. Both benign if inherited by
+  unrelated processes.
+- New optional dev dep: `filetime = "0.2"`.
+
+**Files (~40 touched):**
+
+- New: `src/wizard/session.rs`, `src/tools/{bacon,bazelisk,
+  cargo_nextest,cmake,composer,infisical,pnpm,release_plz,skaffold,
+  yarn}/{mod,definition}.rs`, `tests/wizard_e2e_repo_matrix.rs`.
+- Enhanced significantly: `src/mcp/extended_tools.rs`,
+  `src/wizard/{headless,prompt}.rs`, `src/commands/wizard_cmd.rs`,
+  `src/discover/{commands,mod,rules,scanner,version}.rs`,
+  `src/tools/{common,mod}.rs`, `src/paths.rs`, `src/mcp/audit.rs`,
+  `tests/{tools_matrix,wizard_e2e_repo_matrix}.rs`, `CLAUDE.md`.
+
 ## [v0.4.0] — Library registry / monorepo / discover / git hooks / 25-item review sweep (2026-06-29)
 
 The biggest single milestone since v0.2.0 — eleven PRDs closed
@@ -124,7 +376,7 @@ code-review enhancement plan that ran against the new surface.
   `~/.jarvy/cache/synthesized/`. The contents are equivalent; only
   the storage path changed.
 
-## [Unreleased] — PRD-056 agent-driven wizard (2026-06-30)
+## PRD-056 agent-driven wizard — original 2026-06-30 note (folded into v0.5.0 above)
 
 `jarvy wizard` — hands the current project to your local AI coding
 agent (Claude Code, Codex, Cursor, Windsurf, Cline, Continue) to
@@ -169,7 +421,7 @@ All gated on `telemetry_gate::is_enabled()`.
   (`jarvy_wizard_plan` definition + handler),
   `src/mcp/server.rs` (dispatch arm), `mkdocs.yml`, `CLAUDE.md`.
 
-## [Unreleased] — Close out PRD-011/013/014/037/038/039/048/049/052/054/055 + library registry + git skill sources + skills + git hooks + progress (2026-06-28)
+## v0.4.0 detail expansion — original 2026-06-28 note (already summarized in v0.4.0)
 
 A documentation + maintainability + ecosystem-breadth pass that closes
 eleven long-open PRDs across five commits. The headliner is **PRD-054
