@@ -1,0 +1,459 @@
+name: Pre-Release Soak Gate
+
+# Automated 24h soak gate for the currently-live rc / beta / alpha tag.
+# Complements the existing per-publish workflows:
+#
+#   - `verify-release.yml`   — Path 8 (asset integrity + signatures) at t=0
+#   - `release-paths.yml`    — Paths 2/3/4 (upgrade / skip-version / rollback) at t=0
+#   - `prerelease-soak.yml`  — Path 1 (fresh install) + promotion-readiness at t=24h+
+#
+# `docs/release-testing.md#soak-window` requires a minimum soak of 24h for
+# patch / 72h for minor / 7d for major before promoting an rc to stable.
+# Pre-existing paths (2/3/4/8) all run at t=0 — meaning the ONLY thing
+# blocking promotion after publish is the wall-clock wait. This workflow
+# closes that: 24h after publish, if the rc is still the current one,
+# run Path 1 + snapshot the state of the other paths + post a
+# promotion-readiness comment on the release + open/update a
+# `release-soak: <tag>` tracking issue.
+#
+# Idempotence & supersession:
+#   - Skips if the release the schedule finds isn't the newest prerelease
+#     (a newer `-rc.(N+1)` was cut in the interim; soak the newer one).
+#   - Skips if a prior successful run of this workflow already posted the
+#     "soak-24h-passed" label to the tracking issue.
+#   - No-op returns are silent (info-level Actions summary only) so the
+#     scheduled cron doesn't spam maintainers when there's nothing to do.
+#
+# Manual dispatch is supported for out-of-band re-soaks (e.g., an rc was
+# cut, the schedule missed a firing, the maintainer wants to re-run
+# after a fixup).
+
+on:
+  schedule:
+    # Every 30 min. Cheap — the gate exits fast when there's nothing to
+    # soak. Wall-clock granularity of 30 min on a 24-hour minimum window
+    # is more than enough.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Pre-release tag to soak (default: auto-detect latest prerelease)'
+        required: false
+        type: string
+      force:
+        description: 'Skip the 24h minimum + supersession check (emergency re-soak)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: prerelease-soak
+  cancel-in-progress: false
+
+env:
+  JARVY_TELEMETRY: '0'
+  # Minimum soak in hours before Path 1 fires. Matches
+  # docs/release-testing.md's patch-bump minimum. Minor + major soak
+  # windows (72h / 7d) are the maintainer's call — this gate only
+  # enforces the floor.
+  MIN_SOAK_HOURS: '24'
+
+jobs:
+  # ============================================================================
+  # Gate: decide whether to soak. Fast path exit for the "nothing to do"
+  # case, which is the vast majority of scheduled firings.
+  # ============================================================================
+  gate:
+    name: Decide whether to soak
+    runs-on: ubuntu-latest
+    outputs:
+      should_soak: ${{ steps.decide.outputs.should_soak }}
+      tag: ${{ steps.decide.outputs.tag }}
+      is_prerelease: ${{ steps.decide.outputs.is_prerelease }}
+      published_at: ${{ steps.decide.outputs.published_at }}
+      already_soaked: ${{ steps.decide.outputs.already_soaked }}
+      supersession_reason: ${{ steps.decide.outputs.supersession_reason }}
+    steps:
+      - name: Resolve target tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Manual dispatch → use provided tag; otherwise auto-detect the
+          # newest prerelease. Auto-detect uses the same query as
+          # `docs/release-testing.md`'s soak flow: newest release with
+          # `prerelease: true`.
+          MANUAL_TAG='${{ inputs.tag }}'
+          if [ -n "$MANUAL_TAG" ]; then
+            echo "Manual dispatch — using tag: $MANUAL_TAG"
+            TAG="$MANUAL_TAG"
+          else
+            TAG=$(gh api "repos/${{ github.repository }}/releases?per_page=25" \
+              --jq '[.[] | select(.prerelease == true and .draft == false)] | .[0].tag_name // empty')
+            if [ -z "$TAG" ]; then
+              echo "No prerelease found — nothing to soak."
+              echo "tag=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Auto-detected newest prerelease: $TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Decide
+        id: decide
+        if: steps.resolve.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          # Pull metadata for the target tag.
+          RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases/tags/$TAG")
+          IS_PRERELEASE=$(echo "$RELEASE_JSON" | jq -r '.prerelease')
+          PUBLISHED_AT=$(echo "$RELEASE_JSON" | jq -r '.published_at // .created_at')
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "published_at=$PUBLISHED_AT" >> "$GITHUB_OUTPUT"
+
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            echo "supersession_reason=not_a_prerelease" >> "$GITHUB_OUTPUT"
+            echo "should_soak=false" >> "$GITHUB_OUTPUT"
+            echo "Target is a stable release, not a prerelease — skipping."
+            exit 0
+          fi
+
+          # Supersession check: verify $TAG is STILL the newest prerelease.
+          # If someone cut a newer -rc.N+1 while the schedule was waiting,
+          # abandon this run — soak the newer one instead.
+          NEWEST_PRE=$(gh api "repos/${{ github.repository }}/releases?per_page=25" \
+            --jq '[.[] | select(.prerelease == true and .draft == false)] | .[0].tag_name // empty')
+          if [ "$NEWEST_PRE" != "$TAG" ]; then
+            echo "supersession_reason=superseded_by_$NEWEST_PRE" >> "$GITHUB_OUTPUT"
+            echo "should_soak=false" >> "$GITHUB_OUTPUT"
+            echo "Newer prerelease ($NEWEST_PRE) exists — skipping soak of $TAG."
+            exit 0
+          fi
+
+          # Wall-clock check: ≥ MIN_SOAK_HOURS since publish.
+          if [ "$FORCE" = "true" ]; then
+            echo "Force flag set — skipping wall-clock + supersession checks."
+          else
+            NOW_EPOCH=$(date -u +%s)
+            PUB_EPOCH=$(date -u -d "$PUBLISHED_AT" +%s 2>/dev/null || \
+                        python3 -c "from datetime import datetime; print(int(datetime.fromisoformat('$PUBLISHED_AT'.replace('Z','+00:00')).timestamp()))")
+            AGE_HOURS=$(( (NOW_EPOCH - PUB_EPOCH) / 3600 ))
+            echo "Release age: ${AGE_HOURS}h (min: ${MIN_SOAK_HOURS}h)"
+            if [ "$AGE_HOURS" -lt "$MIN_SOAK_HOURS" ]; then
+              echo "supersession_reason=too_young_${AGE_HOURS}h" >> "$GITHUB_OUTPUT"
+              echo "should_soak=false" >> "$GITHUB_OUTPUT"
+              echo "Release younger than ${MIN_SOAK_HOURS}h — schedule will re-check."
+              exit 0
+            fi
+          fi
+
+          # Already-soaked check: search issues for the tracking label.
+          # Label shape: `soak-24h-passed-<tag>` (dashes only — avoids
+          # any URL-encode surprises through the gh CLI + issue-search
+          # index). Attached by the summary job at the end of a
+          # successful soak.
+          ALREADY=$(gh issue list \
+            --state all \
+            --label "soak-24h-passed-$TAG" \
+            --limit 1 \
+            --json number \
+            --jq 'length')
+          if [ "$ALREADY" -gt 0 ]; then
+            echo "already_soaked=true" >> "$GITHUB_OUTPUT"
+            echo "should_soak=false" >> "$GITHUB_OUTPUT"
+            echo "$TAG already soaked (tracking-issue label present) — skipping."
+            exit 0
+          fi
+
+          echo "should_soak=true" >> "$GITHUB_OUTPUT"
+          echo "$TAG is eligible for soak."
+
+      - name: Summarize decision
+        if: always()
+        run: |
+          {
+            echo "## Soak-gate decision"
+            echo ""
+            echo "- Tag: \`${{ steps.decide.outputs.tag || 'none' }}\`"
+            echo "- Should soak: \`${{ steps.decide.outputs.should_soak || 'false' }}\`"
+            [ -n "${{ steps.decide.outputs.supersession_reason }}" ] && \
+              echo "- Supersession reason: \`${{ steps.decide.outputs.supersession_reason }}\`"
+            [ -n "${{ steps.decide.outputs.published_at }}" ] && \
+              echo "- Published at: \`${{ steps.decide.outputs.published_at }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # Path 1 — Fresh install on each cohort platform. This is the coverage
+  # missing from `release-paths.yml` (which owns Paths 2/3/4). Downloads
+  # the archive from the release, extracts, runs `jarvy --version` +
+  # `jarvy discover --format json` on a fixture project.
+  # ============================================================================
+  fresh-install:
+    name: Path 1 — Fresh install (${{ matrix.name }})
+    needs: gate
+    if: needs.gate.outputs.should_soak == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: Ubuntu 22.04 x86_64
+            asset_pattern: 'jarvy-*-x86_64-unknown-linux-musl.tar.gz'
+            binary: jarvy
+            archive_kind: tar
+          - os: macos-14
+            name: macOS arm64
+            # No aarch64 tarball ships today — use the .dmg's inner
+            # binary. If tarballs land per issue #30, swap the pattern.
+            asset_pattern: 'jarvy-*-aarch64-apple-darwin.tar.gz'
+            binary: jarvy
+            archive_kind: tar
+            fallback_asset_pattern: 'jarvy_*_aarch64.dmg'
+          - os: windows-latest
+            name: Windows x86_64
+            asset_pattern: 'jarvy-*-x86_64-pc-windows-msvc.zip'
+            binary: jarvy.exe
+            archive_kind: zip
+    runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+    steps:
+      - name: Checkout (for fixture project)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.tag }}
+          fetch-depth: 1
+
+      - name: Download release archive
+        id: download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET_PATTERN: ${{ matrix.asset_pattern }}
+          FALLBACK_PATTERN: ${{ matrix.fallback_asset_pattern || '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p _soak && cd _soak
+          if gh release download "$TAG" \
+              --repo "${{ github.repository }}" \
+              --pattern "$ASSET_PATTERN" 2>/dev/null; then
+            echo "Downloaded primary asset ($ASSET_PATTERN)"
+            echo "used_fallback=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FALLBACK_PATTERN" ] && gh release download "$TAG" \
+              --repo "${{ github.repository }}" \
+              --pattern "$FALLBACK_PATTERN" 2>/dev/null; then
+            echo "::warning::Primary asset $ASSET_PATTERN missing; used fallback $FALLBACK_PATTERN"
+            echo "used_fallback=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Neither $ASSET_PATTERN nor $FALLBACK_PATTERN present in $TAG"
+            exit 1
+          fi
+          ls -la
+
+      - name: Extract binary (tar)
+        if: matrix.archive_kind == 'tar' && steps.download.outputs.used_fallback == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd _soak
+          tar xzf jarvy-*.tar.gz
+          # Move binary into a stable location so the downstream steps
+          # don't have to guess.
+          find . -type f -name '${{ matrix.binary }}' -exec mv {} ./jarvy \;
+          chmod +x jarvy
+          ./jarvy --version
+
+      - name: Extract binary (zip)
+        if: matrix.archive_kind == 'zip' && steps.download.outputs.used_fallback == 'false'
+        shell: pwsh
+        run: |
+          Set-Location _soak
+          Expand-Archive -Path (Get-Item 'jarvy-*.zip').FullName -DestinationPath .
+          # Locate jarvy.exe; move to stable path.
+          $bin = Get-ChildItem -Recurse -Filter 'jarvy.exe' | Select-Object -First 1
+          Move-Item $bin.FullName .\jarvy.exe -Force
+          .\jarvy.exe --version
+
+      - name: Extract binary (macOS dmg fallback)
+        if: matrix.archive_kind == 'tar' && steps.download.outputs.used_fallback == 'true' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd _soak
+          DMG=$(ls jarvy_*_aarch64.dmg)
+          MOUNT=$(hdiutil attach -nobrowse -readonly -mountrandom /tmp "$DMG" | tail -1 | awk '{print $3}')
+          # Copy binary out; unmount immediately so we don't leak the mount.
+          cp "$MOUNT"/jarvy ./jarvy
+          hdiutil detach "$MOUNT" -quiet
+          chmod +x jarvy
+          ./jarvy --version
+
+      - name: Smoke — version reports tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd _soak
+          # Tag is `v0.5.0-rc.1`; `jarvy --version` reports `jarvy 0.5.0`.
+          # Strip the `v` prefix and the `-rc.N` suffix for the comparison —
+          # Cargo.toml only carries the semver-major-minor-patch.
+          EXPECTED=$(echo "$TAG" | sed -E 's/^v//; s/-(rc|beta|alpha)\.[0-9]+$//')
+          REPORTED=$(./jarvy --version | awk '{print $2}')
+          echo "Expected: $EXPECTED"
+          echo "Reported: $REPORTED"
+          if [ "$EXPECTED" != "$REPORTED" ]; then
+            echo "::error::Version mismatch: tag $TAG → expected $EXPECTED, jarvy --version reports $REPORTED"
+            exit 1
+          fi
+
+      - name: Smoke — discover on a polyglot fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd _soak
+          # Build a small polyglot fixture and exercise the discover
+          # pass — this is the "does the wizard's back-end still work?"
+          # signal. jq (not python3) so the assertion runs on Windows
+          # too; jq ships pre-installed on every runner.
+          mkdir -p fixture
+          cd fixture
+          {
+            echo '[package]'
+            echo 'name = "fixture"'
+            echo 'version = "0.0.0"'
+            echo 'edition = "2024"'
+          } > Cargo.toml
+          echo '{}' > package.json
+          touch pnpm-lock.yaml
+          # `discover` is telemetry-gated + fully deterministic — safe
+          # to run inside CI without polluting production data.
+          BIN="$(cd .. && pwd)/jarvy"
+          # On Windows the binary is jarvy.exe.
+          [ -f "$BIN.exe" ] && BIN="$BIN.exe"
+          "$BIN" discover --format json > report.json
+          # Cross-platform assertion: extract required names + diff
+          # against the expected set via jq. Missing entries print +
+          # exit 1.
+          MISSING=$(jq -r '
+            (["rust","node","pnpm"]) as $expected
+            | ([.required[]?.name] | sort) as $got
+            | ($expected - $got)
+            | join(",")
+          ' report.json)
+          if [ -n "$MISSING" ]; then
+            echo "::error::discover output missing required entries: $MISSING"
+            cat report.json
+            exit 1
+          fi
+          jq '.required | map(.name)' report.json
+
+  # ============================================================================
+  # Summary — post the promotion-readiness signal to a tracking issue
+  # + comment on the release. This job is the "24h passed" signal the
+  # cutting-release skill's checklist can look for.
+  # ============================================================================
+  summary:
+    name: Post soak-passed signal
+    needs: [gate, fresh-install]
+    if: needs.gate.outputs.should_soak == 'true' && needs.fresh-install.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify companion workflows also PASSed on this tag
+        id: companion
+        run: |
+          set -euo pipefail
+          # release-paths.yml (Paths 2/3/4) + verify-release.yml (Path 8)
+          # both trigger on `release: published`, so by t=24h they've had
+          # ample time to complete. Check their status.
+          COMPANION_OK=true
+          for WF in "Release Paths Validation (2/3/4)" "Verify Release Assets"; do
+            LATEST=$(gh api "repos/${{ github.repository }}/actions/workflows" \
+              --jq ".workflows[] | select(.name == \"$WF\") | .id")
+            if [ -z "$LATEST" ]; then
+              echo "::warning::Workflow '$WF' not found — skipping companion check."
+              continue
+            fi
+            # Find the most recent run of this workflow that matched the tag.
+            RUN_STATUS=$(gh run list --workflow "$LATEST" --limit 20 --json headBranch,conclusion,event,displayTitle \
+              --jq "[.[] | select(.displayTitle | contains(\"$TAG\"))] | .[0].conclusion // \"none\"")
+            echo "$WF for $TAG: $RUN_STATUS"
+            if [ "$RUN_STATUS" != "success" ] && [ "$RUN_STATUS" != "none" ]; then
+              echo "::warning::Companion workflow '$WF' did not PASS for $TAG ($RUN_STATUS). Soak signal remains advisory."
+              COMPANION_OK=false
+            fi
+          done
+          echo "companion_ok=$COMPANION_OK" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update tracking issue
+        id: issue
+        run: |
+          set -euo pipefail
+          TITLE="Pre-release soak: $TAG"
+          # Idempotent: find an existing issue by title, else create.
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state all --limit 1 --json number --jq '.[0].number // empty')
+          if [ -z "$EXISTING" ]; then
+            EXISTING=$(gh issue create \
+              --title "$TITLE" \
+              --label release-soak \
+              --body "Auto-created by \`prerelease-soak.yml\`. Populated during the 24h soak window; label \`soak-24h-passed-$TAG\` added when the gate passes.")
+            EXISTING=$(echo "$EXISTING" | grep -oE '[0-9]+$')
+          fi
+          echo "number=$EXISTING" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure soak-passed label exists (repo-wide)
+        run: |
+          set -euo pipefail
+          LABEL="soak-24h-passed-$TAG"
+          if ! gh label list --limit 200 --json name --jq '.[].name' | grep -qxF "$LABEL"; then
+            gh label create "$LABEL" --color 0e8a16 --description "24h soak passed on $TAG"
+          fi
+
+      - name: Attach label + summary comment
+        env:
+          ISSUE_NUM: ${{ steps.issue.outputs.number }}
+          COMPANION_OK: ${{ steps.companion.outputs.companion_ok }}
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE_NUM" --add-label "soak-24h-passed-$TAG"
+          gh issue comment "$ISSUE_NUM" --body "$(cat <<EOF
+          ## 24h soak gate — PASSED
+
+          - Tag: \`$TAG\`
+          - Published: ${{ needs.gate.outputs.published_at }}
+          - Path 1 (fresh install) — PASS on Ubuntu, macOS, Windows
+          - Companion workflows (release-paths, verify-release) status: \`$COMPANION_OK\`
+
+          **Promotion readiness signal:** this label attaches when the
+          minimum wall-clock window has elapsed AND Path 1 has passed
+          on every cohort platform. Companion status is advisory only —
+          verify via \`gh run list\` before promoting.
+
+          Next: run the \`cutting-release\` skill to promote \`$TAG\` to
+          stable, if maintainer soak observations agree. This label does
+          NOT auto-authorize promotion — per-version authorization
+          from the maintainer is still required.
+          EOF
+          )"
+
+      - name: Comment on the release
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq '.body' > /tmp/body.md
+          # Append the soak signal to the body if not already present.
+          if ! grep -q "24h soak: PASSED" /tmp/body.md; then
+            printf "\n\n---\n\n**24h soak: PASSED** — see #%s for the audit trail.\n" \
+              "${{ steps.issue.outputs.number }}" >> /tmp/body.md
+            gh release edit "$TAG" --notes-file /tmp/body.md
+          fi
