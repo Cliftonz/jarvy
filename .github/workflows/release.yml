@@ -165,7 +165,9 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            artifact_paths: target/release/jarvy*_aarch64.dmg
+            artifact_paths: |
+              target/release/jarvy*_aarch64.dmg
+              target/release/jarvy-v*-aarch64-apple-darwin.tar.gz
             build_args: ""
             cross: false
           # macos-13 (Intel) intentionally dropped from v0.1.0. Apple
@@ -191,6 +193,7 @@ jobs:
             artifact_paths: |
               target/release/jarvy*_x64_en-US.msi
               target/release/jarvy*_x64-setup.exe
+              target/release/jarvy-v*-x86_64-pc-windows-msvc.zip
             build_args: ""
             cross: false
           - platform: ubuntu-latest
@@ -269,6 +272,45 @@ jobs:
           tar -C "target/${TRIPLE}/release" -czf "${OUT}" jarvy
           echo "Produced: ${OUT}"
           ls -la "${OUT}"
+
+      # Issue #30: mac + Windows also need a plain binary archive so
+      # the `jarvy update --method binary` path + `dist/scripts/install.sh`
+      # + Homebrew formula all work. Previously only .dmg / .msi / .exe
+      # shipped, which forced installer-mediated flows only.
+      #
+      # Naming mirrors the Linux tarball contract:
+      #   jarvy-v${VER}-${TRIPLE}.{tar.gz,zip}
+      # macos-latest is aarch64 as of 2024+ (macos-latest points at
+      # macos-14 on the arm64 fleet); windows-latest is x86_64 msvc.
+      - name: Package raw macOS tarball
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRIPLE="aarch64-apple-darwin"
+          VER="${{ env.VERSION }}"
+          VER_CLEAN="${VER#v}"
+          OUT="target/release/jarvy-v${VER_CLEAN}-${TRIPLE}.tar.gz"
+          tar -C target/release -czf "${OUT}" jarvy
+          echo "Produced: ${OUT}"
+          ls -la "${OUT}"
+
+      - name: Package raw Windows zip
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $Triple = 'x86_64-pc-windows-msvc'
+          $Ver = '${{ env.VERSION }}'
+          $VerClean = $Ver -replace '^v',''
+          $Out = "target\release\jarvy-v$VerClean-$Triple.zip"
+          # Use built-in Compress-Archive to sidestep third-party zip
+          # deps. Archive contains a single `jarvy.exe` at the root
+          # — matches the install.sh unzip contract at line 299 of
+          # dist/scripts/install.sh.
+          Compress-Archive -Path 'target\release\jarvy.exe' -DestinationPath $Out -Force
+          Write-Host "Produced: $Out"
+          Get-Item $Out
 
       - name: Package Binary
         shell: bash
@@ -616,7 +658,10 @@ jobs:
             echo "All release artifacts are signed with [Sigstore](https://sigstore.dev/) keyless OIDC. Verify any artifact:"
             echo ""
             echo '```bash'
-            echo "ARTIFACT=jarvy-linux-x86_64.tar.gz"
+            echo "# Substitute a triple that matches your platform, e.g."
+            echo "# aarch64-apple-darwin, x86_64-unknown-linux-musl,"
+            echo "# aarch64-unknown-linux-gnu, x86_64-pc-windows-msvc (.zip)."
+            echo "ARTIFACT=jarvy-${TAG}-x86_64-unknown-linux-musl.tar.gz"
             echo "BASE=https://github.com/Cliftonz/jarvy/releases/download/${TAG}"
             echo "curl -LO \$BASE/\$ARTIFACT"
             echo "curl -LO \$BASE/\$ARTIFACT.sig"

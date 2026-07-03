@@ -167,33 +167,94 @@ done
 [[ "$SBOM_COUNT" -gt 0 ]] || fail "no SBOM artifacts found"
 
 step "Running --version on platform-matching binary"
-# Jarvy ships native installers (.dmg / .deb / .rpm / .AppImage / .msi / .exe),
-# not tarballs. Of those, only .deb has a portable, no-privilege extraction
-# path (`ar x` + tar) that works on any Linux host, so the --version probe is
-# Linux-only. macOS and Windows hosts log a skip — install-path coverage on
-# those platforms is exercised by Paths 1-5.
+# Two probes, host-adaptive:
+#   1. Tarball / zip probe (issue #30). Portable extraction — `tar xzf`
+#      or `unzip` — works on any OS. Preferred path for macOS / Windows
+#      hosts that previously logged a skip. Triples match the release
+#      artifact name; host_triple() picks one deterministically.
+#   2. .deb probe (Linux fallback). Still used when the tarball isn't
+#      present (e.g. verifying a pre-#30 release) or when the host is
+#      Linux and both are present (tarball wins).
 HOST_OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 HOST_ARCH="$(uname -m)"
 case "$HOST_ARCH" in
-  arm64|aarch64) DEB_ARCH="arm64"  ;;
-  x86_64|amd64)  DEB_ARCH="amd64"  ;;
-  armv7l|armhf)  DEB_ARCH="armhf"  ;;
-  *)             DEB_ARCH=""       ;;
+  arm64|aarch64) DEB_ARCH="arm64"; TARBALL_ARCH="aarch64" ;;
+  x86_64|amd64)  DEB_ARCH="amd64"; TARBALL_ARCH="x86_64"  ;;
+  armv7l|armhf)  DEB_ARCH="armhf"; TARBALL_ARCH="armv7"   ;;
+  *)             DEB_ARCH="";      TARBALL_ARCH=""        ;;
 esac
 
-if [[ "$HOST_OS" != "linux" || -z "$DEB_ARCH" ]]; then
-  printf '  \033[1;33m·\033[0m host %s/%s — skipping --version probe (Linux-only)\n' \
-    "$HOST_OS" "$HOST_ARCH"
-else
+# Resolve the host triple → matches the release artifact name.
+HOST_TRIPLE=""
+case "$HOST_OS" in
+  linux)
+    # glibc / musl → both ship; pick musl for x86_64 (matches release
+    # matrix), gnu for aarch64/armv7. Falls back to whatever's in the
+    # release directory if only one triple is present.
+    if [[ "$TARBALL_ARCH" == "x86_64" ]]; then
+      HOST_TRIPLE="${TARBALL_ARCH}-unknown-linux-musl"
+    else
+      HOST_TRIPLE="${TARBALL_ARCH}-unknown-linux-gnu"
+    fi
+    ;;
+  darwin)
+    [[ -n "$TARBALL_ARCH" ]] && HOST_TRIPLE="${TARBALL_ARCH}-apple-darwin"
+    ;;
+esac
+
+TARBALL_CANDIDATE=""
+if [[ -n "$HOST_TRIPLE" ]]; then
+  TARBALL_CANDIDATE="$(find "$ASSETS_DIR" -maxdepth 1 -type f \
+      -name "jarvy-v*-${HOST_TRIPLE}.tar.gz" | head -1)"
+  if [[ -z "$TARBALL_CANDIDATE" && "$HOST_OS" == "linux" ]]; then
+    # Fallback: try the other libc for Linux (musl ↔ gnu).
+    ALT_TRIPLE="${TARBALL_ARCH}-unknown-linux-gnu"
+    [[ "$HOST_TRIPLE" == *-gnu ]] && ALT_TRIPLE="${TARBALL_ARCH}-unknown-linux-musl"
+    TARBALL_CANDIDATE="$(find "$ASSETS_DIR" -maxdepth 1 -type f \
+        -name "jarvy-v*-${ALT_TRIPLE}.tar.gz" | head -1)"
+  fi
+fi
+
+# Windows: check for the zip variant.
+ZIP_CANDIDATE=""
+if [[ "$HOST_OS" == mingw* || "$HOST_OS" == cygwin* || "$HOST_OS" == msys* ]]; then
+  ZIP_CANDIDATE="$(find "$ASSETS_DIR" -maxdepth 1 -type f \
+      -name 'jarvy-v*-x86_64-pc-windows-msvc.zip' | head -1)"
+fi
+
+if [[ -n "$TARBALL_CANDIDATE" ]]; then
+  EXTRACT="$WORKDIR/extract-tar"
+  mkdir -p "$EXTRACT"
+  tar -xzf "$TARBALL_CANDIDATE" -C "$EXTRACT"
+  BIN="$(find "$EXTRACT" -type f -name 'jarvy' -perm -u+x | head -1)"
+  [[ -n "$BIN" ]] || fail "no jarvy binary inside $(basename "$TARBALL_CANDIDATE")"
+  reported="$("$BIN" --version 2>&1 | head -1)"
+  if [[ "$reported" != *"$VERSION_CORE"* ]]; then
+    fail "$BIN --version reported '$reported', expected to contain '$VERSION_CORE'"
+  fi
+  ok "$(basename "$TARBALL_CANDIDATE") binary reports: $reported (core $VERSION_CORE matched)"
+elif [[ -n "$ZIP_CANDIDATE" ]]; then
+  require_cmd unzip
+  EXTRACT="$WORKDIR/extract-zip"
+  mkdir -p "$EXTRACT"
+  unzip -q "$ZIP_CANDIDATE" -d "$EXTRACT"
+  BIN="$(find "$EXTRACT" -type f -name 'jarvy.exe' | head -1)"
+  [[ -n "$BIN" ]] || fail "no jarvy.exe inside $(basename "$ZIP_CANDIDATE")"
+  reported="$("$BIN" --version 2>&1 | head -1)"
+  if [[ "$reported" != *"$VERSION_CORE"* ]]; then
+    fail "$BIN --version reported '$reported', expected to contain '$VERSION_CORE'"
+  fi
+  ok "$(basename "$ZIP_CANDIDATE") binary reports: $reported (core $VERSION_CORE matched)"
+elif [[ "$HOST_OS" == "linux" && -n "$DEB_ARCH" ]]; then
+  # .deb fallback for hosts that pre-date issue #30's tarball shipment.
   CANDIDATE="$(find "$ASSETS_DIR" -maxdepth 1 -type f -name "jarvy*_${DEB_ARCH}.deb" | head -1)"
   if [[ -z "$CANDIDATE" ]]; then
-    printf '  \033[1;33m·\033[0m no .deb matched arch %s — skipping --version probe\n' "$DEB_ARCH"
+    printf '  \033[1;33m·\033[0m no .deb matched arch %s and no tarball — skipping --version probe\n' "$DEB_ARCH"
   else
     require_cmd ar
-    EXTRACT="$WORKDIR/extract"
+    EXTRACT="$WORKDIR/extract-deb"
     mkdir -p "$EXTRACT"
     ( cd "$EXTRACT" && ar x "$CANDIDATE" )
-    # data.tar may be .gz / .xz / .zst depending on packager defaults.
     DATA_TAR="$(find "$EXTRACT" -maxdepth 1 -name 'data.tar.*' | head -1)"
     [[ -n "$DATA_TAR" ]] || fail "no data.tar.* inside $(basename "$CANDIDATE")"
     mkdir -p "$EXTRACT/data"
@@ -206,6 +267,9 @@ else
     fi
     ok "$(basename "$CANDIDATE") binary reports: $reported (core version $VERSION_CORE matched)"
   fi
+else
+  printf '  \033[1;33m·\033[0m host %s/%s — no extractable artifact for --version probe\n' \
+    "$HOST_OS" "$HOST_ARCH"
 fi
 
 step "Sweep complete"

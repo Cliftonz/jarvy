@@ -57,12 +57,17 @@ mints an ephemeral certificate per release run and signs every binary,
 package, SBOM, and checksum artifact. Verification:
 
 ```bash
+# Substitute a triple that matches your target — one of:
+#   aarch64-apple-darwin, x86_64-unknown-linux-musl,
+#   x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu,
+#   armv7-unknown-linux-gnueabihf, x86_64-pc-windows-msvc (.zip).
+ARTIFACT=jarvy-v0.5.1-x86_64-unknown-linux-musl.tar.gz
 cosign verify-blob \
-  --signature jarvy-linux-x86_64.tar.gz.sig \
-  --certificate jarvy-linux-x86_64.tar.gz.pem \
+  --signature "${ARTIFACT}.sig" \
+  --certificate "${ARTIFACT}.pem" \
   --certificate-identity-regexp "https://github.com/Cliftonz/jarvy/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  jarvy-linux-x86_64.tar.gz
+  "$ARTIFACT"
 ```
 
 Same pattern as `omni-infra-provider-truenas`. No skill divergence.
@@ -154,86 +159,55 @@ Discovered when adding a prerelease gate to `publish-packages.yml`:
 risk window for `v0.1.0-rc.10` itself is closed because the run was
 cancelled before `cargo publish` completed.
 
-## Universal install scripts are also broken pending tarballs
+## Universal install scripts — FIXED (issue #30)
 
-`dist/scripts/install.sh` (line 282) builds:
+`dist/scripts/install.sh` and `.ps1` build:
 
-```bash
-https://github.com/${JARVY_REPO}/releases/download/v${version}/jarvy-v${version}-${platform}.tar.gz
+```
+jarvy-v${version}-${triple}.{tar.gz,zip}
 ```
 
-`dist/scripts/install.ps1` builds the same pattern with `.zip`.
-Neither of these asset shapes is produced by `release.yml` — same
-gap that breaks Homebrew. Install scripts have been broken since
-v0.0.1; symptom is `curl: (56) The requested URL returned error:
-404` immediately after the "Download URL" log line.
+Historically these 404'd because `release.yml` only shipped
+`.dmg` / `.msi` / `.exe` / `.deb` / `.rpm` / `.AppImage`. As of
+issue #30 (landed pre-v0.5.1), `release.yml` now also produces:
 
-Confirmed on a fresh macOS arm64 machine 2026-05-12 trying to
-install rc.10 via `JARVY_CHANNEL=beta curl … | bash`. The
-`JARVY_CHANNEL` env var also doesn't propagate when set on the
-left of the curl invocation (sets it for curl, not for the piped
-bash) — but even if it did, the URL 404s. Use
-`curl … | JARVY_CHANNEL=beta bash` if you need the channel to
-take effect, and combine that with the upstream tarball fix.
+- `jarvy-v${VER}-aarch64-apple-darwin.tar.gz` (macOS arm64)
+- `jarvy-v${VER}-x86_64-pc-windows-msvc.zip` (Windows)
+- (Linux tarballs across all three triples were already shipping.)
 
-Workaround for users right now: `cargo install --git
-https://github.com/Cliftonz/jarvy --tag v0.1.0-rc.10 jarvy`
-(compiles from source).
+Install scripts should Just Work starting with the first release
+cut after this section landed. The `JARVY_CHANNEL` piping gotcha
+(env var must be right of `curl … |`, not left) is unrelated to
+tarballs and still applies.
 
-This needs to be fixed before any soak claims `install.sh` /
-`install.ps1` cohort coverage — Path 1 (fresh install) cannot
-exercise these channels until tarballs are produced. Add
-`dist/scripts/install.{sh,ps1}` to the channels excluded from
-required cohort coverage in `docs/release-testing.md` until the
-upstream tarball fix lands (same blocker as Homebrew).
+## Homebrew pipeline — partially unblocked (issue #30)
 
-## Homebrew pipeline is non-functional pending tarball artifacts
+Issue #30 added the `.tar.gz` / `.zip` artifacts the Homebrew
+formula in `Cliftonz/homebrew-tap` was authored against. The
+tarball naming convention now matches the formula's URL pattern:
 
-The Homebrew formula in `Cliftonz/homebrew-tap` is authored against
-`.tar.gz` tarball assets (`jarvy-v<version>-<arch>-<os>.tar.gz`) that
-`release.yml` does **not** produce. Verified on `v0.0.5`:
+- `jarvy-v${VER}-aarch64-apple-darwin.tar.gz`
+- `jarvy-v${VER}-x86_64-unknown-linux-gnu.tar.gz`
+- `jarvy-v${VER}-x86_64-unknown-linux-musl.tar.gz`
+- `jarvy-v${VER}-aarch64-unknown-linux-gnu.tar.gz`
 
-```bash
-gh release view v0.0.5 --json assets --jq '.assets[].name' | grep tar.gz
-# (no output — no tarballs in the release)
-```
+Two remaining blockers before `brew install Cliftonz/tap/jarvy`
+works end-to-end:
 
-Actual artifact set: `.dmg` (macOS), `.deb` (Linux deb-based),
-`.rpm` (Linux rpm-based), `.msi` / `.exe` (Windows), `.AppImage`
-(Linux portable), `SHA256SUMS.txt`, SBOMs. None of these match the
-formula's URL pattern.
+1. **`HOMEBREW_TAP_DEPLOY_KEY` secret must be configured** so
+   `publish-packages.yml::update-homebrew::Push to Homebrew tap`
+   can commit the SHA-substituted formula to the tap repo.
+   Configuration steps in `docs/MAINTAINER_RELEASE_GUIDE.md`.
+2. **`jarvy.rb` in the tap repo must be reset** — as of the last
+   audit it still contained literal `VERSION_PLACEHOLDER` /
+   `SHA256_PLACEHOLDER_*` strings from initial setup 2026-01-18,
+   because every prior update run silently skipped (secret unset).
+   Any release cut after fix (1) will substitute the placeholders
+   automatically.
 
-Consequences:
-
-1. `publish-packages.yml::update-homebrew::Update formula` step greps
-   `SHA256SUMS.txt` for `x86_64-apple-darwin` (etc.) — these substrings
-   never appear, so the placeholder substitution writes empty SHAs.
-2. `publish-packages.yml::update-homebrew::Push to Homebrew tap` is
-   additionally gated on the `HOMEBREW_TAP_DEPLOY_KEY` secret, which
-   is currently unset. The step has been **skipped** on every release
-   (v0.0.1 → v0.0.5). The tap repo's `jarvy.rb` still contains literal
-   `VERSION_PLACEHOLDER` / `SHA256_PLACEHOLDER_*` strings from initial
-   setup on 2026-01-18.
-3. `brew install jarvy` (or `brew install Cliftonz/tap/jarvy`)
-   currently fails — the formula is unparseable and references
-   non-existent URLs.
-
-Until the pipeline is rebuilt, Homebrew is **not a viable distribution
-channel** and should not count toward
-[`docs/release-testing.md#cohort-environment`](release-testing.md#cohort-environment)
-coverage. macOS soak coverage runs through `install.sh` and `cargo install`
-instead.
-
-Three real fix paths (none done as of this writing):
-
-1. Add `.tar.gz` artifact production to `release.yml` for macOS arm64,
-   macOS x86_64, Linux x86_64, Linux arm64. Formula then works after
-   the `HOMEBREW_TAP_DEPLOY_KEY` secret is configured per
-   `docs/MAINTAINER_RELEASE_GUIDE.md`.
-2. Rewrite the formula as a Homebrew Cask that installs from the
-   `.dmg` asset (macOS-only; doesn't help Linux brew users).
-3. Rewrite the formula to compile from crates.io via `Language::Rust`
-   (slow user-side install, simplest pipeline — no new artifact work).
+Until (1) + (2) land, Homebrew still isn't a working distribution
+channel. macOS soak coverage runs through `install.sh` (now
+functional post-#30) and `cargo install`.
 
 Path 1 is the cleanest long-term — adds Homebrew to real cohort
 coverage and lets the existing publish-packages workflow finish what
