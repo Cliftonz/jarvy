@@ -25,11 +25,43 @@ use jarvy::library_registry::{
     url_parser::{self, SourceScheme},
 };
 use serial_test::serial;
+use std::sync::OnceLock;
+use tempfile::TempDir;
+
+/// Isolate `~/.jarvy/library.d/` for this test binary.
+///
+/// `library_registry::cache::dirs_home()` reads `JARVY_HOME` first,
+/// then `HOME`, then `USERPROFILE`. Without an explicit override the
+/// cache lives under the runner's real home — which races with any
+/// other test binary that mutates `HOME` mid-run (notably
+/// `src/mcp_register/mod.rs`'s `with_fake_home`, which briefly points
+/// `HOME` at a soon-to-be-dropped tempdir).
+///
+/// Pin `JARVY_HOME` to a per-binary tempdir on first use so
+/// `manifest_cache_path` always resolves under a stable root. Every
+/// cache-mutating test in this file is `#[serial(jarvy_home_env)]`,
+/// so there's no in-file race; concurrent test binaries can't see this
+/// env var change because cargo test spawns each binary as a separate
+/// process.
+static ISOLATED_HOME: OnceLock<TempDir> = OnceLock::new();
+
+fn ensure_isolated_home() {
+    let home = ISOLATED_HOME.get_or_init(|| TempDir::new().expect("tempdir for isolated home"));
+    // SAFETY: process-global env-var mutation. Safe because this
+    // binary's cache-mutating tests are `#[serial]`-gated and this
+    // function is idempotent — subsequent calls point at the same
+    // path.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("JARVY_HOME", home.path());
+    }
+}
 
 /// Hand-build a `Manifest` and shove it into the in-process cache by
 /// way of `library_registry`'s public sync helpers. Used to seed
 /// `resolve_*` tests without exercising the network fetcher.
 fn seed_manifest(url: &str, manifest: Manifest) {
+    ensure_isolated_home();
     // The public API only exposes `sync()` which goes through the
     // fetcher. Tests that don't want to spin up an HTTP listener
     // reach the resolver via a different door: write the manifest
@@ -324,6 +356,7 @@ fn clear_cache_drops_every_seeded_library() {
 #[test]
 #[serial(jarvy_home_env)]
 fn sync_falls_back_to_disk_cache_on_unreachable_host() {
+    ensure_isolated_home();
     library_registry::clear_cache();
     let url = "https://this-host-must-not-resolve.example.invalid/manifest.json";
     let manifest = skill_manifest("offline-publisher", vec![("offline-skill", "3.0.0")]);

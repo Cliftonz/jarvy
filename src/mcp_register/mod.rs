@@ -73,6 +73,15 @@ pub fn auto_detect_agents() -> Vec<McpAgentTarget> {
     let Some(home) = dirs::home_dir() else {
         return Vec::new();
     };
+    auto_detect_agents_at(&home)
+}
+
+/// Testable inner form of [`auto_detect_agents`] — takes an explicit
+/// `home` so unit tests don't have to mutate process-global env vars
+/// (which is both racy under nextest's parallel execution and useless
+/// on Windows, where `dirs::home_dir()` resolves via
+/// `SHGetKnownFolderPath` and ignores `USERPROFILE`/`HOME` overrides).
+fn auto_detect_agents_at(home: &std::path::Path) -> Vec<McpAgentTarget> {
     let mut found = Vec::new();
     if home.join(".claude.json").exists() || home.join(".claude").is_dir() {
         found.push(McpAgentTarget::ClaudeCode);
@@ -116,46 +125,22 @@ pub fn synthesize_auto_register(agents: Vec<McpAgentTarget>) -> McpRegisterConfi
 #[cfg(test)]
 mod auto_detect_tests {
     use super::*;
-    use std::sync::Mutex;
 
-    static HOME_MUTEX: Mutex<()> = Mutex::new(());
-
-    /// Override `$HOME` (and `USERPROFILE` on Windows) for the duration
-    /// of the closure so detection looks at a controlled tempdir, then
-    /// restore — the unit tests would otherwise be impossible without
-    /// globally trashing the developer's real home.
-    ///
-    /// `dirs::home_dir()` reads `USERPROFILE` on Windows, not `HOME`;
-    /// overriding only `HOME` leaves detection pointed at the runner's
-    /// real user profile and every positive-detection assertion fails.
+    /// Set up a tempdir and run the detection logic against it via the
+    /// pure `auto_detect_agents_at` helper. No env-var mutation — the
+    /// old `with_fake_home` approach was both racy under nextest's
+    /// parallel execution (other test binaries reading `HOME` mid-run)
+    /// and useless on Windows, where `dirs::home_dir()` resolves via
+    /// `SHGetKnownFolderPath` and ignores the env-var overrides.
     fn with_fake_home<F: FnOnce(&std::path::Path)>(f: F) {
-        let _guard = HOME_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::TempDir::new().expect("tempdir");
-        let prev_home = std::env::var("HOME").ok();
-        let prev_userprofile = std::env::var("USERPROFILE").ok();
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::set_var("HOME", tmp.path());
-            std::env::set_var("USERPROFILE", tmp.path());
-        }
         f(tmp.path());
-        #[allow(unsafe_code)]
-        unsafe {
-            match prev_home {
-                Some(v) => std::env::set_var("HOME", v),
-                None => std::env::remove_var("HOME"),
-            }
-            match prev_userprofile {
-                Some(v) => std::env::set_var("USERPROFILE", v),
-                None => std::env::remove_var("USERPROFILE"),
-            }
-        }
     }
 
     #[test]
     fn detects_no_agents_in_empty_home() {
-        with_fake_home(|_| {
-            let found = auto_detect_agents();
+        with_fake_home(|home| {
+            let found = auto_detect_agents_at(home);
             assert!(
                 found.is_empty(),
                 "empty home must yield no detected agents, got {found:?}"
@@ -167,7 +152,7 @@ mod auto_detect_tests {
     fn detects_claude_code_via_dotfile() {
         with_fake_home(|home| {
             std::fs::write(home.join(".claude.json"), "{}").unwrap();
-            let found = auto_detect_agents();
+            let found = auto_detect_agents_at(home);
             assert_eq!(found, vec![McpAgentTarget::ClaudeCode]);
         });
     }
@@ -176,7 +161,7 @@ mod auto_detect_tests {
     fn detects_claude_code_via_directory() {
         with_fake_home(|home| {
             std::fs::create_dir(home.join(".claude")).unwrap();
-            let found = auto_detect_agents();
+            let found = auto_detect_agents_at(home);
             assert_eq!(found, vec![McpAgentTarget::ClaudeCode]);
         });
     }
@@ -188,7 +173,7 @@ mod auto_detect_tests {
             std::fs::create_dir(home.join(".codex")).unwrap();
             std::fs::create_dir_all(home.join(".codeium").join("windsurf")).unwrap();
             std::fs::create_dir(home.join(".continue")).unwrap();
-            let found = auto_detect_agents();
+            let found = auto_detect_agents_at(home);
             assert_eq!(
                 found,
                 vec![
@@ -216,7 +201,7 @@ mod auto_detect_tests {
                 .join("User")
                 .join("globalStorage");
             std::fs::create_dir_all(&bogus).unwrap();
-            let found = auto_detect_agents();
+            let found = auto_detect_agents_at(home);
             assert!(
                 !found.contains(&McpAgentTarget::Cline),
                 "auto-detect must not return Cline; got {found:?}"
