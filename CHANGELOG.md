@@ -27,7 +27,7 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [v0.5.0] — Agent-driven wizard + polyglot detection + two review-plan sweeps (2026-07-02)
+## [v0.5.0] — Agent-driven wizard + polyglot detection + two review-plan sweeps (2026-07-04)
 
 The wizard graduates from "spawn an agent and hope" to a hardened trust
 boundary — per-invocation session UUID, Drop-guarded marker file at
@@ -38,6 +38,13 @@ languages, 3 build systems, ~20 new rules, 10 new tools) and the
 back-to-back execution of two full parallel-code-review enhancement
 plans (32 + 38 items) that hardened almost every corner of the
 diff.
+
+**Distribution — prebuilt binaries on macOS + Windows:**
+
+- Release assets now ship prebuilt binary tarballs (macOS) and zips
+  (Windows) alongside the existing Linux builds (closes #30). Install
+  without a Rust toolchain via the install script or by downloading the
+  target archive directly.
 
 **Wizard runtime — from "hangs on MCP prompt" to production-ready:**
 
