@@ -300,6 +300,16 @@ pub struct ToolSpec {
     /// Optional category for filtering and organization (e.g., "devops", "language", "editor").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<&'static str>,
+
+    /// Optional canonical upstream **GitHub** repository as an `owner/repo`
+    /// slug (e.g. `"BurntSushi/ripgrep"`). Consumed by
+    /// `scripts/check-archived-tools.sh` (via `jarvy tools --index`) to
+    /// detect when a tool's upstream has been archived or removed. `None`
+    /// for tools with no GitHub upstream (vendor-hosted CLIs, GitLab
+    /// projects, base system utilities). NOT a full URL and NOT a
+    /// packaging/tap/mirror repo — the source-of-truth repo only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<&'static str>,
 }
 
 impl ToolSpec {
@@ -523,6 +533,7 @@ macro_rules! define_tool {
     // Full form with all platforms
     ($name:ident, {
         command: $cmd:expr,
+        $(repo: $repo:expr,)?
         $(macos: { $($macos_key:ident: $macos_val:expr),* $(,)? },)?
         $(linux: { $($linux_key:ident: $linux_val:expr),* $(,)? },)?
         $(windows: { $($windows_key:ident: $windows_val:expr),* $(,)? },)?
@@ -551,6 +562,7 @@ macro_rules! define_tool {
             depends_on: define_tool!(@depends_on $($deps)?),
             depends_on_one_of: define_tool!(@depends_on_one_of $($flex_deps)?),
             category: define_tool!(@category $($category)?),
+            repo: define_tool!(@repo $($repo)?),
         };
 
         #[allow(dead_code)] // Public API for tool installation
@@ -712,6 +724,10 @@ macro_rules! define_tool {
     // Category helper
     (@category) => { None };
     (@category $cat:expr) => { Some($cat) };
+
+    // Upstream-repo helper (GitHub `owner/repo` slug)
+    (@repo) => { None };
+    (@repo $r:expr) => { Some($r) };
 }
 
 #[allow(unused_imports)]
@@ -753,6 +769,9 @@ pub struct ToolIndexEntry {
     /// Tool category for filtering (e.g., "devops", "language", "editor")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Canonical upstream GitHub repo as `owner/repo` (for archive checks)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
 }
 
 impl From<&ToolSpec> for ToolIndexEntry {
@@ -769,6 +788,7 @@ impl From<&ToolSpec> for ToolIndexEntry {
                 has_custom_installer: spec.custom_install.is_some(),
             },
             category: spec.category.map(|s| s.to_string()),
+            repo: spec.repo.map(|s| s.to_string()),
         }
     }
 }
@@ -790,8 +810,13 @@ impl ToolIndex {
 }
 
 /// Manually registered tools that don't use the `define_tool!` macro.
-/// These tools have custom installation logic and are registered in `register_all()`.
-const MANUAL_TOOLS: &[(&str, &str)] = &[("nvm", "nvm"), ("rust", "rustc"), ("brew", "brew")];
+/// These tools have custom installation logic and are registered in
+/// `register_all()`. Tuple: `(name, command, upstream_repo)`.
+const MANUAL_TOOLS: &[(&str, &str, &str)] = &[
+    ("nvm", "nvm", "nvm-sh/nvm"),
+    ("rust", "rustc", "rust-lang/rust"),
+    ("brew", "brew", "Homebrew/brew"),
+];
 
 /// Generate the complete tool index by collecting all tools.
 ///
@@ -807,7 +832,7 @@ pub fn generate_tool_index() -> ToolIndex {
     }
 
     // Add manually registered tools
-    for (name, command) in MANUAL_TOOLS {
+    for (name, command, repo) in MANUAL_TOOLS {
         tools.push(ToolIndexEntry {
             name: name.to_string(),
             command: command.to_string(),
@@ -819,6 +844,7 @@ pub fn generate_tool_index() -> ToolIndex {
                 has_custom_installer: true,
             },
             category: None,
+            repo: Some(repo.to_string()),
         });
     }
 
@@ -855,7 +881,11 @@ pub fn iter_tool_names() -> impl Iterator<Item = &'static str> {
         let mut v: Vec<String> = iter_tools()
             .map(|e| e.spec.name.to_ascii_lowercase())
             .collect();
-        v.extend(MANUAL_TOOLS.iter().map(|(n, _)| (*n).to_ascii_lowercase()));
+        v.extend(
+            MANUAL_TOOLS
+                .iter()
+                .map(|(n, _, _)| (*n).to_ascii_lowercase()),
+        );
         v.sort();
         v.dedup();
         v
@@ -1019,7 +1049,7 @@ fn check_tool_version(name: &str, version: &str) -> ToolVersionStatus {
     let spec = get_tool_spec(&name_lower);
     let manual_cmd = MANUAL_TOOLS
         .iter()
-        .find_map(|(n, cmd)| if *n == name_lower { Some(*cmd) } else { None });
+        .find_map(|(n, cmd, _)| if *n == name_lower { Some(*cmd) } else { None });
 
     // If neither a registered tool nor a manual tool, it's unknown
     if spec.is_none() && manual_cmd.is_none() {
@@ -1268,7 +1298,7 @@ pub fn has_custom_installer(tool_name: &str) -> bool {
         .unwrap_or(false)
         || MANUAL_TOOLS
             .iter()
-            .any(|(name, _)| *name == tool_name.to_lowercase())
+            .any(|(name, _, _)| *name == tool_name.to_lowercase())
 }
 
 /// Group a list of tools by their installation method.
@@ -1291,7 +1321,7 @@ where
 
         // Check if it's a known tool
         let is_known = get_tool_spec(&name_lower).is_some()
-            || MANUAL_TOOLS.iter().any(|(n, _)| *n == name_lower);
+            || MANUAL_TOOLS.iter().any(|(n, _, _)| *n == name_lower);
 
         if !is_known {
             groups.unknown.push((name.to_string(), version.to_string()));
@@ -1769,6 +1799,7 @@ mod tests {
         depends_on: None,
         depends_on_one_of: None,
         category: None,
+        repo: None,
     };
 
     // Test ToolSpec with a default hook
@@ -1787,6 +1818,7 @@ mod tests {
         depends_on: None,
         depends_on_one_of: None,
         category: None,
+        repo: None,
     };
 
     #[test]
@@ -1859,6 +1891,7 @@ mod tests {
             depends_on: None,
             depends_on_one_of: None,
             category: None,
+            repo: None,
         };
         assert!(!tool.is_satisfied("1.0"));
     }
@@ -1892,6 +1925,7 @@ mod tests {
             depends_on: None,
             depends_on_one_of: None,
             category: None,
+            repo: None,
         };
         let entry = ToolIndexEntry::from(&custom_tool);
         assert!(entry.custom_install.has_custom_installer);
@@ -2097,6 +2131,7 @@ mod tests {
             depends_on: None,
             depends_on_one_of: None,
             category: None,
+            repo: None,
         };
 
         // Hook should be available on current platform
@@ -2177,6 +2212,38 @@ mod tests {
         assert!(!has_custom_installer("jq"));
         // git does not have a custom installer
         assert!(!has_custom_installer("git"));
+    }
+
+    #[test]
+    fn every_declared_repo_is_a_well_formed_slug() {
+        // The `repo` field feeds scripts/check-archived-tools.sh, which
+        // treats it as a GitHub `owner/repo` slug for a `gh api
+        // repos/<slug>` lookup. Reject full URLs, whitespace, and anything
+        // that is not exactly two non-empty path segments so a malformed
+        // entry fails here rather than silently 404ing in the monthly
+        // Archived Tool Check workflow.
+        let index = generate_tool_index();
+        for t in &index.tools {
+            let Some(repo) = &t.repo else { continue };
+            let parts: Vec<&str> = repo.split('/').collect();
+            assert_eq!(
+                parts.len(),
+                2,
+                "tool `{}` repo `{}` must be exactly `owner/repo` (no host, no deep path, no URL)",
+                t.name,
+                repo
+            );
+            assert!(
+                parts.iter().all(|p| {
+                    !p.is_empty()
+                        && p.chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+                }),
+                "tool `{}` repo `{}` has an invalid owner/repo segment",
+                t.name,
+                repo
+            );
+        }
     }
 
     // ========================================================================

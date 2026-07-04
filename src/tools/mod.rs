@@ -217,6 +217,8 @@ pub mod spec;
 pub mod sqlite;
 pub mod starship;
 pub mod stern;
+pub mod surreal;
+pub mod surrealkit;
 pub mod syft;
 pub mod tailscale;
 pub mod talisman;
