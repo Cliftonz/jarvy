@@ -15,6 +15,7 @@ use crate::define_tool;
 
 define_tool!(NEBULA, {
     command: "nebula",
+    repo: "slackhq/nebula",
     macos: { brew: "nebula" },
     linux: { brew: "nebula" },
     category: "networking",

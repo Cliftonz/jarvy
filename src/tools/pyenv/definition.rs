@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(PYENV, {
     command: "pyenv",
+    repo: "pyenv/pyenv",
     macos: { brew: "pyenv" },
     linux: { brew: "pyenv" },
     bsd: { pkg: "pyenv" },

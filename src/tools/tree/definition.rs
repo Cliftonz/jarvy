@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(TREE, {
     command: "tree",
+    repo: "Old-Man-Programmer/tree",
     macos: { brew: "tree" },
     linux: { uniform: "tree" },
     // Windows has built-in tree.exe, no package needed

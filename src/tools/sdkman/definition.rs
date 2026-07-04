@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(SDKMAN, {
     command: "sdk",
+    repo: "sdkman/sdkman-cli",
     macos: { brew: "sdkman-cli" },
     linux: { apt: "sdkman", dnf: "sdkman", pacman: "sdkman", apk: "sdkman" },
     bsd: { pkg: "sdkman" },

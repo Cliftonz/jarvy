@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(OMNICTL, {
     command: "omnictl",
+    repo: "siderolabs/omni",
     macos: { brew: "siderolabs/tap/omnictl" },
     linux: { brew: "siderolabs/tap/omnictl" },
     windows: { winget: "Sidero.omnictl" },

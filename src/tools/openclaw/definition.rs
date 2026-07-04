@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(OPENCLAW, {
     command: "openclaw",
+    repo: "openclaw/openclaw",
     macos: { brew: "openclaw-cli" },
     linux: { uniform: "openclaw-cli" },
 });

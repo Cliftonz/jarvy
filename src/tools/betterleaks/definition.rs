@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(BETTERLEAKS, {
     command: "betterleaks",
+    repo: "betterleaks/betterleaks",
     macos: { brew: "betterleaks" },
     linux: { brew: "betterleaks" },
     default_hook: {

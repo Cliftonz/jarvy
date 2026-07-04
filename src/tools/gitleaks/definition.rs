@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(GITLEAKS, {
     command: "gitleaks",
+    repo: "gitleaks/gitleaks",
     macos: { brew: "gitleaks" },
     linux: { brew: "gitleaks" },
     windows: { winget: "Gitleaks.Gitleaks" },

@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(AZD, {
     command: "azd",
+    repo: "Azure/azure-dev",
     macos: { brew: "azure-dev" },
     linux: { uniform: "azure-dev" },
     windows: { winget: "Microsoft.Azd" },

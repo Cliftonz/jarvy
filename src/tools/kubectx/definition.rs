@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(KUBECTX, {
     command: "kubectx",
+    repo: "ahmetb/kubectx",
     macos: { brew: "kubectx" },
     linux: { brew: "kubectx" },
     windows: { winget: "ahmetb.kubectx" },

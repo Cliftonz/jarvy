@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(PYTHON, {
     command: "python3",
+    repo: "python/cpython",
     macos: { brew: "python" },
     linux: { apt: "python3", dnf: "python3", pacman: "python", apk: "python3" },
     windows: { winget: "Python.Python.3" },

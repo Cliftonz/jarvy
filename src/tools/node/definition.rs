@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(NODE, {
     command: "node",
+    repo: "nodejs/node",
     macos: { brew: "node" },
     linux: { uniform: "nodejs" },
     windows: { winget: "OpenJS.NodeJS.LTS" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(AGE, {
     command: "age",
+    repo: "FiloSottile/age",
     macos: { brew: "age" },
     linux: { uniform: "age" },
     windows: { winget: "FiloSottile.age" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(DOTNET, {
     command: "dotnet",
+    repo: "dotnet/sdk",
     macos: { cask: "dotnet-sdk" },
     linux: { apt: "dotnet-sdk-8.0", dnf: "dotnet-sdk", pacman: "dotnet-sdk", apk: "dotnet-sdk" },
     windows: { winget: "Microsoft.DotNet.SDK.8" },

@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(CRANE, {
     command: "crane",
+    repo: "google/go-containerregistry",
     macos: { brew: "crane" },
     linux: { uniform: "crane" },
 });

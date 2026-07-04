@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(EMQX, {
     command: "emqx",
+    repo: "emqx/emqx",
     macos: { brew: "emqx" },
     linux: { uniform: "emqx" },
     // No first-party winget manifest as of 2026-06; download

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(DIRENV, {
     command: "direnv",
+    repo: "direnv/direnv",
     macos: { brew: "direnv" },
     linux: { uniform: "direnv" },
     windows: { winget: "direnv.direnv" },

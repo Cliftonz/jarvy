@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(KN, {
     command: "kn",
+    repo: "knative/client",
     macos: { brew: "kn" },
     // Linux: install via Linuxbrew or the upstream release binary —
     // `kn` is a 2-letter generic name that's namespace-squat-prone if

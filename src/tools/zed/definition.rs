@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(ZED, {
     command: "zed",
+    repo: "zed-industries/zed",
     macos: { cask: "zed" },
 });
 

@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(INFRACOST, {
     command: "infracost",
+    repo: "infracost/infracost",
     macos: { brew: "infracost" },
     linux: { uniform: "infracost" },
     windows: { winget: "Infracost.Infracost" },

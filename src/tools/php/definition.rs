@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(PHP, {
     command: "php",
+    repo: "php/php-src",
     macos: { brew: "php" },
     linux: { uniform: "php" },
     windows: { winget: "PHP.PHP" },

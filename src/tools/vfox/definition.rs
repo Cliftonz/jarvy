@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(VFOX, {
     command: "vfox",
+    repo: "version-fox/vfox",
     macos: { brew: "vfox" },
     linux: { brew: "vfox" },
     windows: { winget: "vfox" },

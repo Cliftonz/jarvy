@@ -12,6 +12,7 @@ use crate::tools::common::{InstallError, has, run};
 
 define_tool!(VLLM, {
     command: "vllm",
+    repo: "vllm-project/vllm",
     custom_install: install_vllm,
 });
 

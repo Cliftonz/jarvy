@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(TRIVY, {
     command: "trivy",
+    repo: "aquasecurity/trivy",
     macos: { brew: "trivy" },
     linux: { brew: "trivy", apk: "trivy" },
     windows: { winget: "aquasecurity.trivy" },

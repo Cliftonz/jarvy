@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(RIPGREP, {
     command: "rg",
+    repo: "BurntSushi/ripgrep",
     macos: { brew: "ripgrep" },
     linux: { uniform: "ripgrep" },
     windows: { winget: "BurntSushi.ripgrep.MSVC" },

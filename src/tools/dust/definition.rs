@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(DUST, {
     command: "dust",
+    repo: "bootandy/dust",
     macos: { brew: "dust" },
     linux: { apt: "du-dust", dnf: "dust", pacman: "dust", apk: "dust" },
     windows: { winget: "bootandy.dust", choco: "dust" },

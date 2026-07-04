@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(NIM, {
     command: "nim",
+    repo: "nim-lang/Nim",
     macos: { brew: "nim" },
     linux: { apt: "nim", dnf: "nim", pacman: "nim", apk: "nim" },
     windows: { winget: "Nim.Nim" },

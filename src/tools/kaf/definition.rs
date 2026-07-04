@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(KAF, {
     command: "kaf",
+    repo: "birdayz/kaf",
     macos: { brew: "kaf" },
     // Linux: no distro package; install via Linuxbrew or release binary.
     linux: { brew: "kaf" },

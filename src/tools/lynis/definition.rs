@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(LYNIS, {
     command: "lynis",
+    repo: "CISOfy/lynis",
     macos: { brew: "lynis" },
     linux: { uniform: "lynis" },
     bsd: { pkg: "lynis" },

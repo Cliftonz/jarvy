@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(JUST, {
     command: "just",
+    repo: "casey/just",
     macos: { brew: "just" },
     linux: { uniform: "just" },
     windows: { winget: "Casey.Just" },

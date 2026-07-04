@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(KOTLIN, {
     command: "kotlin",
+    repo: "JetBrains/kotlin",
     macos: { brew: "kotlin" },
     linux: { apt: "kotlin", dnf: "kotlin", pacman: "kotlin", apk: "kotlin" },
     windows: { winget: "JetBrains.Kotlin.Compiler", choco: "kotlinc" },

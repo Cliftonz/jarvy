@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(TRUFFLEHOG, {
     command: "trufflehog",
+    repo: "trufflesecurity/trufflehog",
     macos: { brew: "trufflehog" },
     linux: { brew: "trufflehog" },
     bsd: { pkg: "trufflehog" },

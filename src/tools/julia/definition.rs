@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(JULIA, {
     command: "julia",
+    repo: "JuliaLang/julia",
     macos: { cask: "julia" },
     linux: { apt: "julia", dnf: "julia", pacman: "julia", apk: "julia" },
     windows: { winget: "Julialang.Julia" },

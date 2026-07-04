@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(LUA, {
     command: "lua",
+    repo: "lua/lua",
     macos: { brew: "lua" },
     linux: { apt: "lua5.4", dnf: "lua", pacman: "lua", apk: "lua" },
     windows: { winget: "DEVCOM.Lua", choco: "lua" },

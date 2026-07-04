@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(LITECLI, {
     command: "litecli",
+    repo: "dbcli/litecli",
     macos: { brew: "litecli" },
     linux: { apt: "litecli", dnf: "litecli", pacman: "litecli", apk: "litecli" },
     windows: { choco: "litecli" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(MONGOSH, {
     command: "mongosh",
+    repo: "mongodb-js/mongosh",
     macos: { brew: "mongosh" },
     linux: { brew: "mongosh" },
     windows: { winget: "MongoDB.Shell" },

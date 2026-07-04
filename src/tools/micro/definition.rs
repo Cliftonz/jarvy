@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(MICRO, {
     command: "micro",
+    repo: "micro-editor/micro",
     macos: { brew: "micro" },
     linux: { apt: "micro", dnf: "micro", pacman: "micro", apk: "micro" },
     windows: { winget: "zyedidia.micro" },

@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(PGCLI, {
     command: "pgcli",
+    repo: "dbcli/pgcli",
     macos: { brew: "pgcli" },
     linux: { apt: "pgcli", dnf: "pgcli", pacman: "pgcli", apk: "pgcli" },
     windows: { choco: "pgcli" },

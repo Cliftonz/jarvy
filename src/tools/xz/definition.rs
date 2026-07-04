@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(XZ, {
     command: "xz",
+    repo: "tukaani-project/xz",
     macos: { brew: "xz" },
     linux: { uniform: "xz" },
     windows: { winget: "XZUtils.XZ" },

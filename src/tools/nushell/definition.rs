@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(NUSHELL, {
     command: "nu",
+    repo: "nushell/nushell",
     macos: { brew: "nushell" },
     linux: { apt: "nushell", dnf: "nushell", pacman: "nushell", apk: "nushell" },
     windows: { winget: "Nushell.Nushell" },

@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(SKOPEO, {
     command: "skopeo",
+    repo: "podman-container-tools/skopeo",
     macos: { brew: "skopeo" },
     linux: { apt: "skopeo", dnf: "skopeo", pacman: "skopeo", apk: "skopeo" },
     bsd: { pkg: "skopeo" },

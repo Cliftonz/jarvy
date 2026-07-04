@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(BUF, {
     command: "buf",
+    repo: "bufbuild/buf",
     macos: { brew: "bufbuild/buf/buf" },
     linux: { uniform: "buf" },
     windows: { winget: "Bufbuild.Buf" },

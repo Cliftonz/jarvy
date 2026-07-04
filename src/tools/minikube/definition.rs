@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(MINIKUBE, {
     command: "minikube",
+    repo: "kubernetes/minikube",
     macos: { brew: "minikube" },
     linux: { uniform: "minikube" },
     windows: { winget: "Kubernetes.minikube" },

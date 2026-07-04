@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(DOCKER, {
     command: "docker",
+    repo: "docker/cli",
     macos: { cask: "docker" },
     linux: { apt: "docker.io", dnf: "docker", pacman: "docker", apk: "docker" },
     windows: { winget: "Docker.DockerDesktop" },

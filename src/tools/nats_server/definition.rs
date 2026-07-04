@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(NATS_SERVER, {
     command: "nats-server",
+    repo: "nats-io/nats-server",
     macos: { brew: "nats-server" },
     linux: { uniform: "nats-server" },
     // No first-party winget manifest as of 2026-06; the prior

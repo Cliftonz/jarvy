@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(DETECT_SECRETS, {
     command: "detect-secrets",
+    repo: "Yelp/detect-secrets",
     macos: { brew: "detect-secrets" },
     linux: { brew: "detect-secrets" },
 });

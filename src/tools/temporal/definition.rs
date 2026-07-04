@@ -11,6 +11,7 @@ use crate::define_tool;
 
 define_tool!(TEMPORAL, {
     command: "temporal",
+    repo: "temporalio/cli",
     macos: { brew: "temporal" },
     // Linux: install via Linuxbrew or release binary; no native
     // distro package.

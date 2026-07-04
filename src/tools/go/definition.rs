@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GO, {
     command: "go",
+    repo: "golang/go",
     macos: { brew: "go" },
     linux: { apt: "golang", dnf: "golang", pacman: "go", apk: "go" },
     windows: { winget: "GoLang.Go" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(PODMAN, {
     command: "podman",
+    repo: "podman-container-tools/podman",
     macos: { brew: "podman" },
     linux: { apt: "podman", dnf: "podman", pacman: "podman", apk: "podman" },
     windows: { winget: "RedHat.Podman" },

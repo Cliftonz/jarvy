@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(CHOOSE, {
     command: "choose",
+    repo: "theryangeary/choose",
     macos: { brew: "choose-rust" },
     linux: { uniform: "choose" },
     windows: { winget: "choose.choose" },

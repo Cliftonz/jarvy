@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(LUAROCKS, {
     command: "luarocks",
+    repo: "luarocks/luarocks",
     macos: { brew: "luarocks" },
     linux: { apt: "luarocks", dnf: "luarocks", pacman: "luarocks", apk: "luarocks" },
     windows: { winget: "LuaRocks.LuaRocks" },

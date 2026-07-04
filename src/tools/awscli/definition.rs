@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(AWSCLI, {
     command: "aws",
+    repo: "aws/aws-cli",
     macos: { brew: "awscli" },
     linux: { apt: "awscli", dnf: "awscli", pacman: "aws-cli-v2", apk: "aws-cli" },
     windows: { winget: "Amazon.AWSCLI" },

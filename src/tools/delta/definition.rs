@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(DELTA, {
     command: "delta",
+    repo: "dandavison/delta",
     macos: { brew: "git-delta" },
     linux: { apt: "git-delta", dnf: "git-delta", pacman: "git-delta", apk: "git-delta" },
     windows: { winget: "dandavison.delta" },

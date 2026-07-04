@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GRPCURL, {
     command: "grpcurl",
+    repo: "fullstorydev/grpcurl",
     macos: { brew: "grpcurl" },
     linux: { uniform: "grpcurl" },
     // Canonical winget PackageIdentifier is `fullstorydev.grpcurl` —

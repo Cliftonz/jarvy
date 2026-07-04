@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(HUGO, {
     command: "hugo",
+    repo: "gohugoio/hugo",
     macos: { brew: "hugo" },
     linux: { uniform: "hugo" },
     windows: { winget: "Hugo.Hugo.Extended" },

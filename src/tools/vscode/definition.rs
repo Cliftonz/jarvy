@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(VSCODE, {
     command: "code",
+    repo: "microsoft/vscode",
     macos: { cask: "visual-studio-code" },
     linux: { uniform: "code" },
     windows: { winget: "Microsoft.VisualStudioCode" },

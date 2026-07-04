@@ -51,6 +51,7 @@ const HEADSCALE_LINUX_ARM64_SHA256: &str =
 // (raw binary on Linux, server-side-rare on mac/win).
 define_tool!(HEADSCALE, {
     command: "headscale",
+    repo: "juanfont/headscale",
     custom_install: install_headscale,
     category: "networking",
 });

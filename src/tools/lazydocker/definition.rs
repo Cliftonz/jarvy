@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(LAZYDOCKER, {
     command: "lazydocker",
+    repo: "jesseduffield/lazydocker",
     macos: { brew: "lazydocker" },
     linux: { brew: "lazydocker", apk: "lazydocker" },
     windows: { choco: "lazydocker" },

@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(DFC, {
     command: "dfc",
+    repo: "chainguard-dev/dfc",
     macos: { brew: "chainguard-dev/tap/dfc" },
     linux: { brew: "chainguard-dev/tap/dfc" },
     // No native Windows support; requires Go installation

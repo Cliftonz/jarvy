@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(GRYPE, {
     command: "grype",
+    repo: "anchore/grype",
     macos: { brew: "grype" },
     linux: { brew: "grype", apk: "grype" },
     windows: { choco: "grype" },

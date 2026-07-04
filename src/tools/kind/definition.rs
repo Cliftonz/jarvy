@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(KIND, {
     command: "kind",
+    repo: "kubernetes-sigs/kind",
     macos: { brew: "kind" },
     linux: { brew: "kind" },
     windows: { winget: "Kubernetes.kind" },

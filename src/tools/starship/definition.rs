@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(STARSHIP, {
     command: "starship",
+    repo: "starship/starship",
     macos: { brew: "starship" },
     linux: { uniform: "starship" },
     windows: { winget: "Starship.Starship" },

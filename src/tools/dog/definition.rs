@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(DOG, {
     command: "dog",
+    repo: "ogham/dog",
     macos: { brew: "dog" },
     linux: { apt: "dog", dnf: "dog", pacman: "dog", apk: "dog" },
     bsd: { pkg: "dog" },

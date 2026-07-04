@@ -13,6 +13,7 @@ use crate::define_tool;
 
 define_tool!(BAZELISK, {
     command: "bazelisk",
+    repo: "bazelbuild/bazelisk",
     macos: { brew: "bazelisk" },
     linux: { brew: "bazelisk" },
     windows: { winget: "Bazel.Bazelisk" },

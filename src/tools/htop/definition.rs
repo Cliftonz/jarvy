@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(HTOP, {
     command: "htop",
+    repo: "htop-dev/htop",
     macos: { brew: "htop" },
     linux: { uniform: "htop" },
     // No Windows support - htop is Unix-only

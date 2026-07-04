@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(CHECKOV, {
     command: "checkov",
+    repo: "bridgecrewio/checkov",
     macos: { brew: "checkov" },
     linux: { brew: "checkov" },
     bsd: { pkg: "py39-checkov" },

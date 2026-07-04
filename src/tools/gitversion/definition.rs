@@ -11,6 +11,7 @@ use crate::define_tool;
 
 define_tool!(GITVERSION, {
     command: "gitversion",
+    repo: "GitTools/GitVersion",
     macos: { brew: "gitversion" },
     linux: { uniform: "gitversion" },
     windows: { winget: "GitTools.GitVersion" },

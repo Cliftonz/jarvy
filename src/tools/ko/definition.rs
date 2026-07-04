@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(KO, {
     command: "ko",
+    repo: "ko-build/ko",
     macos: { brew: "ko" },
     linux: { uniform: "ko" },
     windows: { winget: "ko-build.ko" },

@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(WIREGUARD_TOOLS, {
     command: "wg",
+    repo: "WireGuard/wireguard-tools",
     macos: { brew: "wireguard-tools" },
     linux: { uniform: "wireguard-tools" },
     windows: { winget: "WireGuard.WireGuard" },

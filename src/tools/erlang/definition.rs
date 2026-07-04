@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(ERLANG, {
     command: "erl",
+    repo: "erlang/otp",
     macos: { brew: "erlang" },
     linux: { apt: "erlang", dnf: "erlang", pacman: "erlang", apk: "erlang" },
     windows: { winget: "Erlang.ErlangOTP", choco: "erlang" },

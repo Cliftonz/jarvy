@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(EZA, {
     command: "eza",
+    repo: "eza-community/eza",
     macos: { brew: "eza" },
     linux: { apt: "eza", dnf: "eza", pacman: "eza", apk: "eza" },
     windows: { winget: "eza-community.eza" },

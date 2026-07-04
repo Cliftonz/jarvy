@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(UV, {
     command: "uv",
+    repo: "astral-sh/uv",
     macos: { brew: "uv" },
     linux: { brew: "uv", apk: "uv" },
     windows: { winget: "astral-sh.uv" },

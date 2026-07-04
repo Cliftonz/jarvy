@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(JQ, {
     command: "jq",
+    repo: "jqlang/jq",
     macos: { brew: "jq" },
     linux: { uniform: "jq" },
     windows: { winget: "jqlang.jq" },

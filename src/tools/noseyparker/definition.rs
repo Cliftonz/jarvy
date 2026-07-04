@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(NOSEYPARKER, {
     command: "noseyparker",
+    repo: "praetorian-inc/noseyparker",
     macos: { brew: "noseyparker" },
     linux: { brew: "noseyparker" },
 });

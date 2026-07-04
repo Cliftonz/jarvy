@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(MOLECULE, {
     command: "molecule",
+    repo: "ansible/molecule",
     macos: { brew: "molecule" },
     linux: { apt: "molecule", dnf: "molecule", pacman: "molecule", apk: "molecule" },
     bsd: { pkg: "molecule" },

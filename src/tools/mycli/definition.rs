@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(MYCLI, {
     command: "mycli",
+    repo: "dbcli/mycli",
     macos: { brew: "mycli" },
     linux: { apt: "mycli", dnf: "mycli", pacman: "mycli", apk: "mycli" },
     windows: { choco: "mycli" },

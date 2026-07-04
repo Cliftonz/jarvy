@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(TILT, {
     command: "tilt",
+    repo: "tilt-dev/tilt",
     macos: { brew: "tilt" },
     linux: { uniform: "tilt" },
     bsd: { pkg: "tilt" },

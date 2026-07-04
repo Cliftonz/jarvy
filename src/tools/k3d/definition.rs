@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(K3D, {
     command: "k3d",
+    repo: "k3d-io/k3d",
     macos: { brew: "k3d" },
     linux: { brew: "k3d" },
     windows: { winget: "k3d-io.k3d" },

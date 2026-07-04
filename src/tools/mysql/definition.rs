@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(MYSQL, {
     command: "mysql",
+    repo: "mysql/mysql-server",
     macos: { brew: "mysql-client" },
     linux: { apt: "mysql-client", dnf: "mysql", pacman: "mysql", apk: "mysql-client" },
     windows: { winget: "Oracle.MySQL" },

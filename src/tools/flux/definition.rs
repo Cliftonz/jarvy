@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(FLUX, {
     command: "flux",
+    repo: "fluxcd/flux2",
     macos: { brew: "fluxcd/tap/flux" },
     linux: { brew: "fluxcd/tap/flux" },
     windows: { winget: "Fluxcd.Flux" },

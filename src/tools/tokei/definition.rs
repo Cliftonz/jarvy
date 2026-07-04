@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(TOKEI, {
     command: "tokei",
+    repo: "XAMPPRocky/tokei",
     macos: { brew: "tokei" },
     linux: { apt: "tokei", dnf: "tokei", pacman: "tokei", apk: "tokei" },
     windows: { winget: "XAMPPRocky.tokei", choco: "tokei" },

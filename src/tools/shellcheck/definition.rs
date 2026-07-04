@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(SHELLCHECK, {
     command: "shellcheck",
+    repo: "koalaman/shellcheck",
     macos: { brew: "shellcheck" },
     linux: { uniform: "shellcheck" },
     windows: { winget: "koalaman.shellcheck" },

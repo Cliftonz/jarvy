@@ -13,6 +13,7 @@ use crate::define_tool;
 
 define_tool!(TAILSCALE, {
     command: "tailscale",
+    repo: "tailscale/tailscale",
     macos: { brew: "tailscale" },
     linux: { brew: "tailscale" },
     windows: { winget: "Tailscale.Tailscale" },

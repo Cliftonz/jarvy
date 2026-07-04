@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(BUN, {
     command: "bun",
+    repo: "oven-sh/bun",
     macos: { brew: "oven-sh/bun/bun" },
     linux: { brew: "oven-sh/bun/bun" },
     windows: { winget: "Oven-sh.Bun" },

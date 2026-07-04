@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(KUBENS, {
     command: "kubens",
+    repo: "ahmetb/kubectx",
     macos: { brew: "kubectx" },
     linux: { brew: "kubectx" },
     bsd: { pkg: "kubectx" },

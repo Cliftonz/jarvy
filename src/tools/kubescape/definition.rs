@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(KUBESCAPE, {
     command: "kubescape",
+    repo: "kubescape/kubescape",
     macos: { brew: "kubescape" },
     linux: { uniform: "kubescape" },
     windows: { winget: "kubescape.kubescape" },

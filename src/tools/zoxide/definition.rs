@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(ZOXIDE, {
     command: "zoxide",
+    repo: "ajeetdsouza/zoxide",
     macos: { brew: "zoxide" },
     linux: { uniform: "zoxide" },
     windows: { winget: "ajeetdsouza.zoxide" },

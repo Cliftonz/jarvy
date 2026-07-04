@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(KUBECTL, {
     command: "kubectl",
+    repo: "kubernetes/kubernetes",
     macos: { brew: "kubectl" },
     linux: { uniform: "kubectl" },
     windows: { winget: "Kubernetes.kubectl" },

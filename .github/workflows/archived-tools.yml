@@ -1,0 +1,85 @@
+name: Archived Tool Check
+
+# Monthly sweep: flag any built-in tool whose upstream GitHub repo has
+# been archived (read-only / abandoned) or gone missing, so a maintainer
+# can migrate to a maintained successor or drop the tool. Findings are
+# collected into a single tracking issue (one open issue reused across
+# runs via the `archived-upstream` label).
+on:
+  workflow_dispatch:
+  schedule:
+    # 06:00 UTC on the 1st of every month.
+    - cron: '0 6 1 * *'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: archived-tools
+  cancel-in-progress: false
+
+jobs:
+  check-archived:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Generate tool index
+        run: |
+          cargo run --quiet -- tools --index --format json > tool-index.json
+          jq -e '.tools | length' tool-index.json
+
+      - name: Scan declared upstreams for archived repos
+        id: scan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          bash scripts/check-archived-tools.sh tool-index.json archived-tools-report.md
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Fail on scan error
+        if: steps.scan.outputs.status == '2'
+        run: |
+          echo "::error::check-archived-tools.sh failed (missing/unauthenticated gh CLI)"
+          exit 1
+
+      - name: Open or update tracking issue
+        if: steps.scan.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="Archived / unreachable upstream tools detected"
+          label="archived-upstream"
+
+          # Ensure the tracking label exists (no-op if already present).
+          gh label create "$label" \
+            --color b60205 \
+            --description "A built-in tool's upstream repo is archived or unreachable" \
+            2>/dev/null || true
+
+          existing="$(gh issue list --state open --label "$label" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file archived-tools-report.md
+            echo "Updated existing tracking issue #$existing"
+          else
+            gh issue create --title "$title" --label "$label" --body-file archived-tools-report.md
+            echo "Opened new tracking issue"
+          fi
+
+      - name: Upload report artifact
+        if: steps.scan.outputs.status != '2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: archived-tools-report
+          path: archived-tools-report.md
+          if-no-files-found: ignore

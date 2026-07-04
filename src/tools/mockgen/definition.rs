@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(MOCKGEN, {
     command: "mockgen",
+    repo: "uber-go/mock",
     macos: { brew: "mockery" },
     linux: { uniform: "mockery" },
     windows: { winget: "vektra.mockery" },

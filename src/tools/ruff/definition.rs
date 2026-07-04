@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(RUFF, {
     command: "ruff",
+    repo: "astral-sh/ruff",
     macos: { brew: "ruff" },
     linux: { brew: "ruff", apk: "ruff" },
     windows: { winget: "astral-sh.ruff" },

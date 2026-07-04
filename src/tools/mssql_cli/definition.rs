@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(MSSQL_CLI, {
     command: "mssql-cli",
+    repo: "dbcli/mssql-cli",
     macos: { brew: "mssql-cli" },
     linux: { uniform: "mssql-cli" },
     windows: { winget: "Microsoft.SqlServer.MssqlCli" },

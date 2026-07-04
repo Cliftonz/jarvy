@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(GREX, {
     command: "grex",
+    repo: "pemistahl/grex",
     macos: { brew: "grex" },
     linux: { uniform: "grex" },
     windows: { winget: "pemistahl.grex" },

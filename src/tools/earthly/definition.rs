@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(EARTHLY, {
     command: "earthly",
+    repo: "earthly/earthly",
     macos: { brew: "earthly/earthly/earthly" },
     linux: { uniform: "earthly" },
     windows: { winget: "Earthly.Earthly" },

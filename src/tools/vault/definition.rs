@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(VAULT, {
     command: "vault",
+    repo: "hashicorp/vault",
     macos: { brew: "vault" },
     linux: { uniform: "vault" },
     windows: { winget: "HashiCorp.Vault" },

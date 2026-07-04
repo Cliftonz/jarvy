@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(YAZI, {
     command: "yazi",
+    repo: "sxyazi/yazi",
     macos: { brew: "yazi" },
     linux: { apt: "yazi", dnf: "yazi", pacman: "yazi", apk: "yazi" },
     windows: { winget: "sxyazi.yazi" },

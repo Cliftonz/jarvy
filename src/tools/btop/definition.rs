@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(BTOP, {
     command: "btop",
+    repo: "aristocratos/btop",
     macos: { brew: "btop" },
     linux: { apt: "btop", dnf: "btop", pacman: "btop", apk: "btop" },
     bsd: { pkg: "btop" },

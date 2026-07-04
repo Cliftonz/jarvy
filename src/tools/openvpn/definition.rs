@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(OPENVPN, {
     command: "openvpn",
+    repo: "OpenVPN/openvpn",
     macos: { brew: "openvpn" },
     linux: { uniform: "openvpn" },
     windows: { winget: "OpenVPNTechnologies.OpenVPN" },

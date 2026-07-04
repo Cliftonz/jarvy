@@ -42,3 +42,7 @@ docs/schema/jarvy-telemetry-forwarder.values.schema.json
 
 # JetBrains IDE state (RustRover / IntelliJ)
 .idea/
+
+# Archived Tool Check workflow artifacts
+tool-index.json
+archived-tools-report.md

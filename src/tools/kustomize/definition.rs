@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(KUSTOMIZE, {
     command: "kustomize",
+    repo: "kubernetes-sigs/kustomize",
     macos: { brew: "kustomize" },
     linux: { uniform: "kustomize" },
     windows: { winget: "Kubernetes.kustomize" },

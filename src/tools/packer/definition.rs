@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(PACKER, {
     command: "packer",
+    repo: "hashicorp/packer",
     macos: { brew: "packer" },
     linux: { uniform: "packer" },
     windows: { winget: "HashiCorp.Packer" },

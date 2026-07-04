@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(TALOSCTL, {
     command: "talosctl",
+    repo: "siderolabs/talos",
     macos: { brew: "siderolabs/tap/talosctl" },
     linux: { uniform: "talosctl" },
     windows: { winget: "SideroLabs.talosctl" },

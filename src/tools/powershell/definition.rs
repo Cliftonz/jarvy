@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(POWERSHELL, {
     command: "pwsh",
+    repo: "PowerShell/PowerShell",
     macos: { cask: "powershell" },
     linux: { uniform: "powershell" },
     windows: { winget: "Microsoft.PowerShell" },

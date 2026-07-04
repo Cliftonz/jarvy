@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(PNPM, {
     command: "pnpm",
+    repo: "pnpm/pnpm",
     macos: { brew: "pnpm" },
     linux: { brew: "pnpm" },
     windows: { winget: "pnpm.pnpm" },

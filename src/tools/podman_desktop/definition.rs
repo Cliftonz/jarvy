@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(PODMAN_DESKTOP, {
     command: "podman-desktop",
+    repo: "podman-desktop/podman-desktop",
     macos: { cask: "podman-desktop" },
     linux: { brew: "podman-desktop" },
     windows: { winget: "RedHat.Podman-Desktop" },

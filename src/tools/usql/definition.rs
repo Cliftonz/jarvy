@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(USQL, {
     command: "usql",
+    repo: "xo/usql",
     macos: { brew: "usql" },
     linux: { brew: "usql" },
     windows: { choco: "usql" },

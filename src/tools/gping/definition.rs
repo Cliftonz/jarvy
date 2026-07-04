@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(GPING, {
     command: "gping",
+    repo: "orf/gping",
     macos: { brew: "gping" },
     linux: { uniform: "gping" },
     windows: { winget: "orf.gping" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(AIR, {
     command: "air",
+    repo: "air-verse/air",
     macos: { brew: "air" },
     linux: { uniform: "air" },
     windows: { winget: "cosmtrek.air" },

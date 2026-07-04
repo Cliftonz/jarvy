@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(MISE, {
     command: "mise",
+    repo: "jdx/mise",
     macos: { brew: "mise" },
     linux: { brew: "mise" },
     windows: { winget: "jdx.mise" },

@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(ARGOCD, {
     command: "argocd",
+    repo: "argoproj/argo-cd",
     macos: { brew: "argocd" },
     linux: { brew: "argocd", apk: "argocd" },
     windows: { winget: "Argoproj.ArgoCD" },

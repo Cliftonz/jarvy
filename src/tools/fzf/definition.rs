@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(FZF, {
     command: "fzf",
+    repo: "junegunn/fzf",
     macos: { brew: "fzf" },
     linux: { uniform: "fzf" },
     windows: { winget: "junegunn.fzf" },

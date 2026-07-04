@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(ACTIONLINT, {
     command: "actionlint",
+    repo: "rhysd/actionlint",
     macos: { brew: "actionlint" },
     linux: { brew: "actionlint" },
     windows: { winget: "rhysd.actionlint" },

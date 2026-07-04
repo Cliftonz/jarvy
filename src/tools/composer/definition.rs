@@ -16,6 +16,7 @@ use crate::define_tool;
 
 define_tool!(COMPOSER, {
     command: "composer",
+    repo: "composer/composer",
     macos: { brew: "composer" },
     linux: { uniform: "composer" },
 });

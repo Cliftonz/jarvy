@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(KREW, {
     command: "kubectl-krew",
+    repo: "kubernetes-sigs/krew",
     macos: { brew: "krew" },
     linux: { brew: "krew", apk: "kubectl-krew" },
     bsd: { pkg: "krew" },

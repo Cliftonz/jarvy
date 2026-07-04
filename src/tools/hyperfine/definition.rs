@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(HYPERFINE, {
     command: "hyperfine",
+    repo: "sharkdp/hyperfine",
     macos: { brew: "hyperfine" },
     linux: { apt: "hyperfine", dnf: "hyperfine", pacman: "hyperfine", apk: "hyperfine" },
     windows: { winget: "sharkdp.hyperfine", choco: "hyperfine" },

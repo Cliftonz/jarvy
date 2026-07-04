@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(SCALA, {
     command: "scala",
+    repo: "scala/scala",
     macos: { brew: "scala" },
     linux: { apt: "scala", dnf: "scala", pacman: "scala", apk: "scala" },
     windows: { winget: "Scala.Scala.3", choco: "scala" },

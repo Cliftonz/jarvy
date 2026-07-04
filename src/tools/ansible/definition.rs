@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(ANSIBLE, {
     command: "ansible",
+    repo: "ansible/ansible",
     macos: { brew: "ansible" },
     linux: { apt: "ansible", dnf: "ansible", pacman: "ansible", apk: "ansible" },
     windows: { choco: "ansible" },

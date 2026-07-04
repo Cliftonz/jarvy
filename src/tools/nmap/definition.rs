@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(NMAP, {
     command: "nmap",
+    repo: "nmap/nmap",
     macos: { brew: "nmap" },
     linux: { uniform: "nmap" },
     windows: { winget: "Insecure.Nmap" },

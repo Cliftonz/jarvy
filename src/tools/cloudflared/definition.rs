@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(CLOUDFLARED, {
     command: "cloudflared",
+    repo: "cloudflare/cloudflared",
     macos: { brew: "cloudflared" },
     linux: { brew: "cloudflared" },
     windows: { winget: "Cloudflare.cloudflared" },

@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(BICEP, {
     command: "bicep",
+    repo: "Azure/bicep",
     macos: { brew: "bicep" },
     linux: { uniform: "bicep" },
     windows: { winget: "Microsoft.Bicep" },

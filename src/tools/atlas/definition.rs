@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(ATLAS, {
     command: "atlas",
+    repo: "ariga/atlas",
     macos: { brew: "ariga/tap/atlas" },
     linux: { uniform: "atlas" },
     windows: { winget: "Ariga.Atlas" },

@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(TALISMAN, {
     command: "talisman",
+    repo: "thoughtworks/talisman",
     macos: { brew: "talisman" },
     linux: { brew: "talisman" },
     depends_on: &["git"],

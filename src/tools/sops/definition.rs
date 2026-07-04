@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(SOPS, {
     command: "sops",
+    repo: "getsops/sops",
     macos: { brew: "sops" },
     linux: { brew: "sops" },
     windows: { winget: "Mozilla.sops" },

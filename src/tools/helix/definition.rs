@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(HELIX, {
     command: "hx",
+    repo: "helix-editor/helix",
     macos: { brew: "helix" },
     linux: { apt: "helix-editor", dnf: "helix", pacman: "helix", apk: "helix" },
     windows: { winget: "Helix.Helix" },

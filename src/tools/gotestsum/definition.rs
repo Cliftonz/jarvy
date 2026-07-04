@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GOTESTSUM, {
     command: "gotestsum",
+    repo: "gotestyourself/gotestsum",
     macos: { brew: "gotestsum" },
     linux: { uniform: "gotestsum" },
     windows: { winget: "gotestyourself.gotestsum" },

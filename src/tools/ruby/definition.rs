@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(RUBY, {
     command: "ruby",
+    repo: "ruby/ruby",
     macos: { brew: "ruby" },
     linux: { uniform: "ruby" },
     windows: { winget: "RubyInstallerTeam.Ruby" },

@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(KAGENT, {
     command: "kagent",
+    repo: "kagent-dev/kagent",
     macos: { brew: "kagent" },
     linux: { brew: "kagent" },
     depends_on: &["kubectl"],

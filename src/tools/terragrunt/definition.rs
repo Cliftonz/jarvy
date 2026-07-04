@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(TERRAGRUNT, {
     command: "terragrunt",
+    repo: "gruntwork-io/terragrunt",
     macos: { brew: "terragrunt" },
     linux: { brew: "terragrunt" },
     windows: { winget: "Gruntwork.Terragrunt", choco: "terragrunt" },

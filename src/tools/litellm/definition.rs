@@ -11,6 +11,7 @@ use crate::tools::common::{InstallError, has, run};
 
 define_tool!(LITELLM, {
     command: "litellm",
+    repo: "BerriAI/litellm",
     custom_install: install_litellm,
 });
 

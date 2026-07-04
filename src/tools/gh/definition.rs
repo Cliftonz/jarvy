@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GH, {
     command: "gh",
+    repo: "cli/cli",
     macos: { brew: "gh" },
     linux: { apt: "gh", dnf: "gh", pacman: "github-cli", apk: "github-cli" },
     windows: { winget: "GitHub.cli" },

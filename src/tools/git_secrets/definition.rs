@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(GIT_SECRETS, {
     command: "git-secrets",
+    repo: "awslabs/git-secrets",
     macos: { brew: "git-secrets" },
     linux: { uniform: "git-secrets" },
     depends_on: &["git"],

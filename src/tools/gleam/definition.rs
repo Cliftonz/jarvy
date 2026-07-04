@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GLEAM, {
     command: "gleam",
+    repo: "gleam-lang/gleam",
     macos: { brew: "gleam" },
     linux: { uniform: "gleam" },
     windows: { winget: "Gleam.Gleam" },

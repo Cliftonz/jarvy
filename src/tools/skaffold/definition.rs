@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(SKAFFOLD, {
     command: "skaffold",
+    repo: "GoogleContainerTools/skaffold",
     macos: { brew: "skaffold" },
     linux: { brew: "skaffold" },
     windows: { winget: "Google.ContainerTools.Skaffold" },

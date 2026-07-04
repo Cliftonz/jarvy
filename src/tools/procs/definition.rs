@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(PROCS, {
     command: "procs",
+    repo: "dalance/procs",
     macos: { brew: "procs" },
     linux: { uniform: "procs" },
     windows: { winget: "dalance.procs" },

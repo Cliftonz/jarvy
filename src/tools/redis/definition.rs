@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(REDIS, {
     command: "redis-cli",
+    repo: "redis/redis",
     macos: { brew: "redis" },
     linux: { uniform: "redis" },
     windows: { winget: "Redis.Redis" },

@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(ACT, {
     command: "act",
+    repo: "nektos/act",
     macos: { brew: "act" },
     linux: { brew: "act" },
     windows: { winget: "nektos.act", choco: "act-cli" },

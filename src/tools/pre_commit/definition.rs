@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(PRE_COMMIT, {
     command: "pre-commit",
+    repo: "pre-commit/pre-commit",
     macos: { brew: "pre-commit" },
     linux: { uniform: "pre-commit" },
     windows: { choco: "pre-commit" },

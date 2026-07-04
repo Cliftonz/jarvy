@@ -15,6 +15,7 @@ use crate::define_tool;
 
 define_tool!(NATS, {
     command: "nats",
+    repo: "nats-io/natscli",
     macos: { brew: "nats-io/nats-tools/nats" },
     // Linux: use Linuxbrew via the same tap rather than a distro
     // `natscli` package — verified that no Debian / RHEL family ships

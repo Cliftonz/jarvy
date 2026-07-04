@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(BROOT, {
     command: "broot",
+    repo: "Canop/broot",
     macos: { brew: "broot" },
     linux: { uniform: "broot" },
     windows: { winget: "Dystroy.broot" },

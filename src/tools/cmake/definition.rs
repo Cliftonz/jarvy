@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(CMAKE, {
     command: "cmake",
+    repo: "Kitware/CMake",
     macos: { brew: "cmake" },
     linux: { uniform: "cmake" },
     windows: { winget: "Kitware.CMake" },

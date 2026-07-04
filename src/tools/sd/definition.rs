@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(SD, {
     command: "sd",
+    repo: "chmln/sd",
     macos: { brew: "sd" },
     linux: { brew: "sd" },
     windows: { choco: "sd-cli" },

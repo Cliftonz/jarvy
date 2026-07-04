@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(GRAFANACTL, {
     command: "grafanactl",
+    repo: "grafana/grafanactl",
     macos: { brew: "grafanactl" },
     linux: { uniform: "grafanactl" },
 });

@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(RBENV, {
     command: "rbenv",
+    repo: "rbenv/rbenv",
     macos: { brew: "rbenv" },
     linux: { brew: "rbenv" },
     bsd: { pkg: "rbenv" },

@@ -11,6 +11,7 @@ use crate::define_tool;
 
 define_tool!(CRYSTAL, {
     command: "crystal",
+    repo: "crystal-lang/crystal",
     macos: { brew: "crystal" },
     linux: { apt: "crystal", dnf: "crystal", pacman: "crystal", apk: "crystal" },
     bsd: { pkg: "crystal" },

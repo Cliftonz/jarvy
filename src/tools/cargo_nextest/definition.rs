@@ -25,6 +25,7 @@ fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
 
 define_tool!(CARGO_NEXTEST, {
     command: "cargo-nextest",
+    repo: "nextest-rs/nextest",
     custom_install: install_via_cargo,
     depends_on: &["rust"],
 });

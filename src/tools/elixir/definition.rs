@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(ELIXIR, {
     command: "elixir",
+    repo: "elixir-lang/elixir",
     macos: { brew: "elixir" },
     linux: { uniform: "elixir" },
     windows: { winget: "Elixir.Elixir" },

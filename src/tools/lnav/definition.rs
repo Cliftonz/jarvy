@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(LNAV, {
     command: "lnav",
+    repo: "tstack/lnav",
     macos: { brew: "lnav" },
     linux: { uniform: "lnav" },
     bsd: { pkg: "lnav" },

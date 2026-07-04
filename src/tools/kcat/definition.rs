@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(KCAT, {
     command: "kcat",
+    repo: "edenhill/kcat",
     macos: { brew: "kcat" },
     // Per-package-manager split: Debian-family stable still packages
     // under the legacy `kafkacat` name; Fedora / Arch / Alpine adopted

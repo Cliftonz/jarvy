@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(WATCHEXEC, {
     command: "watchexec",
+    repo: "watchexec/watchexec",
     macos: { brew: "watchexec" },
     linux: { apt: "watchexec", dnf: "watchexec", pacman: "watchexec", apk: "watchexec" },
     windows: { winget: "watchexec.watchexec", choco: "watchexec" },

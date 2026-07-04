@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(LAZYGIT, {
     command: "lazygit",
+    repo: "jesseduffield/lazygit",
     macos: { brew: "lazygit" },
     linux: { uniform: "lazygit" },
     windows: { winget: "JesseDuffield.lazygit" },

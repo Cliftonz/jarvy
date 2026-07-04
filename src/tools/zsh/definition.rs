@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(ZSH, {
     command: "zsh",
+    repo: "zsh-users/zsh",
     macos: { brew: "zsh" },
     linux: { uniform: "zsh" },
     // No Windows support - zsh is Unix-only

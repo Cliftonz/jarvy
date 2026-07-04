@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(DENO, {
     command: "deno",
+    repo: "denoland/deno",
     macos: { brew: "deno" },
     linux: { brew: "deno" },
     windows: { winget: "DenoLand.Deno" },

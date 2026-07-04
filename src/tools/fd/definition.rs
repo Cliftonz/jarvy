@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(FD, {
     command: "fd",
+    repo: "sharkdp/fd",
     macos: { brew: "fd" },
     linux: { apt: "fd-find", dnf: "fd-find", pacman: "fd", apk: "fd" },
     windows: { winget: "sharkdp.fd" },

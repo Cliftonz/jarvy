@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(ITERM2, {
     command: "iterm2",
+    repo: "gnachman/iTerm2",
     macos: { cask: "iterm2" },
     // No Linux or Windows support - macOS only
 });

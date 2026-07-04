@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(KAFKACTL, {
     command: "kafkactl",
+    repo: "deviceinsight/kafkactl",
     macos: { brew: "deviceinsight/packages/kafkactl" },
     // Linux: install via Linuxbrew through the same tap, or use the
     // upstream release binary. No native distro package.

@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(CUE, {
     command: "cue",
+    repo: "cue-lang/cue",
     macos: { brew: "cue" },
     linux: { uniform: "cue" },
     bsd: { pkg: "cue" },

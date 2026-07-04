@@ -23,6 +23,7 @@ const KMCP_INSTALLER_SHA256: &str =
 
 define_tool!(KMCP, {
     command: "kmcp",
+    repo: "kagent-dev/kmcp",
     custom_install: install_kmcp,
     depends_on: &["kubectl"],
 });

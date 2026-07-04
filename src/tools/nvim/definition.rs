@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(NVIM, {
     command: "nvim",
+    repo: "neovim/neovim",
     macos: { brew: "neovim" },
     linux: { uniform: "neovim" },
     windows: { winget: "Neovim.Neovim" },

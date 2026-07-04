@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(VAGRANT, {
     command: "vagrant",
+    repo: "hashicorp/vagrant",
     macos: { cask: "vagrant" },
     linux: { apt: "vagrant", dnf: "vagrant", pacman: "vagrant", apk: "vagrant" },
     windows: { winget: "Hashicorp.Vagrant", choco: "vagrant" },

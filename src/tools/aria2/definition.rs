@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(ARIA2, {
     command: "aria2c",
+    repo: "aria2/aria2",
     macos: { brew: "aria2" },
     linux: { uniform: "aria2" },
     windows: { winget: "aria2.aria2" },

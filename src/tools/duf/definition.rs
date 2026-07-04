@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(DUF, {
     command: "duf",
+    repo: "muesli/duf",
     macos: { brew: "duf" },
     linux: { uniform: "duf" },
     windows: { winget: "muesli.duf" },

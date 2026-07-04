@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(RABBITMQ, {
     command: "rabbitmq-server",
+    repo: "rabbitmq/rabbitmq-server",
     macos: { brew: "rabbitmq" },
     linux: { uniform: "rabbitmq-server" },
     // No first-party winget manifest as of 2026-06; the prior

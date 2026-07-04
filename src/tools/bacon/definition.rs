@@ -24,6 +24,7 @@ fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
 
 define_tool!(BACON, {
     command: "bacon",
+    repo: "Canop/bacon",
     custom_install: install_via_cargo,
     depends_on: &["rust"],
 });

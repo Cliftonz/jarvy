@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(TERRAFORM, {
     command: "terraform",
+    repo: "hashicorp/terraform",
     macos: { brew: "terraform" },
     linux: { uniform: "terraform" },
     windows: { winget: "HashiCorp.Terraform" },

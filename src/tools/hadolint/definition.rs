@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(HADOLINT, {
     command: "hadolint",
+    repo: "hadolint/hadolint",
     macos: { brew: "hadolint" },
     linux: { brew: "hadolint" },
     windows: { winget: "hadolint.hadolint" },

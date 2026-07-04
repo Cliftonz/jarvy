@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(VIM, {
     command: "vim",
+    repo: "vim/vim",
     macos: { brew: "vim" },
     linux: { apt: "vim", dnf: "vim-enhanced", pacman: "vim", apk: "vim" },
     windows: { winget: "vim.vim" },

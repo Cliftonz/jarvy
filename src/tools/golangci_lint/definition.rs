@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GOLANGCI_LINT, {
     command: "golangci-lint",
+    repo: "golangci/golangci-lint",
     macos: { brew: "golangci-lint" },
     linux: { uniform: "golangci-lint" },
     windows: { winget: "GolangCI.golangci-lint" },

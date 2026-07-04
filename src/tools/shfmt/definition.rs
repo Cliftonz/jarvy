@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(SHFMT, {
     command: "shfmt",
+    repo: "mvdan/sh",
     macos: { brew: "shfmt" },
     linux: { uniform: "shfmt" },
     windows: { winget: "mvdan.shfmt" },

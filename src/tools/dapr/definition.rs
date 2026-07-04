@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(DAPR, {
     command: "dapr",
+    repo: "dapr/cli",
     macos: { brew: "dapr/tap/dapr-cli" },
     linux: { uniform: "dapr" },
     windows: { winget: "Dapr.CLI" },

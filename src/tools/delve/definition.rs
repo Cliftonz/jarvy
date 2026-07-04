@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(DELVE, {
     command: "dlv",
+    repo: "go-delve/delve",
     macos: { brew: "delve" },
     linux: { uniform: "delve" },
     windows: { winget: "Go.Delve" },

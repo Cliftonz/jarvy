@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(LOCALSTACK, {
     command: "localstack",
+    repo: "localstack/localstack",
     macos: { brew: "localstack" },
     linux: { uniform: "localstack" },
     bsd: { pkg: "localstack" },

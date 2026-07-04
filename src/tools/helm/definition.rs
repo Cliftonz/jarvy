@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(HELM, {
     command: "helm",
+    repo: "helm/helm",
     macos: { brew: "helm" },
     linux: { uniform: "helm" },
     windows: { winget: "Helm.Helm" },

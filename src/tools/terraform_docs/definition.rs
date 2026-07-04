@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(TERRAFORM_DOCS, {
     command: "terraform-docs",
+    repo: "terraform-docs/terraform-docs",
     macos: { brew: "terraform-docs" },
     linux: { brew: "terraform-docs" },
     windows: { choco: "terraform-docs" },

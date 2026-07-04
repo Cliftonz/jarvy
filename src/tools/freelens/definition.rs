@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(FREELENS, {
     command: "freelens",
+    repo: "freelensapp/freelens",
     macos: { cask: "freelens" },
     linux: { brew: "freelens" },
     windows: { winget: "freelensapp.Freelens" },

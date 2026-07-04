@@ -14,6 +14,7 @@ use crate::define_tool;
 
 define_tool!(ZEROTIER, {
     command: "zerotier-cli",
+    repo: "zerotier/ZeroTierOne",
     macos: { cask: "zerotier-one" },
     windows: { winget: "ZeroTier.ZeroTierOne" },
     category: "networking",

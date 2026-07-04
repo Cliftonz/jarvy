@@ -27,6 +27,7 @@ use crate::define_tool;
 
 define_tool!(INFISICAL, {
     command: "infisical",
+    repo: "Infisical/infisical",
     macos: { brew: "infisical" },
     windows: { winget: "infisical.infisical" },
 });

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(AZURE_CLI, {
     command: "az",
+    repo: "Azure/azure-cli",
     macos: { brew: "azure-cli" },
     linux: { apt: "azure-cli", dnf: "azure-cli", pacman: "azure-cli", apk: "azure-cli" },
     windows: { winget: "Microsoft.AzureCLI" },

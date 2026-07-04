@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GOVULNCHECK, {
     command: "govulncheck",
+    repo: "golang/vuln",
     macos: { brew: "govulncheck" },
     linux: { uniform: "govulncheck" },
     bsd: { pkg: "govulncheck" },

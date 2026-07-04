@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(ATUIN, {
     command: "atuin",
+    repo: "atuinsh/atuin",
     macos: { brew: "atuin" },
     linux: { uniform: "atuin" },
     windows: { winget: "atuinsh.atuin" },

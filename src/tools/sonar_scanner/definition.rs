@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(SONAR_SCANNER, {
     command: "sonar-scanner",
+    repo: "SonarSource/sonar-scanner-cli",
     macos: { brew: "sonar-scanner" },
     linux: { apt: "sonar-scanner", dnf: "sonar-scanner", pacman: "sonar-scanner", apk: "sonar-scanner" },
 });

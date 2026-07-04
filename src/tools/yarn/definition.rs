@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(YARN, {
     command: "yarn",
+    repo: "yarnpkg/yarn",
     macos: { brew: "yarn" },
     linux: { brew: "yarn" },
     windows: { winget: "Yarn.Yarn" },

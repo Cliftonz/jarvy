@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(OPENTOFU, {
     command: "tofu",
+    repo: "opentofu/opentofu",
     macos: { brew: "opentofu" },
     linux: { uniform: "opentofu" },
     windows: { winget: "OpenTofu.OpenTofu" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(K9S, {
     command: "k9s",
+    repo: "derailed/k9s",
     macos: { brew: "derailed/k9s/k9s" },
     linux: { uniform: "k9s" },
     windows: { winget: "Derailed.k9s" },

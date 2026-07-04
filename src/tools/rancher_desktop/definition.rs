@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(RANCHER_DESKTOP, {
     command: "rdctl",
+    repo: "rancher-sandbox/rancher-desktop",
     macos: { cask: "rancher" },
     linux: { brew: "rancher" },
     windows: { winget: "suse.RancherDesktop" },

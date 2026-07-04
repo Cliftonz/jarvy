@@ -28,6 +28,7 @@ fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
 
 define_tool!(RELEASE_PLZ, {
     command: "release-plz",
+    repo: "release-plz/release-plz",
     custom_install: install_via_cargo,
     depends_on: &["rust"],
 });

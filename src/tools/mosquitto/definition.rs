@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(MOSQUITTO, {
     command: "mosquitto",
+    repo: "eclipse-mosquitto/mosquitto",
     macos: { brew: "mosquitto" },
     linux: { uniform: "mosquitto" },
     windows: { winget: "EclipseFoundation.Mosquitto" },

@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(DBMATE, {
     command: "dbmate",
+    repo: "amacneil/dbmate",
     macos: { brew: "dbmate" },
     linux: { brew: "dbmate" },
     windows: { choco: "dbmate" },

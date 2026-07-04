@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(NSC, {
     command: "nsc",
+    repo: "nats-io/nsc",
     macos: { brew: "nats-io/nats-tools/nsc" },
     linux: { brew: "nats-io/nats-tools/nsc" },
     windows: { winget: "NATSAuthors.nsc" },

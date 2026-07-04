@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GIT_LFS, {
     command: "git-lfs",
+    repo: "git-lfs/git-lfs",
     macos: { brew: "git-lfs" },
     linux: { uniform: "git-lfs" },
     windows: { winget: "GitHub.GitLFS" },

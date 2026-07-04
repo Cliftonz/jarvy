@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(ZIG, {
     command: "zig",
+    repo: "ziglang/zig",
     macos: { brew: "zig" },
     linux: { apt: "zig", dnf: "zig", pacman: "zig", apk: "zig" },
     windows: { winget: "zig.zig", choco: "zig" },

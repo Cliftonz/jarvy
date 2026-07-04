@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(PULUMI, {
     command: "pulumi",
+    repo: "pulumi/pulumi",
     macos: { brew: "pulumi" },
     linux: { uniform: "pulumi" },
     windows: { winget: "Pulumi.Pulumi" },

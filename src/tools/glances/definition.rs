@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(GLANCES, {
     command: "glances",
+    repo: "nicolargo/glances",
     macos: { brew: "glances" },
     linux: { uniform: "glances" },
     bsd: { pkg: "py-glances" },

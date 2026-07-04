@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GORELEASER, {
     command: "goreleaser",
+    repo: "goreleaser/goreleaser",
     macos: { brew: "goreleaser" },
     linux: { uniform: "goreleaser" },
     windows: { winget: "GoReleaser.GoReleaser" },

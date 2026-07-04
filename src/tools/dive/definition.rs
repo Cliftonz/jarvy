@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(DIVE, {
     command: "dive",
+    repo: "wagoodman/dive",
     macos: { brew: "dive" },
     linux: { brew: "dive", apk: "dive" },
     bsd: { pkg: "dive" },

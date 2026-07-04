@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(EKSCTL, {
     command: "eksctl",
+    repo: "eksctl-io/eksctl",
     macos: { brew: "eksctl" },
     linux: { uniform: "eksctl" },
     windows: { winget: "weaveworks.eksctl" },

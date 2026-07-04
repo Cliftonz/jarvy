@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GOFUMPT, {
     command: "gofumpt",
+    repo: "mvdan/gofumpt",
     macos: { brew: "gofumpt" },
     linux: { uniform: "gofumpt" },
     windows: { winget: "mvdan.gofumpt" },

@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(OCAML, {
     command: "ocaml",
+    repo: "ocaml/ocaml",
     macos: { brew: "ocaml" },
     linux: { apt: "ocaml", dnf: "ocaml", pacman: "ocaml", apk: "ocaml" },
     windows: { winget: "OCaml.OCaml" },

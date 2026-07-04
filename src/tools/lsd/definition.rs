@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(LSD, {
     command: "lsd",
+    repo: "lsd-rs/lsd",
     macos: { brew: "lsd" },
     linux: { uniform: "lsd" },
     windows: { winget: "lsd-rs.lsd" },

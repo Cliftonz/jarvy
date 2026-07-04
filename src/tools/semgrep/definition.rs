@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(SEMGREP, {
     command: "semgrep",
+    repo: "semgrep/semgrep",
     macos: { brew: "semgrep" },
     linux: { brew: "semgrep" },
     bsd: { pkg: "semgrep" },

@@ -19,6 +19,7 @@ use crate::define_tool;
 
 define_tool!(KAFKA, {
     command: "kafka-topics",
+    repo: "apache/kafka",
     macos: { brew: "kafka" },
     // Linux: Apache Kafka isn't packaged in mainstream distros.
     // Install via Linuxbrew or the upstream tarball.

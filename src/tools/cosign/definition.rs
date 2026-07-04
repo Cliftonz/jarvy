@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(COSIGN, {
     command: "cosign",
+    repo: "sigstore/cosign",
     macos: { brew: "cosign" },
     linux: { brew: "cosign", apk: "cosign" },
     windows: { winget: "sigstore.cosign" },

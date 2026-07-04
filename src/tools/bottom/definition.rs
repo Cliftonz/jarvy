@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(BOTTOM, {
     command: "btm",
+    repo: "ClementTsang/bottom",
     macos: { brew: "bottom" },
     linux: { uniform: "bottom" },
     windows: { winget: "Clement.bottom" },

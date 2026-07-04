@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(JAVA, {
     command: "java",
+    repo: "openjdk/jdk",
     macos: { brew: "openjdk" },
     linux: { apt: "default-jdk", dnf: "java-latest-openjdk", pacman: "jdk-openjdk", apk: "openjdk21" },
     windows: { winget: "Microsoft.OpenJDK.21", choco: "openjdk" },

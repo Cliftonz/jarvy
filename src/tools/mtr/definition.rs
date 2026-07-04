@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(MTR, {
     command: "mtr",
+    repo: "traviscross/mtr",
     macos: { brew: "mtr" },
     linux: { uniform: "mtr" },
     bsd: { pkg: "mtr" },

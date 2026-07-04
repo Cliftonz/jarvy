@@ -8,6 +8,7 @@ use crate::define_tool;
 
 define_tool!(DUCKDB, {
     command: "duckdb",
+    repo: "duckdb/duckdb",
     macos: { brew: "duckdb" },
     linux: { apt: "duckdb", dnf: "duckdb", pacman: "duckdb", apk: "duckdb" },
     windows: { winget: "DuckDB.cli", choco: "duckdb" },

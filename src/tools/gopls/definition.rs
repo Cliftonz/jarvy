@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(GOPLS, {
     command: "gopls",
+    repo: "golang/tools",
     macos: { brew: "gopls" },
     linux: { uniform: "gopls" },
     windows: { winget: "Google.Gopls" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(K6, {
     command: "k6",
+    repo: "grafana/k6",
     macos: { brew: "k6" },
     linux: { uniform: "k6" },
     windows: { winget: "Grafana.k6" },

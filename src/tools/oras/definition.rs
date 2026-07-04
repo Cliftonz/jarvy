@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(ORAS, {
     command: "oras",
+    repo: "oras-project/oras",
     macos: { brew: "oras" },
     linux: { uniform: "oras" },
     windows: { winget: "oras-project.oras" },

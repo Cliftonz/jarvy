@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(YQ, {
     command: "yq",
+    repo: "mikefarah/yq",
     macos: { brew: "yq" },
     linux: { uniform: "yq" },
     windows: { winget: "mikefarah.yq" },

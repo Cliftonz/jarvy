@@ -26,6 +26,7 @@ const OLLAMA_INSTALLER_SHA256: &str =
 
 define_tool!(OLLAMA, {
     command: "ollama",
+    repo: "ollama/ollama",
     macos: { brew: "ollama" },
     linux: { brew: "ollama" },
     windows: { winget: "Ollama.Ollama" },

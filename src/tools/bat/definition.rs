@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(BAT, {
     command: "bat",
+    repo: "sharkdp/bat",
     macos: { brew: "bat" },
     linux: { uniform: "bat" },
     windows: { winget: "sharkdp.bat" },

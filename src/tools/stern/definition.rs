@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(STERN, {
     command: "stern",
+    repo: "stern/stern",
     macos: { brew: "stern" },
     linux: { uniform: "stern" },
     windows: { winget: "stern.stern" },

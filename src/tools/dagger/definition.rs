@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(DAGGER, {
     command: "dagger",
+    repo: "dagger/dagger",
     macos: { brew: "dagger/tap/dagger" },
     linux: { uniform: "dagger" },
     windows: { winget: "Dagger.Dagger" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(OPENSSH, {
     command: "ssh",
+    repo: "openssh/openssh-portable",
     macos: { brew: "openssh" },
     linux: { uniform: "openssh" },
     windows: { winget: "Microsoft.OpenSSH.Beta" },

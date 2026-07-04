@@ -14,6 +14,7 @@ use crate::define_tool;
 
 define_tool!(NETBIRD, {
     command: "netbird",
+    repo: "netbirdio/netbird",
     macos: { brew: "netbirdio/tap/netbird" },
     linux: { brew: "netbirdio/tap/netbird" },
     windows: { winget: "Netbird.Netbird" },

@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(TFSEC, {
     command: "tfsec",
+    repo: "aquasecurity/tfsec",
     macos: { brew: "tfsec" },
     linux: { uniform: "tfsec" },
     windows: { winget: "aquasecurity.tfsec" },

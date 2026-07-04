@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(RCLONE, {
     command: "rclone",
+    repo: "rclone/rclone",
     macos: { brew: "rclone" },
     linux: { uniform: "rclone" },
     windows: { winget: "Rclone.Rclone" },

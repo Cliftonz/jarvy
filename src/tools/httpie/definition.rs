@@ -6,6 +6,7 @@ use crate::define_tool;
 
 define_tool!(HTTPIE, {
     command: "http",
+    repo: "httpie/cli",
     macos: { brew: "httpie" },
     linux: { apt: "httpie", dnf: "httpie", pacman: "httpie", apk: "py3-httpie" },
     windows: { winget: "HTTPie.HTTPie" },

@@ -9,6 +9,7 @@ use crate::define_tool;
 
 define_tool!(ARGO, {
     command: "argo",
+    repo: "argoproj/argo-workflows",
     macos: { brew: "argo" },
     // Linux: install via Linuxbrew or release binary; no native
     // distro package (`argo` as a Debian package is an unrelated

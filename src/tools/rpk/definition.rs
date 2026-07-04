@@ -11,6 +11,7 @@ use crate::define_tool;
 
 define_tool!(RPK, {
     command: "rpk",
+    repo: "redpanda-data/redpanda",
     macos: { brew: "redpanda-data/tap/redpanda" },
     // Linux: install via Linuxbrew (same tap) — the upstream `redpanda`
     // apt package installs the full broker daemon, not just the CLI,

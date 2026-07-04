@@ -7,6 +7,7 @@ use crate::define_tool;
 
 define_tool!(TMUX, {
     command: "tmux",
+    repo: "tmux/tmux",
     macos: { brew: "tmux" },
     linux: { uniform: "tmux" },
     // No Windows support - tmux is Unix-only

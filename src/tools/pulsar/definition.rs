@@ -10,6 +10,7 @@ use crate::define_tool;
 
 define_tool!(PULSAR, {
     command: "pulsar",
+    repo: "apache/pulsar",
     macos: { brew: "apache-pulsar" },
     // Linux: no native distro package; install via Linuxbrew.
     linux: { brew: "apache-pulsar" },
