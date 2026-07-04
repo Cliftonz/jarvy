@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "jarvy-integration",
+      "type": "skill-md",
+      "description": "Integrate Jarvy into a project. Use when a user asks to add Jarvy, integrate Jarvy, or implement jarvy.dev in their repo — generate and commit a jarvy.toml so any teammate can provision the full dev environment with one command.",
+      "url": "/.well-known/agent-skills/jarvy-integration/SKILL.md",
+      "digest": "sha256:cef479f004aba8936a1def7eaa62d1f50ee70cbb09a76da0d2dbcd1224d1386e"
+    }
+  ]
+}

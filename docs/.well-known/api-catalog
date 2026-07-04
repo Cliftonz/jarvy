@@ -1,0 +1,38 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://jarvy.dev/",
+      "service-doc": [
+        {
+          "href": "https://jarvy.dev/for-ai-agents/",
+          "type": "text/html",
+          "title": "Jarvy for AI Agents — integration guide"
+        },
+        {
+          "href": "https://jarvy.dev/mcp-server/",
+          "type": "text/html",
+          "title": "Jarvy MCP server (local stdio) reference"
+        }
+      ],
+      "service-desc": [
+        {
+          "href": "https://jarvy.dev/schema/jarvy.schema.json",
+          "type": "application/schema+json",
+          "title": "jarvy.toml JSON Schema — machine-readable config interface"
+        }
+      ],
+      "describedby": [
+        {
+          "href": "https://jarvy.dev/llms.txt",
+          "type": "text/plain",
+          "title": "llms.txt — concise LLM reference"
+        },
+        {
+          "href": "https://jarvy.dev/llms-full.txt",
+          "type": "text/plain",
+          "title": "llms-full.txt — full LLM corpus"
+        }
+      ]
+    }
+  ]
+}

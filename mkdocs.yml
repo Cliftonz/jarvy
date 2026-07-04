@@ -74,6 +74,11 @@ plugins:
         color: "#FFFFFF"
   - tags
 
+# Build hooks. mkdocs_hooks.copy the dot-prefixed docs/.well-known/ tree
+# into the site output (MkDocs skips dot-dirs, so it needs a post-build copy).
+hooks:
+  - scripts/mkdocs_hooks.py
+
 extra:
   social:
     - icon: fontawesome/brands/github

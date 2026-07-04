@@ -1,0 +1,10 @@
+# https://jarvy.dev/.well-known/security.txt
+# Vulnerability disclosure policy for Jarvy (RFC 9116).
+# Please do NOT report vulnerabilities through public GitHub issues.
+
+Contact: https://github.com/Cliftonz/jarvy/security/advisories/new
+Contact: mailto:security@jarvy.dev
+Policy: https://github.com/Cliftonz/jarvy/security/policy
+Canonical: https://jarvy.dev/.well-known/security.txt
+Preferred-Languages: en
+Expires: 2027-01-01T00:00:00.000Z

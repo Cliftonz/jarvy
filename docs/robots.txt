@@ -1,4 +1,88 @@
+# robots.txt for https://jarvy.dev
+#
+# Jarvy explicitly welcomes AI assistants, answer engines, and LLM
+# crawlers. Machine-readable surfaces for agents:
+#   https://jarvy.dev/llms.txt                  concise LLM reference
+#   https://jarvy.dev/llms-full.txt             full LLM corpus
+#   https://jarvy.dev/for-ai-agents/            agent integration guide
+#   https://jarvy.dev/sitemap.xml               full URL inventory
+#   https://jarvy.dev/tags.json                 page -> topic index
+#   https://jarvy.dev/.well-known/security.txt  vulnerability reporting
+#   https://jarvy.dev/.well-known/api-catalog   RFC 9727 API/doc catalog
+#   https://jarvy.dev/.well-known/agent-skills/index.json  agent skills
+
+# Default: everything is open to every crawler.
+#
+# Content-Signal (contentsignals.org / AIPREF) declares how content may be
+# used: search + real-time AI answers (ai-input) are welcome; model training
+# (ai-train) is not. Flip ai-train to yes to also permit training.
 User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+Allow: /
+
+# --- AI assistants, answer engines & LLM training crawlers ---
+# Named explicitly so operators can see at a glance that these are
+# welcome; the wildcard above already grants access, these reaffirm it.
+
+# OpenAI
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+# Anthropic (Claude)
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+# Perplexity
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+# Google (Gemini / AI Overviews opt-in)
+User-agent: Google-Extended
+Allow: /
+
+# Apple Intelligence
+User-agent: Applebot-Extended
+Allow: /
+
+# Common Crawl (feeds many LLM datasets)
+User-agent: CCBot
+Allow: /
+
+# Others
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: DuckAssistBot
+Allow: /
+
+User-agent: Bytespider
 Allow: /
 
 Sitemap: https://jarvy.dev/sitemap.xml

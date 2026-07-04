@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{#
+  Site-wide <head> additions for machine consumers (AI agents, LLM
+  crawlers, answer engines). Everything below is injected into every
+  rendered page via Material's `extrahead` block.
+
+    * <link rel="alternate"> — makes the llms.txt / llms-full.txt LLM
+      surfaces discoverable from the head of any page, not just via
+      robots.txt or the sitemap.
+    * schema.org JSON-LD — a SoftwareApplication + WebSite + Organization
+      graph so crawlers and agents can parse what Jarvy is, where to get
+      it, and how it is licensed without scraping prose.
+
+  Absolute https://jarvy.dev URLs are intentional: this is a single-site
+  deployment (see .github/workflows/docs.yml) and absolute hrefs are
+  unambiguous for off-site crawlers.
+#}
+{% block extrahead %}
+  {{ super() }}
+
+  <!-- LLM-facing plain-text references (llmstxt.org convention) -->
+  <link rel="alternate" type="text/plain" title="llms.txt — concise LLM reference" href="https://jarvy.dev/llms.txt">
+  <link rel="alternate" type="text/plain" title="llms-full.txt — full LLM corpus" href="https://jarvy.dev/llms-full.txt">
+
+  <!-- Agent discovery link relations (RFC 8288 / RFC 9727 / RFC 8631).
+       These <link> elements are the static-host equivalent of Link:
+       response headers, which GitHub Pages cannot set (add real Link
+       headers at the Cloudflare edge — see docs). -->
+  <link rel="api-catalog" href="https://jarvy.dev/.well-known/api-catalog">
+  <link rel="service-doc" type="text/html" title="Jarvy for AI Agents" href="https://jarvy.dev/for-ai-agents/">
+  <link rel="service-desc" type="application/schema+json" title="jarvy.toml JSON Schema" href="https://jarvy.dev/schema/jarvy.schema.json">
+
+  <!-- schema.org structured data for agents & search engines -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://jarvy.dev/#website",
+        "url": "https://jarvy.dev/",
+        "name": "Jarvy",
+        "description": "Fast, cross-platform CLI that provisions a complete local development environment from a single declarative jarvy.toml file.",
+        "inLanguage": "en",
+        "publisher": { "@id": "https://jarvy.dev/#org" }
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://jarvy.dev/#org",
+        "name": "Jarvy",
+        "url": "https://jarvy.dev/",
+        "sameAs": [ "https://github.com/Cliftonz/jarvy" ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://jarvy.dev/#app",
+        "name": "Jarvy",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows",
+        "url": "https://jarvy.dev/",
+        "downloadUrl": "https://github.com/Cliftonz/jarvy/releases",
+        "softwareHelp": "https://jarvy.dev/",
+        "license": "https://github.com/Cliftonz/jarvy/blob/main/LICENSE",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "description": "Jarvy standardizes and automates local dev environment setup across macOS, Linux, and Windows using native package managers driven by a declarative jarvy.toml. Ships a built-in MCP server so AI agents can discover, check, and install developer tools.",
+        "featureList": [
+          "Declarative jarvy.toml environment provisioning",
+          "Native package managers (brew, apt, dnf, winget, choco, scoop)",
+          "Built-in Model Context Protocol (MCP) server for AI agents",
+          "Role-based tool sets with inheritance",
+          "Configuration drift detection",
+          "CI/CD integration across 11 providers"
+        ]
+      }
+    ]
+  }
+  </script>
+{% endblock %}
