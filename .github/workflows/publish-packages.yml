@@ -360,9 +360,11 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      # Skip when WINGET_TOKEN isn't configured. The token is a fine-
-      # grained GitHub PAT with `public_repo` scope; the action uses
-      # it to fork microsoft/winget-pkgs and open the submission PR.
+      # Skip when WINGET_TOKEN isn't configured. The token must be a
+      # CLASSIC GitHub PAT with `public_repo` scope — winget-releaser
+      # (Komac under the hood) does not support fine-grained PATs. The
+      # action uses it to fork microsoft/winget-pkgs and open the
+      # submission PR.
       - name: Check winget token
         id: winget_secret
         shell: bash
@@ -389,7 +391,10 @@ jobs:
       # zero assets and the action silently no-op'd.
       - name: Submit to winget-pkgs
         if: steps.winget_secret.outputs.have_secret == 'true'
-        uses: vedantmgoyal2009/winget-releaser@v2
+        # Owner renamed vedantmgoyal2009 → vedantmgoyal9. GitHub
+        # redirects the old path, but redirects can lapse — pin the
+        # current owner directly.
+        uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: Jarvy.Jarvy
           installers-regex: '^jarvy_\d+\.\d+\.\d+_x64_en-US\.msi$'

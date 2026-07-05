@@ -213,6 +213,88 @@ Path 1 is the cleanest long-term — adds Homebrew to real cohort
 coverage and lets the existing publish-packages workflow finish what
 it started. Tracked separately; not a v0.1.0 blocker.
 
+## Package publish — dispatch wiring + per-channel bootstrap (2026-07-05 audit)
+
+Cutting v0.5.0 surfaced three separate breakages in the package-publish
+path. Two are fixed in-repo; two are one-time external setup that only a
+maintainer with the relevant account/secret can do.
+
+### `publish-packages.yml` was never triggered (FIXED)
+
+`publish-packages.yml` keys on `release: published`. That event does
+**not** fire downstream workflows when the release is published by the
+release workflow's built-in `GITHUB_TOKEN` (GitHub's recursion guard —
+same root cause as the `release-paths` / `verify-release` /
+`prerelease-soak` dispatches documented above). v0.5.0's release was
+published by `github-actions[bot]`, so nothing published — crates.io
+had no 0.5.0 and `jarvy update` (cargo path) failed with
+`could not find jarvy in registry with version =0.5.0`.
+
+Fix (`release.yml::upload_to_release`):
+
+1. Added `actions: write` to the job. Without it the `gh workflow run`
+   dispatch step 403'd (`Resource not accessible by integration`) and
+   `set -e` aborted — which had *also* been silently starving
+   release-paths / verify-release / prerelease-soak of their per-release
+   triggers (they ran on cron only).
+2. Added a stable-only `gh workflow run publish-packages.yml` dispatch.
+   Stable-only is load-bearing: publish-packages' crates-io gate reads
+   `github.event.release.prerelease`, which is null on a
+   `workflow_dispatch` and therefore treated as "not a prerelease" — a
+   dispatch **always** publishes. An unguarded dispatch on an rc tag
+   would push the stable `Cargo.toml` version to crates.io as latest.
+
+v0.6.0 onward auto-publishes. To publish a release cut *before* the fix,
+dispatch manually: `gh workflow run publish-packages.yml -f version=X.Y.Z`.
+
+### AUR — SSH key must have no passphrase (needs maintainer)
+
+Every release the `update-aur` job fails with:
+
+```
+Load key "/home/builder/.ssh/aur": incorrect passphrase supplied to decrypt private key
+```
+
+`KSXGitHub/github-actions-deploy-aur` has no passphrase input — the
+`AUR_SSH_PRIVATE_KEY` secret must be an **unencrypted** private key.
+Regenerate and re-register:
+
+```bash
+ssh-keygen -t ed25519 -C "aur@jarvy" -f aur_key -N ""   # -N "" = no passphrase
+# add aur_key.pub to the AUR account (My Account → SSH keys)
+# set repo secret AUR_SSH_PRIVATE_KEY = contents of aur_key, then delete local copies
+```
+
+### winget — package must be bootstrapped once (needs maintainer)
+
+Every release the `update-winget` job fails with:
+
+```
+Package Jarvy.Jarvy does not exist in the winget-pkgs repository.
+Please add atleast one version of the package before using this action.
+```
+
+`winget-releaser` only submits **updates** — it bases new manifests on
+an existing version. `Jarvy.Jarvy` has never been added to
+`microsoft/winget-pkgs`, so the first version is a one-time manual
+submission (subject to the `public-pr-guard` skill — Microsoft
+maintainers review the PR):
+
+```bash
+winget install wingetcreate
+wingetcreate new https://github.com/Cliftonz/jarvy/releases/download/v0.5.0/jarvy_0.5.0_x64_en-US.msi
+# identifier Jarvy.Jarvy → --submit
+```
+
+After that PR merges, the action handles all future versions. Two
+adjacent fixes already applied to `publish-packages.yml`:
+
+- Action owner renamed `vedantmgoyal2009` → `vedantmgoyal9`; pinned the
+  new owner (redirect can lapse).
+- `WINGET_TOKEN` must be a **classic** PAT with `public_repo` scope —
+  winget-releaser (Komac) does not accept fine-grained PATs. The prior
+  comment mis-documented it as fine-grained.
+
 ## Multi-channel propagation
 
 Jarvy ships through eight distribution channels. The skills assume one
@@ -227,9 +309,9 @@ Summary:
 | crates.io | Auto (`publish-packages.yml::publish-crates-io` job) |
 | Homebrew tap | Auto (CI PR to `Cliftonz/homebrew-tap`) |
 | `.deb`, `.rpm`, `.msi`, `.dmg`, `.AppImage` | Auto (release.yml asset) |
-| AUR (`jarvy-bin` and `jarvy`) | Manual |
-| winget | Manual (`wingetcreate`, then Microsoft approves) |
-| Chocolatey | Manual (`choco pack` + `choco push`) |
+| AUR (`jarvy-bin`) | Auto-attempt (`publish-packages.yml::update-aur`) — blocked until the SSH key is re-keyed without a passphrase (see bootstrap section) |
+| winget | Auto-attempt (`update-winget`) — blocked until `Jarvy.Jarvy` is bootstrapped with a one-time manual PR; updates auto after |
+| Chocolatey | Auto (`publish-packages.yml::update-chocolatey`) |
 | Universal install scripts (`install.sh`, `install.ps1`) | No update needed; scripts auto-fetch latest from GitHub API |
 
 The `public-pr-guard` skill applies for winget submissions
