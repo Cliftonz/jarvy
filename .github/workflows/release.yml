@@ -65,10 +65,11 @@ jobs:
   # is the operator's invocation, not a CI green check.
   #
   # Polls via `gh` CLI (preinstalled on GH-hosted runners) — avoids a
-  # third-party action dependency. 15 min total budget at 30s
-  # intervals: enough for the Linux + macOS + Windows test matrix to
-  # complete; less than the typical artifact-build wall time so this
-  # rarely extends the critical path.
+  # third-party action dependency. 40 min total budget at 30s
+  # intervals: the Windows leg of the test matrix routinely runs
+  # ~27 min, so a 15 min budget timed out before it went green and
+  # forced a manual re-run of the release (v0.5.0). 40 min covers the
+  # slowest observed matrix leg plus queue time with headroom.
   wait_for_tests:
     name: Wait for Test workflow (green required)
     runs-on: ubuntu-latest
@@ -85,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           REPO="${{ github.repository }}"
-          DEADLINE=$(( SECONDS + 15 * 60 ))
+          DEADLINE=$(( SECONDS + 40 * 60 ))
           ATTEMPT=0
 
           echo "Waiting for Test workflow on commit ${COMMIT_SHA}..."
@@ -144,7 +145,7 @@ jobs:
             exit 0
           done
 
-          echo "::error::Timed out waiting for Test workflow (15 min budget). Re-run after tests complete."
+          echo "::error::Timed out waiting for Test workflow (40 min budget). Re-run after tests complete."
           exit 1
 
   build_and_package:
