@@ -101,29 +101,38 @@ pub struct ReleaseAsset {
     pub content_type: String,
 }
 
-/// Get target triple for current platform
+/// Rust target triple for the current platform, matching the asset
+/// names `release.yml` ships since #30 (`jarvy-v<ver>-<triple>.{tar.gz,zip}`).
+///
+/// [`GitHubRelease::asset_for_platform`] substring-matches this string
+/// against the release asset names, so it MUST equal the shipped Rust
+/// triple. The previous implementation returned an ad-hoc `<os>-<arch>`
+/// string (`linux-x86_64`, `darwin-aarch64`, `windows-x86_64`) that
+/// matched NONE of the triple-named assets, silently breaking
+/// `jarvy update --method binary` on every platform. x86_64 Linux maps
+/// to the static `-musl` build; aarch64 / armv7 Linux map to their
+/// `-gnu` / `-gnueabihf` builds — mirroring the release build matrix.
 pub fn get_current_target() -> String {
-    let os = if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "windows") {
-        "windows"
+    let triple = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        // No Intel macOS prebuilt is shipped (Apple Silicon only since
+        // v0.1.0). Returned for completeness; asset_for_platform finds
+        // nothing today, surfacing an honest "No binary for this platform".
+        "x86_64-apple-darwin"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "x86_64-unknown-linux-musl"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "aarch64-unknown-linux-gnu"
+    } else if cfg!(all(target_os = "linux", target_arch = "arm")) {
+        "armv7-unknown-linux-gnueabihf"
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "x86_64-pc-windows-msvc"
     } else {
         "unknown"
     };
 
-    let arch = if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "aarch64"
-    } else if cfg!(target_arch = "arm") {
-        "arm"
-    } else {
-        "unknown"
-    };
-
-    format!("{}-{}", os, arch)
+    triple.to_string()
 }
 
 /// GitHub Releases API client
@@ -362,13 +371,16 @@ mod tests {
     #[test]
     fn test_get_current_target() {
         let target = get_current_target();
-        // Should contain OS and arch
+        // Must equal the exact Rust triple release.yml ships, so the
+        // substring match in asset_for_platform() finds the asset.
         assert!(target.contains('-'));
-        #[cfg(target_os = "macos")]
-        assert!(target.starts_with("darwin"));
-        #[cfg(target_os = "linux")]
-        assert!(target.starts_with("linux"));
-        #[cfg(target_os = "windows")]
-        assert!(target.starts_with("windows"));
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        assert_eq!(target, "aarch64-apple-darwin");
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        assert_eq!(target, "x86_64-unknown-linux-musl");
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        assert_eq!(target, "aarch64-unknown-linux-gnu");
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        assert_eq!(target, "x86_64-pc-windows-msvc");
     }
 }
