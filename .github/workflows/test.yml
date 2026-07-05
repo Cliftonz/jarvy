@@ -68,6 +68,32 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  # Compile the *packaged* crate, not the working tree. `cargo publish
+  # --dry-run` builds jarvy from the stripped tarball in target/package
+  # — exactly what `cargo install jarvy` does against the crates.io
+  # artifact. Catches include_str!/include_bytes! assets that are
+  # tracked in git but fall outside the Cargo.toml `include` allowlist:
+  # they exist for every local/CI working-tree build and silently
+  # vanish from the published crate. This is the class of bug that
+  # broke `cargo install jarvy` in v0.5.0 (assets/wizard-skill/SKILL.md
+  # omitted). Runs on PRs too, so it fails at review time, not release.
+  package-verify:
+    name: Verify publishable crate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      # No --locked: Cargo.lock is gitignored in this repo, so a fresh
+      # CI checkout has none to honor.
+      - name: Verify packaged crate compiles
+        run: cargo publish -p jarvy --dry-run
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

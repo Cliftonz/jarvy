@@ -27,6 +27,40 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.5.1] — Fix `cargo install jarvy` + auto-publish to package managers (2026-07-05)
+
+Patch release. The v0.5.0 crate published to crates.io was incomplete
+and would not compile, so `cargo install jarvy` and the cargo path of
+`jarvy update` both failed. This fixes that and hardens the release
+pipeline so package managers actually receive each release.
+
+**Fixes:**
+
+- Fix `cargo install jarvy` failing to compile with `couldn't read
+  .../assets/wizard-skill/SKILL.md`. The wizard embeds that file via
+  `include_str!`, but it fell outside the `Cargo.toml` `include`
+  allowlist, so `cargo publish` stripped it from the tarball. Local and
+  CI builds passed because the file exists in the working tree — only
+  the published crate was broken. If you hit this on v0.5.0, install
+  v0.5.1 (or a prebuilt binary / Homebrew / the install script).
+- Add a `package-verify` CI job that compiles the *packaged* crate via
+  `cargo publish --dry-run`, so a missing embedded asset now fails at
+  pull-request time instead of after publishing an immutable release.
+
+**Release automation:**
+
+- Auto-publish to package managers on every stable release. crates.io,
+  Homebrew, and Chocolatey were being skipped because the `release:
+  published` event does not trigger downstream workflows when the
+  release is cut by CI's built-in token; the release workflow now
+  dispatches the publish workflow explicitly (stable tags only).
+- Fix the release job's downstream dispatches, which had been failing
+  with a permissions error and silently skipping the post-release
+  validation and publish workflows.
+- Raise the release test-gate poll budget from 15 to 40 minutes so a
+  slow Windows test leg no longer times the release out before it goes
+  green.
+
 ## [v0.5.0] — Agent-driven wizard + polyglot detection + two review-plan sweeps (2026-07-04)
 
 The wizard graduates from "spawn an agent and hope" to a hardened trust
@@ -2553,6 +2587,7 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
 [Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.2.2...HEAD
+[v0.5.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.1
 [v0.3.0]: https://github.com/Cliftonz/Jarvy/releases/tag/v0.3.0
 [v0.2.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.2.2
 [v0.2.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.2.1
