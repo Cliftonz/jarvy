@@ -32,8 +32,18 @@ use std::process::Command;
 /// We deliberately do NOT call `jarvy_cmd()` here — that helper sets
 /// `JARVY_TEST_MODE=1`, which causes `initialize_from_disk` to
 /// short-circuit before any disclosure logic runs.
+///
+/// `Command` inherits the parent process environment, so avoiding
+/// *setting* `JARVY_TEST_MODE` is not enough: CI jobs that export it as
+/// ambient env (`coverage.yml`, `e2e-cross-platform.yml` set
+/// `JARVY_TEST_MODE=1`) would leak it into the spawned binary, short-
+/// circuit `initialize_from_disk`, suppress the banner, and fail these
+/// tests in exactly those jobs (but not the nextest job, which doesn't
+/// set it). Strip it so the disclosure path runs regardless of runner.
 fn jarvy_no_test_mode() -> Command {
-    Command::new(assert_cmd::cargo::cargo_bin!("jarvy"))
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env_remove("JARVY_TEST_MODE");
+    c
 }
 
 /// One paragraph string fragment from the boxed disclosure. Pinned by
