@@ -525,6 +525,13 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      # `actions: write` is required for the `gh workflow run`
+      # dispatches below. Without it every dispatch 403s ("Resource
+      # not accessible by integration") and `set -e` aborts the step —
+      # which silently starved release-paths / verify-release /
+      # prerelease-soak AND package publishing of their per-release
+      # triggers (they only ran on cron). Verified 403 on v0.5.0.
+      actions: write
     needs: [build_and_package, generate_sbom, sign_artifacts]
     if: |
       always()
@@ -841,4 +848,30 @@ jobs:
             --ref "${VERSION}" \
             -f tag="${VERSION}" \
             -f force=true
+          echo "Dispatched prerelease-soak.yml against ${VERSION} (force=true)."
+
+          # Package publishing (crates.io / Homebrew / Chocolatey /
+          # winget / AUR). publish-packages.yml keys on `release:
+          # published`, but that event never fires downstream when the
+          # release is published by this workflow's GITHUB_TOKEN — same
+          # recursion guard documented above. So dispatch it explicitly.
+          #
+          # STABLE ONLY. publish-packages' crates-io gate reads
+          # `github.event.release.prerelease`, which is null on a
+          # workflow_dispatch and therefore treated as "not a
+          # prerelease" — a dispatch always publishes. Guarding here
+          # keeps rc / beta / alpha tags from pushing the stable
+          # Cargo.toml version to crates.io. The version input is
+          # unprefixed semver (publish-packages reads the real value
+          # from Cargo.toml regardless, but the input contract is
+          # `X.Y.Z`), so strip the leading `v`.
+          if [ "${{ steps.detect_prerelease.outputs.is_prerelease }}" = "true" ]; then
+            echo "Prerelease ${VERSION} — skipping package publish dispatch."
+          else
+            gh workflow run publish-packages.yml \
+              --repo "${{ github.repository }}" \
+              --ref "${VERSION}" \
+              -f version="${VERSION#v}"
+            echo "Dispatched publish-packages.yml against ${VERSION#v} (stable)."
+          fi
           echo "Dispatched prerelease-soak.yml against ${VERSION} (force=true)."
