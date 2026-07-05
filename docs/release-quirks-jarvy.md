@@ -306,7 +306,7 @@ Summary:
 | Channel | Auto / Manual |
 |---|---|
 | GitHub release | Auto (CI) |
-| crates.io | Auto (`publish-packages.yml::publish-crates-io` job) |
+| crates.io | Auto (`publish-packages.yml::publish-crates-io` job) — publishes via **Trusted Publishing** (OIDC), no stored token. Requires a one-time Trusted Publisher config on crates.io for **both** `jarvy` and `jarvy-templates` (owner `Cliftonz`, repo `jarvy`, workflow `publish-packages.yml`). Once a release proves it, the `CRATES_IO_TOKEN` secret can be deleted. |
 | Homebrew tap | Auto (CI PR to `Cliftonz/homebrew-tap`) |
 | `.deb`, `.rpm`, `.msi`, `.dmg`, `.AppImage` | Auto (release.yml asset) |
 | AUR (`jarvy-bin`) | Auto-attempt (`publish-packages.yml::update-aur`) — blocked until the SSH key is re-keyed without a passphrase (see bootstrap section) |
