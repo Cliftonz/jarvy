@@ -800,6 +800,36 @@ jobs:
             echo "Stable release ${VERSION} published and pinned as Latest."
           fi
 
+      # Package publishing runs as its OWN step, BEFORE the validation
+      # dispatches below, so publishing never rides on their success —
+      # a failed `gh workflow run` for release-paths / verify-release /
+      # prerelease-soak (set -e in that step) must not also block
+      # crates.io / Homebrew / etc.
+      #
+      # publish-packages.yml keys on `release: published`, which never
+      # fires downstream from this workflow's GITHUB_TOKEN (recursion
+      # guard — see the validation-dispatch note below). Dispatch it
+      # explicitly.
+      #
+      # STABLE ONLY (step-level `if`). publish-packages' crates-io gate
+      # reads `github.event.release.prerelease`, which is null on a
+      # workflow_dispatch and therefore treated as "not a prerelease" —
+      # a dispatch always publishes. Gating to stable keeps rc / beta /
+      # alpha from pushing the stable Cargo.toml version to crates.io.
+      # The version input is unprefixed semver (publish-packages reads
+      # the real value from Cargo.toml regardless), so strip `v`.
+      - name: Dispatch package publishing (stable only)
+        if: steps.detect_prerelease.outputs.is_prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run publish-packages.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${VERSION}" \
+            -f version="${VERSION#v}"
+          echo "Dispatched publish-packages.yml against ${VERSION#v} (stable)."
+
       # `release: published` does NOT fire for downstream workflows when
       # the transition is driven by `GITHUB_TOKEN` — GitHub blocks
       # workflow-to-workflow triggering via the built-in token to prevent
@@ -848,30 +878,4 @@ jobs:
             --ref "${VERSION}" \
             -f tag="${VERSION}" \
             -f force=true
-          echo "Dispatched prerelease-soak.yml against ${VERSION} (force=true)."
-
-          # Package publishing (crates.io / Homebrew / Chocolatey /
-          # winget / AUR). publish-packages.yml keys on `release:
-          # published`, but that event never fires downstream when the
-          # release is published by this workflow's GITHUB_TOKEN — same
-          # recursion guard documented above. So dispatch it explicitly.
-          #
-          # STABLE ONLY. publish-packages' crates-io gate reads
-          # `github.event.release.prerelease`, which is null on a
-          # workflow_dispatch and therefore treated as "not a
-          # prerelease" — a dispatch always publishes. Guarding here
-          # keeps rc / beta / alpha tags from pushing the stable
-          # Cargo.toml version to crates.io. The version input is
-          # unprefixed semver (publish-packages reads the real value
-          # from Cargo.toml regardless, but the input contract is
-          # `X.Y.Z`), so strip the leading `v`.
-          if [ "${{ steps.detect_prerelease.outputs.is_prerelease }}" = "true" ]; then
-            echo "Prerelease ${VERSION} — skipping package publish dispatch."
-          else
-            gh workflow run publish-packages.yml \
-              --repo "${{ github.repository }}" \
-              --ref "${VERSION}" \
-              -f version="${VERSION#v}"
-            echo "Dispatched publish-packages.yml against ${VERSION#v} (stable)."
-          fi
           echo "Dispatched prerelease-soak.yml against ${VERSION} (force=true)."
