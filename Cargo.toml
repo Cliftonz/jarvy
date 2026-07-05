@@ -13,6 +13,13 @@ keywords = ["devtools", "provisioning", "cli", "developer-experience", "setup"]
 categories = ["command-line-utilities", "development-tools"]
 include = [
     "src/**/*",
+    # `src/wizard/skill_drop.rs` pulls this in via include_str!. Without
+    # it here the published crate compiles fine locally (file present in
+    # the working tree) but FAILS on `cargo install` — cargo publish
+    # strips anything outside this allowlist. Scoped to the wizard-skill
+    # dir so the 1.4M of logos under assets/ stay out of the crate.
+    # (Regression: added in 0.5.0, broke `cargo install jarvy`.)
+    "assets/wizard-skill/**/*",
     "Cargo.toml",
     "LICENSE*",
     "Readme.md",
