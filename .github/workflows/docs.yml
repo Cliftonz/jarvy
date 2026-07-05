@@ -20,6 +20,17 @@ name: Deploy Docs
 # site with that commit. Single-version docs site = no versioned
 # rebuild on tags. Re-add tag triggers (and configure the environment
 # to allow tag refs) only if versioning via mike comes back.
+#
+# Recovering a failed deploy: if the "Deploy to GitHub Pages" step
+# fails with "Deployment failed, try again later" (empty status
+# description, ~5s), do NOT `gh run rerun --failed` — that re-pushes
+# the SAME already-built artifact, which reproduces the failure if the
+# artifact is the culprit. Instead trigger a fresh full run
+# (`gh workflow run docs.yml --ref main`) so the site rebuilds and a
+# new artifact is uploaded before deploy. Observed 2026-07-05: two
+# `rerun --failed` attempts on a stale artifact both failed; a fresh
+# dispatch deployed clean. (Pages backend was operational; branch
+# policy allowed main — so neither was the cause.)
 on:
   push:
     branches:
