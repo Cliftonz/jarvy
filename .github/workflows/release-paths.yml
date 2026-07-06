@@ -167,8 +167,27 @@ jobs:
             echo "::error::Target release $TARGET has 0 tarballs for triple $TRIPLE — release.yml is not shipping the expected asset. #30 is closed; this is a regression."
             exit 1
           fi
+          # N-1 predates the updater triple fix (v0.5.2)? The binary
+          # self-update is driven BY the N-1 binary, so if N-1 shipped
+          # before v0.5.2 its get_current_target() returns an
+          # <os>-<arch> string that can't match the rust-triple asset
+          # names — the update always fails "No binary for this
+          # platform". That's an already-shipped binary we can't
+          # retro-patch, so warn+skip like the #30 case rather than
+          # hard-fail. Numeric dot-field sort is portable across GNU +
+          # BSD sort (macOS); `sort -V` is not.
+          NM1_CORE="${NM1#v}"; NM1_CORE="${NM1_CORE%%-*}"
+          UPDATER_FIX="0.5.2"
+          NM1_PREDATES_FIX=false
+          if [ "$NM1_CORE" != "$UPDATER_FIX" ] && \
+             [ "$(printf '%s\n%s\n' "$NM1_CORE" "$UPDATER_FIX" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)" = "$NM1_CORE" ]; then
+            NM1_PREDATES_FIX=true
+          fi
           if [ "$NM1_HAS" = "0" ]; then
             echo "::warning::N-1 ($NM1) predates #30 (0 tarballs for triple $TRIPLE); Path 2+4 binary-update test skipped until N-1 ships tarballs."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$NM1_PREDATES_FIX" = "true" ]; then
+            echo "::warning::N-1 ($NM1) predates the updater triple fix (v${UPDATER_FIX}); its get_current_target can't resolve triple-named assets, so binary self-update fails by design. Path 2+4 skipped until N-1 >= v${UPDATER_FIX}."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -425,8 +444,24 @@ jobs:
             echo "::error::Target release $TARGET has 0 tarballs for triple $TRIPLE — release.yml is not shipping the expected asset. #30 is closed; this is a regression."
             exit 1
           fi
+          # N-2 predates the updater triple fix (v0.5.2)? Same reason as
+          # the Path 2+4 bootstrap: the skip-version update is driven by
+          # the N-2 binary, whose get_current_target can't match
+          # rust-triple asset names before v0.5.2. Warn+skip instead of
+          # hard-fail. (Only reached for minor/major targets — patch
+          # bumps already skip Path 3 upstream.)
+          NM2_CORE="${NM2#v}"; NM2_CORE="${NM2_CORE%%-*}"
+          UPDATER_FIX="0.5.2"
+          NM2_PREDATES_FIX=false
+          if [ "$NM2_CORE" != "$UPDATER_FIX" ] && \
+             [ "$(printf '%s\n%s\n' "$NM2_CORE" "$UPDATER_FIX" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)" = "$NM2_CORE" ]; then
+            NM2_PREDATES_FIX=true
+          fi
           if [ "$NM2_HAS" = "0" ]; then
             echo "::warning::N-2 ($NM2) predates #30 (0 tarballs for triple $TRIPLE); Path 3 skip-version test skipped until N-2 ships tarballs."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$NM2_PREDATES_FIX" = "true" ]; then
+            echo "::warning::N-2 ($NM2) predates the updater triple fix (v${UPDATER_FIX}); binary self-update fails by design. Path 3 skipped until N-2 >= v${UPDATER_FIX}."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
