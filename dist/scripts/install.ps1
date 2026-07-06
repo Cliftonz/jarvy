@@ -99,6 +99,33 @@ function Test-Checksum {
     return $true
 }
 
+function Get-ExpectedSha {
+    # Fetch the expected SHA256 for $ArchiveName from the release's
+    # SHA256SUMS.txt. Returns the lowercase hex digest, or $null when the
+    # sums file is unreachable or the archive is not listed. Lines look
+    # like "<hex>  [./]<filename>".
+    param(
+        [string]$Version,
+        [string]$ArchiveName
+    )
+    $sumsUrl = "https://github.com/$JarvyRepo/releases/download/v$Version/SHA256SUMS.txt"
+    try {
+        $sums = (Invoke-WebRequest -Uri $sumsUrl -UseBasicParsing).Content
+    }
+    catch {
+        return $null
+    }
+    foreach ($line in $sums -split "`n") {
+        $parts = ($line.Trim() -split '\s+', 2)
+        if ($parts.Count -lt 2) { continue }
+        $name = $parts[1].Trim() -replace '^\./', ''
+        if ($name -eq $ArchiveName) {
+            return $parts[0].Trim().ToLower()
+        }
+    }
+    return $null
+}
+
 function Add-ToPath {
     param([string]$Directory)
 
@@ -146,6 +173,27 @@ function Install-Jarvy {
         Write-Info "Downloading..."
         $zipPath = Join-Path $tempDir "jarvy.zip"
         Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
+
+        # Verify integrity before extracting/executing the download. A
+        # mismatch aborts; a missing sums file warns but proceeds so a
+        # legacy tag stays installable. JARVY_SKIP_CHECKSUM=1 opts out.
+        $archiveName = "jarvy-v$version-$platform.zip"
+        if ($env:JARVY_SKIP_CHECKSUM -eq '1') {
+            Write-Warn "JARVY_SKIP_CHECKSUM=1 set - skipping integrity verification"
+        }
+        else {
+            $expectedSha = Get-ExpectedSha -Version $version -ArchiveName $archiveName
+            if ($expectedSha) {
+                if (-not (Test-Checksum -FilePath $zipPath -ExpectedHash $expectedSha)) {
+                    Write-Err "Refusing to install: downloaded archive failed checksum verification."
+                    exit 1
+                }
+            }
+            else {
+                Write-Warn "SHA256SUMS.txt not found for v$version - skipping integrity check."
+                Write-Warn "Set JARVY_SKIP_CHECKSUM=1 to silence, or verify the download manually."
+            }
+        }
 
         # Extract
         Write-Info "Extracting..."

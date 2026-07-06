@@ -9,6 +9,8 @@
 #                          nightly accepts every tag including -alpha.N
 #   JARVY_INSTALL_DIR    - Installation directory (default: ~/.local/bin)
 #   JARVY_NO_MODIFY_PATH - Set to 1 to skip PATH modification
+#   JARVY_SKIP_CHECKSUM  - Set to 1 to skip SHA256 integrity verification
+#                          (NOT recommended — bypasses supply-chain check)
 
 set -euo pipefail
 
@@ -17,6 +19,7 @@ JARVY_CHANNEL="${JARVY_CHANNEL:-stable}"
 JARVY_INSTALL_DIR="${JARVY_INSTALL_DIR:-$HOME/.local/bin}"
 JARVY_REPO="Cliftonz/jarvy"
 JARVY_NO_MODIFY_PATH="${JARVY_NO_MODIFY_PATH:-0}"
+JARVY_SKIP_CHECKSUM="${JARVY_SKIP_CHECKSUM:-0}"
 
 # Validate channel
 case "$JARVY_CHANNEL" in
@@ -50,9 +53,25 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
+# Map a normalized Linux architecture to the release triple that
+# release.yml actually publishes. The x86_64 build is static musl (runs
+# on glibc AND musl); aarch64 ships as gnu; armv7 as gnueabihf. The
+# detected libc is deliberately ignored: requesting an unpublished
+# combination — e.g. x86_64-gnu on a glibc box, the common case — would
+# 404 because that asset was never built. Prints the triple, or returns
+# 1 for an unsupported arch.
+resolve_linux_triple() {
+    case "$1" in
+        x86_64|amd64)  echo "x86_64-unknown-linux-musl" ;;
+        aarch64|arm64) echo "aarch64-unknown-linux-gnu" ;;
+        armv7|armv7l)  echo "armv7-unknown-linux-gnueabihf" ;;
+        *)             return 1 ;;
+    esac
+}
+
 # Detect OS and architecture
 detect_platform() {
-    local os arch
+    local os arch triple
 
     os="$(uname -s)"
     arch="$(uname -m)"
@@ -117,6 +136,17 @@ detect_platform() {
         *)
             log_error "Unsupported architecture: $arch"
             exit 1
+            ;;
+    esac
+
+    # Linux: request the triple release.yml actually shipped, not the
+    # ${arch}-${libc} guess (which 404s for glibc x86_64 / musl arm64).
+    case "$os" in
+        unknown-linux-*)
+            if triple="$(resolve_linux_triple "$arch")"; then
+                echo "$triple"
+                return 0
+            fi
             ;;
     esac
 
@@ -206,6 +236,33 @@ verify_checksum() {
     return 0
 }
 
+# Fetch the expected SHA256 for a given archive from the release's
+# SHA256SUMS.txt. Prints the hex digest on stdout and returns 0 on
+# success; returns 1 if the sums file is unreachable or the archive
+# is not listed. SHA256SUMS.txt lines are "<hex>  [./]<filename>"
+# (the `./` prefix comes from release.yml's `sha256sum ./jarvy*`).
+fetch_expected_sha() {
+    local version="$1"
+    local archive_name="$2"
+    local sums_url sums
+    sums_url="https://github.com/${JARVY_REPO}/releases/download/v${version}/SHA256SUMS.txt"
+
+    sums="$(curl -fsSL "$sums_url" 2>/dev/null)" || return 1
+    [ -n "$sums" ] || return 1
+
+    # Strip an optional leading `./` from the filename column, then match
+    # the basename exactly. awk exits 1 when no line matched so the caller
+    # can distinguish "missing entry" from "empty digest".
+    echo "$sums" | awk -v want="$archive_name" '
+        {
+            name = $2
+            sub(/^\.\//, "", name)
+            if (name == want) { print $1; found = 1; exit }
+        }
+        END { if (!found) exit 1 }
+    '
+}
+
 # Add to PATH
 add_to_path() {
     local install_dir="$1"
@@ -293,6 +350,24 @@ main() {
         exit 1
     fi
 
+    # Verify integrity against the release SHA256SUMS.txt before we ever
+    # extract or execute the downloaded bytes. A mismatch aborts — a
+    # missing sums file (very old releases) warns but proceeds so a
+    # legacy tag stays installable. JARVY_SKIP_CHECKSUM=1 opts out.
+    local archive_name expected_sha
+    archive_name="jarvy-v${version}-${platform}.${archive_ext}"
+    if [ "$JARVY_SKIP_CHECKSUM" = "1" ]; then
+        log_warn "JARVY_SKIP_CHECKSUM=1 set — skipping integrity verification"
+    elif expected_sha="$(fetch_expected_sha "$version" "$archive_name")" && [ -n "$expected_sha" ]; then
+        if ! verify_checksum "$tmp_dir/jarvy.$archive_ext" "$expected_sha"; then
+            log_error "Refusing to install: downloaded archive failed checksum verification."
+            exit 1
+        fi
+    else
+        log_warn "SHA256SUMS.txt not found for v${version} — skipping integrity check."
+        log_warn "Set JARVY_SKIP_CHECKSUM=1 to silence, or verify the download manually."
+    fi
+
     # Extract
     log_info "Extracting..."
     if [ "$archive_ext" = "zip" ]; then
@@ -335,4 +410,9 @@ main() {
     echo ""
 }
 
-main "$@"
+# Only auto-run when executed directly, not when sourced (the unit tests
+# in dist/scripts/tests/ source this file to exercise individual
+# functions without triggering a real install).
+if [ "${BASH_SOURCE[0]:-$0}" = "${0}" ]; then
+    main "$@"
+fi
