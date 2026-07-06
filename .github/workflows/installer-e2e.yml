@@ -1,0 +1,172 @@
+name: Installer E2E
+
+# Executes the documented one-line installers against a REAL published
+# release and asserts the whole download → verify → install → run chain:
+#   - install.sh  on Ubuntu (x86_64 musl) + macOS (arm64)
+#   - install.ps1 on Windows (x86_64 msvc)
+#
+# What it guards that nothing else did:
+#   * the installer is never run in `cargo test` — a broken platform map,
+#     a 404'd asset name, or a dead checksum path would ship unnoticed
+#     (see the glibc-x86_64 → *-gnu 404 that this suite was written after)
+#   * proves the SHA256 integrity gate actually fires ("Checksum verified")
+#   * proves add_to_path writes the shell rc line
+#
+# Triggers on every release (stable AND prerelease) so a cut is validated
+# through the installer, plus manual dispatch to reverify any tag.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to install (e.g. v0.5.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-e2e-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  JARVY_TELEMETRY: '0'
+
+jobs:
+  setup:
+    name: Resolve tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.r.outputs.tag }}
+      version: ${{ steps.r.outputs.version }}
+      core: ${{ steps.r.outputs.core }}
+      prerelease: ${{ steps.r.outputs.prerelease }}
+    steps:
+      - id: r
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          VERSION="${TAG#v}"          # keep any -rc.N / -beta.N suffix
+          CORE="${VERSION%%-*}"       # semver core only, for --version compare
+          if [ "${{ github.event_name }}" = "release" ]; then
+            PRE="${{ github.event.release.prerelease }}"
+          elif [[ "$TAG" == *-* ]]; then PRE=true; else PRE=false; fi
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "core=$CORE"
+            echo "prerelease=$PRE"
+          } >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG version=$VERSION core=$CORE prerelease=$PRE"
+
+  unix:
+    name: install.sh (${{ matrix.name }})
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Ubuntu x86_64
+          - os: macos-14
+            name: macOS arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.setup.outputs.version }}
+      CORE: ${{ needs.setup.outputs.core }}
+      PRERELEASE: ${{ needs.setup.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install via install.sh (pinned version)
+        run: |
+          set -euo pipefail
+          export JARVY_VERSION="$VERSION"
+          export JARVY_INSTALL_DIR="$HOME/jarvy-e2e/bin"
+          export JARVY_NO_MODIFY_PATH=1   # invoke by absolute path below
+          bash dist/scripts/install.sh 2>&1 | tee install.log
+
+          # The integrity gate must have fired against the real
+          # SHA256SUMS.txt — this is the regression guard for the
+          # dead-code verify_checksum bug.
+          grep -q "Checksum verified" install.log \
+            || { echo "::error::install.sh did not verify the checksum"; exit 1; }
+
+          OBSERVED="$("$JARVY_INSTALL_DIR/jarvy" --version | awk '{print $2}')"
+          OBSERVED_CORE="${OBSERVED%%-*}"
+          if [ "$OBSERVED_CORE" != "$CORE" ]; then
+            echo "::error::version mismatch: installed $OBSERVED, expected core $CORE"
+            exit 1
+          fi
+          echo "✓ installed + verified: $OBSERVED"
+
+      - name: add_to_path writes the shell rc line
+        run: |
+          set -euo pipefail
+          # Isolated HOME with a real .bashrc so add_to_path has a
+          # deterministic target regardless of the runner's dotfiles.
+          FAKE_HOME="$(mktemp -d)"
+          touch "$FAKE_HOME/.bashrc"
+          HOME="$FAKE_HOME" SHELL="/bin/bash" \
+            JARVY_VERSION="$VERSION" \
+            JARVY_INSTALL_DIR="$FAKE_HOME/.local/bin" \
+            bash dist/scripts/install.sh >/dev/null 2>&1
+          if ! grep -q "$FAKE_HOME/.local/bin" "$FAKE_HOME/.bashrc"; then
+            echo "::error::install.sh did not add the install dir to .bashrc"
+            cat "$FAKE_HOME/.bashrc"
+            exit 1
+          fi
+          echo "✓ PATH line written to .bashrc"
+
+      - name: Latest-channel resolution (stable releases only)
+        if: needs.setup.outputs.prerelease == 'false'
+        run: |
+          set -euo pipefail
+          # Exercise get_latest_version: no pinned version, stable channel.
+          # Only meaningful on a stable cut (the release IS latest); a
+          # prerelease is invisible to the stable /releases/latest endpoint.
+          export JARVY_INSTALL_DIR="$HOME/jarvy-latest/bin"
+          export JARVY_NO_MODIFY_PATH=1
+          export JARVY_CHANNEL=stable
+          bash dist/scripts/install.sh 2>&1 | tee latest.log
+          grep -q "Checksum verified" latest.log
+          "$JARVY_INSTALL_DIR/jarvy" --version
+
+  windows:
+    name: install.ps1 (Windows x86_64)
+    needs: setup
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.setup.outputs.version }}
+      CORE: ${{ needs.setup.outputs.core }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install via install.ps1 (pinned version)
+        shell: pwsh
+        run: |
+          $env:JARVY_VERSION = $env:VERSION
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-e2e"
+          # Run the installer in a child pwsh so its internal `exit` on
+          # failure doesn't skip the assertions below.
+          $out = & pwsh -NoProfile -File dist/scripts/install.ps1 2>&1
+          $rc = $LASTEXITCODE
+          $text = $out | Out-String
+          Write-Host $text
+          if ($rc -ne 0) { Write-Host "::error::install.ps1 exited $rc"; exit 1 }
+          if ($text -notmatch 'Checksum verified') {
+            Write-Host "::error::install.ps1 did not verify the checksum"; exit 1
+          }
+
+          $bin = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
+          $observed = (& $bin --version).Split(' ')[1]
+          if ($observed.Split('-')[0] -ne $env:CORE) {
+            Write-Host "::error::version mismatch: installed $observed, expected core $env:CORE"
+            exit 1
+          }
+          Write-Host "OK installed + verified: $observed"

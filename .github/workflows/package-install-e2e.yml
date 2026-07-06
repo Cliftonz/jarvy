@@ -1,0 +1,205 @@
+name: Package Install E2E
+
+# Installs the OS-native packages we publish and proves each one lands a
+# working binary AND that `jarvy update` auto-detects the matching install
+# method (the branch that decides whether a self-update shells out to apt /
+# dnf / cargo vs. replacing the binary in place):
+#
+#   .deb  → apt      (Ubuntu, native)
+#   .rpm  → dnf      (Fedora, throwaway container)
+#   crate → cargo    (`cargo install`)
+#   .msi  → binary   (Windows; version smoke only)
+#
+# Gap this closes: publish-packages.yml only asserts these assets EXIST;
+# nothing installed them and ran `jarvy`, and only `--method binary` self-
+# update was ever exercised. The method-detection assertion is network-free
+# and mutation-free: `run_install` prints "Installation method: <m>" before
+# any check, and the just-installed version == latest so the update no-ops.
+#
+# Triggers on release publish + manual dispatch.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to install (e.g. v0.5.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-install-e2e-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  JARVY_TELEMETRY: '0'
+
+jobs:
+  setup:
+    name: Resolve tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.r.outputs.tag }}
+      core: ${{ steps.r.outputs.core }}
+    steps:
+      - id: r
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          CORE="${TAG#v}"; CORE="${CORE%%-*}"
+          { echo "tag=$TAG"; echo "core=$CORE"; } >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG core=$CORE"
+
+  deb:
+    name: .deb → apt (Ubuntu)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.setup.outputs.tag }}
+      CORE: ${{ needs.setup.outputs.core }}
+    steps:
+      - name: Download + install the .deb
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern '*_amd64.deb' --dir _pkg
+          sudo apt-get update -qq
+          sudo apt-get install -y ./_pkg/*_amd64.deb
+
+      - name: Version matches the tag
+        run: |
+          set -euo pipefail
+          OBSERVED="$(jarvy --version | awk '{print $2}')"
+          [ "${OBSERVED%%-*}" = "$CORE" ] \
+            || { echo "::error::got $OBSERVED, expected core $CORE"; exit 1; }
+          echo "✓ apt-installed jarvy: $OBSERVED"
+
+      - name: jarvy update auto-detects the apt method
+        run: |
+          set +e
+          OUT="$(JARVY_UPDATE=1 JARVY_TEST_MODE=1 jarvy update 2>&1)"
+          set -e
+          echo "$OUT"
+          echo "$OUT" | grep -q "Installation method: apt" \
+            || { echo "::error::update did not detect the apt install method"; exit 1; }
+          echo "✓ method detected: apt"
+
+  rpm:
+    name: .rpm → dnf (Fedora container)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.setup.outputs.tag }}
+      CORE: ${{ needs.setup.outputs.core }}
+    steps:
+      - name: Download the .rpm (gh on host)
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern '*.rpm' --dir _pkg
+          # Keep only the x86_64 rpm — the arm/armv7 rpms can't install here.
+          ls _pkg
+
+      - name: Install + smoke inside Fedora
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/_pkg:/pkg:ro" -e CORE="$CORE" fedora:41 bash -c '
+            set -euo pipefail
+            RPM=$(ls /pkg/*x86_64*.rpm 2>/dev/null || ls /pkg/*.rpm | head -1)
+            echo "Installing $RPM"
+            dnf install -y "$RPM"
+            OBSERVED="$(jarvy --version | awk "{print \$2}")"
+            [ "${OBSERVED%%-*}" = "$CORE" ] \
+              || { echo "::error::got $OBSERVED, expected core $CORE"; exit 1; }
+            echo "OK rpm-installed jarvy: $OBSERVED"
+            set +e
+            OUT="$(JARVY_UPDATE=1 JARVY_TEST_MODE=1 JARVY_TELEMETRY=0 jarvy update 2>&1)"
+            set -e
+            echo "$OUT"
+            echo "$OUT" | grep -q "Installation method: dnf" \
+              || { echo "::error::update did not detect the dnf install method"; exit 1; }
+            echo "OK method detected: dnf"
+          '
+
+  cargo:
+    name: crate → cargo install
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CORE: ${{ needs.setup.outputs.core }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.setup.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo install from the tagged source
+        run: |
+          set -euo pipefail
+          # `cargo install --path .` validates the published crate installs
+          # into ~/.cargo/bin as a working `jarvy` — the same code path a
+          # user's `cargo install jarvy` exercises, without waiting on
+          # crates.io propagation.
+          cargo install --path . --locked --force
+          OBSERVED="$(jarvy --version | awk '{print $2}')"
+          [ "${OBSERVED%%-*}" = "$CORE" ] \
+            || { echo "::error::got $OBSERVED, expected core $CORE"; exit 1; }
+          echo "✓ cargo-installed jarvy: $OBSERVED"
+
+      - name: jarvy update auto-detects the cargo method
+        run: |
+          set +e
+          OUT="$(JARVY_UPDATE=1 JARVY_TEST_MODE=1 jarvy update 2>&1)"
+          set -e
+          echo "$OUT"
+          echo "$OUT" | grep -q "Installation method: cargo" \
+            || { echo "::error::update did not detect the cargo install method"; exit 1; }
+          echo "✓ method detected: cargo"
+
+  msi:
+    name: .msi (Windows)
+    needs: setup
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.setup.outputs.tag }}
+      CORE: ${{ needs.setup.outputs.core }}
+    steps:
+      - name: Download + install the .msi
+        shell: pwsh
+        run: |
+          gh release download $env:TAG --repo "${{ github.repository }}" --pattern '*.msi' --dir _pkg
+          $msi = (Get-ChildItem _pkg -Filter *.msi | Select-Object -First 1).FullName
+          Write-Host "Installing $msi"
+          $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/quiet', '/norestart' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Host "::error::msiexec exited $($p.ExitCode)"; exit 1 }
+
+      - name: Locate + smoke the installed binary
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:ProgramFiles\jarvy\jarvy.exe",
+            "${env:ProgramFiles(x86)}\jarvy\jarvy.exe",
+            "$env:LOCALAPPDATA\Programs\jarvy\jarvy.exe"
+          )
+          $bin = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if (-not $bin) {
+            $bin = (Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}" -Recurse -Filter jarvy.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          }
+          if (-not $bin) { Write-Host "::error::jarvy.exe not found after msi install"; exit 1 }
+          $observed = (& $bin --version).Split(' ')[1]
+          if ($observed.Split('-')[0] -ne $env:CORE) {
+            Write-Host "::error::got $observed, expected core $env:CORE"; exit 1
+          }
+          Write-Host "OK msi-installed jarvy: $observed at $bin"

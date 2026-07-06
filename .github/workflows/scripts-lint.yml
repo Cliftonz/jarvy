@@ -1,0 +1,85 @@
+name: Scripts Lint
+
+# Static gate for the shell + PowerShell installers. These scripts are the
+# primary onboarding path (`curl … install.sh | bash`, `irm … install.ps1 |
+# iex`) but the crate's `cargo test` never touches them, so a broken quote,
+# an unset var, or a dead code path could ship unnoticed. This workflow:
+#   1. `bash -n` + `shellcheck` every install/bootstrap shell script
+#   2. Parse-checks install.ps1 (PowerShell AST)
+#   3. Runs the install.sh unit tests (checksum gate, channel filter,
+#      SHA256SUMS parsing) — network-free.
+#
+# Fast + cheap → runs on every push/PR that touches the scripts or this
+# workflow. The live end-to-end runs are installer-e2e.yml (executes the
+# installers against a real release) and package-install-e2e.yml.
+
+on:
+  push:
+    paths:
+      - 'dist/scripts/**'
+      - 'scripts/bootstrap.sh'
+      - '.github/workflows/scripts-lint.yml'
+  pull_request:
+    paths:
+      - 'dist/scripts/**'
+      - 'scripts/bootstrap.sh'
+      - '.github/workflows/scripts-lint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scripts-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell:
+    name: Shell lint + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # shellcheck ships preinstalled on ubuntu-latest runners.
+      - name: shellcheck + bash -n
+        run: |
+          set -euo pipefail
+          shellcheck --version
+          SCRIPTS=(
+            dist/scripts/install.sh
+            dist/scripts/verify-release-assets.sh
+            dist/scripts/tests/install_sh_test.sh
+            scripts/bootstrap.sh
+          )
+          for s in "${SCRIPTS[@]}"; do
+            echo "==> $s"
+            bash -n "$s"
+            shellcheck -S warning "$s"
+          done
+          echo "All shell scripts pass bash -n + shellcheck."
+
+      - name: install.sh unit tests
+        run: bash dist/scripts/tests/install_sh_test.sh
+
+  powershell:
+    name: PowerShell parse
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # pwsh is preinstalled on ubuntu-latest — parse-check the installer
+      # AST so a syntax error can't ship. Full behavioral coverage of the
+      # Windows path is in installer-e2e.yml (runs it on a windows runner).
+      - name: Parse install.ps1
+        shell: pwsh
+        run: |
+          $tokens = $null; $errs = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path dist/scripts/install.ps1).Path, [ref]$tokens, [ref]$errs) | Out-Null
+          if ($errs) {
+            $errs | ForEach-Object { Write-Host "::error::$($_.Message)" }
+            exit 1
+          }
+          Write-Host "install.ps1: parse OK"
