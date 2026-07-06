@@ -268,7 +268,7 @@ jobs:
       TAG: ${{ needs.gate.outputs.tag }}
     steps:
       - name: Checkout (for fixture project)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.tag }}
           fetch-depth: 1
