@@ -27,6 +27,34 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [Unreleased]
+
+**Fixes:**
+
+- The `curl … | bash` installer (`install.sh`) now verifies the downloaded
+  archive against the release `SHA256SUMS.txt` before extracting it. The
+  checksum routine existed but was never called, so installs ran with no
+  integrity check at all; the PowerShell installer (`install.ps1`) had the
+  same dead-code gap and is fixed too. A mismatch aborts the install; set
+  `JARVY_SKIP_CHECKSUM=1` to opt out.
+- Fix `curl … | bash` failing with a download 404 on 64-bit glibc Linux —
+  the most common platform. `install.sh` requested an
+  `x86_64-unknown-linux-gnu` asset, but Jarvy ships only the static
+  `x86_64-unknown-linux-musl` build for x86_64, so nothing matched. The
+  installer now requests the triple that actually ships (x86_64 → musl,
+  aarch64 → gnu, armv7 → gnueabihf).
+
+**Internal:**
+
+- Add end-to-end coverage for the download → install → upgrade path, which
+  previously had none: unit tests for `install.sh` (checksum accept/reject,
+  channel filter, platform-triple mapping), a `shellcheck` / `bash -n` /
+  PowerShell-parse lint gate, an installer e2e workflow that runs
+  `install.sh` and `install.ps1` against a real published release, and a
+  package-install matrix (`.deb` → apt, `.rpm` → dnf, crate → cargo,
+  `.msi` → Windows) that also asserts `jarvy update` auto-detects the
+  install method.
+
 ## [v0.5.2] — Fix `jarvy update --method binary` (2026-07-06)
 
 Patch release. `jarvy update --method binary` could not find a release
@@ -2612,7 +2640,7 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.5.2...HEAD
 [v0.5.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.2
 [v0.5.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.1
 [v0.3.0]: https://github.com/Cliftonz/Jarvy/releases/tag/v0.3.0
