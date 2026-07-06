@@ -27,6 +27,32 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.5.2] — Fix `jarvy update --method binary` (2026-07-06)
+
+Patch release. `jarvy update --method binary` could not find a release
+asset on any platform, so binary self-update failed for everyone; this
+fixes it.
+
+**Fixes:**
+
+- Fix `jarvy update --method binary` failing with "No binary for this
+  platform" (Windows) or a download error (macOS/Linux). The updater
+  matched assets by an ad-hoc `<os>-<arch>` string (`linux-x86_64`,
+  `darwin-aarch64`), but release assets are named by Rust target triple
+  (`x86_64-unknown-linux-musl`, `aarch64-apple-darwin`,
+  `x86_64-pc-windows-msvc`) since the binary-tarball change in v0.5.0,
+  so nothing matched. The updater now requests the exact triple each
+  platform ships. Other update methods (Homebrew, Cargo, apt/dnf/…)
+  were unaffected.
+
+**Internal:**
+
+- Add a `package-verify` follow-through and make the telemetry
+  disclosure tests hermetic against an ambient `JARVY_TEST_MODE`, so the
+  Coverage and cross-platform E2E jobs are green again. crates.io
+  publishing moved to Trusted Publishing (OIDC) with the API token kept
+  as a fallback.
+
 ## [v0.5.1] — Fix `cargo install jarvy` + auto-publish to package managers (2026-07-05)
 
 Patch release. The v0.5.0 crate published to crates.io was incomplete
@@ -2587,6 +2613,7 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
 [Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.2.2...HEAD
+[v0.5.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.2
 [v0.5.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.1
 [v0.3.0]: https://github.com/Cliftonz/Jarvy/releases/tag/v0.3.0
 [v0.2.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.2.2
