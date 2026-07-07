@@ -284,7 +284,15 @@ where
     save_global_config(&config)
 }
 
-#[cfg(test)]
+// Every test here drives the `JARVY_TEST_HOME` redirect in
+// `global_config_path`, which is compiled only under the `test-bypass`
+// feature (review item 15). Without that feature the env override is inert,
+// so the tests would resolve the real `~/.jarvy/config.toml` — failing their
+// tempdir assertions and polluting the developer's home. Gate the module on
+// the same feature: the unit-test analogue of the `required-features` gate
+// used for the integration tests. CI (`--all-features`) and local
+// `--features test-bypass` runs still exercise them.
+#[cfg(all(test, feature = "test-bypass"))]
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
