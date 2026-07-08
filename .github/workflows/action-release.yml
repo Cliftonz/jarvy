@@ -1,0 +1,72 @@
+# Advances the moving major tag for the published GitHub Action.
+#
+# The action is versioned INDEPENDENTLY of the jarvy CLI: CLI releases use
+# `vX.Y.Z` tags; the action uses `action-vX.Y.Z` immutable release tags plus
+# a moving `action-vX` major tag that consumers pin (`uses: Cliftonz/jarvy@action-v1`).
+#
+# On every `action-vX.Y.Z` tag push, this force-updates `action-vX` to the
+# same commit and (re)creates a GitHub Release for the immutable tag. The
+# maintainer ticks "Publish this Action to the Marketplace" on the release
+# once per major line; subsequent moves keep the Marketplace entry current.
+name: Action Release (major tag)
+
+on:
+  push:
+    tags:
+      - 'action-v*.*.*'   # immutable release tags only; never fires on action-vX
+
+permissions:
+  contents: write          # push the moving major tag + create the release
+
+concurrency:
+  group: action-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  move-major-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout at the pushed tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive versions and move the major tag
+        id: ver
+        run: |
+          set -euo pipefail
+          full="${GITHUB_REF_NAME}"                    # e.g. action-v1.4.2
+          semver="${full#action-v}"                    # 1.4.2
+          major="${semver%%.*}"                         # 1
+          moving="action-v${major}"                     # action-v1
+          echo "full=$full"     >> "$GITHUB_OUTPUT"
+          echo "moving=$moving" >> "$GITHUB_OUTPUT"
+
+          # Reject a bare 'action-v1'-shaped push reaching this job (the
+          # trigger already excludes it, but guard against manual dispatch).
+          if [ "$full" = "$moving" ]; then
+            echo "::error::$full is a major tag, not an immutable release tag"
+            exit 1
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Force-move the major tag to this commit and push it.
+          git tag -f "$moving" "${GITHUB_SHA}"
+          git push origin "refs/tags/${moving}" --force
+          echo "Moved $moving -> ${GITHUB_SHA} (from $full)"
+
+      - name: Create/update the immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.full }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; leaving it as-is."
+          else
+            gh release create "$tag" \
+              --title "GitHub Action $tag" \
+              --notes "Jarvy GitHub Action \`$tag\`. Pin \`${{ steps.ver.outputs.moving }}\` for the moving major, or this tag for an exact version. See docs/github-action.md." \
+              --verify-tag
+          fi

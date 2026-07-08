@@ -4,8 +4,16 @@ Install the [Jarvy](https://github.com/Cliftonz/jarvy) CLI in a GitHub Actions
 workflow and optionally validate, set up, or doctor your dev environment from a
 `jarvy.toml` — in one step, on Linux, macOS, and Windows.
 
-The action lives at the **root of the Jarvy repo** (`action.yml`), so it is
-referenced as `Cliftonz/jarvy@v1` (or any tag/branch/SHA).
+The action lives at the **root of the Jarvy repo** (`action.yml`) — the
+GitHub Marketplace only lists actions whose metadata is at the repo root, so
+it cannot live under a subdirectory.
+
+**Versioning is independent of the jarvy CLI.** The CLI releases as `vX.Y.Z`
+tags; the action releases as `action-vX.Y.Z` tags with a moving `action-vX`
+major tag. Pin the action with the `action-` prefix — `Cliftonz/jarvy@action-v1`
+tracks the latest `action-v1.*`, or pin `@action-v1.4.0` for an exact version
+(or a full commit SHA for maximum supply-chain strictness). This keeps the
+action's version from being conflated with the CLI's `vX.Y.Z` tags.
 
 > Note: there is a separate, repo-internal composite action at
 > `.github/actions/setup-jarvy` used by Jarvy's own CI to build from source.
@@ -25,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Cliftonz/jarvy@v1
+      - uses: Cliftonz/jarvy@action-v1
         # Defaults: install latest stable via the checksum-verified installer,
         # then `jarvy validate --strict ./jarvy.toml`.
 ```
@@ -114,7 +122,7 @@ jobs:
       # 1) Install a pinned version and validate the repo config.
       #    The problem matcher annotates any validation failures.
       - id: jarvy
-        uses: Cliftonz/jarvy@v1
+        uses: Cliftonz/jarvy@action-v1
         with:
           version: 1.4.0
           run: validate
@@ -137,7 +145,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Install-only, then run setup yourself with your own flags.
-      - uses: Cliftonz/jarvy@v1
+      - uses: Cliftonz/jarvy@action-v1
         with:
           version: 1.4.0
           run: none
@@ -151,3 +159,39 @@ jobs:
 - Telemetry is disabled (`JARVY_TELEMETRY=0`) for all steps the action runs.
 - `run: setup` passes `--ci` for non-interactive execution. Add
   `args: --dry-run` to preview without mutating the runner.
+
+## Versioning & releasing (maintainers)
+
+The action versions on its **own** tag line, decoupled from the CLI:
+
+| Tag              | Mutability | Purpose                                              |
+|------------------|------------|------------------------------------------------------|
+| `action-vX.Y.Z`  | immutable  | A specific action release. Never re-pointed.         |
+| `action-vX`      | moving     | Always points at the newest `action-vX.*`. Consumers pin this. |
+
+Consumers pin `@action-vX` (moving major) or `@action-vX.Y.Z` (exact). They
+never pin the CLI's `vX.Y.Z` tags for the action.
+
+**To cut an action release:**
+
+```bash
+# 1. Tag an immutable release on the commit you want to ship.
+git tag action-v1.4.0
+git push origin action-v1.4.0
+```
+
+That push triggers `.github/workflows/action-release.yml`, which:
+
+1. force-moves the `action-v1` major tag to the same commit, and
+2. creates a GitHub Release for `action-v1.4.0`.
+
+**First release of a new major line** (`action-v1.0.0`, `action-v2.0.0`, …):
+after the workflow creates the release, open it once and tick **"Publish this
+Action to the GitHub Marketplace"**. Subsequent `action-v1.*` pushes keep the
+`action-v1` tag (and thus the Marketplace listing) current automatically — no
+further manual step.
+
+**Breaking changes** go to a new major (`action-v2.0.0` → new `action-v2`
+moving tag); consumers stay on `@action-v1` until they opt in. The workflow
+handles any major number, so `action-v2.*` pushes maintain `action-v2` without
+changes.
