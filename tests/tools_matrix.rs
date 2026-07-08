@@ -60,6 +60,34 @@ fn new_polyglot_tools_are_registered() {
     }
 }
 
+/// Same registration-side-effect guard for the new-tools batch
+/// (tasks/new_tools.json queue drain + backlog picks). Each of these
+/// must survive `register_all()`; a dropped `pub mod` line in
+/// `src/tools/mod.rs` fails here by name.
+#[test]
+fn new_tools_batch_is_registered() {
+    jarvy::tools::register_all();
+    let names = jarvy::tools::registered_tool_names();
+    for tool in [
+        "allure",
+        "aws_sam_cli",
+        "cfn_lint",
+        "cypress",
+        "goaccess",
+        "linkerd",
+        "locust",
+        "playwright",
+        "putty",
+        "task",
+    ] {
+        assert!(
+            names.iter().any(|n| n == tool),
+            "tool `{tool}` must be in the registered set — did `mod.rs` \
+             drop the `pub mod {tool};` line? got: {names:?}"
+        );
+    }
+}
+
 /// The dash/underscore alias resolution in `tools::registry::get_tool()`
 /// must find every new tool whose canonical form uses an underscore
 /// (Rust identifiers can't contain dashes). Users typing the natural
@@ -71,6 +99,8 @@ fn dash_form_tool_names_resolve_via_aliasing() {
     for (dash, expected_underscore) in [
         ("cargo-nextest", "cargo_nextest"),
         ("release-plz", "release_plz"),
+        ("aws-sam-cli", "aws_sam_cli"),
+        ("cfn-lint", "cfn_lint"),
     ] {
         assert!(
             jarvy::tools::get_tool(dash).is_some(),
