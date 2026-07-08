@@ -8,13 +8,18 @@
     "kustomize", "argocd", "flux", "eksctl", "azure-cli", "pulumi", "tfsec",
     "btop", "procs", "bottom", "ncdu", "duf", "nmap", "mtr", "lnav", "lynis",
     "openssh", "7zip", "rclone", "gh", "glab", "vault", "sops", "age", "podman",
-    "just", "git-lfs", "hugo", "curl", "httpie"
+    "just", "git-lfs", "hugo", "curl", "httpie",
+    "kubens", "krew", "gcloud", "checkov", "ansible", "pre-commit", "localstack",
+    "bicep", "infracost",
+    "aws-sam-cli", "playwright", "cypress", "task", "allure", "locust",
+    "goaccess", "linkerd", "cfn-lint", "putty"
   ],
   "implementation_status": {
     "completed_date": "2026-01-14",
+    "updated_date": "2026-07-08",
     "total_from_list": 73,
-    "implemented_count": 38,
-    "notes": "Many tools already implemented from T12 batch. 23 new tools added in this session."
+    "implemented_count": 57,
+    "notes": "Many tools already implemented from T12 batch. 23 new tools added in the 2026-01-14 session. 2026-07-08 batch (feat/new-tools-batch) drained the remaining high-priority queue (aws-sam-cli, playwright, cypress) plus 7 backlog picks (task, allure, locust, goaccess, linkerd, cfn-lint, putty), and reconciled 9 tools that were already in src/tools/ but missing from this list (kubens, krew, gcloud, checkov, ansible, pre-commit, localstack, bicep, infracost). Allure/locust/cfn-lint/linkerd ship without a windows block — no first-party winget manifests exist (JSON's Allure.Allure was a placeholder; supply-chain rule forbids it)."
   },
   "categories": [
     {
@@ -842,25 +847,16 @@
     }
   ],
   "implementation_queue": {
-    "high_priority": [
-      "kubectl", "helm", "k9s", "kustomize", "trivy",
-      "azure-cli", "gcloud", "pulumi", "aws-sam-cli", "eksctl",
-      "checkov", "tfsec",
-      "gh", "glab", "vault", "sops", "ansible", "podman", "just", "pre-commit",
-      "btop", "ncdu", "nmap", "curl", "7zip",
-      "playwright", "cypress", "httpie", "openssh"
-    ],
+    "high_priority": [],
     "medium_priority": [
-      "kubectx", "stern", "argocd", "flux", "krew",
-      "copilot-cli", "cfn-lint", "localstack", "azure-functions-core-tools", "bicep", "infracost",
-      "age", "git-lfs", "hugo", "task",
-      "procs", "bottom", "duf", "mtr", "netcat", "lnav", "lynis", "fail2ban",
-      "aria2", "rclone", "winscp", "nssm", "putty",
-      "allure", "locust", "nyc"
+      "copilot-cli", "azure-functions-core-tools",
+      "netcat", "fail2ban",
+      "winscp", "nssm",
+      "nyc"
     ],
     "low_priority": [
-      "linkerd", "appium", "mockoon", "prism", "testcontainers",
-      "goaccess", "everything"
+      "appium", "mockoon", "prism", "testcontainers",
+      "everything"
     ]
   },
   "notes": {
