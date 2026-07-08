@@ -176,12 +176,33 @@ matches_channel() {
 # stable -> /releases/latest (skips drafts and prereleases).
 # beta/nightly -> /releases (includes prereleases); pick the first tag that
 # matches the channel filter.
+# Fetch a GitHub API URL with auth (when GITHUB_TOKEN / GH_TOKEN is set,
+# for the 5000/hr authenticated rate limit instead of 60/hr) and up to 3
+# retries with linear backoff — a single transient 403/rate-limit or
+# network blip should not hard-fail an install. Echoes the body on
+# success; returns 1 after exhausting retries.
+gh_api_fetch() {
+    local url="$1"
+    local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+    local -a auth=()
+    [ -n "$token" ] && auth=(-H "Authorization: Bearer $token")
+    local attempt body
+    for attempt in 1 2 3; do
+        if body=$(curl -fsSL "${auth[@]}" -H "X-GitHub-Api-Version: 2022-11-28" "$url" 2>/dev/null) \
+            && [ -n "$body" ]; then
+            echo "$body"
+            return 0
+        fi
+        [ "$attempt" -lt 3 ] && sleep "$attempt"
+    done
+    return 1
+}
+
 get_latest_version() {
     if [ "$JARVY_CHANNEL" = "stable" ]; then
         local response
-        response=$(curl -fsSL "https://api.github.com/repos/${JARVY_REPO}/releases/latest" 2>/dev/null)
-        if [ -z "$response" ]; then
-            log_error "Failed to fetch latest stable release from GitHub"
+        if ! response=$(gh_api_fetch "https://api.github.com/repos/${JARVY_REPO}/releases/latest"); then
+            log_error "Failed to fetch latest stable release from GitHub (rate limit? set GITHUB_TOKEN)"
             exit 1
         fi
         echo "$response" | grep '"tag_name"' | head -1 | sed -E 's/.*"v?([^"]+)".*/\1/'
@@ -190,9 +211,8 @@ get_latest_version() {
 
     # beta or nightly
     local response
-    response=$(curl -fsSL "https://api.github.com/repos/${JARVY_REPO}/releases?per_page=30" 2>/dev/null)
-    if [ -z "$response" ]; then
-        log_error "Failed to fetch releases from GitHub"
+    if ! response=$(gh_api_fetch "https://api.github.com/repos/${JARVY_REPO}/releases?per_page=30"); then
+        log_error "Failed to fetch releases from GitHub (rate limit? set GITHUB_TOKEN)"
         exit 1
     fi
 
@@ -247,7 +267,16 @@ fetch_expected_sha() {
     local sums_url sums
     sums_url="https://github.com/${JARVY_REPO}/releases/download/v${version}/SHA256SUMS.txt"
 
-    sums="$(curl -fsSL "$sums_url" 2>/dev/null)" || return 1
+    # Retry: the SHA256SUMS.txt asset exists for every release, so a
+    # failure here is almost always a transient release-CDN blip or
+    # rate-limit rather than a genuinely missing file. Retry before
+    # falling back to the (warned) checksum skip.
+    local attempt
+    for attempt in 1 2 3; do
+        sums="$(curl -fsSL "$sums_url" 2>/dev/null)" && [ -n "$sums" ] && break
+        sums=""
+        [ "$attempt" -lt 3 ] && sleep "$attempt"
+    done
     [ -n "$sums" ] || return 1
 
     # Strip an optional leading `./` from the filename column, then match
@@ -339,9 +368,17 @@ main() {
     url="https://github.com/${JARVY_REPO}/releases/download/v${version}/jarvy-v${version}-${platform}.${archive_ext}"
     log_info "Download URL: $url"
 
-    # Create temporary directory
+    # Create temporary directory. Bake the resolved path into the trap
+    # command NOW (double quotes expand at registration) rather than
+    # referencing $tmp_dir lazily: `tmp_dir` is a `local` in main(), but
+    # the EXIT trap fires at *script* exit when that local is out of
+    # scope — under `set -u` a lazy `$tmp_dir` then throws "unbound
+    # variable" and the trap exits 1, failing every install after a
+    # successful download. mktemp -d output contains no quotes, so the
+    # single-quoted embedding is safe.
     tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
+    # shellcheck disable=SC2064  # expand-now is the intent (see comment above)
+    trap "rm -rf '$tmp_dir'" EXIT
 
     # Download
     log_info "Downloading..."

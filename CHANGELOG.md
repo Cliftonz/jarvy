@@ -110,6 +110,17 @@ for divergences from generic release skills.
 
 **Fixes:**
 
+- `install.sh` no longer exits `1` after a successful install. The
+  `EXIT`-trap cleanup referenced a `local tmp_dir` that was out of scope
+  when the trap fired at script exit; under `set -u` that threw
+  `tmp_dir: unbound variable` and failed every install right after it
+  reported success. The trap now bakes the resolved path in at
+  registration time. (Caught by the new GitHub Action self-test.)
+- `install.sh` now retries transient GitHub failures (3× with backoff)
+  and honors `GITHUB_TOKEN` / `GH_TOKEN` for the authenticated
+  5000/hr API rate limit, so a single rate-limited request no longer
+  hard-fails `get_latest_version` or silently skips the checksum
+  fetch when `SHA256SUMS.txt` is actually present.
 - The `curl … | bash` installer (`install.sh`) now verifies the downloaded
   archive against the release `SHA256SUMS.txt` before extracting it. The
   checksum routine existed but was never called, so installs ran with no
