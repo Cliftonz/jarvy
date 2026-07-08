@@ -76,6 +76,7 @@ Commands:
   mcp-register  Register the Jarvy MCP server with terminal AI agents
   hooks         Manage git hook frameworks (pre-commit, husky, lefthook)
   skills        Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
+  wizard        Agent-driven setup: hand the project to your local AI agent (Claude Code, Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to `jarvy quickstart` when no agent is installed
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -823,6 +824,8 @@ Usage: jarvy skills [OPTIONS] <COMMAND>
 
 Commands:
   install  Install every skill from `[skills.install]`, or a single named skill
+  update   Re-fetch from library_sources and reinstall skills whose version/sha changed
+  remove   Uninstall a skill (SKILL.md + sidecar) from every targeted agent
   list     List skills declared in jarvy.toml + their installation status across agents
   status   Drift check: which configured skills are missing / out-of-version per agent
   agents   Show which AI agents are detected on disk
@@ -831,6 +834,22 @@ Commands:
 Options:
   -f, --file <FILE>  Path to the configuration file [default: ./jarvy.toml]
   -h, --help         Print help
+```
+
+### `jarvy wizard`
+
+```text
+Agent-driven setup: hand the project to your local AI agent (Claude Code, Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to `jarvy quickstart` when no agent is installed
+
+Usage: jarvy wizard [OPTIONS]
+
+Options:
+      --agent <AGENT>           Force a specific agent (claude-code | codex | cursor | windsurf | cline | continue). Defaults to auto-detect: prefer headless-capable agents (claude, codex), fall back to skill drop for GUI agents, fall back to `jarvy quickstart` if none
+      --skill-only              Always drop a skill into the agent's skills dir instead of shelling out to the agent's CLI. Useful when the user prefers to drive the agent themselves
+      --apply                   Apply proposed changes. Without `--apply` the wizard previews only
+  -F, --format <OUTPUT_FORMAT>  Output format: pretty (default) | json [default: pretty]
+  -f, --file <FILE>             Path to the configuration file [default: ./jarvy.toml]
+  -h, --help                    Print help
 ```
 
 ### `jarvy help`

@@ -61,10 +61,16 @@ Then:
 
 ```bash
 jarvy skills install            # install every configured skill
+jarvy skills install <name>     # one skill — ad-hoc from library_sources if not configured
+jarvy skills update             # re-fetch + reinstall skills whose version/sha changed
+jarvy skills update <name>      # update one skill
+jarvy skills remove <name>      # uninstall SKILL.md + sidecar from every agent
 jarvy skills list               # show what's configured + per-agent status
 jarvy skills status             # drift summary
 jarvy skills agents             # which AI agents jarvy detected
 ```
+
+`install`, `update`, and `remove` accept `--format json` for scripting (PRD-051); exit codes are identical between human and JSON output.
 
 `jarvy setup` also installs skills automatically (gated on `[skills] auto_install = true`, which is the default).
 
@@ -82,6 +88,37 @@ For each `(skill_name, version)` in `[skills.install]`:
 6. Drop a `.jarvy-skill.json` sidecar recording version + sha256 + install time, so `jarvy skills status` can detect drift.
 
 Use `"latest"` instead of an explicit version to pull whatever the library currently advertises.
+
+### Ad-hoc install
+
+`jarvy skills install <name>` with a name that is NOT in `[skills.install]` resolves the skill from your configured `library_sources` at `latest` and installs it without touching `jarvy.toml`. Useful for trying a skill before pinning it. Ad-hoc installs are invisible to `jarvy skills list` / `status` (those report configured entries only) — but `jarvy skills update <name>` and `jarvy skills remove <name>` still work on them.
+
+---
+
+## Update
+
+```bash
+jarvy skills update             # every [skills.install] entry
+jarvy skills update <name>      # one skill (configured or ad-hoc-installed)
+```
+
+For each skill, `update` re-syncs `library_sources`, compares the library's advertised version + `skill_md_sha256` against the installed `.jarvy-skill.json` sidecar per agent, and:
+
+- **No-op** when both match — nothing is fetched or written.
+- **Reinstalls** (fetch → sha256-verify → write) when either changed. A skill missing on disk counts as changed, so `update` doubles as repair.
+- **Refuses** when a pinned `[skills.install]` version no longer matches what the library advertises (`version mismatch`) — bump the pin in `jarvy.toml` first. Entries pinned to `"latest"` follow the library forward automatically.
+
+A named skill that isn't in `[skills.install]` is treated as `"latest"` (pairs with ad-hoc install).
+
+## Remove
+
+```bash
+jarvy skills remove <name>
+```
+
+Deletes `SKILL.md` + the `.jarvy-skill.json` sidecar from every targeted agent, then prunes the skill directory if it's empty. Files you added yourself next to `SKILL.md` are left alone. Idempotent: removing a skill that isn't installed is a clean no-op (reported per agent as "absent"), not an error.
+
+Note `remove` does not edit `jarvy.toml` — a skill still listed in `[skills.install]` will come back on the next `jarvy setup` / `jarvy skills install`.
 
 ---
 
@@ -170,14 +207,14 @@ The short version:
 
 ---
 
-## What's not in v1
+## What's still open
 
-Tracked under PRD-049 follow-up:
+`jarvy skills update`, `jarvy skills remove`, and ad-hoc `jarvy skills install <name>` shipped in PRD-049 phase 2. Still tracked under PRD-049 follow-up:
 
-- `jarvy skills search` / `info` / `update` / `remove` subcommands
+- `jarvy skills search` / `info` subcommands
+- skills.sh API integration (search, popular, info)
 - Companion file fetching (today only `SKILL.md` lands; templates / scripts skip)
 - Project-scope skills (`./.{agent}/skills/`)
-- skills.sh API integration (search, popular, info)
 - Version-range pinning (today only exact or `"latest"`)
 
 ---
