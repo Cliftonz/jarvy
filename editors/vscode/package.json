@@ -1,0 +1,118 @@
+{
+  "name": "jarvy-vscode",
+  "displayName": "Jarvy",
+  "description": "Validate and manage jarvy.toml dev-environment configs directly from VS Code.",
+  "version": "0.1.0",
+  "publisher": "jarvy",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cliftonz/jarvy.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Cliftonz/jarvy/issues"
+  },
+  "homepage": "https://github.com/Cliftonz/jarvy",
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "jarvy",
+    "toml",
+    "dev environment",
+    "provisioning",
+    "linter"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/jarvy.toml"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "jarvy-toml",
+        "aliases": [
+          "Jarvy TOML",
+          "jarvy.toml"
+        ],
+        "filenames": [
+          "jarvy.toml"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "jarvy-toml",
+        "scopeName": "source.jarvy-toml",
+        "path": "./syntaxes/jarvy-toml.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "jarvy.setup",
+        "title": "Jarvy: Run Setup",
+        "category": "Jarvy"
+      },
+      {
+        "command": "jarvy.doctor",
+        "title": "Jarvy: Run Doctor",
+        "category": "Jarvy"
+      },
+      {
+        "command": "jarvy.validate",
+        "title": "Jarvy: Validate Configuration",
+        "category": "Jarvy"
+      }
+    ],
+    "configuration": {
+      "title": "Jarvy",
+      "properties": {
+        "jarvy.executablePath": {
+          "type": "string",
+          "default": "jarvy",
+          "description": "Path to the jarvy executable. Defaults to `jarvy` on the system PATH."
+        },
+        "jarvy.validate.onSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-validate jarvy.toml files automatically when they are saved."
+        },
+        "jarvy.validate.onChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-validate jarvy.toml files (debounced) as you type."
+        },
+        "jarvy.validate.strict": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pass --strict to jarvy validate so warnings are treated as errors."
+        },
+        "jarvy.validate.debounceMs": {
+          "type": "number",
+          "default": 500,
+          "description": "Debounce interval in milliseconds for on-change validation."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc --noEmit -p ./",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.0"
+  }
+}
