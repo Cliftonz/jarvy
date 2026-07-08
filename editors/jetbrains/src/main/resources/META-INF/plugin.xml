@@ -1,0 +1,64 @@
+<idea-plugin>
+    <id>com.jarvy.intellij</id>
+    <name>Jarvy</name>
+    <version>0.1.0</version>
+    <vendor email="zac@bearbinarydevelopment.com" url="https://github.com/zacclifton/Jarvy">Zac Clifton</vendor>
+
+    <description><![CDATA[
+        <p><b>Jarvy</b> integration for JetBrains IDEs.</p>
+        <p>Jarvy provisions dev environments from a <code>jarvy.toml</code> file using native
+        package managers. This plugin surfaces Jarvy directly inside the IDE:</p>
+        <ul>
+            <li>Highlights configuration problems in <code>jarvy.toml</code> as you type, by
+            running <code>jarvy validate --format json</code> in the background.</li>
+            <li><b>Tools &gt; Jarvy</b> actions to run <b>Setup</b>, <b>Doctor</b>, and
+            <b>Validate</b> against the project's <code>jarvy.toml</code>.</li>
+        </ul>
+        <p>The plugin shells out to the <code>jarvy</code> executable on your <code>PATH</code>
+        (override with the <code>JARVY_BINARY</code> environment variable).</p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <ul><li>0.1.0 — Initial release: setup / doctor / validate actions and live
+        jarvy.toml validation.</li></ul>
+    ]]></change-notes>
+
+    <idea-version since-build="242" until-build="252.*"/>
+
+    <!-- Core platform is required; the TOML language plugin (bundled since
+         2023.1) lets us attach an ExternalAnnotator to jarvy.toml. -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.toml.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Balloon notifications for action results. -->
+        <notificationGroup id="Jarvy" displayType="BALLOON"/>
+
+        <!-- Live validation of jarvy.toml via the jarvy validate JSON output. -->
+        <externalAnnotator
+            language="TOML"
+            implementationClass="com.jarvy.intellij.validation.JarvyExternalAnnotator"/>
+    </extensions>
+
+    <actions>
+        <group id="com.jarvy.intellij.JarvyMenu"
+               text="Jarvy"
+               description="Jarvy commands"
+               popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+
+            <action id="com.jarvy.intellij.SetupAction"
+                    class="com.jarvy.intellij.actions.SetupAction"
+                    text="Setup"
+                    description="Run 'jarvy setup' against this project's jarvy.toml"/>
+            <action id="com.jarvy.intellij.DoctorAction"
+                    class="com.jarvy.intellij.actions.DoctorAction"
+                    text="Doctor"
+                    description="Run 'jarvy doctor' diagnostics"/>
+            <action id="com.jarvy.intellij.ValidateAction"
+                    class="com.jarvy.intellij.actions.ValidateAction"
+                    text="Validate jarvy.toml"
+                    description="Validate the project's jarvy.toml with 'jarvy validate'"/>
+        </group>
+    </actions>
+</idea-plugin>
