@@ -308,14 +308,24 @@ pub fn update_skill(
     }
 
     // Pass 2: fetch once (an all-unchanged run never touches the
-    // network) and rewrite every stale agent.
+    // network) and rewrite every stale agent. Companions are fetched +
+    // verified alongside SKILL.md so the rewritten sidecar's recorded
+    // companions actually exist on disk (parity with the install path).
     let mut updated = Vec::new();
     if !stale.is_empty() {
         let body = fetch_skill_md(&item)?;
+        let companions = fetch_companions(&item)?;
         for (agent, skill_dir) in stale {
             std::fs::create_dir_all(&skill_dir)?;
             std::fs::write(skill_dir.join("SKILL.md"), &body)?;
-            write_sidecar(&skill_dir, name, &item.version, &item.skill_md_sha256)?;
+            for (relpath, companion_body) in &companions {
+                let dest = skill_dir.join(relpath);
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&dest, companion_body)?;
+            }
+            write_sidecar(&skill_dir, name, &item)?;
             updated.push(agent);
         }
     }
@@ -925,7 +935,16 @@ mod tests {
         let skill_dir = agent.skills_dir().unwrap().join(name);
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(skill_dir.join("SKILL.md"), b"body").unwrap();
-        write_sidecar(&skill_dir, name, version, sha).unwrap();
+        let item = crate::library_registry::LibrarySkillItem {
+            name: name.to_string(),
+            version: version.to_string(),
+            description: String::new(),
+            skill_md_url: String::new(),
+            skill_md_sha256: sha.to_string(),
+            companion_files: Vec::new(),
+            supported_agents: Vec::new(),
+        };
+        write_sidecar(&skill_dir, name, &item).unwrap();
         skill_dir
     }
 
