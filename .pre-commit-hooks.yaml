@@ -1,0 +1,35 @@
+# Consumable pre-commit hooks (PRD-017 phase 5).
+#
+# End users add jarvy to their own `.pre-commit-config.yaml`:
+#
+#   repos:
+#     - repo: https://github.com/Cliftonz/jarvy
+#       rev: v0.5.2            # pin to a released tag
+#       hooks:
+#         - id: jarvy-validate
+#
+# `language: system` means the hook runs the user's already-installed
+# `jarvy` binary (install via `install.sh`, brew, cargo, or the
+# devcontainer feature) rather than pre-commit building it — jarvy is a
+# Rust binary, not a pip/npm package pre-commit can provision itself.
+#
+# `pass_filenames: false` + the `files:` trigger means: when any
+# `jarvy.toml` changes, validate the repo-root `./jarvy.toml` (jarvy
+# validate takes a single `--file`, default `./jarvy.toml`). Monorepos
+# with per-member configs can add a second hook entry with an explicit
+# `args: [--file, path/to/jarvy.toml]`.
+- id: jarvy-validate
+  name: jarvy validate (jarvy.toml)
+  description: Validate jarvy.toml — tool names, package specs, and schema.
+  entry: jarvy validate --strict
+  language: system
+  files: (^|/)jarvy\.toml$
+  pass_filenames: false
+
+- id: jarvy-validate-json
+  name: jarvy validate (jarvy.toml, JSON output)
+  description: Same as jarvy-validate but emits machine-readable JSON.
+  entry: jarvy validate --strict --format json
+  language: system
+  files: (^|/)jarvy\.toml$
+  pass_filenames: false

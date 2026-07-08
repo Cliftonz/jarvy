@@ -1,0 +1,28 @@
+{
+  "id": "jarvy",
+  "version": "0.1.0",
+  "name": "Jarvy CLI",
+  "description": "Installs the Jarvy dev-environment provisioning CLI and (optionally) runs `jarvy setup` against the workspace jarvy.toml.",
+  "documentationURL": "https://github.com/Cliftonz/jarvy/blob/main/docs/installation.md",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "latest",
+      "description": "Jarvy version to install (a release tag like 0.5.2, or 'latest')."
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["stable", "beta", "nightly"],
+      "default": "stable",
+      "description": "Release channel passed to install.sh."
+    },
+    "runSetup": {
+      "type": "boolean",
+      "default": false,
+      "description": "Run `jarvy setup` against ./jarvy.toml after install (postCreate)."
+    }
+  },
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/common-utils"
+  ]
+}

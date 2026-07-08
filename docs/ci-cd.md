@@ -155,3 +155,48 @@ jarvy ci-info
 ```
 
 Output includes: provider name, build ID, branch, commit SHA, PR number (if applicable), and which environment variables were detected.
+
+## Pre-commit Hook
+
+Jarvy ships consumable [pre-commit](https://pre-commit.com) hooks that
+validate `jarvy.toml` before every commit. Add to your
+`.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/Cliftonz/jarvy
+    rev: v0.5.2            # pin to a released tag
+    hooks:
+      - id: jarvy-validate           # runs: jarvy validate --strict
+      # - id: jarvy-validate-json    # same, machine-readable JSON output
+```
+
+The hooks use `language: system`, so they run the `jarvy` binary you
+already have installed (via `install.sh`, brew, cargo, or the
+devcontainer feature below) — pre-commit does not build jarvy itself.
+They trigger whenever a `jarvy.toml` changes and validate the repo-root
+`./jarvy.toml`; monorepos with per-member configs can add a second entry
+with `args: [--file, path/to/jarvy.toml]`.
+
+## Devcontainer Feature
+
+Install jarvy into a devcontainer / GitHub Codespace via the feature in
+`dist/devcontainer/jarvy`:
+
+```jsonc
+{
+  "features": {
+    "ghcr.io/cliftonz/jarvy/jarvy:0": {
+      "version": "latest",
+      "channel": "stable",
+      "runSetup": false
+    }
+  }
+}
+```
+
+Options: `version` (release tag or `latest`), `channel`
+(`stable`/`beta`/`nightly`), and `runSetup` (emit a postCreate script
+that runs `jarvy setup` against `./jarvy.toml`). The install delegates to
+the canonical `install.sh`, so the binary is checksum-verified like every
+other channel. See `dist/devcontainer/jarvy/README.md` for details.
