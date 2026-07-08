@@ -17,6 +17,63 @@ jarvy mcp
 jarvy mcp --config ~/.jarvy/custom-mcp.toml
 ```
 
+### Run via npm (no jarvy install required)
+
+The `jarvy-mcp` npm package (maintained in-repo at `packages/npm/`)
+downloads the platform-native jarvy binary on install
+(SHA256-verified against the release `SHA256SUMS.txt`) and exposes the MCP
+server as a bin:
+
+```bash
+npx -y jarvy-mcp        # starts the MCP server on stdio
+```
+
+MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "jarvy": {
+      "command": "npx",
+      "args": ["-y", "jarvy-mcp"]
+    }
+  }
+}
+```
+
+### Run via Docker
+
+`ghcr.io/cliftonz/jarvy` (built from `dist/docker/Dockerfile`) defaults to
+the MCP server entrypoint. Run with `-i` so stdio stays attached:
+
+```bash
+docker run -i --rm ghcr.io/cliftonz/jarvy:latest
+```
+
+MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "jarvy": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "ghcr.io/cliftonz/jarvy:latest"]
+    }
+  }
+}
+```
+
+Notes:
+
+- The image pins `JARVY_MCP_WORKSPACE=/workspace`; mount your project there
+  (`-v "$PWD:/workspace"`) if you want project-aware tools
+  (`jarvy_validate_config`, `jarvy_drift_status`, ...) to see it.
+- Tool *installation* inside the container installs into the container, not
+  your host — the Docker image is best for discovery / verification /
+  read-only workflows. Use a native install for host provisioning.
+- Any CLI subcommand overrides the default: `docker run --rm
+  ghcr.io/cliftonz/jarvy:latest --version`.
+
 ## Integration with AI Clients
 
 ### Claude Desktop
@@ -462,6 +519,29 @@ If you see rate limit errors, wait 60 seconds for the sliding window to reset, o
 ### Permission errors
 
 Some tools require elevated permissions. The MCP server will return error code `-32006` (Sudo required) when this occurs.
+
+## Distribution & MCP Registry
+
+Jarvy's MCP server ships through three channels:
+
+| Channel | Artifact | Source |
+|---|---|---|
+| Native binary | `jarvy mcp` (crates.io / brew / AUR / winget / installer script) | `.github/workflows/publish-packages.yml` |
+| npm | `jarvy-mcp` (binary-download wrapper) | `packages/npm/` |
+| Docker | `ghcr.io/cliftonz/jarvy` | `dist/docker/Dockerfile` + `.github/workflows/docker-publish.yml` (release tags / manual dispatch only) |
+
+### Official MCP registry
+
+`dist/mcp-registry/server.json` describes this server for the
+[official MCP registry](https://registry.modelcontextprotocol.io/) under the
+name `io.github.cliftonz/jarvy`, listing the npm and OCI packages above.
+
+Submission is a **maintainer-only** action and requires the npm package and
+Docker image to already be published (the registry validates package
+ownership: `mcpName` in the npm `package.json`, and the
+`io.modelcontextprotocol.server.name` label on the OCI image). The
+step-by-step publish procedure (`mcp-publisher login github` +
+`mcp-publisher publish`) is documented in `dist/mcp-registry/README.md`.
 
 ## Protocol Version
 

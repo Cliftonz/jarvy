@@ -1,0 +1,17 @@
+# Build context filter for dist/docker/Dockerfile (and any future images).
+# Keep the context to what `cargo build -p jarvy` actually needs. Do NOT
+# exclude assets/ (src/wizard/skill_drop.rs include_str!s from
+# assets/wizard-skill/) or tests/ (Cargo target discovery).
+.git
+.github
+.claude
+.agents
+.junie
+target
+node_modules
+packages/npm/vendor
+packages/npm/node_modules
+dist/helm
+docs
+*.log
+.DS_Store

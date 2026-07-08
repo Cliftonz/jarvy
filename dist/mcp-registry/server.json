@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.cliftonz/jarvy",
+  "title": "Jarvy",
+  "description": "Safely discover, verify, and install developer tools with dry-run defaults and audit logging.",
+  "repository": {
+    "url": "https://github.com/Cliftonz/jarvy",
+    "source": "github"
+  },
+  "websiteUrl": "https://jarvy.dev",
+  "version": "0.5.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "jarvy-mcp",
+      "version": "0.5.2",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/cliftonz/jarvy:0.5.2",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

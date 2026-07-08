@@ -1,0 +1,46 @@
+{
+  "name": "jarvy-mcp",
+  "version": "0.5.2",
+  "description": "Run Jarvy's MCP server via npm - downloads the platform-native jarvy binary (SHA256-verified) on install.",
+  "mcpName": "io.github.cliftonz/jarvy",
+  "license": "(MIT OR Apache-2.0)",
+  "homepage": "https://jarvy.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cliftonz/jarvy.git",
+    "directory": "packages/npm"
+  },
+  "bugs": {
+    "url": "https://github.com/Cliftonz/jarvy/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "jarvy",
+    "devtools",
+    "provisioning",
+    "cli"
+  ],
+  "bin": {
+    "jarvy": "bin/jarvy.js",
+    "jarvy-mcp": "bin/jarvy-mcp.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "scripts/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ]
+}

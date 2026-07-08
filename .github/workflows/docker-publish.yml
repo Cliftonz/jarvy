@@ -1,0 +1,103 @@
+name: Docker Publish (ghcr.io)
+
+# Builds the Jarvy MCP server image (dist/docker/Dockerfile) and pushes it
+# to ghcr.io/cliftonz/jarvy. Deliberately gated:
+#   - version tags (vX.Y.Z / vX.Y.Z-rc.N) - rides the normal release train
+#   - workflow_dispatch - manual operator runs (optionally push-less)
+# It never triggers on branch pushes or PRs, so merging this workflow
+# cannot publish anything by itself.
+#
+# The io.modelcontextprotocol.server.name OCI label baked into the
+# Dockerfile is the MCP registry's ownership proof for the `oci` package in
+# dist/mcp-registry/server.json - keep image publishing ahead of any
+# registry submission.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push the built image to ghcr.io (false = build only)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  # ghcr requires a lowercase repository path.
+  IMAGE_NAME: cliftonz/jarvy
+
+jobs:
+  build-and-push:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Only authenticate when we will actually push.
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' || inputs.push
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag policy mirrors publish-packages.yml's channel rules:
+      #   vX.Y.Z       -> X.Y.Z, X.Y, latest
+      #   vX.Y.Z-rc.N  -> X.Y.Z-rc.N only (semver prerelease never moves
+      #                   latest / X.Y - `latest=auto` handles this)
+      # The raw manual-<sha> entry covers workflow_dispatch, which has no
+      # tag ref - buildx always needs at least one tag.
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=manual-{{sha}},enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.title=jarvy
+            org.opencontainers.image.description=Jarvy MCP server - safe, auditable developer-tool discovery and installation for AI agents
+
+      - name: Extract version for build arg
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(awk -F'"' '/^version = / {print $2; exit}' Cargo.toml)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build (and conditionally push) image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: dist/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' || inputs.push == true }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
