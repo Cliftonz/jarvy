@@ -188,7 +188,12 @@ gh_api_fetch() {
     [ -n "$token" ] && auth=(-H "Authorization: Bearer $token")
     local attempt body
     for attempt in 1 2 3; do
-        if body=$(curl -fsSL "${auth[@]}" -H "X-GitHub-Api-Version: 2022-11-28" "$url" 2>/dev/null) \
+        # `${auth[@]+"${auth[@]}"}` expands to nothing when the array is
+        # empty and to the quoted elements otherwise. macOS ships bash
+        # 3.2, where a bare `"${auth[@]}"` on an empty array under
+        # `set -u` is an "unbound variable" error (bash 4.4+ treats it as
+        # empty) — this idiom is safe on both.
+        if body=$(curl -fsSL ${auth[@]+"${auth[@]}"} -H "X-GitHub-Api-Version: 2022-11-28" "$url" 2>/dev/null) \
             && [ -n "$body" ]; then
             echo "$body"
             return 0
