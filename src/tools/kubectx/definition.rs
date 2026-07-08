@@ -16,14 +16,21 @@ define_tool!(KUBECTX, {
     default_hook: {
         description: "Add kctx/kns aliases for kubectx and kubens",
         script: r#"
+# Guard each alias independently — an rc that already has one but not the
+# other (e.g. a hand-added kns) must not get a duplicate or miss the pair.
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    if [ -f "$rc" ] && ! grep -q 'alias kctx=' "$rc"; then
+    [ -f "$rc" ] || continue
+    if ! grep -q 'alias kctx=' "$rc"; then
         echo 'alias kctx="kubectx"' >> "$rc"
+        echo "Added kctx alias to $rc"
+    fi
+    if ! grep -q 'alias kns=' "$rc"; then
         echo 'alias kns="kubens"' >> "$rc"
-        echo "Added kctx/kns aliases to $rc"
+        echo "Added kns alias to $rc"
     fi
 done
-"#
+"#,
+        platform: "unix"
     },
 });
 

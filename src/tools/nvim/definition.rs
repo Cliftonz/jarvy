@@ -28,7 +28,8 @@ vim.opt.termguicolors = true
 EOF
     echo "Created starter config at $NVIM_DIR/init.lua"
 fi
-"#
+"#,
+        platform: "unix"
     },
 });
 

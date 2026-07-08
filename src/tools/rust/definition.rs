@@ -8,11 +8,17 @@
 //! Windows, routed through `custom_install`.
 
 use crate::define_tool;
-#[cfg(target_os = "windows")]
-use crate::tools::common::has;
-use crate::tools::common::{InstallError, run};
+use crate::tools::common::{InstallError, has, run};
 
 fn install_rust(_min_hint: &str) -> Result<(), InstallError> {
+    // Preserve the pre-migration `ensure()` acceptance: an existing
+    // rustup (even with no default toolchain, so `rustc` isn't on PATH
+    // and `ToolSpec::is_satisfied` returns false) means the toolchain
+    // manager is present — re-running `curl | sh` would be a redundant,
+    // network-mutating action the user didn't ask for (QA review F5).
+    if has("rustc") || has("rustup") {
+        return Ok(());
+    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         // Use bash -lc to ensure shell expands the pipe correctly
@@ -59,7 +65,8 @@ fi
 if command -v rustup >/dev/null 2>&1; then
     rustup component add clippy rustfmt 2>/dev/null || true
 fi
-"#
+"#,
+        platform: "unix"
     },
 });
 

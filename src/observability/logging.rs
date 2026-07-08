@@ -25,19 +25,6 @@ pub enum LogLevel {
     Trace,
 }
 
-impl LogLevel {
-    /// Convert to tracing EnvFilter string
-    pub fn as_filter_string(self) -> &'static str {
-        match self {
-            LogLevel::Quiet => "error",
-            LogLevel::Normal => "info",
-            LogLevel::Verbose => "warn,jarvy=info",
-            LogLevel::Debug => "debug",
-            LogLevel::Trace => "trace",
-        }
-    }
-}
-
 /// Log output format
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum LogFormat {
@@ -73,14 +60,6 @@ pub fn default_log_directory() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_log_level_to_filter() {
-        assert_eq!(LogLevel::Quiet.as_filter_string(), "error");
-        assert_eq!(LogLevel::Normal.as_filter_string(), "info");
-        assert_eq!(LogLevel::Debug.as_filter_string(), "debug");
-        assert_eq!(LogLevel::Trace.as_filter_string(), "trace");
-    }
 
     #[test]
     fn test_log_config_default() {

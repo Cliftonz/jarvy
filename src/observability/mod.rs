@@ -75,13 +75,20 @@ impl ObservabilityConfig {
         }
     }
 
-    /// True when any flag deviates from the defaults — used by
-    /// `analytics::init_logging` to decide whether CLI directives
-    /// override `RUST_LOG`.
-    pub fn has_log_overrides(&self) -> bool {
-        self.log.level != LogLevel::Normal
-            || self.log.format != LogFormat::Text
-            || self.log.filter.is_some()
-            || self.log.file.is_some()
+    /// True when the CLI expresses *filtering* intent that should widen
+    /// the registry `EnvFilter` and take precedence over `RUST_LOG`.
+    ///
+    /// Only `-v/-vv/-vvv` (level more verbose than `Normal`) and
+    /// `--debug-filter <module>` qualify. `--quiet` is a console-only
+    /// cap (it must not lower the registry floor — see
+    /// `analytics::cli_log_directives`), and `--log-format` / `--log-file`
+    /// shape the sink, not the filter. Including those sink flags here
+    /// previously let `--log-file out.log` alone silently discard a
+    /// user's `RUST_LOG` (perf/QA/observability/maintainability review).
+    pub fn has_filter_overrides(&self) -> bool {
+        matches!(
+            self.log.level,
+            LogLevel::Verbose | LogLevel::Debug | LogLevel::Trace
+        ) || self.log.filter.is_some()
     }
 }

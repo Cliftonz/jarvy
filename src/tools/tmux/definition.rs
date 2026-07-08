@@ -14,10 +14,15 @@ define_tool!(TMUX, {
     default_hook: {
         description: "Install TPM (tmux plugin manager) and seed its run line in ~/.tmux.conf",
         script: r#"
-# Clone TPM if git is available and it isn't already present
+# Clone TPM if git is available and it isn't already present. Surface a
+# clone failure on stderr rather than silently continuing — otherwise the
+# hook records hook.completed(exit 0) with TPM absent (observability F9).
 if command -v git >/dev/null 2>&1 && [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
-    git clone --depth 1 https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm" \
-        && echo "Installed TPM to ~/.tmux/plugins/tpm"
+    if git clone --depth 1 https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm"; then
+        echo "Installed TPM to ~/.tmux/plugins/tpm"
+    else
+        echo "warning: TPM clone failed; skipping tmux plugin-manager setup" >&2
+    fi
 fi
 
 # Seed the TPM run line so `prefix + I` works out of the box
