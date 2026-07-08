@@ -1,0 +1,4 @@
+# Vendored binary is downloaded by postinstall — never committed.
+vendor/
+node_modules/
+*.tgz

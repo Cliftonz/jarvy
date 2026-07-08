@@ -48,6 +48,28 @@ for divergences from generic release skills.
   `skills.updated` / `skills.removed` telemetry events (gated behind the
   standard telemetry opt-in).
 
+**Added:**
+
+- **npm wrapper** (`packages/npm/`, PRD-021): `jarvy-mcp` npm package that
+  downloads the platform-native jarvy release binary on install
+  (SHA256-verified against the release `SHA256SUMS.txt`, mirroring
+  `install.sh`) and exposes `jarvy-mcp` (runs `jarvy mcp`) and `jarvy`
+  bins. `npx -y jarvy-mcp` is now a zero-install MCP client command.
+  Not yet published to npm — maintainer action.
+- **Docker image** (`dist/docker/Dockerfile`, PRD-021): multi-stage
+  Alpine image that builds jarvy from source, runs as a non-root user,
+  pins `JARVY_MCP_WORKSPACE=/workspace`, and defaults to the MCP server
+  entrypoint. `.github/workflows/docker-publish.yml` builds
+  linux/amd64 + linux/arm64 to `ghcr.io/cliftonz/jarvy`, gated on
+  release tags / manual dispatch only.
+- **MCP registry submission prep** (`dist/mcp-registry/`, PRD-021):
+  `server.json` for the official MCP registry
+  (`io.github.cliftonz/jarvy`, validated against the `2025-12-11`
+  schema) plus maintainer submission runbook. Ownership proofs are
+  pre-wired: `mcpName` in the npm package.json and the
+  `io.modelcontextprotocol.server.name` OCI label in the Dockerfile.
+  Not submitted — requires the maintainer to publish npm + ghcr first.
+
 **Fixes:**
 
 - The `curl … | bash` installer (`install.sh`) now verifies the downloaded
