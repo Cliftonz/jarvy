@@ -47,6 +47,40 @@ pub fn manifest_cache_path(url: &str) -> std::io::Result<PathBuf> {
     Ok(dir.join("manifest.json"))
 }
 
+/// Content-addressed companion cache slot:
+/// `~/.jarvy/library.d/companions/<sha256>`.
+///
+/// Keyed by the manifest-pinned content hash (NOT the URL) — pinned
+/// content is immutable, so two libraries referencing the same artifact
+/// share one cache entry, and a hit is verifiable by re-hashing. The
+/// caller (`companion::fetch_verified`) validates the pin is 64 hex
+/// chars before it ever reaches this path.
+pub fn companion_cache_path(sha256_lower: &str) -> std::io::Result<PathBuf> {
+    debug_assert!(
+        sha256_lower.len() == 64 && sha256_lower.bytes().all(|b| b.is_ascii_hexdigit()),
+        "companion cache key must be a validated sha256 hex digest"
+    );
+    let dir = cache_root()?.join("companions");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)?;
+    }
+    Ok(dir.join(sha256_lower))
+}
+
+/// Atomic byte write: `<path>.new` → fsync → rename. Crash mid-write
+/// leaves the previous cache entry (or nothing) intact. Same shape as
+/// [`write_manifest`], minus the serialization.
+pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("new");
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 /// Read a cached manifest. `Ok(None)` if the file doesn't exist;
 /// `Err` for permission / parse failures.
 pub fn read_manifest(path: &Path) -> std::io::Result<Option<Manifest>> {

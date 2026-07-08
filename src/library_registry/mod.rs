@@ -44,6 +44,7 @@
 //! ```
 
 pub mod cache;
+pub mod companion;
 pub mod config;
 pub mod fetch;
 pub mod git_fetch;

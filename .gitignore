@@ -42,3 +42,4 @@ docs/schema/jarvy-telemetry-forwarder.values.schema.json
 
 # JetBrains IDE state (RustRover / IntelliJ)
 .idea/
+.claude/worktrees/

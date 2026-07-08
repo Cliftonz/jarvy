@@ -47,9 +47,30 @@ for divergences from generic release skills.
 - All three subcommands accept `--format json` (PRD-051), and emit
   `skills.updated` / `skills.removed` telemetry events (gated behind the
   standard telemetry opt-in).
+- `jarvy setup` observability flags are now wired into the tracing
+  subscriber: `-v/-vv/-vvv` raise console verbosity, `-q` suppresses all
+  but errors (without starving `jarvy.log` / OTLP), `--log-format json`,
+  `--log-file <path>`, `--debug-filter <module>`, and `--profile` /
+  `--profile-output` (phase-level timing report). These flags previously
+  parsed but were silently dropped.
+- 10 new tools: `allure`, `aws-sam-cli`, `cfn-lint`, `cypress`,
+  `goaccess`, `linkerd`, `locust`, `playwright`, `putty`, `task`.
+- Default post-install hooks for `rust` (clippy/rustfmt + cargo env),
+  `tmux` (TPM plugin manager), `kubectx` (kctx/kns aliases), and `nvim`
+  (starter `init.lua`). Unix-only where the tool also ships on Windows.
 
 **Added:**
 
+- Library manifests can now reference item bodies by URL instead of
+  inlining them (PRD-054 companion-fetch phase): `ai_hook` items honor
+  `bash_url` / `powershell_url` (each requiring a matching `*_sha256`
+  pin), and `skill` items install their `companion_files` (templates,
+  helper scripts) alongside `SKILL.md`. Every companion fetch is
+  HTTPS-bounded, sha256-verified against the manifest pin (no
+  unverified fetch path), cached content-addressed under
+  `~/.jarvy/library.d/companions/`, and skill companion filenames are
+  path-safety validated so a hostile manifest cannot escape the skill
+  directory. New telemetry: `library.companion.{fetched,sha_mismatch,fetch_failed,refused_filename}`.
 - **npm wrapper** (`packages/npm/`, PRD-021): `jarvy-mcp` npm package that
   downloads the platform-native jarvy release binary on install
   (SHA256-verified against the release `SHA256SUMS.txt`, mirroring
@@ -69,6 +90,19 @@ for divergences from generic release skills.
   pre-wired: `mcpName` in the npm package.json and the
   `io.modelcontextprotocol.server.name` OCI label in the Dockerfile.
   Not submitted — requires the maintainer to publish npm + ghcr first.
+- CI e2e coverage for Fedora, Arch, and Alpine via distro containers on
+  the free ubuntu runner (PRD-014).
+
+**Changed:**
+
+- `rust` migrated from a bespoke installer to the `define_tool!` macro
+  (so it can carry a default hook); removed a duplicate `rust` entry from
+  the tool index.
+- Removed ~1.3k LOC of unwired diagnostic surface: the
+  `observability::{network_trace, bundle}` modules (the latter duplicated
+  the wired `jarvy ticket` bundler) and the per-tool/per-network arms of
+  the profiler. `--profile-output` durations now serialize as integer
+  `*_ms`, matching the `duration_ms` telemetry contract.
 
 **Fixes:**
 
