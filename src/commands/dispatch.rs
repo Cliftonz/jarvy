@@ -181,10 +181,11 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
         Some(Commands::Doctor {
             file,
             tools,
+            check,
             output_format,
             extended,
             report,
-        }) => handle_doctor(file, tools, output_format, *extended, report),
+        }) => handle_doctor(file, tools, check, output_format, *extended, report),
         Some(Commands::Diff {
             file,
             changes_only,
@@ -310,10 +311,23 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
 fn handle_doctor(
     file: &Option<String>,
     tools: &Option<String>,
+    check: &Option<String>,
     output_format: &str,
     extended: bool,
     report: &Option<String>,
 ) -> i32 {
+    // Parse --check up front so an invalid category fails fast with a
+    // clear message rather than silently running every category.
+    let categories = match check {
+        Some(raw) => match commands::doctor::DoctorCategory::parse_list(raw) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                return error_codes::CONFIG_ERROR;
+            }
+        },
+        None => None,
+    };
     // PRD-047 phase 2 — auto-redirect to the current workspace
     // member's jarvy.toml when one is detected. Triggers whether or
     // not the user passed `--file`: `cd apps/web && jarvy doctor`
@@ -358,7 +372,11 @@ fn handle_doctor(
     });
 
     if extended {
-        let result = commands::doctor::run_doctor_extended(config.as_ref(), specific_tools);
+        let result = commands::doctor::run_doctor_extended_filtered(
+            config.as_ref(),
+            specific_tools,
+            categories.as_deref(),
+        );
         if let Some(report_path) = report {
             if let Err(e) = commands::doctor::export_report(&result, report_path) {
                 eprintln!("Failed to export report: {}", e);
@@ -368,7 +386,11 @@ fn handle_doctor(
         }
         crate::output::print_and_exit(result, output_format)
     } else {
-        let result = commands::doctor::run_doctor(config.as_ref(), specific_tools);
+        let result = commands::doctor::run_doctor_filtered(
+            config.as_ref(),
+            specific_tools,
+            categories.as_deref(),
+        );
         crate::output::print_and_exit(result, output_format)
     }
 }

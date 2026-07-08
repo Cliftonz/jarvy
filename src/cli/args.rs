@@ -287,6 +287,10 @@ pub enum Commands {
         /// Only check specific tools (comma-separated)
         #[clap(long)]
         tools: Option<String>,
+        /// Limit checks to specific categories (comma-separated): path, tools, hooks.
+        /// System info is always shown as context. Omit to run every category.
+        #[clap(long, value_name = "CATEGORIES")]
+        check: Option<String>,
         /// Output format: json, pretty
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,

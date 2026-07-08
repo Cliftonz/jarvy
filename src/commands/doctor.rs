@@ -330,9 +330,76 @@ impl Outputable for DoctorResult {
 }
 
 /// Run the doctor command
+/// A `jarvy doctor --check <category>` filter. System info is always
+/// shown as context, so it is not a filterable category; the checkable
+/// sections are PATH analysis, tool health, and hook status.
+///
+/// (The PRD-027 sketch also listed "network" / "performance" categories,
+/// but the `network_trace` module was deleted as unwired and profiling
+/// lives on `jarvy setup --profile` — neither maps to a doctor section,
+/// so they are intentionally omitted.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoctorCategory {
+    Path,
+    Tools,
+    Hooks,
+}
+
+impl DoctorCategory {
+    /// Parse a comma-separated `--check` value into a deduplicated list.
+    /// Returns `Err` naming the offending token (and the valid set) on
+    /// the first unrecognized category.
+    pub fn parse_list(raw: &str) -> Result<Vec<DoctorCategory>, String> {
+        let mut out: Vec<DoctorCategory> = Vec::new();
+        for token in raw.split(',') {
+            let t = token.trim();
+            if t.is_empty() {
+                continue;
+            }
+            let cat = match t.to_ascii_lowercase().as_str() {
+                "path" | "paths" => DoctorCategory::Path,
+                "tool" | "tools" => DoctorCategory::Tools,
+                "hook" | "hooks" => DoctorCategory::Hooks,
+                other => {
+                    return Err(format!(
+                        "unknown doctor category `{other}` (valid: path, tools, hooks)"
+                    ));
+                }
+            };
+            if !out.contains(&cat) {
+                out.push(cat);
+            }
+        }
+        if out.is_empty() {
+            return Err("no valid categories in --check (valid: path, tools, hooks)".to_string());
+        }
+        Ok(out)
+    }
+}
+
+/// `true` when `cat` should run: no filter means every category runs.
+fn wants(filter: Option<&[DoctorCategory]>, cat: DoctorCategory) -> bool {
+    filter.is_none_or(|f| f.contains(&cat))
+}
+
 pub fn run_doctor(config: Option<&Config>, specific_tools: Option<Vec<String>>) -> DoctorResult {
+    run_doctor_filtered(config, specific_tools, None)
+}
+
+/// Category-filtered doctor run. Unselected sections are skipped entirely
+/// (no probing) and come back empty, which the human/JSON renderers
+/// already hide. System info is always collected as context.
+pub fn run_doctor_filtered(
+    config: Option<&Config>,
+    specific_tools: Option<Vec<String>>,
+    categories: Option<&[DoctorCategory]>,
+) -> DoctorResult {
     let system = collect_system_info();
-    let path_checks = check_path_entries();
+    let path_checks = if wants(categories, DoctorCategory::Path) {
+        check_path_entries()
+    } else {
+        Vec::new()
+    };
 
     // Get tools to check
     let tools_to_check: Vec<(String, String)> = if let Some(tools) = specific_tools {
@@ -362,8 +429,16 @@ pub fn run_doctor(config: Option<&Config>, specific_tools: Option<Vec<String>>) 
         .map(|(name, _)| name.to_lowercase())
         .collect();
 
-    let tools = check_tool_health(&tools_to_check, &config_tools);
-    let hooks = check_hook_status(config);
+    let tools = if wants(categories, DoctorCategory::Tools) {
+        check_tool_health(&tools_to_check, &config_tools)
+    } else {
+        Vec::new()
+    };
+    let hooks = if wants(categories, DoctorCategory::Hooks) {
+        check_hook_status(config)
+    } else {
+        Vec::new()
+    };
     let recommendations = generate_recommendations(&path_checks, &tools, &hooks);
 
     // Calculate exit code - also consider dependency issues
@@ -1175,11 +1250,16 @@ impl Outputable for DoctorResultExtended {
 }
 
 /// Run the doctor command with extended metrics
-pub fn run_doctor_extended(
+/// Category-filtered `--extended` dashboard. The `--check` filter narrows
+/// the base sections (path / tools / hooks); the system-metrics panel and
+/// tool summary are always part of the extended dashboard. (The
+/// unfiltered form is just `run_doctor_extended_filtered(.., None)`.)
+pub fn run_doctor_extended_filtered(
     config: Option<&Config>,
     specific_tools: Option<Vec<String>>,
+    categories: Option<&[DoctorCategory]>,
 ) -> DoctorResultExtended {
-    let base = run_doctor(config, specific_tools);
+    let base = run_doctor_filtered(config, specific_tools, categories);
 
     // Collect extended metrics
     let extended = collect_extended_metrics();
@@ -1581,6 +1661,39 @@ mod tests {
         let info = collect_system_info();
         assert!(!info.os.is_empty());
         assert!(!info.arch.is_empty());
+    }
+
+    #[test]
+    fn doctor_category_parse_list_dedups_and_normalizes() {
+        assert_eq!(
+            DoctorCategory::parse_list("tools, path , tools").unwrap(),
+            vec![DoctorCategory::Tools, DoctorCategory::Path]
+        );
+        // Singular/plural aliases and case-insensitivity.
+        assert_eq!(
+            DoctorCategory::parse_list("HOOK").unwrap(),
+            vec![DoctorCategory::Hooks]
+        );
+    }
+
+    #[test]
+    fn doctor_category_parse_list_rejects_unknown_and_empty() {
+        assert!(DoctorCategory::parse_list("network").is_err());
+        assert!(DoctorCategory::parse_list("").is_err());
+        assert!(DoctorCategory::parse_list(" , ").is_err());
+    }
+
+    #[test]
+    fn doctor_filter_skips_unselected_sections() {
+        // `--check tools` must not populate path/hook sections.
+        let result = run_doctor_filtered(
+            None,
+            Some(vec!["git".into()]),
+            Some(&[DoctorCategory::Tools]),
+        );
+        assert!(result.path_checks.is_empty(), "path must be skipped");
+        assert!(result.hooks.is_empty(), "hooks must be skipped");
+        assert!(!result.tools.is_empty(), "tools must be checked");
     }
 
     #[test]

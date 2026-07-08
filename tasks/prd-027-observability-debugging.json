@@ -3,7 +3,7 @@
   "parent_prd": "PRD-027",
   "title": "Observability & Debugging",
   "description": "Add comprehensive observability and debugging features including structured logging, performance profiling, network tracing, and diagnostic tools to help users understand what Jarvy is doing, diagnose failures, and optimize performance",
-  "status": "in_progress",
+  "status": "completed",
   "completionNote": "Observability shipped at src/observability/ (logging.rs, sanitizer.rs, telemetry_gate.rs, network_trace.rs, profiler.rs, bundle.rs). Tracing-subscriber + OTLP wiring in src/telemetry.rs. Ticket/debug bundle at src/ticket/.",
   "completedAt": "2026-06-27T00:00:00Z",
   "priority": "medium",
@@ -302,7 +302,7 @@
       "id": "T14",
       "title": "Add doctor category filtering",
       "description": "Allow checking specific categories with --check flag",
-      "passed": false,
+      "passed": true,
       "priority": "low",
       "files": [
         "src/commands/doctor.rs"
@@ -314,8 +314,8 @@
         "Implement performance category check",
         "Allow multiple categories"
       ],
-      "status": "open",
-      "note": "doctor filters by --tools only; no category filtering"
+      "status": "completed",
+      "note": "jarvy doctor --check <path,tools,hooks> — filters checkable sections (system info always shown as context); unknown category exits 2; composes with --tools/--extended. Merged 2026-07-08. Note: PRD sketch listed network/performance categories, but network_trace was deleted and profiling lives on setup --profile, so N/A."
     },
     {
       "id": "T15",
@@ -343,7 +343,7 @@
       "id": "T16",
       "title": "Write integration tests",
       "description": "Test observability features end-to-end",
-      "passed": false,
+      "passed": true,
       "priority": "medium",
       "files": [
         "tests/observability_integration.rs",
@@ -358,8 +358,8 @@
         "Test jarvy diagnose --export creates ZIP",
         "Test bundle contains expected files"
       ],
-      "status": "open",
-      "note": "only doctor covered in tests/cli_dispatch.rs; no diagnose/profiler integration tests"
+      "status": "completed",
+      "note": "tests/observability_cli.rs: 10 integration tests (doctor --check filtering + error, --format json, --extended, setup --profile stderr report, --profile-output *_ms JSON, --log-format json, diagnose <tool>, diagnose --export writes JSON). Plus doctor category-parser unit tests. Note: diagnose --export writes JSON (not a ZIP; the ZIP debug bundle is jarvy ticket)."
     },
     {
       "id": "T17",
@@ -468,5 +468,6 @@
     "documentation": "1 day",
     "total": "19 days"
   },
-  "reconciled": "2026-07-08: observability flag-wiring (-q/-v/--log-format/--log-file/--debug-filter/--profile) + phase profiler + network_trace/bundle deletion MERGED to main via chore/observability-cleanup, with cli_log_directives unit tests. Genuinely open: T14 doctor --category filtering, T16 diagnose/profiler integration tests. T6/T7 network tracing = wont_do (module deleted)."
+  "reconciled": "2026-07-08: ALL PRD-027 tasks closed. T14 (doctor --check) + T16 (observability integration tests) merged; T6/T7 network tracing = wont_do (module deleted); flag-wiring/profiler/bundle-deletion done earlier. PRD complete.",
+  "completed": "2026-07-08"
 }

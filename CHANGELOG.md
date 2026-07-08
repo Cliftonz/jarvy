@@ -31,6 +31,10 @@ for divergences from generic release skills.
 
 **Features:**
 
+- `jarvy doctor --check <path,tools,hooks>` — limit the health run to
+  specific categories (system info is always shown as context). Skips the
+  unselected probes entirely; an unknown category exits `2` with the valid
+  set. Composes with `--tools` and `--extended`. Closes PRD-027.
 - `jarvy skills update [<name>]` — re-fetch skills from `library_sources`,
   compare the advertised version/sha against the installed sidecar per
   agent, and reinstall only on divergence (no-op when unchanged; a pinned
