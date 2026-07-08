@@ -6,7 +6,10 @@
   "status": "completed",
   "completed_date": "2026-01-15",
   "priority": "medium",
-  "dependencies": ["PRD-003.1", "PRD-010"],
+  "dependencies": [
+    "PRD-003.1",
+    "PRD-010"
+  ],
   "estimated_complexity": "low",
   "acceptance_criteria": [
     "Tools with common post-install needs have default hooks",
@@ -47,7 +50,9 @@
       "description": "Configure npm global prefix and add to PATH",
       "status": "completed",
       "priority": "high",
-      "files": ["src/tools/node/node.rs"]
+      "files": [
+        "src/tools/node/node.rs"
+      ]
     },
     {
       "id": "H2",
@@ -55,16 +60,21 @@
       "description": "Upgrade pip and configure user site-packages PATH",
       "status": "completed",
       "priority": "high",
-      "files": ["src/tools/python/python.rs"]
+      "files": [
+        "src/tools/python/python.rs"
+      ]
     },
     {
       "id": "H3",
       "title": "Add rust default hook",
       "description": "Install common rustup components and configure cargo PATH",
-      "status": "skipped",
+      "status": "completed",
       "priority": "high",
-      "files": ["src/tools/rust/rust.rs"],
-      "notes": "Rust uses a custom installer (not define_tool! macro), so default hooks are not supported. Requires infrastructure enhancement to add hook support for custom installers."
+      "files": [
+        "src/tools/rust/rust.rs"
+      ],
+      "notes": "Rust uses a custom installer (not define_tool! macro), so default hooks are not supported. Requires infrastructure enhancement to add hook support for custom installers.",
+      "note": "Done: rust migrated to define_tool! + default_hook (clippy/rustfmt components + cargo env in shell rc), gated platform:unix. Merged to main 2026-07-08."
     },
     {
       "id": "H4",
@@ -72,7 +82,9 @@
       "description": "Add common Helm repositories",
       "status": "completed",
       "priority": "medium",
-      "files": ["src/tools/helm/helm.rs"]
+      "files": [
+        "src/tools/helm/helm.rs"
+      ]
     },
     {
       "id": "H5",
@@ -80,7 +92,9 @@
       "description": "Configure AWS CLI defaults and shell completion",
       "status": "completed",
       "priority": "medium",
-      "files": ["src/tools/awscli/awscli.rs"]
+      "files": [
+        "src/tools/awscli/awscli.rs"
+      ]
     },
     {
       "id": "H6",
@@ -88,7 +102,9 @@
       "description": "Configure shell completion for GitHub CLI",
       "status": "completed",
       "priority": "medium",
-      "files": ["src/tools/gh/gh.rs"]
+      "files": [
+        "src/tools/gh/gh.rs"
+      ]
     },
     {
       "id": "H7",
@@ -96,7 +112,9 @@
       "description": "Add user to docker group on Linux",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/docker/docker.rs"],
+      "files": [
+        "src/tools/docker/docker.rs"
+      ],
       "notes": "Platform-specific, Linux only"
     },
     {
@@ -105,7 +123,9 @@
       "description": "Configure k9s shell completion",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/k9s/k9s.rs"]
+      "files": [
+        "src/tools/k9s/k9s.rs"
+      ]
     },
     {
       "id": "H9",
@@ -113,7 +133,9 @@
       "description": "Create lg alias for lazygit",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/lazygit/lazygit.rs"]
+      "files": [
+        "src/tools/lazygit/lazygit.rs"
+      ]
     },
     {
       "id": "H10",
@@ -121,7 +143,9 @@
       "description": "Set bat as MANPAGER for colored man pages",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/bat/bat.rs"]
+      "files": [
+        "src/tools/bat/bat.rs"
+      ]
     }
   ],
   "implementation_notes": {

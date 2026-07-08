@@ -468,5 +468,5 @@
     "documentation": "1 day",
     "total": "19 days"
   },
-  "reconciled": "2026-07-08: verified against codebase + observability cleanup branch. Flags (-v/-q/--profile/--log-format/--log-file/--debug-filter) now wired through main.rs/dispatch.rs (were parsed-but-dropped). Profiler wired into run_setup phases. NetworkTracer + DiagnosticBundle modules DELETED (bundle duplicated src/ticket/; tracer had no callers — resurrect from git if needed). Open: doctor category filtering (T14), integration tests for diagnose/profiler (T16)."
+  "reconciled": "2026-07-08: observability flag-wiring (-q/-v/--log-format/--log-file/--debug-filter/--profile) + phase profiler + network_trace/bundle deletion MERGED to main via chore/observability-cleanup, with cli_log_directives unit tests. Genuinely open: T14 doctor --category filtering, T16 diagnose/profiler integration tests. T6/T7 network tracing = wont_do (module deleted)."
 }

@@ -10,18 +10,14 @@
   "completedAt": "2026-06-28T00:00:00Z",
   "scope": "Phase 1 (library_sources-based install, no skills.sh API). Remaining work in PRD-049 phase 2 documented under follow_up.",
   "progress": {
-    "completed": 14,
+    "completed": 22,
     "total": 28,
-    "percentage": 50
+    "percentage": 79
   },
   "follow_up": [
     "skills.sh API integration: search, info, popular commands",
-    "jarvy skills update (re-fetch + reinstall with version bumps)",
-    "jarvy skills remove (uninstall + sidecar cleanup)",
-    "Companion file fetch (today only SKILL.md lands)",
     "Project-scope skills (./.{agent}/skills/)",
-    "Version-range pinning (today only exact or 'latest')",
-    "jarvy skills install <name> for ad-hoc install outside [skills.install]"
+    "Version-range pinning (today only exact or 'latest')"
   ],
   "phases": [
     {
@@ -552,5 +548,5 @@
     "048-pre-commit-hook-installation",
     "025-docker-mcp-catalog"
   ],
-  "reconciled": "2026-07-08: phases[] were stale not_started while completionNote documents v1 shipped (src/skills/, jarvy skills {install,list,status,agents}, setup integration, docs/skills.md). Marked v1 phases completed. Remaining = phase 2: skills.sh API, update/remove/ad-hoc install, companion files, project-scope, version ranges (see follow_up)."
+  "reconciled": "2026-07-08: phase-2 update/remove/ad-hoc install MERGED to main via feat/skills-update-remove (all --format json, skills.updated/removed telemetry). Still deferred: skills.sh API integration, project-scope skills, version-range pinning."
 }

@@ -5,7 +5,10 @@
   "description": "Add default post-install hooks for additional tools that would benefit from shell integration, completions, or configuration setup",
   "status": "completed",
   "priority": "low",
-  "dependencies": ["PRD-003", "HOOKS-002"],
+  "dependencies": [
+    "PRD-003",
+    "HOOKS-002"
+  ],
   "estimated_complexity": "low",
   "acceptance_criteria": [
     "Each tool hook is idempotent (grep before append)",
@@ -32,7 +35,9 @@
       "description": "Configure git to use delta as the default pager",
       "status": "completed",
       "priority": "medium",
-      "files": ["src/tools/delta/delta.rs"],
+      "files": [
+        "src/tools/delta/delta.rs"
+      ],
       "hook_type": "config_generation",
       "hook_script": "git config --global core.pager delta && git config --global interactive.diffFilter 'delta --color-only'",
       "notes": "delta provides beautiful git diffs but requires git config to use it"
@@ -43,7 +48,9 @@
       "description": "Add aliases to replace ls with eza",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/eza/eza.rs"],
+      "files": [
+        "src/tools/eza/eza.rs"
+      ],
       "hook_type": "shell_alias",
       "hook_script": "Add alias ls='eza', alias ll='eza -l', alias la='eza -la' to shell rc",
       "notes": "eza is a modern ls replacement with better colors and git integration"
@@ -54,7 +61,9 @@
       "description": "Add ripgrep shell completions",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/ripgrep/ripgrep.rs"],
+      "files": [
+        "src/tools/ripgrep/ripgrep.rs"
+      ],
       "hook_type": "shell_completion",
       "hook_script": "rg --generate=complete-bash/zsh/fish",
       "notes": "ripgrep can generate its own completions"
@@ -63,23 +72,29 @@
       "id": "T4",
       "title": "tmux - Plugin manager setup",
       "description": "Optionally install TPM (Tmux Plugin Manager)",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["src/tools/tmux/tmux.rs"],
+      "files": [
+        "src/tools/tmux/tmux.rs"
+      ],
       "hook_type": "advisory_note",
       "hook_script": "Print note about TPM installation for plugin management",
-      "notes": "TPM is optional but commonly used"
+      "notes": "TPM is optional but commonly used",
+      "note": "tmux TPM plugin-manager setup hook (clone + .tmux.conf run-line, clone failure surfaced on stderr). platform:unix."
     },
     {
       "id": "T5",
       "title": "kubectx - Shell completion",
       "description": "Add kubectx and kubens shell completions",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["src/tools/kubectx/kubectx.rs"],
+      "files": [
+        "src/tools/kubectx/kubectx.rs"
+      ],
       "hook_type": "shell_completion",
       "hook_script": "Source kubectx/kubens completions from installation directory",
-      "notes": "Completions help with context and namespace switching"
+      "notes": "Completions help with context and namespace switching",
+      "note": "kubectx kctx/kns aliases hook (each alias guarded independently). platform:unix."
     },
     {
       "id": "T6",
@@ -87,7 +102,9 @@
       "description": "Add minikube shell completions",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/minikube/minikube.rs"],
+      "files": [
+        "src/tools/minikube/minikube.rs"
+      ],
       "hook_type": "shell_completion",
       "hook_script": "minikube completion bash/zsh/fish",
       "notes": "minikube can generate its own completions"
@@ -98,7 +115,9 @@
       "description": "Add kind shell completions",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/kind/kind.rs"],
+      "files": [
+        "src/tools/kind/kind.rs"
+      ],
       "hook_type": "shell_completion",
       "hook_script": "kind completion bash/zsh/fish",
       "notes": "kind can generate its own completions"
@@ -109,7 +128,9 @@
       "description": "Add argocd shell completions and login advisory",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/argocd/argocd.rs"],
+      "files": [
+        "src/tools/argocd/argocd.rs"
+      ],
       "hook_type": "shell_completion",
       "hook_script": "argocd completion bash/zsh/fish",
       "notes": "Also include advisory about 'argocd login' setup"
@@ -118,12 +139,15 @@
       "id": "T9",
       "title": "nvim - Config directory setup",
       "description": "Create basic nvim config directory structure",
-      "status": "pending",
+      "status": "completed",
       "priority": "low",
-      "files": ["src/tools/nvim/nvim.rs"],
+      "files": [
+        "src/tools/nvim/nvim.rs"
+      ],
       "hook_type": "advisory_note",
       "hook_script": "Print note about ~/.config/nvim setup and popular configs (LazyVim, NvChad)",
-      "notes": "Don't auto-configure nvim, just provide guidance"
+      "notes": "Don't auto-configure nvim, just provide guidance",
+      "note": "nvim starter init.lua hook (only when no config exists). platform:unix."
     },
     {
       "id": "T10",
@@ -131,7 +155,9 @@
       "description": "Add fd alias for find replacement",
       "status": "completed",
       "priority": "low",
-      "files": ["src/tools/fd/fd.rs"],
+      "files": [
+        "src/tools/fd/fd.rs"
+      ],
       "hook_type": "shell_alias",
       "hook_script": "Add alias find='fd' to shell rc (optional)",
       "notes": "fd is a simpler, faster alternative to find"

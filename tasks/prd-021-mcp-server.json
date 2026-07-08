@@ -201,7 +201,7 @@
       "id": "T11",
       "title": "Create npm package",
       "description": "Create @jarvy/mcp-server npm package",
-      "passed": false,
+      "passed": true,
       "priority": "high",
       "files": [
         "dist/mcp/package.json",
@@ -214,13 +214,14 @@
         "Create shell wrapper for jarvy mcp",
         "Test npx @jarvy/mcp-server works",
         "Add to CI publish workflow"
-      ]
+      ],
+      "note": "npm wrapper shipped: packages/npm/ (jarvy-mcp, SHA256SUMS-verified binary download). NOT published to npm — maintainer action."
     },
     {
       "id": "T12",
       "title": "Create Docker image",
       "description": "Create jarvy/mcp-server Docker image",
-      "passed": false,
+      "passed": true,
       "priority": "medium",
       "files": [
         "dist/docker/Dockerfile.mcp",
@@ -231,7 +232,8 @@
         "Create docker-compose for testing",
         "Add to CI publish workflow",
         "Test Docker image works with stdio"
-      ]
+      ],
+      "note": "Docker image shipped: dist/docker/Dockerfile + .github/workflows/docker-publish.yml (ghcr.io, tag/manual-gated). NOT published — maintainer action."
     },
     {
       "id": "T13",
@@ -265,7 +267,8 @@
         "Submit to smithery.ai",
         "Submit PR to awesome-mcp-servers",
         "Submit to mcp.run if available"
-      ]
+      ],
+      "note": "PREP done: dist/mcp-registry/server.json + submission runbook + ownership proofs. Actual submission needs maintainer to publish npm+ghcr first."
     }
   ],
   "implementation_notes": {
@@ -346,5 +349,5 @@
     "registry_submission": "0.5 days",
     "total": "13 days"
   },
-  "reconciled": "2026-07-08: verified against codebase. T10 done (tests/mcp_integration.rs, mcp_extended_tools_integration.rs, mcp_register_integration.rs, mcp_register_cli.rs). T13 done (docs/mcp-server.md client configs for Claude Desktop/Cursor/VS Code+Continue). Open: npm package, Docker image, public MCP registry submission (no server.json)."
+  "reconciled": "2026-07-08: merged to main via feat/mcp-distribution. npm wrapper (T11) + Docker image (T12) built; only public registry submission (T14, a maintainer action) remains."
 }
