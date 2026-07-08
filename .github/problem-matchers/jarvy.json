@@ -1,0 +1,14 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "jarvy-validate",
+      "pattern": [
+        {
+          "regexp": "^(?:\\u001b\\[[0-9;]*m)*\\[(?:ERROR|WARN)\\](?:\\u001b\\[[0-9;]*m)*\\s+(?:Line (\\d+):\\s+)?(.+?)\\s*$",
+          "line": 1,
+          "message": 2
+        }
+      ]
+    }
+  ]
+}

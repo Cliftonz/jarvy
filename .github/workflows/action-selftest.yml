@@ -1,0 +1,101 @@
+name: Action Self-Test
+
+# Exercises the published top-level `action.yml` end-to-end against the
+# LOCAL checkout (`uses: ./`) on Linux, macOS, and Windows:
+#   * install-sh path downloads + checksum-verifies a real release binary
+#   * jarvy is added to PATH and the outputs are populated
+#   * `run: validate` succeeds against a known-good minimal config
+#   * `run: none` proves install-only mode + outputs work
+#
+# Keeps the action from silently breaking as the installer / CLI evolve.
+
+on:
+  push:
+    paths:
+      - action.yml
+      - .github/problem-matchers/jarvy.json
+      - .github/workflows/action-selftest.yml
+      - dist/scripts/install.sh
+      - dist/scripts/install.ps1
+  pull_request:
+    paths:
+      - action.yml
+      - .github/problem-matchers/jarvy.json
+      - .github/workflows/action-selftest.yml
+      - dist/scripts/install.sh
+      - dist/scripts/install.ps1
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-selftest-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JARVY_TELEMETRY: '0'
+
+jobs:
+  selftest:
+    name: action (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Write a known-good minimal config
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '[provisioner]\ngit = "latest"\n' > selftest.jarvy.toml
+          cat selftest.jarvy.toml
+
+      - name: Install Jarvy and validate the config
+        id: jarvy
+        uses: ./
+        with:
+          version: latest
+          channel: stable
+          install-method: install-sh
+          run: validate
+          config-path: selftest.jarvy.toml
+
+      - name: Assert outputs are populated
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "jarvy-version: ${{ steps.jarvy.outputs.jarvy-version }}"
+          echo "jarvy-path:    ${{ steps.jarvy.outputs.jarvy-path }}"
+          test -n "${{ steps.jarvy.outputs.jarvy-version }}"
+          test -n "${{ steps.jarvy.outputs.jarvy-path }}"
+
+      - name: Jarvy is on PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v jarvy
+          jarvy --version
+
+      - name: Install-only mode (run=none) is a no-op that still resolves outputs
+        id: jarvy_noop
+        uses: ./
+        with:
+          version: latest
+          channel: stable
+          install-method: install-sh
+          run: none
+          # Avoid a duplicate save of the key already claimed above.
+          cache: false
+
+      - name: Assert install-only outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${{ steps.jarvy_noop.outputs.jarvy-version }}"
+          test -n "${{ steps.jarvy_noop.outputs.jarvy-path }}"

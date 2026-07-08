@@ -1,0 +1,202 @@
+name: Jarvy
+author: Jarvy Maintainers
+description: >-
+  Install the Jarvy CLI (checksum-verified) and optionally validate, set up,
+  or doctor your dev environment from a jarvy.toml.
+
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  version:
+    description: >-
+      Jarvy release tag to install (e.g. "1.4.0" or "v1.4.0"), or "latest" to
+      resolve the newest release on the selected channel. Pin a concrete
+      version for reproducible, cache-friendly CI.
+    required: false
+    default: latest
+  channel:
+    description: 'Release channel to resolve "latest" from: stable, beta, or nightly.'
+    required: false
+    default: stable
+  install-method:
+    description: >-
+      How to install Jarvy: "install-sh" downloads a checksum-verified
+      prebuilt binary from GitHub Releases; "cargo" builds from crates.io.
+    required: false
+    default: install-sh
+  run:
+    description: >-
+      Which Jarvy command to run after install: "none" (install only),
+      "validate" (jarvy validate --strict), "setup" (jarvy setup --ci), or
+      "doctor" (jarvy doctor).
+    required: false
+    default: validate
+  config-path:
+    description: 'Path to the jarvy.toml the chosen command should act on.'
+    required: false
+    default: ./jarvy.toml
+  args:
+    description: >-
+      Extra arguments appended verbatim to the chosen command (e.g.
+      "--format json"). Ignored when run is "none".
+    required: false
+    default: ''
+  cache:
+    description: >-
+      Cache the installed Jarvy binary keyed on version/channel/method + OS.
+      Set to "false" to always reinstall.
+    required: false
+    default: 'true'
+
+outputs:
+  jarvy-version:
+    description: 'The installed Jarvy version (as reported by `jarvy --version`).'
+    value: ${{ steps.resolve.outputs.jarvy_version }}
+  jarvy-path:
+    description: 'Absolute path to the installed jarvy binary.'
+    value: ${{ steps.resolve.outputs.jarvy_path }}
+
+runs:
+  using: composite
+  steps:
+    # ------------------------------------------------------------------
+    # Cache the installed binary. Cargo.lock is gitignored in this repo,
+    # so there is no lockfile hash to key on — the key is the fully
+    # resolved install identity (version + channel + method) plus the
+    # runner OS. `version: latest` shares one cache entry per channel and
+    # may serve a slightly older binary until the key rotates; pin a
+    # concrete version (recommended) for exact reproducibility, or set
+    # cache: false.
+    # ------------------------------------------------------------------
+    - name: Restore Jarvy from cache
+      id: cache
+      if: ${{ inputs.cache == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.jarvy/bin
+          ~/.cargo/bin/jarvy
+          ~/.cargo/bin/jarvy.exe
+        key: jarvy-${{ runner.os }}-${{ inputs.install-method }}-${{ inputs.channel }}-${{ inputs.version }}
+
+    - name: Install Jarvy via install.sh (Linux / macOS)
+      if: ${{ inputs.install-method == 'install-sh' && runner.os != 'Windows' && steps.cache.outputs.cache-hit != 'true' }}
+      shell: bash
+      env:
+        JARVY_VERSION: ${{ inputs.version }}
+        JARVY_CHANNEL: ${{ inputs.channel }}
+        JARVY_NO_MODIFY_PATH: '1'
+        JARVY_TELEMETRY: '0'
+      run: |
+        set -euo pipefail
+        # Install into a stable, cache-aligned directory. The installer's
+        # own PATH-mutation is disabled (JARVY_NO_MODIFY_PATH=1); this
+        # action writes GITHUB_PATH explicitly in a later step.
+        export JARVY_INSTALL_DIR="$HOME/.jarvy/bin"
+        bash "${{ github.action_path }}/dist/scripts/install.sh"
+
+    - name: Install Jarvy via install.ps1 (Windows)
+      if: ${{ inputs.install-method == 'install-sh' && runner.os == 'Windows' && steps.cache.outputs.cache-hit != 'true' }}
+      shell: pwsh
+      env:
+        JARVY_VERSION: ${{ inputs.version }}
+        JARVY_CHANNEL: ${{ inputs.channel }}
+        JARVY_TELEMETRY: '0'
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $env:JARVY_INSTALL_DIR = Join-Path $HOME '.jarvy\bin'
+        & pwsh -NoProfile -File "${{ github.action_path }}/dist/scripts/install.ps1"
+        if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+
+    - name: Install Jarvy via cargo
+      if: ${{ inputs.install-method == 'cargo' && steps.cache.outputs.cache-hit != 'true' }}
+      shell: bash
+      env:
+        JARVY_TELEMETRY: '0'
+      run: |
+        set -euo pipefail
+        if ! command -v cargo >/dev/null 2>&1; then
+          echo "::error::install-method=cargo requires a Rust toolchain (cargo) on PATH." >&2
+          exit 1
+        fi
+        VER="${{ inputs.version }}"
+        VER="${VER#v}"
+        if [ "$VER" = "latest" ] || [ -z "$VER" ]; then
+          cargo install jarvy --locked
+        else
+          cargo install jarvy --version "$VER" --locked
+        fi
+
+    - name: Add Jarvy to PATH (Linux / macOS)
+      if: ${{ runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        {
+          echo "$HOME/.jarvy/bin"
+          echo "$HOME/.cargo/bin"
+        } >> "$GITHUB_PATH"
+
+    - name: Add Jarvy to PATH (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        @(
+          (Join-Path $HOME '.jarvy\bin'),
+          (Join-Path $HOME '.cargo\bin')
+        ) | ForEach-Object { Add-Content -Path $env:GITHUB_PATH -Value $_ }
+
+    - name: Resolve version and path
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        BIN="$(command -v jarvy || true)"
+        if [ -z "$BIN" ]; then
+          echo "::error::jarvy was not found on PATH after installation." >&2
+          exit 1
+        fi
+        VERSION="$(jarvy --version 2>/dev/null | awk 'NR==1{print $2}')"
+        echo "jarvy_path=$BIN" >> "$GITHUB_OUTPUT"
+        echo "jarvy_version=${VERSION:-unknown}" >> "$GITHUB_OUTPUT"
+        echo "Installed jarvy ${VERSION:-unknown} at $BIN"
+
+    # Register the problem matcher only for `run: validate`, whose
+    # `[ERROR]` / `[WARN]` lines the matcher understands. Under --strict
+    # (used below) warnings are build-failing, so both are surfaced as
+    # error annotations — consistent with the strict exit code.
+    - name: Register jarvy validate problem matcher
+      if: ${{ inputs.run == 'validate' }}
+      shell: bash
+      run: |
+        echo "::add-matcher::${{ github.action_path }}/.github/problem-matchers/jarvy.json"
+
+    - name: Run Jarvy command
+      if: ${{ inputs.run != 'none' }}
+      shell: bash
+      env:
+        JARVY_TELEMETRY: '0'
+      run: |
+        set -euo pipefail
+        CONFIG="${{ inputs.config-path }}"
+        # shellcheck disable=SC2206
+        EXTRA=(${{ inputs.args }})
+        # Guard the empty-array expansion for bash 3.2 (macOS) under set -u.
+        case "${{ inputs.run }}" in
+          validate)
+            jarvy validate --strict --file "$CONFIG" "${EXTRA[@]+"${EXTRA[@]}"}"
+            ;;
+          setup)
+            jarvy setup --file "$CONFIG" --ci "${EXTRA[@]+"${EXTRA[@]}"}"
+            ;;
+          doctor)
+            jarvy doctor --file "$CONFIG" "${EXTRA[@]+"${EXTRA[@]}"}"
+            ;;
+          *)
+            echo "::error::Unknown run value '${{ inputs.run }}' (expected: none | validate | setup | doctor)." >&2
+            exit 2
+            ;;
+        esac
