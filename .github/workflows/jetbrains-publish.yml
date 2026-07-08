@@ -1,0 +1,89 @@
+# Publish the JetBrains plugin to the JetBrains Marketplace.
+#
+# Versioning is independent of the jarvy CLI: the version comes from
+# editors/jetbrains/gradle.properties (pluginVersion), NOT a git tag. This
+# workflow is *triggered* by a `jetbrains-v*` tag (distinct prefix so CLI
+# `v*` releases don't fire it) or manual dispatch, then publishes whatever
+# version gradle.properties declares.
+#
+# Requires repo secrets (publish is skipped with a notice if absent, so the
+# workflow is safe to merge before they're configured):
+#   PUBLISH_TOKEN         — JetBrains Marketplace permanent token
+#   CERTIFICATE_CHAIN     — plugin signing cert chain (PEM)
+#   PRIVATE_KEY           — plugin signing private key (PEM)
+#   PRIVATE_KEY_PASSWORD  — password for the private key
+name: JetBrains Plugin Publish
+
+on:
+  push:
+    tags:
+      - 'jetbrains-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build + verify only, do not publish'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jetbrains-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: editors/jetbrains
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build the plugin
+        run: ./gradlew buildPlugin --no-daemon
+
+      - name: Verify against recommended IDEs
+        run: ./gradlew verifyPlugin --no-daemon
+
+      - name: Upload plugin zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvy-intellij-plugin
+          path: editors/jetbrains/build/distributions/*.zip
+          retention-days: 30
+
+      # Sign + publish only on a real tag push (not the dry-run dispatch)
+      # and only when the token is present.
+      - name: Sign and publish to JetBrains Marketplace
+        if: github.event_name == 'push' && github.event.inputs.dry_run != 'true'
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "${PUBLISH_TOKEN:-}" ]; then
+            echo "::notice::PUBLISH_TOKEN not set — skipping Marketplace publish."
+            exit 0
+          fi
+          # The build.gradle.kts signing/publishing blocks read the cert +
+          # key from env-referenced file paths; materialize them here.
+          if [ -n "${CERTIFICATE_CHAIN:-}" ]; then
+            printf '%s' "$CERTIFICATE_CHAIN" > "$RUNNER_TEMP/chain.crt"
+            printf '%s' "$PRIVATE_KEY"       > "$RUNNER_TEMP/private.pem"
+            export CERTIFICATE_CHAIN="$RUNNER_TEMP/chain.crt"
+            export PRIVATE_KEY="$RUNNER_TEMP/private.pem"
+            ./gradlew signPlugin publishPlugin --no-daemon
+          else
+            echo "::notice::signing secrets not set — publishing unsigned."
+            ./gradlew publishPlugin --no-daemon
+          fi

@@ -69,4 +69,26 @@ intellijPlatform {
             recommended()
         }
     }
+
+    // Marketplace signing + publishing, driven entirely by env vars so the
+    // config is inert in local/CI builds that don't set them (the
+    // jetbrains-publish workflow supplies them from repo secrets). The
+    // plugin version is `pluginVersion` in gradle.properties — independent
+    // of the jarvy CLI's git tags.
+    signing {
+        certificateChainFile = providers.environmentVariable("CERTIFICATE_CHAIN")
+            .map { file(it) }.orNull
+        privateKeyFile = providers.environmentVariable("PRIVATE_KEY")
+            .map { file(it) }.orNull
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD").orNull
+    }
+
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN").orNull
+        // Marketplace release channel: default "stable"; a version like
+        // 0.1.0-beta.1 auto-routes to the matching pre-release channel.
+        channels = providers.gradleProperty("pluginVersion").map {
+            listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "stable" })
+        }
+    }
 }

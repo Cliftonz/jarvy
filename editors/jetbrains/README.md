@@ -84,3 +84,24 @@ editors/jetbrains/
     ├── actions/                # Setup / Doctor / Validate actions
     └── validation/             # ExternalAnnotator + JSON model
 ```
+
+## Versioning & releasing (maintainers)
+
+The plugin version lives in `gradle.properties` (`pluginVersion`) and is
+**independent of the jarvy CLI's git tags** — the JetBrains Marketplace reads
+the version from the uploaded plugin zip, not from a git tag.
+
+To release:
+
+1. Bump `pluginVersion` in `editors/jetbrains/gradle.properties`.
+2. Tag `jetbrains-vX.Y.Z` and push it (the `jetbrains-` prefix keeps CLI
+   `vX.Y.Z` releases from triggering the publish workflow).
+
+That push triggers `.github/workflows/jetbrains-publish.yml`, which runs
+`buildPlugin` + `verifyPlugin`, then `signPlugin` + `publishPlugin` to the
+**JetBrains Marketplace**. Publishing needs repo secrets: `PUBLISH_TOKEN`
+(Marketplace permanent token) and the signing trio `CERTIFICATE_CHAIN` /
+`PRIVATE_KEY` / `PRIVATE_KEY_PASSWORD`. The publish step is skipped with a
+notice if `PUBLISH_TOKEN` is absent, and `workflow_dispatch` offers a
+build-only dry run. A `pluginVersion` like `0.2.0-beta.1` auto-routes to the
+matching Marketplace pre-release channel.
