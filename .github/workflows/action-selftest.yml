@@ -35,6 +35,10 @@ concurrency:
 
 env:
   JARVY_TELEMETRY: '0'
+  # install.sh reads GITHUB_TOKEN for the authenticated 5000/hr API rate
+  # limit — three parallel OS jobs hammering the unauthenticated 60/hr
+  # limit would otherwise flake on `get_latest_version`.
+  GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
   selftest:
