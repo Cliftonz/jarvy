@@ -1,0 +1,85 @@
+# Publish the VS Code extension to the VS Marketplace and Open VSX.
+#
+# Versioning is independent of the jarvy CLI: the version comes from
+# editors/vscode/package.json, NOT a git tag. This workflow is *triggered*
+# by a `vscode-v*` tag (distinct prefix so CLI `v*` releases don't fire it)
+# or manual dispatch, then publishes whatever version package.json declares.
+#
+# Requires repo secrets (publish is skipped with a notice if absent, so the
+# workflow is safe to merge before they're configured):
+#   VSCE_PAT  — Visual Studio Marketplace personal access token
+#   OVSX_PAT  — Open VSX access token (optional; Open VSX step skips without it)
+name: VS Code Extension Publish
+
+on:
+  push:
+    tags:
+      - 'vscode-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Package only (vsce package), do not publish'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: editors/vscode
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Type-check and compile
+        run: npm run compile
+
+      - name: Package (.vsix)
+        run: npx --yes @vscode/vsce package --out jarvy-vscode.vsix
+
+      - name: Upload .vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvy-vscode-vsix
+          path: editors/vscode/jarvy-vscode.vsix
+          retention-days: 30
+
+      # Publish only on a real tag push (not the dry-run dispatch) and only
+      # when the token is present. `vsce publish` reads the version from
+      # package.json; the .vsix built above is reused.
+      - name: Publish to VS Marketplace
+        if: github.event_name == 'push' && github.event.inputs.dry_run != 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "${VSCE_PAT:-}" ]; then
+            echo "::notice::VSCE_PAT not set — skipping VS Marketplace publish."
+            exit 0
+          fi
+          npx --yes @vscode/vsce publish --packagePath jarvy-vscode.vsix
+
+      - name: Publish to Open VSX
+        if: github.event_name == 'push' && github.event.inputs.dry_run != 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::notice::OVSX_PAT not set — skipping Open VSX publish."
+            exit 0
+          fi
+          npx --yes ovsx publish jarvy-vscode.vsix -p "$OVSX_PAT"
