@@ -74,7 +74,10 @@ fn set_bootstrap_state(state: TelemetryBootstrapState) {
 /// `telemetry::init` gated metrics/traces on the merged config,
 /// producing the bug where `JARVY_TELEMETRY=1` env-only override left
 /// the logger layer permanently disabled.
-pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
+pub fn init_logging(
+    cfg: &crate::telemetry::TelemetryConfig,
+    obs: Option<&crate::observability::ObservabilityConfig>,
+) {
     let enable_analytics = cfg.enabled && cfg.logs;
     // Registry-level EnvFilter so dependency-crate `info!`/`debug!`
     // events from `dirs`, `ureq`, `opentelemetry_sdk`, `rustls`, etc.
@@ -89,9 +92,34 @@ pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
     // successful command (e.g. `jarvy update`), making it look like the
     // command itself failed. The exporter's own degradation is already
     // surfaced via `jarvy telemetry status` (`TelemetryBootstrapState`).
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("warn,jarvy=info,opentelemetry=off,opentelemetry_sdk=off")
+    const DEFAULT_FILTER: &str = "warn,jarvy=info,opentelemetry=off,opentelemetry_sdk=off";
+
+    // CLI observability flags (`jarvy setup -q/-v/--debug-filter`) beat
+    // `RUST_LOG` when any is set — a user typing `-vv` on this invocation
+    // expects it to win over a stale exported env var. Previously these
+    // flags parsed but were dropped by dispatch (`ObservabilityConfig::
+    // from_flags` had zero callers), so `-vv` silently did nothing.
+    let cli_directives: Option<String> = obs.filter(|o| o.has_log_overrides()).map(|o| {
+        use crate::observability::LogLevel;
+        let base = match o.log.level {
+            LogLevel::Quiet => "error",
+            LogLevel::Normal => DEFAULT_FILTER,
+            LogLevel::Verbose => "warn,jarvy=debug,opentelemetry=off,opentelemetry_sdk=off",
+            LogLevel::Debug => "debug,opentelemetry=off,opentelemetry_sdk=off",
+            LogLevel::Trace => "trace",
+        };
+        match o.log.filter.as_deref() {
+            Some(module) => format!("{base},{module}=trace"),
+            None => base.to_string(),
+        }
     });
+
+    let env_filter = match cli_directives {
+        Some(directives) => EnvFilter::new(directives),
+        None => {
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
+        }
+    };
 
     // Console output goes to stderr at every level. Stdout is reserved
     // for command output (e.g. `jarvy tools --index --format json`,
@@ -101,13 +129,80 @@ pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
     // `scripts/gen-docs.sh` hit exactly this in CI envs where the
     // default `warn,jarvy=info` filter let registry-load `info!()`
     // events fire before the index emit.
-    let stderr_non_error = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_filter(FilterFn::new(|meta| meta.level() < &Level::ERROR));
+    //
+    // `--log-file FILE` redirects the console layers to that file
+    // (append, no ANSI); `--log-format json` switches them to JSON.
+    // Layer types differ per branch, so the console layers are boxed
+    // onto the EnvFilter-bearing registry.
+    type BaseSubscriber = tracing_subscriber::layer::Layered<EnvFilter, Registry>;
+    let mut console_layers: Vec<Box<dyn Layer<BaseSubscriber> + Send + Sync>> = Vec::new();
 
-    let stderr_errors = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_filter(LevelFilter::ERROR);
+    let json_console = obs.is_some_and(|o| o.log.format == crate::observability::LogFormat::Json);
+    let console_file = obs.and_then(|o| o.log.file.as_deref()).and_then(|path| {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            Ok(f) => Some(std::sync::Arc::new(f)),
+            Err(e) => {
+                eprintln!("Warning: could not open --log-file {path}: {e}; logging to stderr");
+                None
+            }
+        }
+    });
+
+    match console_file {
+        Some(file) => {
+            if json_console {
+                console_layers.push(
+                    tracing_subscriber::fmt::layer()
+                        .json()
+                        .with_ansi(false)
+                        .with_writer(file)
+                        .boxed(),
+                );
+            } else {
+                console_layers.push(
+                    tracing_subscriber::fmt::layer()
+                        .with_ansi(false)
+                        .with_writer(file)
+                        .boxed(),
+                );
+            }
+        }
+        None => {
+            if json_console {
+                console_layers.push(
+                    tracing_subscriber::fmt::layer()
+                        .json()
+                        .with_writer(std::io::stderr)
+                        .with_filter(FilterFn::new(|meta| meta.level() < &Level::ERROR))
+                        .boxed(),
+                );
+                console_layers.push(
+                    tracing_subscriber::fmt::layer()
+                        .json()
+                        .with_writer(std::io::stderr)
+                        .with_filter(LevelFilter::ERROR)
+                        .boxed(),
+                );
+            } else {
+                console_layers.push(
+                    tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
+                        .with_filter(FilterFn::new(|meta| meta.level() < &Level::ERROR))
+                        .boxed(),
+                );
+                console_layers.push(
+                    tracing_subscriber::fmt::layer()
+                        .with_writer(std::io::stderr)
+                        .with_filter(LevelFilter::ERROR)
+                        .boxed(),
+                );
+            }
+        }
+    }
 
     // File layer at ~/.jarvy/logs/jarvy.log (daily rotation, JSON).
     //
@@ -188,8 +283,7 @@ pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
 
     let subscriber = Registry::default()
         .with(env_filter)
-        .with(stderr_non_error)
-        .with(stderr_errors)
+        .with(console_layers)
         .with(file_layer)
         .with(otel_layer_opt);
 

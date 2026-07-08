@@ -42,6 +42,8 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             sequential,
             ignore_missing_deps,
             header,
+            profile,
+            profile_output,
             ..
         }) => {
             // PRD-047 — `--project <name>` redirects setup to one
@@ -91,6 +93,8 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
                 *ignore_missing_deps,
                 header,
                 global_config.settings.fingerprint.as_deref(),
+                *profile,
+                profile_output.as_deref(),
             )
         }
         Some(Commands::Bootstrap {}) => {
