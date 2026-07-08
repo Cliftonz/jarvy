@@ -60,6 +60,25 @@ npm run check        # tsc --noEmit (type-check only)
 
 Press `F5` in VS Code to launch an Extension Development Host.
 
+## Versioning & releasing (maintainers)
+
+The extension version lives in `package.json` (`version`) and is **independent
+of the jarvy CLI's git tags** — the marketplace reads the version from the
+uploaded `.vsix`, not from a git tag.
+
+To release:
+
+1. Bump `version` in `editors/vscode/package.json` and note it in `CHANGELOG.md`.
+2. Tag `vscode-vX.Y.Z` and push it (the `vscode-` prefix keeps CLI `vX.Y.Z`
+   releases from triggering the publish workflow).
+
+That push triggers `.github/workflows/vscode-publish.yml`, which type-checks,
+packages the `.vsix`, and publishes to the **VS Marketplace** (`VSCE_PAT`
+secret) and **Open VSX** (`OVSX_PAT` secret). Either publish step is skipped
+with a notice if its token isn't configured, and `workflow_dispatch` offers a
+package-only dry run. `publisher` in `package.json` is a placeholder until a
+marketplace publisher account exists.
+
 ## License
 
 MIT — see the root of the [jarvy repository](https://github.com/Cliftonz/jarvy).
