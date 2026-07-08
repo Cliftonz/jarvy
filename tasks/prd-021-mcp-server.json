@@ -3,7 +3,7 @@
   "parent_prd": "PRD-021",
   "title": "Jarvy MCP Server for Safe Tool Installation",
   "description": "Expose Jarvy as a Model Context Protocol (MCP) server, enabling LLMs (Claude, GPT, etc.) to safely discover, verify, and install development tools with mandatory user confirmation",
-  "status": "completed",
+  "status": "in_progress",
   "completionNote": "MCP server shipped at src/mcp/ (server.rs, tools.rs, extended_tools.rs, safety.rs, audit.rs). Mutating tools gated by gate_mutation + workspace containment via safety::resolve_within_workspace. CLI: jarvy mcp.",
   "completedAt": "2026-06-27T00:00:00Z",
   "priority": "high",
@@ -30,7 +30,11 @@
       "description": "Set up src/mcp/ module with core files",
       "passed": true,
       "priority": "high",
-      "files": ["src/mcp/mod.rs", "src/mcp/error.rs", "src/mcp/config.rs"],
+      "files": [
+        "src/mcp/mod.rs",
+        "src/mcp/error.rs",
+        "src/mcp/config.rs"
+      ],
       "subtasks": [
         "Create module directory structure",
         "Define McpError enum with JSON-RPC error codes",
@@ -45,7 +49,10 @@
       "description": "Create JSON-RPC server with stdio transport",
       "passed": true,
       "priority": "high",
-      "files": ["src/mcp/server.rs", "src/mcp/transport.rs"],
+      "files": [
+        "src/mcp/server.rs",
+        "src/mcp/transport.rs"
+      ],
       "subtasks": [
         "Implement JSON-RPC request parsing",
         "Implement JSON-RPC response formatting",
@@ -61,7 +68,9 @@
       "description": "Create handlers for jarvy_* tools",
       "passed": true,
       "priority": "high",
-      "files": ["src/mcp/tools.rs"],
+      "files": [
+        "src/mcp/tools.rs"
+      ],
       "subtasks": [
         "Implement jarvy_list_tools handler with filtering",
         "Implement jarvy_get_tool handler with platform info",
@@ -78,7 +87,9 @@
       "description": "Add rate limiting, allowlist/denylist, and confirmation",
       "passed": true,
       "priority": "high",
-      "files": ["src/mcp/safety.rs"],
+      "files": [
+        "src/mcp/safety.rs"
+      ],
       "subtasks": [
         "Implement RateLimiter with configurable limits",
         "Implement allowlist checking",
@@ -93,7 +104,9 @@
       "description": "Log all MCP requests to audit file",
       "passed": true,
       "priority": "medium",
-      "files": ["src/mcp/audit.rs"],
+      "files": [
+        "src/mcp/audit.rs"
+      ],
       "subtasks": [
         "Create structured audit log format",
         "Log timestamp, action, tool, result",
@@ -107,7 +120,9 @@
       "description": "Add resource handlers for tool index and platform info",
       "passed": true,
       "priority": "medium",
-      "files": ["src/mcp/resources.rs"],
+      "files": [
+        "src/mcp/resources.rs"
+      ],
       "subtasks": [
         "Implement jarvy://tools/index resource",
         "Implement jarvy://platform/info resource",
@@ -121,7 +136,9 @@
       "description": "Add prompt handlers for guided workflows",
       "passed": true,
       "priority": "low",
-      "files": ["src/mcp/prompts.rs"],
+      "files": [
+        "src/mcp/prompts.rs"
+      ],
       "subtasks": [
         "Implement setup_dev_environment prompt",
         "Implement diagnose_missing_tools prompt",
@@ -134,7 +151,9 @@
       "description": "Add 'jarvy mcp' command to start server",
       "passed": true,
       "priority": "high",
-      "files": ["src/main.rs"],
+      "files": [
+        "src/main.rs"
+      ],
       "subtasks": [
         "Add Mcp variant to Commands enum",
         "Add --transport flag (stdio default)",
@@ -148,7 +167,10 @@
       "description": "Test MCP handlers and safety mechanisms",
       "passed": true,
       "priority": "medium",
-      "files": ["src/mcp/tools.rs", "src/mcp/safety.rs"],
+      "files": [
+        "src/mcp/tools.rs",
+        "src/mcp/safety.rs"
+      ],
       "subtasks": [
         "Test list_tools returns all tools",
         "Test check_tool with known/unknown tools",
@@ -162,9 +184,11 @@
       "id": "T10",
       "title": "Write integration tests",
       "description": "Test MCP server end-to-end",
-      "passed": false,
+      "passed": true,
       "priority": "medium",
-      "files": ["tests/mcp_integration.rs"],
+      "files": [
+        "tests/mcp_integration.rs"
+      ],
       "subtasks": [
         "Test initialize handshake",
         "Test tools/list request",
@@ -179,7 +203,11 @@
       "description": "Create @jarvy/mcp-server npm package",
       "passed": false,
       "priority": "high",
-      "files": ["dist/mcp/package.json", "dist/mcp/scripts/download-binary.js", "dist/mcp/bin/jarvy-mcp"],
+      "files": [
+        "dist/mcp/package.json",
+        "dist/mcp/scripts/download-binary.js",
+        "dist/mcp/bin/jarvy-mcp"
+      ],
       "subtasks": [
         "Create package.json with metadata",
         "Create postinstall script to download binary",
@@ -194,7 +222,10 @@
       "description": "Create jarvy/mcp-server Docker image",
       "passed": false,
       "priority": "medium",
-      "files": ["dist/docker/Dockerfile.mcp", "dist/docker/docker-compose.mcp.yml"],
+      "files": [
+        "dist/docker/Dockerfile.mcp",
+        "dist/docker/docker-compose.mcp.yml"
+      ],
       "subtasks": [
         "Create minimal Alpine-based Dockerfile",
         "Create docker-compose for testing",
@@ -206,9 +237,13 @@
       "id": "T13",
       "title": "Create client configurations",
       "description": "Document MCP client setup",
-      "passed": false,
+      "passed": true,
       "priority": "medium",
-      "files": ["docs/mcp/README.md", "docs/mcp/claude-desktop.md", "docs/mcp/cursor.md"],
+      "files": [
+        "docs/mcp/README.md",
+        "docs/mcp/claude-desktop.md",
+        "docs/mcp/cursor.md"
+      ],
       "subtasks": [
         "Create Claude Desktop configuration example",
         "Create Cursor configuration example",
@@ -222,7 +257,9 @@
       "description": "Submit to smithery.ai and awesome-mcp-servers",
       "passed": false,
       "priority": "low",
-      "files": ["smithery.json"],
+      "files": [
+        "smithery.json"
+      ],
       "subtasks": [
         "Create smithery.json manifest",
         "Submit to smithery.ai",
@@ -308,5 +345,6 @@
     "documentation": "1 day",
     "registry_submission": "0.5 days",
     "total": "13 days"
-  }
+  },
+  "reconciled": "2026-07-08: verified against codebase. T10 done (tests/mcp_integration.rs, mcp_extended_tools_integration.rs, mcp_register_integration.rs, mcp_register_cli.rs). T13 done (docs/mcp-server.md client configs for Claude Desktop/Cursor/VS Code+Continue). Open: npm package, Docker image, public MCP registry submission (no server.json)."
 }
