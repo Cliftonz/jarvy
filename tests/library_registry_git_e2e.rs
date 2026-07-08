@@ -508,6 +508,185 @@ fn e2e_unpinned_url_refused() {
     clear_test_env();
 }
 
+// =====================================================================
+// PRD-049 phase 2 — update / remove end-to-end
+// =====================================================================
+
+const SKILL_A_V2: &str = "---
+name: skill-a
+version: 2.0.0
+description: First test skill, revved
+supported_agents:
+  - claude-code
+  - cursor
+---
+
+# Skill A v2
+
+Body of skill A, second edition.
+";
+
+#[test]
+#[serial(git_e2e)]
+fn e2e_update_noop_then_new_version_reinstalls() {
+    if !git_available() {
+        eprintln!("skipping: git not on PATH");
+        return;
+    }
+    library_registry::clear_cache();
+    let fx = E2EFixture::new();
+    set_test_env(&fx.home_path);
+    std::fs::create_dir_all(fx.home_path.join(".claude")).unwrap();
+
+    init_repo(&fx.repo_path);
+    write_file(&fx.repo_path, "SKILL.md", SKILL_A);
+    commit_all(&fx.repo_path, "v1");
+    tag(&fx.repo_path, "v1");
+
+    let url_v1 = fx.url("v1", None);
+    library_registry::sync(&fx.source(&url_v1)).unwrap();
+
+    // Install at 1.0.0, tracking `latest`.
+    let entry = SkillEntry::Version("latest".to_string());
+    skills::install_skill("skill-a", &entry, &[SkillAgent::ClaudeCode]).unwrap();
+
+    // Update against the same library state: everything already
+    // matches the manifest — no agent is rewritten.
+    let noop = skills::update_skill("skill-a", &entry, &[SkillAgent::ClaudeCode]).unwrap();
+    assert!(noop.updated_agents.is_empty(), "unchanged skill must no-op");
+    assert_eq!(noop.unchanged_agents, vec![SkillAgent::ClaudeCode]);
+    assert_eq!(noop.version, "1.0.0");
+
+    // Publisher revs the skill to 2.0.0 under a new tag; re-sync.
+    write_file(&fx.repo_path, "SKILL.md", SKILL_A_V2);
+    commit_all(&fx.repo_path, "v2");
+    tag(&fx.repo_path, "v2");
+    library_registry::clear_cache();
+    let url_v2 = fx.url("v2", None);
+    library_registry::sync(&fx.source(&url_v2)).unwrap();
+
+    let updated = skills::update_skill("skill-a", &entry, &[SkillAgent::ClaudeCode]).unwrap();
+    assert_eq!(updated.updated_agents, vec![SkillAgent::ClaudeCode]);
+    assert!(updated.unchanged_agents.is_empty());
+    assert_eq!(updated.version, "2.0.0");
+
+    let landed = fx.home_path.join(".claude/skills/skill-a/SKILL.md");
+    let body = std::fs::read_to_string(&landed).unwrap();
+    assert!(body.contains("second edition"), "new body must land");
+    let sidecar = std::fs::read_to_string(
+        fx.home_path
+            .join(".claude/skills/skill-a/.jarvy-skill.json"),
+    )
+    .unwrap();
+    assert!(sidecar.contains("\"version\": \"2.0.0\""));
+
+    library_registry::clear_cache();
+    clear_test_env();
+}
+
+#[test]
+#[serial(git_e2e)]
+fn e2e_update_pinned_version_mismatch_refuses() {
+    if !git_available() {
+        eprintln!("skipping: git not on PATH");
+        return;
+    }
+    library_registry::clear_cache();
+    let fx = E2EFixture::new();
+    set_test_env(&fx.home_path);
+    std::fs::create_dir_all(fx.home_path.join(".claude")).unwrap();
+
+    init_repo(&fx.repo_path);
+    write_file(&fx.repo_path, "SKILL.md", SKILL_A);
+    commit_all(&fx.repo_path, "v1");
+    tag(&fx.repo_path, "v1");
+
+    library_registry::sync(&fx.source(&fx.url("v1", None))).unwrap();
+
+    // Pin diverges from what the library advertises — update refuses
+    // rather than silently drifting the pin.
+    let entry = SkillEntry::Version("9.9.9".to_string());
+    let err = skills::update_skill("skill-a", &entry, &[SkillAgent::ClaudeCode])
+        .expect_err("pinned mismatch must refuse");
+    assert!(format!("{err}").contains("version mismatch"), "got: {err}");
+
+    library_registry::clear_cache();
+    clear_test_env();
+}
+
+#[test]
+#[serial(git_e2e)]
+fn e2e_remove_installed_then_absent_noop() {
+    if !git_available() {
+        eprintln!("skipping: git not on PATH");
+        return;
+    }
+    library_registry::clear_cache();
+    let fx = E2EFixture::new();
+    set_test_env(&fx.home_path);
+    std::fs::create_dir_all(fx.home_path.join(".claude")).unwrap();
+
+    init_repo(&fx.repo_path);
+    write_file(&fx.repo_path, "SKILL.md", SKILL_A);
+    commit_all(&fx.repo_path, "v1");
+    tag(&fx.repo_path, "v1");
+    library_registry::sync(&fx.source(&fx.url("v1", None))).unwrap();
+
+    let entry = SkillEntry::Version("latest".to_string());
+    skills::install_skill("skill-a", &entry, &[SkillAgent::ClaudeCode]).unwrap();
+    let skill_dir = fx.home_path.join(".claude/skills/skill-a");
+    assert!(skill_dir.join("SKILL.md").exists());
+
+    // Remove needs no library — works fully offline.
+    let removed = skills::remove_skill("skill-a", &[SkillAgent::ClaudeCode]).unwrap();
+    assert_eq!(removed.removed_agents, vec![SkillAgent::ClaudeCode]);
+    assert!(!skill_dir.join("SKILL.md").exists());
+    assert!(!skill_dir.join(".jarvy-skill.json").exists());
+
+    // Removing again is a clean no-op.
+    let again = skills::remove_skill("skill-a", &[SkillAgent::ClaudeCode]).unwrap();
+    assert!(again.removed_agents.is_empty());
+    assert_eq!(again.absent_agents, vec![SkillAgent::ClaudeCode]);
+
+    library_registry::clear_cache();
+    clear_test_env();
+}
+
+#[test]
+#[serial(git_e2e)]
+fn e2e_adhoc_install_by_name_without_config_entry() {
+    if !git_available() {
+        eprintln!("skipping: git not on PATH");
+        return;
+    }
+    library_registry::clear_cache();
+    let fx = E2EFixture::new();
+    set_test_env(&fx.home_path);
+    std::fs::create_dir_all(fx.home_path.join(".claude")).unwrap();
+
+    init_repo(&fx.repo_path);
+    write_file(&fx.repo_path, "SKILL.md", SKILL_A);
+    commit_all(&fx.repo_path, "v1");
+    tag(&fx.repo_path, "v1");
+    library_registry::sync(&fx.source(&fx.url("v1", None))).unwrap();
+
+    // Ad-hoc semantics: a `latest` entry synthesized by the CLI when
+    // the name isn't in `[skills.install]` — accepts whatever the
+    // library advertises.
+    let adhoc = SkillEntry::Version("latest".to_string());
+    let result = skills::install_skill("skill-a", &adhoc, &[SkillAgent::ClaudeCode])
+        .expect("ad-hoc install resolves from library");
+    assert_eq!(result.version, "1.0.0");
+    assert!(
+        fx.home_path
+            .join(".claude/skills/skill-a/SKILL.md")
+            .exists()
+    );
+
+    library_registry::clear_cache();
+    clear_test_env();
+}
+
 #[test]
 #[serial(git_e2e)]
 fn e2e_offline_falls_back_to_cached_clone() {

@@ -383,11 +383,15 @@ Install AI agent skills from a library manifest URL across detected agents. See 
 
 ```bash
 jarvy skills install                 # install every skill from [skills.install]
-jarvy skills install --name <skill>  # install one named skill
+jarvy skills install <skill>         # one skill — ad-hoc from library_sources if not configured
+jarvy skills update [<skill>]        # re-fetch + reinstall when version/sha changed
+jarvy skills remove <skill>          # uninstall SKILL.md + sidecar (idempotent)
 jarvy skills list                    # show configured skills + per-agent status
 jarvy skills status                  # drift summary
 jarvy skills agents                  # which AI agents are detected on disk
 ```
+
+`install` / `update` / `remove` accept `--format json`.
 
 ### `jarvy hooks`
 

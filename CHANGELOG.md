@@ -29,6 +29,25 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+**Features:**
+
+- `jarvy skills update [<name>]` — re-fetch skills from `library_sources`,
+  compare the advertised version/sha against the installed sidecar per
+  agent, and reinstall only on divergence (no-op when unchanged; a pinned
+  `[skills.install]` version that no longer matches the library refuses
+  rather than silently drifting). PRD-049 phase 2.
+- `jarvy skills remove <name>` — uninstall `SKILL.md` + the
+  `.jarvy-skill.json` sidecar from every targeted agent. Idempotent:
+  removing an absent skill is a clean no-op. User-added companion files
+  next to `SKILL.md` are preserved.
+- Ad-hoc `jarvy skills install <name>` — a name absent from
+  `[skills.install]` now resolves from the configured `library_sources`
+  at `latest` instead of erroring (the `--name` flag is replaced by a
+  positional argument).
+- All three subcommands accept `--format json` (PRD-051), and emit
+  `skills.updated` / `skills.removed` telemetry events (gated behind the
+  standard telemetry opt-in).
+
 **Fixes:**
 
 - The `curl … | bash` installer (`install.sh`) now verifies the downloaded

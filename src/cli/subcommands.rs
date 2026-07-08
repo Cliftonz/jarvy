@@ -8,9 +8,29 @@ use clap::Subcommand;
 pub enum SkillsAction {
     /// Install every skill from `[skills.install]`, or a single named skill
     Install {
-        /// Only install this skill name (otherwise installs all configured)
-        #[clap(long)]
+        /// Skill name to install. Configured entries use their pinned
+        /// version; a name absent from `[skills.install]` is resolved
+        /// ad-hoc from library_sources at `latest`.
         name: Option<String>,
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+    /// Re-fetch from library_sources and reinstall skills whose version/sha changed
+    Update {
+        /// Skill name to update (defaults to every configured skill)
+        name: Option<String>,
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+    /// Uninstall a skill (SKILL.md + sidecar) from every targeted agent
+    Remove {
+        /// Skill name to remove
+        name: String,
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
     },
     /// List skills declared in jarvy.toml + their installation status across agents
     List {},

@@ -160,6 +160,11 @@ path = "tests/registry_tracing_events.rs"
 required-features = ["test-bypass"]
 
 [[test]]
+name = "skills_cli"
+path = "tests/skills_cli.rs"
+required-features = ["test-bypass"]
+
+[[test]]
 name = "wizard_integration"
 path = "tests/wizard_integration.rs"
 required-features = ["test-bypass"]
