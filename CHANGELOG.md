@@ -96,6 +96,19 @@ for divergences from generic release skills.
   Not submitted — requires the maintainer to publish npm + ghcr first.
 - CI e2e coverage for Fedora, Arch, and Alpine via distro containers on
   the free ubuntu runner (PRD-014).
+- **Published GitHub Action** (top-level `action.yml`, PRD-017 phase 2):
+  installs jarvy (checksum-verified) and runs validate/setup/doctor, with
+  caching, outputs, and a problem matcher. Self-tested on
+  ubuntu/macos/windows. Referenceable as `Cliftonz/jarvy@v1` once tagged.
+- **VS Code extension** (`editors/vscode/`, PRD-017 phase 3): live
+  `jarvy.toml` diagnostics, setup/doctor/validate commands, status bar,
+  and an unknown-tool quick fix. Compiles clean under strict `tsc`.
+- **JetBrains/IntelliJ plugin** (`editors/jetbrains/`, PRD-017 phase 6):
+  Tools ▸ Jarvy actions + a TOML ExternalAnnotator driven by
+  `jarvy validate`. Builds via `./gradlew buildPlugin` (IntelliJ Platform
+  Gradle Plugin 2.x, JDK 21).
+- Consumable pre-commit hook (`.pre-commit-hooks.yaml`) and devcontainer
+  feature (`dist/devcontainer/jarvy/`), PRD-017 phases 4–5.
 
 **Changed:**
 
