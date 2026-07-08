@@ -1,62 +1,76 @@
-use crate::tools::common::{InstallError, cmd_satisfies, has, run};
+//! rust - Rust toolchain via rustup
+//!
+//! Migrated from a legacy manual `ensure()/install()` impl to the
+//! ToolSpec pattern so the tool can carry a `default_hook` (H3 in
+//! tasks/additional-post-install-hooks.json — previously skipped
+//! because hooks are a `define_tool!` slot). Install logic is
+//! unchanged: rustup script on Unix, `Rustlang.Rustup` winget on
+//! Windows, routed through `custom_install`.
 
-/// Ensure Rust toolchain is installed. We accept presence of either `rustc` or `rustup`.
-/// If a version hint is provided, we do a best-effort check against `rustc --version`.
-pub fn ensure(min_hint: &str) -> Result<(), InstallError> {
-    // If rustc satisfies the version hint (or hint empty), we're good
-    if !min_hint.is_empty() {
-        if cmd_satisfies("rustc", min_hint) {
-            return Ok(());
-        }
-    } else if has("rustc") || has("rustup") {
-        return Ok(());
-    }
-    install()
-}
+use crate::define_tool;
+#[cfg(target_os = "windows")]
+use crate::tools::common::has;
+use crate::tools::common::{InstallError, run};
 
-/// Registry adapter: allows tools::add("rust", version) to dispatch here
-pub fn add_handler(min_hint: &str) -> Result<(), InstallError> {
-    ensure(min_hint)
-}
-
-fn install() -> Result<(), InstallError> {
-    #[cfg(target_os = "macos")]
+fn install_rust(_min_hint: &str) -> Result<(), InstallError> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        return install_unix();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        return install_unix();
+        // Use bash -lc to ensure shell expands the pipe correctly
+        return run(
+            "bash",
+            &[
+                "-lc",
+                "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+            ],
+        )
+        .map(|_| ());
     }
     #[cfg(target_os = "windows")]
     {
-        return install_windows();
+        if !has("winget") {
+            return Err(InstallError::Prereq(
+                "winget not found. Install Windows Package Manager, then re-run.",
+            ));
+        }
+        // Official rustup package ID
+        return run("winget", &["install", "-e", "--id", "Rustlang.Rustup"]).map(|_| ());
     }
     #[allow(unreachable_code)]
     Err(InstallError::Unsupported)
 }
 
-// macOS/Linux: install via rustup non-interactively (-y)
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn install_unix() -> Result<(), InstallError> {
-    // Use bash -lc to ensure shell expands the pipe correctly
-    run(
-        "bash",
-        &[
-            "-lc",
-            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
-        ],
-    )
-    .map(|_| ())
-}
+define_tool!(RUST, {
+    command: "rustc",
+    custom_install: install_rust,
+    default_hook: {
+        description: "Install clippy + rustfmt components and source cargo env in shell rc",
+        script: r#"
+# Ensure future shells pick up ~/.cargo/bin without a re-login
+if [ -f "$HOME/.cargo/env" ]; then
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [ -f "$rc" ] && ! grep -q '.cargo/env' "$rc"; then
+            echo '. "$HOME/.cargo/env"' >> "$rc"
+            echo "Added cargo env sourcing to $rc"
+        fi
+    done
+fi
 
-#[cfg(target_os = "windows")]
-fn install_windows() -> Result<(), InstallError> {
-    if !has("winget") {
-        return Err(InstallError::Prereq(
-            "winget not found. Install Windows Package Manager, then re-run.",
-        ));
+# Common components — rustup skips anything already installed
+if command -v rustup >/dev/null 2>&1; then
+    rustup component add clippy rustfmt 2>/dev/null || true
+fi
+"#
+    },
+});
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rust_registration_shape() {
+        assert_eq!(RUST.command, "rustc");
+        assert!(RUST.custom_install.is_some());
+        assert!(RUST.default_hook.is_some());
     }
-    // Official rustup package ID
-    run("winget", &["install", "-e", "--id", "Rustlang.Rustup"]).map(|_| ())
 }

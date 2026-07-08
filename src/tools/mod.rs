@@ -271,7 +271,7 @@ pub use registry::{ToolAdder, add, get_tool, register_tool, registered_tool_name
 /// want to add("git", ...)/add("docker", ...) to work without manual registration.
 ///
 /// Tools defined with `define_tool!` are automatically discovered via the `inventory` crate.
-/// Tools with custom installation logic (nvm, rust, brew) are registered manually.
+/// Tools with custom installation logic (nvm, brew) are registered manually.
 pub fn register_all() {
     // Auto-register all tools defined with define_tool! macro
     // The inventory crate collects these at compile time
@@ -280,9 +280,10 @@ pub fn register_all() {
     }
 
     // Manual registration for tools with custom installers
-    // These tools don't use the ToolSpec pattern due to complex installation logic
+    // These tools don't use the ToolSpec pattern due to complex installation
+    // logic. (`rust` migrated to define_tool! + custom_install so it can
+    // carry a default_hook — H3.)
     let _ = register_tool("nvm", crate::tools::nvm::add_handler);
-    let _ = register_tool("rust", crate::tools::rust::add_handler);
     let _ = register_tool("brew", crate::tools::brew::add_handler);
 
     // Load user-defined plugin tools from ~/.jarvy/tools.d/

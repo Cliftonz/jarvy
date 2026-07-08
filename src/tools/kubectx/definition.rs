@@ -10,6 +10,21 @@ define_tool!(KUBECTX, {
     linux: { brew: "kubectx" },
     windows: { winget: "ahmetb.kubectx" },
     bsd: { pkg: "kubectx" },
+    // Shell completions ship with the package manager install (brew/pkg
+    // drop them into the completions dir); the hook adds the upstream-
+    // documented kctx/kns aliases, mirroring kubectl's `k` alias hook.
+    default_hook: {
+        description: "Add kctx/kns aliases for kubectx and kubens",
+        script: r#"
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$rc" ] && ! grep -q 'alias kctx=' "$rc"; then
+        echo 'alias kctx="kubectx"' >> "$rc"
+        echo 'alias kns="kubens"' >> "$rc"
+        echo "Added kctx/kns aliases to $rc"
+    fi
+done
+"#
+    },
 });
 
 #[cfg(test)]
