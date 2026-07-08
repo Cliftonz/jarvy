@@ -43,9 +43,22 @@ pub fn run_setup(
     ignore_missing_deps: bool,
     header: &[String],
     machine_id: Option<&str>,
+    profile: bool,
+    profile_output: Option<&str>,
 ) -> i32 {
     // Determine effective parallelism level
     let parallel_jobs = if sequential { 1 } else { jobs.max(1) };
+
+    // `--profile` phase-level timing. Per-tool timings are NOT recorded
+    // here: the profiler's start_tool/end_tool model assumes sequential
+    // installs, and the default install path is parallel (PRD-001).
+    // Phase durations + the existing per-tool `duration_ms` telemetry
+    // events cover the same question without a racy API.
+    let mut profiler = if profile {
+        crate::observability::Profiler::new()
+    } else {
+        crate::observability::Profiler::disabled()
+    };
 
     // Set env var for dependency warning suppression
     if ignore_missing_deps {
@@ -169,6 +182,7 @@ pub fn run_setup(
     );
 
     // Phase 2: Parallel version checking - determine which tools need installation
+    profiler.start_phase("version_check");
     println!("Checking tool versions...");
     let version_check = tools::spec::check_tools_parallel(
         tool_configs
@@ -398,6 +412,7 @@ pub fn run_setup(
         }
     } else {
         // Emit setup_started event
+        profiler.start_phase("tool_install");
         telemetry::setup_started(version_check.needs_install.len());
         let _setup_start = telemetry::now();
 
@@ -664,6 +679,7 @@ pub fn run_setup(
         }
 
         // Execute hooks for successfully installed tools
+        profiler.start_phase("tool_hooks");
         if !no_hooks {
             for (tool_name, version) in &successfully_installed {
                 let user_hook = config
@@ -741,28 +757,35 @@ pub fn run_setup(
     }
 
     // Install language-specific packages (npm, pip, cargo)
+    profiler.start_phase("packages");
     run_packages_phase(&config, file, dry_run);
 
     // Git configuration
+    profiler.start_phase("git_config");
     run_git_phase(&config, dry_run);
 
     // Git hook framework (pre-commit / husky / lefthook) — PRD-048
+    profiler.start_phase("git_hooks");
     run_git_hooks_phase(&config, file, dry_run);
 
     // AI agent hook provisioning (Claude Code, Cursor, Codex, Windsurf, ...)
+    profiler.start_phase("ai_hooks");
     run_ai_hooks_phase(&config, dry_run);
 
     // MCP server registration — auto-register `jarvy mcp` with each
     // configured agent so terminal AIs can discover Jarvy's tools.
+    profiler.start_phase("mcp_register");
     run_mcp_register_phase(&config, dry_run);
 
     // Continuous discovery — advisory only. Runs `jarvy discover`'s
     // analyzer against the project tree and reports any new tools
     // not already in `[provisioner]`. NEVER mutates jarvy.toml from
     // setup; users must explicitly run `jarvy discover --apply`.
+    profiler.start_phase("discover");
     run_continuous_discover_phase(file);
 
     // Environment variable setup
+    profiler.start_phase("env_setup");
     let env_config = config.get_env();
     let env_settings = &env_config.config;
 
@@ -860,6 +883,7 @@ pub fn run_setup(
     }
 
     // Auto-start services if configured
+    profiler.start_phase("services");
     run_services_phase(&config, file, ci_env.is_some(), dry_run);
 
     if config.has_hooks() && !no_hooks {
@@ -936,6 +960,20 @@ pub fn run_setup(
     // signal of intent). Stderr so command-output piping is safe.
     if !dry_run {
         emit_telemetry_hint_if_undecided();
+    }
+
+    // `--profile` report goes to stderr so stdout stays clean for
+    // command-output piping (same rule as the tracing console layers).
+    if profiler.is_enabled() {
+        profiler.end_phase();
+        let report = profiler.report();
+        eprint!("{}", report.to_summary());
+        if let Some(path) = profile_output {
+            match report.to_json_file(path) {
+                Ok(()) => eprintln!("Profile written to {path}"),
+                Err(e) => eprintln!("Warning: could not write profile to {path}: {e}"),
+            }
+        }
     }
 
     0

@@ -142,59 +142,86 @@ jobs:
           retention-days: 30
 
   # ============================================================================
-  # AWS EC2 Spot Runners (Future - for distros not on GitHub)
-  # These jobs are currently commented out and will be enabled when
-  # the EC2 infrastructure is deployed.
+  # Container-based distro coverage (PRD-014 T11)
+  #
+  # Replaces the never-deployed "AWS EC2 Spot" plan: distros GitHub has
+  # no hosted runner for are covered by running their official container
+  # images on the free ubuntu-latest runner. dnf/pacman package handlers
+  # get exercised on their native distro; the containers match the local
+  # tests/docker/*.dockerfile environments. FreeBSD remains uncovered —
+  # it can't run in a Linux container; re-evaluate if user demand shows
+  # up (the `bsd: { pkg: ... }` macro slots are compile-checked either way).
+  #
+  # Alpine note: GitHub's JS actions (checkout, upload-artifact) run the
+  # runner's glibc node binary inside the container, which musl can't
+  # load without the gcompat shim — hence gcompat/libstdc++ in its setup
+  # line. If that shim breaks on a future runner image, fall back to a
+  # manual `git clone` + skip the artifact upload for the alpine row.
   # ============================================================================
-  # ec2-hosted:
-  #   name: E2E (${{ matrix.name }})
-  #   # Only run on main merges and nightly, not every PR (to control costs)
-  #   if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - runner: self-hosted-fedora
-  #           name: Fedora 40
-  #           platform: fedora-40
-  #         - runner: self-hosted-arch
-  #           name: Arch Linux
-  #           platform: arch-linux
-  #         - runner: self-hosted-alpine
-  #           name: Alpine
-  #           platform: alpine
-  #         - runner: self-hosted-freebsd
-  #           name: FreeBSD 14
-  #           platform: freebsd-14
-  #
-  #   runs-on: ${{ matrix.runner }}
-  #   timeout-minutes: 30
-  #
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #
-  #     - name: Build Jarvy
-  #       run: cargo build --release
-  #
-  #     - name: Run E2E Tests
-  #       run: cargo test --test e2e_base_tools -- --show-output
-  #       env:
-  #         JARVY_BIN: ${{ github.workspace }}/target/release/jarvy
-  #         JARVY_TEST_MODE: 1
-  #
-  #     - name: Upload Results
-  #       if: always()
-  #       uses: actions/upload-artifact@v7.0.1
-  #       with:
-  #         name: e2e-results-${{ matrix.platform }}
-  #         path: target/e2e-results/
+  container-distros:
+    name: E2E (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: fedora:40
+            name: Fedora 40
+            platform: fedora-40
+            setup: dnf install -y curl git gcc make openssl-devel pkgconf-pkg-config ca-certificates sudo
+          - image: archlinux:latest
+            name: Arch Linux
+            platform: arch-linux
+            setup: pacman -Syu --noconfirm curl git gcc make openssl pkgconf ca-certificates sudo
+          - image: alpine:3.20
+            name: Alpine 3.20
+            platform: alpine-3.20
+            setup: apk add --no-cache bash curl git gcc make musl-dev openssl-dev pkgconf ca-certificates sudo gcompat libstdc++
+
+    steps:
+      - name: Install container prerequisites
+        shell: sh
+        run: ${{ matrix.setup }}
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build Jarvy
+        shell: bash
+        run: cargo build --release --bin jarvy
+
+      - name: Run E2E Tests
+        shell: bash
+        run: cargo test --test e2e_base_tools -- --show-output --nocapture
+        env:
+          JARVY_BIN: ${{ github.workspace }}/target/release/jarvy
+          JARVY_TEST_MODE: 1
+          JARVY_E2E_TIER: ${{ github.event.inputs.tier || 'all' }}
+          JARVY_E2E_SKIP_INSTALL: ${{ github.event.inputs.skip_install == 'true' && '1' || '' }}
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: e2e-results-${{ matrix.platform }}
+          path: |
+            target/e2e-results/
+          retention-days: 30
 
   # ============================================================================
   # Results Aggregation
   # ============================================================================
   aggregate-results:
     name: Aggregate Results
-    needs: [github-hosted]
+    needs: [github-hosted, container-distros]
     if: always()
     runs-on: ubuntu-latest
 

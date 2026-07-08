@@ -39,6 +39,17 @@ for routine work (it overthinks, overbuilds, and costs multiples for marginal ga
   sentences of task + focus. Don't prompt it like it's Claude.
 
 **Orchestration rules:**
+- **Subagents do NOT compile, test, or commit. The orchestrator does.**
+  Concurrent `cargo build`/`cargo test` across N worktrees saturates the
+  CPU — 5 parallel builds means ~62 rustc processes fighting for cores, so
+  a 3-minute test run takes 30+ and nothing finishes. A spawned
+  implementation agent's job is to **write the change and report what it
+  wrote** (files touched, intent, anything uncertain). It must not run
+  `cargo build`/`clippy`/`test` or `git commit`/`push`. The orchestrator
+  gathers all agents' findings, then serially — one cargo invocation at a
+  time — compiles, tests, and commits each branch. If an agent needs a
+  quick `cargo check` to validate a tricky change, that is the exception,
+  not the default, and never in parallel with sibling agents.
 - Don't pre-define agent archetypes — invent the right reviewers/implementers
   per task; every review has different needs.
 - Workflows can only spawn Claude models. To use codex inside a workflow,
@@ -103,7 +114,7 @@ Cross-platform CLI that provisions dev environments from `jarvy.toml` using nati
 - `src/discover/` — project tool auto-discovery (PRD-044 MVP). `jarvy discover [--apply] [--missing] [--format json]` scans the project root for marker files (Cargo.toml, package.json, go.mod, Dockerfile, k8s/, *.tf, Makefile, Justfile, …), infers versions from `rust-toolchain.toml` / `.nvmrc` / `.python-version` / `go.mod`, and either prints suggestions or merges them into `jarvy.toml`. Suggestions are validated against `tools::registry::registered_tool_names()` so we never recommend a tool jarvy can't install. Built-in rules only in v1 (custom rules file deferred).
 - `src/workspace.rs` + `src/commands/workspace_cmd.rs` — monorepo support (PRD-047). `[workspace] members = [...]` declared in root `jarvy.toml`; per-member jarvy.toml inherits via `merge_configs` (provisioner table merges tool-by-tool with member winning). `jarvy workspace {list,show,validate}` is the read-only CLI surface — workspace-aware `jarvy setup --project <name>` orchestration is deferred. Empty `inherit = []` is treated as `["provisioner"]` for the show/list output so the common case "just works".
 - `src/update/` — self-updater. Detects install method (brew/cargo/apt/dnf/pacman/winget/choco/scoop/binary). Env: `JARVY_UPDATE`, `JARVY_UPDATE_CHANNEL`, `JARVY_PINNED_VERSION`. CI auto-disables.
-- `src/observability/` — tracing-subscriber wiring, sanitizer (`Cow<'_, str>` no-alloc on no-match), rolling appender (`tracing_appender::rolling` daily), `non_blocking` writer with `WorkerGuard` held in `analytics::FILE_LOGGER_GUARD`. `shutdown_logging()` flushes `SdkLoggerProvider` + worker guard before exit.
+- `src/observability/` — log-config types (`LogConfig`/`LogLevel`/`LogFormat`), the `jarvy setup --profile` phase `Profiler`, sanitizer (`Cow<'_, str>` no-alloc on no-match), and `telemetry_gate`. The actual tracing-subscriber wiring (console/file/OTLP layers, CLI log-flag overrides) lives in `src/analytics.rs::init_logging`. `jarvy setup -q/-v/-vv/-vvv/--log-format/--log-file/--debug-filter/--profile` are wired through `main.rs` → `commands/dispatch.rs`: CLI verbosity filters the **console** layer only (not the registry `EnvFilter`, so `-q` doesn't starve `jarvy.log`/OTLP); `--debug-filter`/`-v` widen the registry filter and beat `RUST_LOG`. Rolling appender (`tracing_appender::rolling` daily) + `non_blocking` writers with `WorkerGuard`s held in `analytics::{FILE_LOGGER_GUARD, EXTRA_LOG_GUARD}`; `shutdown_logging()` flushes `SdkLoggerProvider` + both guards before exit. (The former `bundle`/`network_trace` modules were deleted — `DiagnosticBundle` duplicated `src/ticket/`.)
 - `src/logging/` — thin re-export over `observability/` + log-file helpers (`read_recent_logs`, `get_log_stats`, `clean_logs`)
 - `src/ticket/` — debug-bundle ZIP for support
 - `src/remote.rs` — remote config fetch + caching (`fetch_remote_config`, `transform_github_url`)

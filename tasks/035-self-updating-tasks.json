@@ -15,7 +15,7 @@
     {
       "id": "phase-1",
       "name": "Module Structure & Configuration",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 2,
       "tasks": [
         {
@@ -23,15 +23,22 @@
           "title": "Create update module structure",
           "description": "Create src/update/ directory with mod.rs and module exports",
           "status": "not_started",
-          "files": ["src/update/mod.rs"],
-          "acceptance_criteria": ["Module compiles", "Exports are accessible from main"]
+          "files": [
+            "src/update/mod.rs"
+          ],
+          "acceptance_criteria": [
+            "Module compiles",
+            "Exports are accessible from main"
+          ]
         },
         {
           "id": "T002",
           "title": "Implement UpdateConfig with defaults",
           "description": "Create config.rs with UpdateConfig struct, enabled=true default, Channel enum",
           "status": "not_started",
-          "files": ["src/update/config.rs"],
+          "files": [
+            "src/update/config.rs"
+          ],
           "acceptance_criteria": [
             "enabled = true by default",
             "channel defaults to stable",
@@ -44,7 +51,9 @@
           "title": "Add [update] section to global config parsing",
           "description": "Integrate UpdateConfig with existing global config system in ~/.jarvy/config.toml",
           "status": "not_started",
-          "files": ["src/config.rs"],
+          "files": [
+            "src/config.rs"
+          ],
           "acceptance_criteria": [
             "[update] section parsed correctly",
             "Missing section uses defaults",
@@ -56,7 +65,9 @@
           "title": "Implement environment variable overrides",
           "description": "Support JARVY_UPDATE, JARVY_UPDATE_CHANNEL, JARVY_UPDATE_CHECK, JARVY_PINNED_VERSION",
           "status": "not_started",
-          "files": ["src/update/config.rs"],
+          "files": [
+            "src/update/config.rs"
+          ],
           "acceptance_criteria": [
             "JARVY_UPDATE=0 disables updates",
             "JARVY_UPDATE_CHANNEL=beta works",
@@ -69,7 +80,7 @@
     {
       "id": "phase-2",
       "name": "Installation Method Detection",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 2.5,
       "tasks": [
         {
@@ -77,15 +88,22 @@
           "title": "Create InstallMethod enum",
           "description": "Define enum with Homebrew, Cargo, Apt, Dnf, Winget, Chocolatey, Scoop, Binary variants",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
-          "acceptance_criteria": ["All variants defined", "Serializable with serde"]
+          "files": [
+            "src/update/method.rs"
+          ],
+          "acceptance_criteria": [
+            "All variants defined",
+            "Serializable with serde"
+          ]
         },
         {
           "id": "T006",
           "title": "Implement path-based detection",
           "description": "Detect installation method from binary path (/opt/homebrew/, .cargo/bin/, etc.)",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "Detects Homebrew from /opt/homebrew/ and /usr/local/Cellar/",
             "Detects Cargo from .cargo/bin",
@@ -97,7 +115,9 @@
           "title": "Implement package manager query detection",
           "description": "Query dpkg -S, rpm -qf, winget list to verify package ownership",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "dpkg -S detection works on Debian/Ubuntu",
             "rpm -qf detection works on RHEL/Fedora",
@@ -109,7 +129,9 @@
           "title": "Implement method caching",
           "description": "Cache detected method to ~/.jarvy/install-method for future runs",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "Cached method loaded on startup",
             "Cache invalidated when binary moves",
@@ -121,7 +143,10 @@
           "title": "Add install_method config override",
           "description": "Allow users to override detected method via config or --method flag",
           "status": "not_started",
-          "files": ["src/update/config.rs", "src/update/method.rs"],
+          "files": [
+            "src/update/config.rs",
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "install_method config option works",
             "--method flag overrides for single run"
@@ -132,7 +157,7 @@
     {
       "id": "phase-3",
       "name": "Version Checking",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 1.5,
       "tasks": [
         {
@@ -140,7 +165,9 @@
           "title": "Implement GitHub releases API client",
           "description": "Create release.rs to fetch releases from GitHub API with channel filtering",
           "status": "not_started",
-          "files": ["src/update/release.rs"],
+          "files": [
+            "src/update/release.rs"
+          ],
           "acceptance_criteria": [
             "Fetches releases from GitHub API",
             "Filters by channel (stable/beta/nightly)",
@@ -152,7 +179,9 @@
           "title": "Implement version comparison logic",
           "description": "Compare current version with latest, respecting patch_only setting",
           "status": "not_started",
-          "files": ["src/update/checker.rs"],
+          "files": [
+            "src/update/checker.rs"
+          ],
           "acceptance_criteria": [
             "Uses semver for version comparison",
             "patch_only filters to same major.minor",
@@ -164,7 +193,9 @@
           "title": "Implement update state persistence",
           "description": "Track last_checked, available_version, previous_version in UpdateState",
           "status": "not_started",
-          "files": ["src/update/checker.rs"],
+          "files": [
+            "src/update/checker.rs"
+          ],
           "acceptance_criteria": [
             "State persisted to ~/.jarvy/update-state.json",
             "last_checked timestamp tracked",
@@ -176,7 +207,9 @@
           "title": "Implement check throttling",
           "description": "Respect check_interval setting, no more than once per interval",
           "status": "not_started",
-          "files": ["src/update/checker.rs"],
+          "files": [
+            "src/update/checker.rs"
+          ],
           "acceptance_criteria": [
             "should_check() respects interval",
             "JARVY_UPDATE_CHECK=1 forces check",
@@ -188,7 +221,7 @@
     {
       "id": "phase-4",
       "name": "Package Manager Updates",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 1,
       "tasks": [
         {
@@ -196,7 +229,9 @@
           "title": "Implement Homebrew update execution",
           "description": "Run brew upgrade jarvy for Homebrew installations",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "Executes brew upgrade jarvy",
             "Handles brew not found gracefully",
@@ -208,7 +243,9 @@
           "title": "Implement Cargo update execution",
           "description": "Run cargo install jarvy [--version X.Y.Z] for Cargo installations",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "Executes cargo install jarvy",
             "--version flag works for specific versions",
@@ -220,7 +257,9 @@
           "title": "Implement Linux package manager updates",
           "description": "Run apt/dnf upgrade commands with sudo for Linux installations",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "apt update && apt install --only-upgrade works",
             "dnf upgrade jarvy works",
@@ -232,7 +271,9 @@
           "title": "Implement Windows package manager updates",
           "description": "Run winget/choco/scoop upgrade for Windows installations",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "winget upgrade jarvy works",
             "choco upgrade jarvy -y works",
@@ -244,7 +285,7 @@
     {
       "id": "phase-5",
       "name": "Binary Installation (Fallback)",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 2,
       "tasks": [
         {
@@ -252,7 +293,9 @@
           "title": "Implement binary download",
           "description": "Download binary from GitHub releases for current platform/architecture",
           "status": "not_started",
-          "files": ["src/update/installer.rs"],
+          "files": [
+            "src/update/installer.rs"
+          ],
           "acceptance_criteria": [
             "Downloads correct binary for platform",
             "Supports darwin-arm64, darwin-x86_64, linux-x86_64, windows-x86_64",
@@ -264,7 +307,10 @@
           "title": "Implement checksum verification",
           "description": "Verify SHA256 checksum before installation",
           "status": "not_started",
-          "files": ["src/update/installer.rs", "src/update/signature.rs"],
+          "files": [
+            "src/update/installer.rs",
+            "src/update/signature.rs"
+          ],
           "acceptance_criteria": [
             "Downloads checksum file from release",
             "Verifies SHA256 matches",
@@ -276,7 +322,9 @@
           "title": "Implement atomic binary replacement",
           "description": "Replace binary atomically, handling platform differences",
           "status": "not_started",
-          "files": ["src/update/installer.rs"],
+          "files": [
+            "src/update/installer.rs"
+          ],
           "acceptance_criteria": [
             "Unix: atomic rename",
             "Windows: self_update crate handling",
@@ -288,7 +336,9 @@
           "title": "Implement backup mechanism",
           "description": "Backup current binary before replacement for rollback",
           "status": "not_started",
-          "files": ["src/update/installer.rs"],
+          "files": [
+            "src/update/installer.rs"
+          ],
           "acceptance_criteria": [
             "Current binary backed up to ~/.jarvy/backups/",
             "Backup named with version",
@@ -300,7 +350,7 @@
     {
       "id": "phase-6",
       "name": "Rollback Mechanism",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 1,
       "tasks": [
         {
@@ -308,7 +358,9 @@
           "title": "Implement rollback info storage",
           "description": "Store rollback information including previous version and backup path",
           "status": "not_started",
-          "files": ["src/update/rollback.rs"],
+          "files": [
+            "src/update/rollback.rs"
+          ],
           "acceptance_criteria": [
             "Rollback info persisted to disk",
             "Tracks previous version and path",
@@ -320,7 +372,9 @@
           "title": "Implement rollback execution",
           "description": "Restore previous binary on jarvy update --rollback",
           "status": "not_started",
-          "files": ["src/update/rollback.rs"],
+          "files": [
+            "src/update/rollback.rs"
+          ],
           "acceptance_criteria": [
             "Restores previous binary",
             "Updates version state",
@@ -332,7 +386,7 @@
     {
       "id": "phase-7",
       "name": "CLI Commands",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 1,
       "tasks": [
         {
@@ -340,7 +394,9 @@
           "title": "Implement jarvy update check command",
           "description": "Show current version, latest version, and what's new",
           "status": "not_started",
-          "files": ["src/update/commands.rs"],
+          "files": [
+            "src/update/commands.rs"
+          ],
           "acceptance_criteria": [
             "Shows current version",
             "Shows latest version per channel",
@@ -352,7 +408,9 @@
           "title": "Implement jarvy update command",
           "description": "Install available update via detected method",
           "status": "not_started",
-          "files": ["src/update/commands.rs"],
+          "files": [
+            "src/update/commands.rs"
+          ],
           "acceptance_criteria": [
             "Updates via detected install method",
             "--version flag for specific version",
@@ -365,7 +423,9 @@
           "title": "Implement jarvy update --rollback command",
           "description": "Restore previous version",
           "status": "not_started",
-          "files": ["src/update/commands.rs"],
+          "files": [
+            "src/update/commands.rs"
+          ],
           "acceptance_criteria": [
             "Restores previous version",
             "Shows helpful message if no backup",
@@ -377,7 +437,9 @@
           "title": "Implement jarvy update history command",
           "description": "Show update history log",
           "status": "not_started",
-          "files": ["src/update/commands.rs"],
+          "files": [
+            "src/update/commands.rs"
+          ],
           "acceptance_criteria": [
             "Shows update history with dates",
             "Indicates auto vs manual updates",
@@ -389,7 +451,9 @@
           "title": "Implement jarvy update config command",
           "description": "Show current update configuration and status",
           "status": "not_started",
-          "files": ["src/update/commands.rs"],
+          "files": [
+            "src/update/commands.rs"
+          ],
           "acceptance_criteria": [
             "Shows all config settings",
             "Shows detected install method",
@@ -402,7 +466,9 @@
           "title": "Implement jarvy update enable/disable commands",
           "description": "Toggle auto-update feature",
           "status": "not_started",
-          "files": ["src/update/commands.rs"],
+          "files": [
+            "src/update/commands.rs"
+          ],
           "acceptance_criteria": [
             "jarvy update enable sets enabled=true",
             "jarvy update disable sets enabled=false",
@@ -414,7 +480,7 @@
     {
       "id": "phase-8",
       "name": "Main Integration",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 1,
       "tasks": [
         {
@@ -422,7 +488,9 @@
           "title": "Add update command to main CLI",
           "description": "Register update subcommand in main.rs",
           "status": "not_started",
-          "files": ["src/main.rs"],
+          "files": [
+            "src/main.rs"
+          ],
           "acceptance_criteria": [
             "jarvy update subcommand accessible",
             "Help text displays correctly",
@@ -434,7 +502,9 @@
           "title": "Implement background update check",
           "description": "Spawn async background check on startup without blocking",
           "status": "not_started",
-          "files": ["src/main.rs"],
+          "files": [
+            "src/main.rs"
+          ],
           "acceptance_criteria": [
             "Check runs in background",
             "Main command not blocked",
@@ -446,7 +516,9 @@
           "title": "Implement update notification display",
           "description": "Show update available message when update found",
           "status": "not_started",
-          "files": ["src/main.rs"],
+          "files": [
+            "src/main.rs"
+          ],
           "acceptance_criteria": [
             "Shows notification after command output",
             "--quiet suppresses notification",
@@ -458,7 +530,7 @@
     {
       "id": "phase-9",
       "name": "CI/CD Integration",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 0.5,
       "tasks": [
         {
@@ -466,7 +538,9 @@
           "title": "Implement CI environment detection",
           "description": "Detect CI=true, GITHUB_ACTIONS, GITLAB_CI, JENKINS_URL, CIRCLECI",
           "status": "not_started",
-          "files": ["src/update/config.rs"],
+          "files": [
+            "src/update/config.rs"
+          ],
           "acceptance_criteria": [
             "All major CI environments detected",
             "Auto-update disabled in CI by default",
@@ -478,7 +552,9 @@
           "title": "Suppress prompts in non-interactive mode",
           "description": "No update prompts when stdin is not a TTY",
           "status": "not_started",
-          "files": ["src/update/commands.rs"],
+          "files": [
+            "src/update/commands.rs"
+          ],
           "acceptance_criteria": [
             "Detects non-interactive mode",
             "Suppresses interactive prompts",
@@ -490,7 +566,7 @@
     {
       "id": "phase-10",
       "name": "Testing",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 2,
       "tasks": [
         {
@@ -498,7 +574,9 @@
           "title": "Write unit tests for method detection",
           "description": "Test InstallMethod detection logic with mocked paths",
           "status": "not_started",
-          "files": ["src/update/method.rs"],
+          "files": [
+            "src/update/method.rs"
+          ],
           "acceptance_criteria": [
             "Path-based detection tested",
             "Package manager queries mocked",
@@ -510,7 +588,9 @@
           "title": "Write unit tests for version comparison",
           "description": "Test UpdateChecker version comparison and throttling",
           "status": "not_started",
-          "files": ["src/update/checker.rs"],
+          "files": [
+            "src/update/checker.rs"
+          ],
           "acceptance_criteria": [
             "Version comparison tested",
             "patch_only filtering tested",
@@ -522,7 +602,9 @@
           "title": "Write unit tests for config parsing",
           "description": "Test UpdateConfig parsing from TOML and env vars",
           "status": "not_started",
-          "files": ["src/update/config.rs"],
+          "files": [
+            "src/update/config.rs"
+          ],
           "acceptance_criteria": [
             "Default values tested",
             "TOML parsing tested",
@@ -534,7 +616,9 @@
           "title": "Write integration tests for update flow",
           "description": "End-to-end tests for update check and notification",
           "status": "not_started",
-          "files": ["tests/update_integration.rs"],
+          "files": [
+            "tests/update_integration.rs"
+          ],
           "acceptance_criteria": [
             "Update check flow tested",
             "Notification display tested",
@@ -583,7 +667,7 @@
     {
       "id": "phase-11",
       "name": "Documentation",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 0.5,
       "tasks": [
         {
@@ -591,7 +675,9 @@
           "title": "Update CLAUDE.md with update features",
           "description": "Document update configuration and CLI commands",
           "status": "not_started",
-          "files": ["CLAUDE.md"],
+          "files": [
+            "CLAUDE.md"
+          ],
           "acceptance_criteria": [
             "Update config section documented",
             "CLI commands documented",
@@ -603,7 +689,9 @@
           "title": "Document [update] section in ConfigurationFile.md",
           "description": "Add comprehensive documentation for update configuration",
           "status": "not_started",
-          "files": ["docs/ConfigurationFile.md"],
+          "files": [
+            "docs/ConfigurationFile.md"
+          ],
           "acceptance_criteria": [
             "All config options documented",
             "Examples provided",
@@ -615,7 +703,9 @@
           "title": "Add update FAQ entries",
           "description": "Document common update questions and troubleshooting",
           "status": "not_started",
-          "files": ["docs/faq/"],
+          "files": [
+            "docs/faq/"
+          ],
           "acceptance_criteria": [
             "How to disable auto-update",
             "How to rollback",
@@ -627,7 +717,7 @@
     {
       "id": "phase-12",
       "name": "Dependencies",
-      "status": "not_started",
+      "status": "completed",
       "estimated_days": 0.5,
       "tasks": [
         {
@@ -635,7 +725,9 @@
           "title": "Add self_update dependency",
           "description": "Add self_update crate for cross-platform binary replacement",
           "status": "not_started",
-          "files": ["Cargo.toml"],
+          "files": [
+            "Cargo.toml"
+          ],
           "acceptance_criteria": [
             "self_update = \"0.39\" added",
             "Builds successfully"
@@ -646,7 +738,9 @@
           "title": "Add sha2 dependency",
           "description": "Add sha2 crate for checksum verification",
           "status": "not_started",
-          "files": ["Cargo.toml"],
+          "files": [
+            "Cargo.toml"
+          ],
           "acceptance_criteria": [
             "sha2 = \"0.10\" added",
             "Builds successfully"
@@ -657,7 +751,9 @@
           "title": "Verify reqwest features",
           "description": "Ensure reqwest has json feature enabled for GitHub API",
           "status": "not_started",
-          "files": ["Cargo.toml"],
+          "files": [
+            "Cargo.toml"
+          ],
           "acceptance_criteria": [
             "reqwest json feature enabled",
             "Builds successfully"
@@ -687,11 +783,27 @@
     "docs/ConfigurationFile.md"
   ],
   "dependencies": {
-    "internal": ["PRD-012 (Distribution) for release binaries"],
-    "new_crates": [
-      { "name": "self_update", "version": "0.39", "reason": "Cross-platform binary replacement" },
-      { "name": "sha2", "version": "0.10", "reason": "Checksum verification" }
+    "internal": [
+      "PRD-012 (Distribution) for release binaries"
     ],
-    "existing_crates": ["semver", "serde", "tokio", "reqwest"]
-  }
+    "new_crates": [
+      {
+        "name": "self_update",
+        "version": "0.39",
+        "reason": "Cross-platform binary replacement"
+      },
+      {
+        "name": "sha2",
+        "version": "0.10",
+        "reason": "Checksum verification"
+      }
+    ],
+    "existing_crates": [
+      "semver",
+      "serde",
+      "tokio",
+      "reqwest"
+    ]
+  },
+  "reconciled": "2026-07-08: phases[] were stale not_started while progress showed 47/47 — src/update/ shipped; phases marked completed to match."
 }

@@ -8,11 +8,10 @@
 
 use std::env;
 use std::io::Write;
-use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
-use tracing_subscriber::filter::{FilterFn, LevelFilter};
+use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::Registry;
@@ -48,6 +47,80 @@ static LOGGER_PROVIDER: std::sync::OnceLock<opentelemetry_sdk::logs::SdkLoggerPr
 static FILE_LOGGER_GUARD: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>> =
     std::sync::Mutex::new(None);
 
+/// Second `WorkerGuard`, for the user-specified `--log-file` writer. Held
+/// separately from the always-on `~/.jarvy/logs/jarvy.log` guard so the
+/// existing rolling-appender path stays untouched; both are dropped in
+/// `shutdown_logging`. The `--log-file` sink is wrapped in `non_blocking`
+/// for the same reason as the rolling appender — a plain `File` writer
+/// does a synchronous, unbuffered syscall per event on the emitting
+/// thread, which under `jarvy setup`'s parallel install phase blocks
+/// install workers and can tear interleaved lines (perf review F1).
+static EXTRA_LOG_GUARD: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>> =
+    std::sync::Mutex::new(None);
+
+/// Base `EnvFilter` directive string for a CLI verbosity level, or `None`
+/// when the level expresses no *filtering* intent (so `RUST_LOG` / the
+/// default floor should govern the registry instead).
+///
+/// Only `-v/-vv/-vvv` and `--debug-filter <module>` widen the registry
+/// filter. `--quiet` is deliberately absent — it narrows the *console*
+/// sink only (applied as a per-layer `LevelFilter::ERROR` in
+/// `init_logging`), and must NOT lower the registry floor, or it would
+/// starve `~/.jarvy/logs/jarvy.log` and the OTLP bridge of every
+/// `tool.*` / `setup.*` / `hook.*` event — hollowing out the exact
+/// support artifacts those sinks feed (observability review F2).
+///
+/// Every widened directive keeps `opentelemetry=off,opentelemetry_sdk=off`
+/// so `-vvv` doesn't resurface the exporter-error chatter the default
+/// filter suppresses, nor feed the SDK's own export events back through
+/// the OTLP bridge (observability review F3).
+pub(crate) fn cli_log_directives(
+    obs: &crate::observability::ObservabilityConfig,
+) -> Option<String> {
+    use crate::observability::LogLevel;
+    if !obs.has_filter_overrides() {
+        return None;
+    }
+    const OTEL_OFF: &str = "opentelemetry=off,opentelemetry_sdk=off";
+    let base = match obs.log.level {
+        LogLevel::Verbose => format!("warn,jarvy=debug,{OTEL_OFF}"),
+        LogLevel::Debug => format!("debug,{OTEL_OFF}"),
+        LogLevel::Trace => format!("trace,{OTEL_OFF}"),
+        // Quiet / Normal reach here only via a `--debug-filter` module
+        // (level itself isn't a filter override); keep the default floor.
+        LogLevel::Quiet | LogLevel::Normal => {
+            format!("warn,jarvy=info,{OTEL_OFF}")
+        }
+    };
+    Some(match obs.log.filter.as_deref() {
+        Some(module) => format!("{base},{module}=trace"),
+        None => base,
+    })
+}
+
+/// Build a boxed console `fmt` layer, resolving the JSON/text and
+/// filter axes in one place so the four sink variants (stderr/file ×
+/// text/json) don't drift (perf review F4, maintainability F3).
+fn boxed_console_layer<S, W>(
+    json: bool,
+    ansi: bool,
+    writer: W,
+    filter: Option<LevelFilter>,
+) -> Box<dyn tracing_subscriber::Layer<S> + Send + Sync>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    W: for<'a> tracing_subscriber::fmt::MakeWriter<'a> + Send + Sync + 'static,
+{
+    let layer = tracing_subscriber::fmt::layer()
+        .with_ansi(ansi)
+        .with_writer(writer);
+    if json {
+        layer.json().with_filter(filter).boxed()
+    } else {
+        layer.with_filter(filter).boxed()
+    }
+}
+
 fn bootstrap_state_cell() -> &'static std::sync::RwLock<TelemetryBootstrapState> {
     BOOTSTRAP_STATE.get_or_init(|| std::sync::RwLock::new(TelemetryBootstrapState::Disabled))
 }
@@ -74,7 +147,10 @@ fn set_bootstrap_state(state: TelemetryBootstrapState) {
 /// `telemetry::init` gated metrics/traces on the merged config,
 /// producing the bug where `JARVY_TELEMETRY=1` env-only override left
 /// the logger layer permanently disabled.
-pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
+pub fn init_logging(
+    cfg: &crate::telemetry::TelemetryConfig,
+    obs: Option<&crate::observability::ObservabilityConfig>,
+) {
     let enable_analytics = cfg.enabled && cfg.logs;
     // Registry-level EnvFilter so dependency-crate `info!`/`debug!`
     // events from `dirs`, `ureq`, `opentelemetry_sdk`, `rustls`, etc.
@@ -89,25 +165,95 @@ pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
     // successful command (e.g. `jarvy update`), making it look like the
     // command itself failed. The exporter's own degradation is already
     // surfaced via `jarvy telemetry status` (`TelemetryBootstrapState`).
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("warn,jarvy=info,opentelemetry=off,opentelemetry_sdk=off")
+    const DEFAULT_FILTER: &str = "warn,jarvy=info,opentelemetry=off,opentelemetry_sdk=off";
+
+    // Registry-level filter. `-v/-vv/-vvv` / `--debug-filter` widen it so
+    // the extra events reach the console; `--quiet` does NOT narrow it
+    // (that's a console-only cap below) so file + OTLP sinks keep their
+    // INFO floor. Invalid `--debug-filter` directives warn instead of
+    // silently vanishing (observability review F11).
+    let cli_directives: Option<String> = obs.and_then(cli_log_directives);
+    let env_filter = match cli_directives {
+        Some(directives) => match EnvFilter::builder().parse(&directives) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Warning: invalid log filter ({e}); using default");
+                EnvFilter::new(DEFAULT_FILTER)
+            }
+        },
+        None => {
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
+        }
+    };
+
+    // Console tracing always goes to stderr (or a `--log-file`), never
+    // stdout — stdout is reserved for command payloads (`--format json`)
+    // that downstream consumers pipe. `--log-format json` switches the
+    // sink to JSON; `--log-file FILE` redirects it to a non-blocking
+    // file writer.
+    //
+    // `--quiet` caps the console at ERROR via a per-layer filter — it
+    // does not touch the registry filter, so telemetry sinks are
+    // unaffected (observability review F2). When `--log-file` is set,
+    // an ERROR-only stderr layer is still added so failures stay visible
+    // at the terminal (observability review F4, QA F3).
+    type BaseSubscriber = tracing_subscriber::layer::Layered<EnvFilter, Registry>;
+    let mut console_layers: Vec<Box<dyn Layer<BaseSubscriber> + Send + Sync>> = Vec::new();
+
+    let json_console = obs.is_some_and(|o| o.log.format == crate::observability::LogFormat::Json);
+    let console_quiet = obs
+        .map(|o| o.log.level == crate::observability::LogLevel::Quiet)
+        .unwrap_or(false);
+    let quiet_filter = console_quiet.then_some(LevelFilter::ERROR);
+
+    let console_file = obs.and_then(|o| o.log.file.as_deref()).and_then(|path| {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            Ok(f) => Some(f),
+            Err(e) => {
+                eprintln!("Warning: could not open --log-file {path}: {e}; logging to stderr");
+                None
+            }
+        }
     });
 
-    // Console output goes to stderr at every level. Stdout is reserved
-    // for command output (e.g. `jarvy tools --index --format json`,
-    // `jarvy explain --format json`) so downstream consumers can pipe
-    // a clean payload. A non-error tracing event arriving on stdout
-    // ahead of the `println!` of the JSON body breaks the parser —
-    // `scripts/gen-docs.sh` hit exactly this in CI envs where the
-    // default `warn,jarvy=info` filter let registry-load `info!()`
-    // events fire before the index emit.
-    let stderr_non_error = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_filter(FilterFn::new(|meta| meta.level() < &Level::ERROR));
-
-    let stderr_errors = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_filter(LevelFilter::ERROR);
+    match console_file {
+        Some(file) => {
+            let (non_blocking, guard) = tracing_appender::non_blocking(file);
+            if let Ok(mut slot) = EXTRA_LOG_GUARD.lock() {
+                *slot = Some(guard);
+            }
+            console_layers.push(boxed_console_layer(
+                json_console,
+                false,
+                non_blocking,
+                quiet_filter,
+            ));
+            // Errors must stay visible on the terminal even when the
+            // primary console sink is redirected to a file.
+            console_layers.push(boxed_console_layer(
+                json_console,
+                true,
+                std::io::stderr,
+                Some(LevelFilter::ERROR),
+            ));
+        }
+        None => {
+            // Single stderr layer (the old non-error/error split routed
+            // both halves to stderr and the non-error half used an
+            // inverted `level < ERROR` predicate that matched nothing —
+            // observability review F1 / perf F4).
+            console_layers.push(boxed_console_layer(
+                json_console,
+                true,
+                std::io::stderr,
+                quiet_filter,
+            ));
+        }
+    }
 
     // File layer at ~/.jarvy/logs/jarvy.log (daily rotation, JSON).
     //
@@ -188,8 +334,7 @@ pub fn init_logging(cfg: &crate::telemetry::TelemetryConfig) {
 
     let subscriber = Registry::default()
         .with(env_filter)
-        .with(stderr_non_error)
-        .with(stderr_errors)
+        .with(console_layers)
         .with(file_layer)
         .with(otel_layer_opt);
 
@@ -230,10 +375,13 @@ pub fn shutdown_logging() {
         let _ = provider.force_flush();
         let _ = provider.shutdown();
     }
-    // Drop the file-logger WorkerGuard so the background-thread writer
-    // flushes pending lines to ~/.jarvy/logs/jarvy.log before
-    // `std::process::exit` kills it.
+    // Drop the file-logger WorkerGuards so the background-thread writers
+    // flush pending lines (jarvy.log + any `--log-file` sink) before
+    // `std::process::exit` kills them.
     if let Ok(mut slot) = FILE_LOGGER_GUARD.lock() {
+        slot.take();
+    }
+    if let Ok(mut slot) = EXTRA_LOG_GUARD.lock() {
         slot.take();
     }
 }
@@ -464,5 +612,72 @@ mod tests {
     #[test]
     fn parse_host_port_returns_none_when_port_not_numeric() {
         assert_eq!(parse_host_port("http://127.0.0.1:abc"), None);
+    }
+
+    // --- CLI log-directive mapping (observability/QA review) ---
+    //
+    // These pin the registry-filter behavior of the setup log flags.
+    // The flags shipped once as parsed-but-dropped dead code; this table
+    // is the regression guard that they stay wired and keep the
+    // opentelemetry-off directives + RUST_LOG-precedence rules.
+    use crate::observability::ObservabilityConfig;
+
+    fn obs(quiet: bool, verbose: u8, filter: Option<&str>) -> ObservabilityConfig {
+        ObservabilityConfig::from_flags(quiet, verbose, None, filter, None)
+    }
+
+    #[test]
+    fn cli_directives_none_for_default_and_quiet() {
+        // Neither plain defaults nor --quiet widen the registry filter;
+        // --quiet is a console-only cap, so RUST_LOG/default must govern
+        // (otherwise -q would starve jarvy.log + OTLP — review F2).
+        assert_eq!(cli_log_directives(&obs(false, 0, None)), None);
+        assert_eq!(cli_log_directives(&obs(true, 0, None)), None);
+    }
+
+    #[test]
+    fn cli_directives_widen_for_verbosity() {
+        assert_eq!(
+            cli_log_directives(&obs(false, 1, None)).as_deref(),
+            Some("warn,jarvy=debug,opentelemetry=off,opentelemetry_sdk=off")
+        );
+        assert_eq!(
+            cli_log_directives(&obs(false, 2, None)).as_deref(),
+            Some("debug,opentelemetry=off,opentelemetry_sdk=off")
+        );
+    }
+
+    #[test]
+    fn cli_directives_trace_keeps_opentelemetry_off() {
+        // -vvv must NOT resurface exporter chatter / feedback loop (F3).
+        let d = cli_log_directives(&obs(false, 3, None)).unwrap();
+        assert!(d.starts_with("trace"));
+        assert!(d.contains("opentelemetry=off"));
+        assert!(d.contains("opentelemetry_sdk=off"));
+    }
+
+    #[test]
+    fn cli_directives_append_debug_filter_module() {
+        // --debug-filter widens even at Normal level, appended as a trace
+        // target; the result must still parse as an EnvFilter.
+        let d = cli_log_directives(&obs(false, 0, Some("jarvy::tools::docker"))).unwrap();
+        assert!(d.ends_with("jarvy::tools::docker=trace"));
+        assert!(EnvFilter::builder().parse(&d).is_ok());
+    }
+
+    #[test]
+    fn cli_directives_quiet_beats_verbose_in_from_flags() {
+        // -q -vv resolves to Quiet (console-only), not a widened filter.
+        assert_eq!(cli_log_directives(&obs(true, 2, None)), None);
+    }
+
+    #[test]
+    fn profile_report_serializes_durations_as_ms() {
+        // --profile-output JSON must use integer *_ms, not {secs,nanos}
+        // (review F7). Empty report still exercises total_duration_ms.
+        let report = crate::observability::Profiler::new().report();
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("total_duration_ms"));
+        assert!(!json.contains("nanos"));
     }
 }

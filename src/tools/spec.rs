@@ -242,6 +242,11 @@ impl DefaultHook {
             Some("linux") => cfg!(target_os = "linux"),
             Some("windows") => cfg!(target_os = "windows"),
             Some("bsd") | Some("freebsd") => cfg!(target_os = "freebsd"),
+            // POSIX-shell hooks on tools that also install on Windows —
+            // hooks run under PowerShell there, so `[ ... ]`/`$HOME`
+            // scripts must skip rather than fail every setup with
+            // advisory warnings.
+            Some("unix") => cfg!(unix),
             Some(_) => false,
         }
     }
@@ -791,7 +796,10 @@ impl ToolIndex {
 
 /// Manually registered tools that don't use the `define_tool!` macro.
 /// These tools have custom installation logic and are registered in `register_all()`.
-const MANUAL_TOOLS: &[(&str, &str)] = &[("nvm", "nvm"), ("rust", "rustc"), ("brew", "brew")];
+/// (`rust` migrated to `define_tool!` + `custom_install`, so it is now
+/// collected via `iter_tools()` — listing it here too produced a
+/// duplicate, null-platform index entry, QA review F4.)
+const MANUAL_TOOLS: &[(&str, &str)] = &[("nvm", "nvm"), ("brew", "brew")];
 
 /// Generate the complete tool index by collecting all tools.
 ///

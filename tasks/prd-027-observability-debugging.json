@@ -3,7 +3,7 @@
   "parent_prd": "PRD-027",
   "title": "Observability & Debugging",
   "description": "Add comprehensive observability and debugging features including structured logging, performance profiling, network tracing, and diagnostic tools to help users understand what Jarvy is doing, diagnose failures, and optimize performance",
-  "status": "completed",
+  "status": "in_progress",
   "completionNote": "Observability shipped at src/observability/ (logging.rs, sanitizer.rs, telemetry_gate.rs, network_trace.rs, profiler.rs, bundle.rs). Tracing-subscriber + OTLP wiring in src/telemetry.rs. Ticket/debug bundle at src/ticket/.",
   "completedAt": "2026-06-27T00:00:00Z",
   "priority": "medium",
@@ -38,14 +38,17 @@
       "description": "Set up src/observability/ module with core files and exports",
       "passed": false,
       "priority": "high",
-      "files": ["src/observability/mod.rs"],
+      "files": [
+        "src/observability/mod.rs"
+      ],
       "subtasks": [
         "Create src/observability/ directory",
         "Create mod.rs with module exports",
         "Define ObservabilityConfig struct",
         "Add feature flags for optional components",
         "Wire up module in src/main.rs"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T2",
@@ -53,7 +56,9 @@
       "description": "Set up tracing-based logging with multiple output formats",
       "passed": false,
       "priority": "high",
-      "files": ["src/observability/logging.rs"],
+      "files": [
+        "src/observability/logging.rs"
+      ],
       "subtasks": [
         "Configure tracing-subscriber with EnvFilter",
         "Implement LogLevel enum (Quiet, Normal, Verbose, Debug, Trace)",
@@ -61,7 +66,8 @@
         "Implement module-specific filtering (--debug-filter)",
         "Add file output writer (--log-file)",
         "Integrate with existing CLI flags"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T3",
@@ -69,7 +75,10 @@
       "description": "Add --debug, --trace, --log-format, --log-file flags to commands",
       "passed": false,
       "priority": "high",
-      "files": ["src/main.rs", "src/commands/setup.rs"],
+      "files": [
+        "src/main.rs",
+        "src/commands/setup.rs"
+      ],
       "subtasks": [
         "Add --quiet flag (errors only)",
         "Add --verbose / -v flag (warnings)",
@@ -79,7 +88,8 @@
         "Add --debug-filter <module> flag",
         "Add --log-file <path> flag",
         "Wire flags to logging initialization"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T4",
@@ -87,7 +97,9 @@
       "description": "Track timing of all operations with phase breakdown",
       "passed": false,
       "priority": "high",
-      "files": ["src/observability/profiler.rs"],
+      "files": [
+        "src/observability/profiler.rs"
+      ],
       "subtasks": [
         "Create Profiler struct with phase tracking",
         "Implement start_phase() and end_phase() methods",
@@ -96,7 +108,8 @@
         "Generate ASCII bar charts for visualization",
         "Create ProfileReport struct for JSON export",
         "Add generate_recommendations() for optimization tips"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T5",
@@ -104,7 +117,10 @@
       "description": "Add --profile flag and profile commands",
       "passed": false,
       "priority": "high",
-      "files": ["src/main.rs", "src/commands/profile.rs"],
+      "files": [
+        "src/main.rs",
+        "src/commands/profile.rs"
+      ],
       "subtasks": [
         "Add --profile flag to setup command",
         "Add --profile-output <path> flag for JSON export",
@@ -112,7 +128,8 @@
         "Create jarvy profile compare <before> <after> subcommand",
         "Display profile summary at end of operations",
         "Wire profiler into tool installation pipeline"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T6",
@@ -120,7 +137,9 @@
       "description": "Track all HTTP requests with detailed timing",
       "passed": false,
       "priority": "medium",
-      "files": ["src/observability/network_trace.rs"],
+      "files": [
+        "src/observability/network_trace.rs"
+      ],
       "subtasks": [
         "Create NetworkTiming struct (DNS, connect, TLS, transfer)",
         "Create NetworkTrace collector",
@@ -129,7 +148,9 @@
         "Calculate transfer speeds",
         "Aggregate by domain for summary",
         "Create NetworkSummary report struct"
-      ]
+      ],
+      "status": "wont_do",
+      "note": "network_trace module deleted in observability cleanup — no CLI surface or callers after 2 release cycles"
     },
     {
       "id": "T7",
@@ -137,14 +158,19 @@
       "description": "Add --trace-network flag and network analysis command",
       "passed": false,
       "priority": "medium",
-      "files": ["src/main.rs", "src/commands/network.rs"],
+      "files": [
+        "src/main.rs",
+        "src/commands/network.rs"
+      ],
       "subtasks": [
         "Add --trace-network flag to setup command",
         "Add --network-log <path> flag for trace export",
         "Create jarvy network analyze <file> subcommand",
         "Display real-time request logging when enabled",
         "Show summary statistics at end"
-      ]
+      ],
+      "status": "wont_do",
+      "note": "network_trace module deleted in observability cleanup — no CLI surface or callers after 2 release cycles"
     },
     {
       "id": "T8",
@@ -152,7 +178,9 @@
       "description": "Redact sensitive data from logs and exports",
       "passed": false,
       "priority": "high",
-      "files": ["src/observability/sanitizer.rs"],
+      "files": [
+        "src/observability/sanitizer.rs"
+      ],
       "subtasks": [
         "Define sensitive data patterns (API keys, tokens, passwords)",
         "Add Bearer token redaction",
@@ -161,7 +189,8 @@
         "Create Sanitizer struct with regex patterns",
         "Implement sanitize() method",
         "Add configurable redaction level"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T9",
@@ -169,7 +198,9 @@
       "description": "Implement jarvy diagnose <tool> for deep tool diagnosis",
       "passed": false,
       "priority": "high",
-      "files": ["src/commands/diagnose.rs"],
+      "files": [
+        "src/commands/diagnose.rs"
+      ],
       "subtasks": [
         "Create diagnose subcommand with tool argument",
         "Check installation status and location",
@@ -179,7 +210,8 @@
         "Test network connectivity (registries)",
         "Run tool-specific health checks",
         "Display formatted diagnostic report"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T10",
@@ -187,7 +219,9 @@
       "description": "Implement automated remediation for common issues",
       "passed": false,
       "priority": "medium",
-      "files": ["src/commands/diagnose.rs"],
+      "files": [
+        "src/commands/diagnose.rs"
+      ],
       "subtasks": [
         "Detect common issues (PATH, shell integration)",
         "Generate fix suggestions with commands",
@@ -195,7 +229,8 @@
         "Add confirmation prompts before applying fixes",
         "Handle shell config file modifications safely",
         "Report fix results"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T11",
@@ -203,7 +238,10 @@
       "description": "Add --extended flag for comprehensive health dashboard",
       "passed": false,
       "priority": "medium",
-      "files": ["src/commands/doctor.rs", "src/doctor/dashboard.rs"],
+      "files": [
+        "src/commands/doctor.rs",
+        "src/doctor/dashboard.rs"
+      ],
       "subtasks": [
         "Create dashboard.rs for extended output",
         "Add system overview (OS, shell, uptime, load, memory, disk)",
@@ -213,7 +251,8 @@
         "Add performance metrics section",
         "Generate actionable recommendations",
         "Create --report flag for markdown export"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T12",
@@ -221,7 +260,9 @@
       "description": "Track and persist performance metrics over time",
       "passed": false,
       "priority": "low",
-      "files": ["src/doctor/metrics.rs"],
+      "files": [
+        "src/doctor/metrics.rs"
+      ],
       "subtasks": [
         "Create MetricsStore for historical data",
         "Store setup duration per run",
@@ -229,7 +270,8 @@
         "Calculate average setup times",
         "Persist metrics to ~/.jarvy/metrics.json",
         "Add trend analysis for dashboard"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T13",
@@ -237,7 +279,10 @@
       "description": "Create jarvy diagnose --export for support bundles",
       "passed": false,
       "priority": "medium",
-      "files": ["src/commands/diagnose.rs", "src/observability/bundle.rs"],
+      "files": [
+        "src/commands/diagnose.rs",
+        "src/observability/bundle.rs"
+      ],
       "subtasks": [
         "Create bundle.rs for export logic",
         "Collect system information",
@@ -249,7 +294,9 @@
         "Create ZIP archive with zip crate",
         "Add --scope flag for selective export",
         "Add --include-history flag for operation history"
-      ]
+      ],
+      "status": "completed",
+      "note": "shipped as src/ticket/ ZIP bundler (jarvy ticket create) + diagnose --export; separate DiagnosticBundle module deleted as duplicate"
     },
     {
       "id": "T14",
@@ -257,14 +304,18 @@
       "description": "Allow checking specific categories with --check flag",
       "passed": false,
       "priority": "low",
-      "files": ["src/commands/doctor.rs"],
+      "files": [
+        "src/commands/doctor.rs"
+      ],
       "subtasks": [
         "Add --check <category> flag",
         "Implement tools category check",
         "Implement network category check",
         "Implement performance category check",
         "Allow multiple categories"
-      ]
+      ],
+      "status": "open",
+      "note": "doctor filters by --tools only; no category filtering"
     },
     {
       "id": "T15",
@@ -272,7 +323,11 @@
       "description": "Test observability components in isolation",
       "passed": false,
       "priority": "medium",
-      "files": ["src/observability/logging.rs", "src/observability/profiler.rs", "src/observability/sanitizer.rs"],
+      "files": [
+        "src/observability/logging.rs",
+        "src/observability/profiler.rs",
+        "src/observability/sanitizer.rs"
+      ],
       "subtasks": [
         "Test log level filtering",
         "Test JSON log formatting",
@@ -281,7 +336,8 @@
         "Test sanitizer pattern matching",
         "Test sensitive data redaction",
         "Test network timing calculation"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T16",
@@ -289,7 +345,10 @@
       "description": "Test observability features end-to-end",
       "passed": false,
       "priority": "medium",
-      "files": ["tests/observability_integration.rs", "tests/diagnose_integration.rs"],
+      "files": [
+        "tests/observability_integration.rs",
+        "tests/diagnose_integration.rs"
+      ],
       "subtasks": [
         "Test --debug flag produces debug output",
         "Test --log-format json produces valid JSON",
@@ -298,7 +357,9 @@
         "Test jarvy doctor --extended dashboard",
         "Test jarvy diagnose --export creates ZIP",
         "Test bundle contains expected files"
-      ]
+      ],
+      "status": "open",
+      "note": "only doctor covered in tests/cli_dispatch.rs; no diagnose/profiler integration tests"
     },
     {
       "id": "T17",
@@ -306,7 +367,11 @@
       "description": "Document all observability features",
       "passed": false,
       "priority": "low",
-      "files": ["docs/debugging.md", "CLAUDE.md", "README.md"],
+      "files": [
+        "docs/debugging.md",
+        "CLAUDE.md",
+        "README.md"
+      ],
       "subtasks": [
         "Create docs/debugging.md guide",
         "Document all CLI flags",
@@ -315,7 +380,8 @@
         "Document bundle export for support",
         "Update CLAUDE.md with debugging conventions",
         "Add observability section to README"
-      ]
+      ],
+      "status": "completed"
     }
   ],
   "implementation_notes": {
@@ -401,5 +467,6 @@
     "integration_tests": "1 day",
     "documentation": "1 day",
     "total": "19 days"
-  }
+  },
+  "reconciled": "2026-07-08: verified against codebase + observability cleanup branch. Flags (-v/-q/--profile/--log-format/--log-file/--debug-filter) now wired through main.rs/dispatch.rs (were parsed-but-dropped). Profiler wired into run_setup phases. NetworkTracer + DiagnosticBundle modules DELETED (bundle duplicated src/ticket/; tracer had no callers — resurrect from git if needed). Open: doctor category filtering (T14), integration tests for diagnose/profiler (T16)."
 }

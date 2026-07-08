@@ -9,9 +9,9 @@
   "scope": "v1 ships the shared library_registry module + manifest schema + ai_hooks/mcp_register/skills consumer wiring. Cosign sig verification and `jarvy library {sync,list,show,clean}` subcommand deferred to phases 5-6.",
   "completionNote": "src/library_registry/ module shipped: manifest (tagged kind: ai_hook|mcp_server|skill), HTTPS-bounded fetch, on-disk cache at ~/.jarvy/library.d/<sha256-of-url>/, in-process resolver. Wired into [ai_hooks] library_sources (built-in LIBRARY wins, library fallback resolves via use=\"...\"), [mcp_register] library_sources (use=\"...\" + local override semantics on env/args), [skills] full pipeline (sha256-verified SKILL.md fetch + .jarvy-skill.json sidecar). Remote-config trust gate uniform across all three consumers via library_registry::check_origin. docs/library-registry.md + docs/skills.md ship.",
   "progress": {
-    "completed": 12,
+    "completed": 18,
     "total": 20,
-    "percentage": 60
+    "percentage": 90
   },
   "follow_up": [
     "Cosign signature verification + library.signature_* events (phase 5)",
@@ -20,5 +20,6 @@
     "Companion file fetch for skill items (today only SKILL.md lands)",
     "Public reference library (community-maintained manifest of common hooks)",
     "Integration test harness against a local manifest fixture using JARVY_LIBRARY_ALLOW_INSECURE_FETCH"
-  ]
+  ],
+  "reconciled": "2026-07-08: scope note said phases 5-6 deferred, but both SHIPPED — cosign verification emits library.signature.verified (src/library_registry/mod.rs:368) and jarvy library subcommand exists (src/commands/library_cmd.rs). Integration harness exists (test-bypass JARVY_LIBRARY_ALLOW_INSECURE_FETCH tests). Remaining: companion file fetch (ai_hook bash_url/powershell_url + skill companions), public reference library manifest."
 }

@@ -27,8 +27,9 @@ Shell out to the Codex CLI. Do NOT guess flags — use exactly these commands
 # Uncommitted changes (staged + unstaged + untracked)
 codex exec review --uncommitted -o "$SCRATCH/codex-review.txt" "<one-sentence focus, optional>"
 
-# Branch diff vs a base branch
-codex exec review --base main -o "$SCRATCH/codex-review.txt" "<one-sentence focus, optional>"
+# Branch diff vs a base branch — NOTE: --base cannot be combined with a
+# focus prompt (clap conflict, verified codex-cli 0.135.0); run it bare
+codex exec review --base main -o "$SCRATCH/codex-review.txt"
 
 # A single commit
 codex exec review --commit <sha> -o "$SCRATCH/codex-review.txt" "<one-sentence focus, optional>"

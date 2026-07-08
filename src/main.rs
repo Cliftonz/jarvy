@@ -169,7 +169,31 @@ fn main() {
         telemetry_config.enabled = false;
     }
 
-    init_logging(&telemetry_config);
+    // Observability flags only exist on `jarvy setup` today; other
+    // commands get default logging. Built here (before init_logging)
+    // so `-v/-q/--log-format/--log-file/--debug-filter` actually
+    // shape the subscriber — previously these flags parsed but were
+    // silently dropped (`ObservabilityConfig::from_flags` had zero
+    // callers).
+    let obs_config = match &cli.command {
+        Some(Commands::Setup {
+            quiet,
+            verbose,
+            log_format,
+            log_file,
+            debug_filter,
+            ..
+        }) => Some(observability::ObservabilityConfig::from_flags(
+            *quiet,
+            *verbose,
+            log_format.as_deref(),
+            debug_filter.as_deref(),
+            log_file.as_deref(),
+        )),
+        _ => None,
+    };
+
+    init_logging(&telemetry_config, obs_config.as_ref());
     telemetry::init(telemetry_config);
 
     // If `initialize_from_disk` rendered the first-run / legacy-upgrade

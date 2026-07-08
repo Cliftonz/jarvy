@@ -24,6 +24,12 @@ use std::process::Command;
 /// non-shell-init hook bodies (git, kubectl).
 const TIER_1: &[&str] = &[
     "starship", "zoxide", "direnv", "atuin", "fzf", "git", "kubectl",
+    // File-mutating hooks added with the hook-singles work — the exact
+    // class this harness guards (rc-append / config-write idempotency).
+    // `rust` is intentionally excluded: its hook shells out to
+    // `rustup component add`, whose state lands in a rustup home and is
+    // environment-dependent, so it isn't a pure `$HOME`-snapshot test.
+    "kubectx", "nvim", "tmux",
 ];
 
 fn bash_available() -> bool {
@@ -87,6 +93,11 @@ fn assert_idempotent(tool: &str, script: &str) {
     fs::write(home.join(".bashrc"), b"# pre-existing\n").unwrap();
     fs::write(home.join(".zshrc"), b"# pre-existing\n").unwrap();
     fs::write(home.join(".profile"), b"# pre-existing\n").unwrap();
+
+    // Pre-seed the TPM checkout so the tmux hook takes its `.tmux.conf`
+    // append branch (the idempotency-relevant path) instead of a network
+    // `git clone`. The `[ -d tpm ]` guard makes the clone a no-op.
+    fs::create_dir_all(home.join(".tmux/plugins/tpm")).unwrap();
 
     run_hook(script, home);
     let snap1 = snapshot(home);

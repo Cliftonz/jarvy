@@ -3,7 +3,7 @@
   "parent_prd": "PRD-014",
   "title": "Real-World Testing and Example Configurations",
   "description": "Establish comprehensive real-world testing across all supported platforms and create example jarvy.toml configurations for common developer personas",
-  "status": "completed",
+  "status": "in_progress",
   "completionNote": "examples/ contains 24 persona-based configs (frontend, backend, devops, data, mobile, fullstack, rust, k8s, dotnet, java, ruby, python). Smoke tests at tests/e2e_base_tools.rs, tests/examples_validation.rs. Real-world CI at .github/workflows/e2e-cross-platform.yml, tool-e2e.yml.",
   "completedAt": "2026-06-27T00:00:00Z",
   "priority": "high",
@@ -26,12 +26,16 @@
       "description": "Create examples/ directory with README.md",
       "passed": false,
       "priority": "high",
-      "files": ["examples/README.md"],
+      "files": [
+        "examples/README.md"
+      ],
       "subtasks": [
         "Create examples/ directory",
         "Write README.md with usage instructions",
         "Document each example persona"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T2",
@@ -39,12 +43,16 @@
       "description": "Create minimal.toml for quick-start testing",
       "passed": false,
       "priority": "high",
-      "files": ["examples/minimal.toml"],
+      "files": [
+        "examples/minimal.toml"
+      ],
       "subtasks": [
         "Define minimal tool set (git, jq, ripgrep)",
         "Add inline comments explaining config",
         "Ensure config works on all platforms"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T3",
@@ -52,12 +60,16 @@
       "description": "Example config for web frontend developers",
       "passed": false,
       "priority": "medium",
-      "files": ["examples/frontend-developer.toml"],
+      "files": [
+        "examples/frontend-developer.toml"
+      ],
       "subtasks": [
         "Include Node.js, pnpm, TypeScript tooling",
         "Add browser testing tools",
         "Include code quality tools (prettier, eslint)"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T4",
@@ -65,12 +77,16 @@
       "description": "Example config for backend/API developers",
       "passed": false,
       "priority": "medium",
-      "files": ["examples/backend-developer.toml"],
+      "files": [
+        "examples/backend-developer.toml"
+      ],
       "subtasks": [
         "Include Go, Rust, Docker",
         "Add database tools (psql, mysql client)",
         "Include API testing tools"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T5",
@@ -78,12 +94,16 @@
       "description": "Example config for DevOps/Platform engineers",
       "passed": false,
       "priority": "medium",
-      "files": ["examples/devops-engineer.toml"],
+      "files": [
+        "examples/devops-engineer.toml"
+      ],
       "subtasks": [
         "Include Terraform, kubectl, helm",
         "Add cloud CLIs (AWS, GCP, Azure)",
         "Include container and security tools"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T6",
@@ -91,12 +111,16 @@
       "description": "Example config for data science workflows",
       "passed": false,
       "priority": "medium",
-      "files": ["examples/data-scientist.toml"],
+      "files": [
+        "examples/data-scientist.toml"
+      ],
       "subtasks": [
         "Include Python, conda/mamba",
         "Add Jupyter and R",
         "Include data processing tools"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T7",
@@ -104,12 +128,16 @@
       "description": "Example config for iOS/Android developers",
       "passed": false,
       "priority": "medium",
-      "files": ["examples/mobile-developer.toml"],
+      "files": [
+        "examples/mobile-developer.toml"
+      ],
       "subtasks": [
         "Include Flutter, Android SDK tools",
         "Add Xcode CLI tools for macOS",
         "Include mobile testing utilities"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T8",
@@ -117,12 +145,16 @@
       "description": "Combined frontend + backend config",
       "passed": false,
       "priority": "low",
-      "files": ["examples/full-stack.toml"],
+      "files": [
+        "examples/full-stack.toml"
+      ],
       "subtasks": [
         "Combine frontend and backend tools",
         "Include Docker for local services",
         "Add services section for databases"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T9",
@@ -130,12 +162,16 @@
       "description": "Example config for Rust ecosystem",
       "passed": false,
       "priority": "low",
-      "files": ["examples/rust-developer.toml"],
+      "files": [
+        "examples/rust-developer.toml"
+      ],
       "subtasks": [
         "Include rustup, cargo tools",
         "Add code quality (clippy, rustfmt)",
         "Include debugging and profiling tools"
-      ]
+      ],
+      "status": "completed",
+      "note": "superseded: framework-based examples/ gallery instead of persona files"
     },
     {
       "id": "T10",
@@ -143,7 +179,9 @@
       "description": "Create smoke test suite for critical paths",
       "passed": false,
       "priority": "high",
-      "files": ["tests/smoke_tests.rs"],
+      "files": [
+        "tests/smoke_tests.rs"
+      ],
       "subtasks": [
         "Test jarvy setup --dry-run",
         "Test jarvy tools command",
@@ -151,7 +189,8 @@
         "Test jarvy bootstrap --dry-run",
         "Test invalid config handling",
         "Add platform-specific tests"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T11",
@@ -159,14 +198,18 @@
       "description": "GitHub Actions workflow for cross-platform testing",
       "passed": false,
       "priority": "high",
-      "files": [".github/workflows/real-world-tests.yml"],
+      "files": [
+        ".github/workflows/real-world-tests.yml"
+      ],
       "subtasks": [
         "Add macOS Intel and ARM runners",
         "Add Ubuntu 22.04 and 24.04",
         "Add Windows latest",
         "Add Linux distro containers (Fedora, Arch)",
         "Configure Rust caching"
-      ]
+      ],
+      "status": "completed",
+      "note": "container-distros job added to e2e-cross-platform.yml: fedora:40, archlinux, alpine:3.20 on ubuntu-latest containers. FreeBSD remains uncovered (no Linux-container path)."
     },
     {
       "id": "T12",
@@ -174,12 +217,15 @@
       "description": "CI job to validate all example configs",
       "passed": false,
       "priority": "medium",
-      "files": [".github/workflows/real-world-tests.yml"],
+      "files": [
+        ".github/workflows/real-world-tests.yml"
+      ],
       "subtasks": [
         "Loop through all examples/*.toml files",
         "Run jarvy setup --dry-run on each",
         "Fail CI if any config is invalid"
-      ]
+      ],
+      "status": "completed"
     },
     {
       "id": "T13",
@@ -187,13 +233,17 @@
       "description": "Cache tool installations in CI for faster runs",
       "passed": false,
       "priority": "medium",
-      "files": [".github/workflows/real-world-tests.yml"],
+      "files": [
+        ".github/workflows/real-world-tests.yml"
+      ],
       "subtasks": [
         "Define cache paths per platform",
         "Use jarvy.toml hash in cache key",
         "Add cache restore and save steps",
         "Verify cache hit rate"
-      ]
+      ],
+      "status": "wont_do",
+      "note": "caching installed tools in e2e CI would defeat the install-testing purpose; Swatinem/rust-cache already covers builds. Reconsider only if a user-facing CI template ships (PRD-017 phase 2)."
     },
     {
       "id": "T14",
@@ -201,12 +251,16 @@
       "description": "Document testing strategy and examples",
       "passed": false,
       "priority": "low",
-      "files": ["CONTRIBUTING.md", "README.md"],
+      "files": [
+        "CONTRIBUTING.md",
+        "README.md"
+      ],
       "subtasks": [
         "Add testing section to CONTRIBUTING.md",
         "Link to examples from README.md",
         "Document smoke test expectations"
-      ]
+      ],
+      "status": "completed"
     }
   ],
   "implementation_notes": {
@@ -216,9 +270,19 @@
     "example_maintenance": "CI validation ensures examples stay parseable as tool registry changes"
   },
   "platform_matrix": {
-    "macos": ["macos-13 (Intel)", "macos-14 (ARM)"],
-    "linux": ["ubuntu-22.04", "ubuntu-24.04", "fedora:latest", "archlinux:latest"],
-    "windows": ["windows-latest (Windows 11)"]
+    "macos": [
+      "macos-13 (Intel)",
+      "macos-14 (ARM)"
+    ],
+    "linux": [
+      "ubuntu-22.04",
+      "ubuntu-24.04",
+      "fedora:latest",
+      "archlinux:latest"
+    ],
+    "windows": [
+      "windows-latest (Windows 11)"
+    ]
   },
   "example_personas": [
     "minimal",
@@ -250,5 +314,6 @@
   ],
   "related_prds": [
     "PRD-006 - Testing Infrastructure Improvements"
-  ]
+  ],
+  "reconciled": "2026-07-08: verified against codebase. Persona configs superseded by framework-based examples/ gallery (20+ dirs) + tests/examples_validation.rs. Open: full distro CI matrix (Fedora/Arch/Alpine commented out in e2e-cross-platform.yml), tool-install caching in CI. | 2026-07-08 later: T11 closed via container-distros job; T13 wont_do (cache would undermine e2e intent)."
 }
