@@ -38,6 +38,13 @@ pub enum AiHookError {
     #[error("invalid hook entry '{name}': {reason}")]
     InvalidEntry { name: String, reason: String },
 
+    #[error("failed to fetch remote body for library hook '{name}': {source}")]
+    LibraryCompanion {
+        name: String,
+        #[source]
+        source: crate::library_registry::companion::CompanionError,
+    },
+
     #[error(
         "settings file at {path} is a symlink — refusing to write through it. Remove the symlink or set `JARVY_HOME` to a clean location."
     )]
@@ -64,6 +71,7 @@ impl AiHookError {
             Self::UnsupportedEvent { .. } => "unsupported_event",
             Self::UnsupportedPlatform(_) => "unsupported_platform",
             Self::InvalidEntry { .. } => "invalid_entry",
+            Self::LibraryCompanion { .. } => "library_companion",
             Self::SettingsPathIsSymlink { .. } => "settings_path_is_symlink",
         }
     }

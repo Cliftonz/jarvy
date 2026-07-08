@@ -135,6 +135,11 @@ path = "tests/library_registry_git_e2e.rs"
 required-features = ["test-bypass"]
 
 [[test]]
+name = "library_companion_fetch"
+path = "tests/library_companion_fetch.rs"
+required-features = ["test-bypass"]
+
+[[test]]
 name = "registry_e2e_lifecycle"
 path = "tests/registry_e2e_lifecycle.rs"
 required-features = ["test-bypass"]

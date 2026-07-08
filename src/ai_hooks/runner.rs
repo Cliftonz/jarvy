@@ -293,16 +293,11 @@ fn resolve_one<'cfg>(
         // PRD-054 third-party library_sources fallback. The
         // `library_registry::sync` call must have run before resolve so
         // the in-process cache is populated; `apply` does this. Inline
-        // `bash` bodies are honored directly; `bash_url` references
-        // would require an additional fetch + sha verify that v1 does
-        // not implement (item-skipped error surfaces clearly).
+        // `bash` bodies are honored directly; `bash_url` references are
+        // fetched over bounded HTTPS and verified against the mandatory
+        // `bash_sha256` manifest pin (PRD-054 companion-fetch phase).
         if let Some(item) = crate::library_registry::resolve_hook(lib_name) {
-            let Some(bash_body) = item.bash.clone() else {
-                return Err(AiHookError::UnknownLibraryHook(format!(
-                    "{lib_name} (library item found but has no inline `bash` body; \
-                     `bash_url`/`bash_sha256` fetch is a PRD-054 follow-up phase)"
-                )));
-            };
+            let bash_body = library_hook_bash_body(&item, lib_name)?;
             let name = entry.name.clone().unwrap_or_else(|| item.name.clone());
             let event = entry.event.unwrap_or_else(|| {
                 // Library item carries event as String; parse on the
@@ -314,7 +309,14 @@ fn resolve_one<'cfg>(
             });
             let matcher = entry.matcher.clone().or_else(|| item.matcher.clone());
             let bash_command: Cow<'cfg, str> = Cow::Owned(bash_body);
-            let powershell_default = item.powershell.clone();
+            // Skip the (potentially network-backed) library PowerShell
+            // body entirely when the user's `command_windows` override
+            // would win anyway.
+            let powershell_default = if entry.command_windows.is_some() {
+                None
+            } else {
+                library_hook_powershell_body(&item, lib_name)
+            };
             let translated = windows_command(
                 Some(bash_command.as_ref()),
                 entry
@@ -369,6 +371,76 @@ fn resolve_one<'cfg>(
         windows_warned,
         timeout_ms,
     }))
+}
+
+/// Resolve the bash body for a third-party library hook item.
+///
+/// Precedence: inline `bash` wins; otherwise `bash_url` is fetched over
+/// bounded HTTPS and verified against the mandatory `bash_sha256` pin
+/// (`library_registry::companion::fetch_verified_utf8`). A `bash_url`
+/// without a sha pin is refused outright — there is no unverified
+/// fetch path.
+fn library_hook_bash_body(
+    item: &crate::library_registry::LibraryHookItem,
+    lib_name: &str,
+) -> Result<String, AiHookError> {
+    if let Some(ref bash) = item.bash {
+        return Ok(bash.clone());
+    }
+    match (&item.bash_url, &item.bash_sha256) {
+        (Some(url), Some(sha)) => crate::library_registry::companion::fetch_verified_utf8(url, sha)
+            .map_err(|source| AiHookError::LibraryCompanion {
+                name: lib_name.to_string(),
+                source,
+            }),
+        (Some(_), None) => Err(AiHookError::InvalidEntry {
+            name: lib_name.to_string(),
+            reason: "library item declares `bash_url` without `bash_sha256` — \
+                     unverified fetch refused"
+                .to_string(),
+        }),
+        (None, _) => Err(AiHookError::UnknownLibraryHook(format!(
+            "{lib_name} (library item found but carries neither an inline `bash` \
+             body nor a `bash_url`/`bash_sha256` reference)"
+        ))),
+    }
+}
+
+/// Resolve the optional PowerShell default for a third-party library
+/// hook item. Inline `powershell` wins; otherwise `powershell_url` +
+/// `powershell_sha256` is fetched + verified. Unlike the bash body,
+/// failures here are advisory — the Windows translation layer falls
+/// back to its warned stub, so a missing PowerShell artifact must not
+/// break provisioning on macOS/Linux.
+fn library_hook_powershell_body(
+    item: &crate::library_registry::LibraryHookItem,
+    lib_name: &str,
+) -> Option<String> {
+    if item.powershell.is_some() {
+        return item.powershell.clone();
+    }
+    let (url, sha) = match (&item.powershell_url, &item.powershell_sha256) {
+        (Some(url), Some(sha)) => (url, sha),
+        (Some(_), None) => {
+            eprintln!(
+                "  Warning: library hook '{lib_name}' declares `powershell_url` without \
+                 `powershell_sha256` — unverified fetch refused; falling back to the \
+                 Windows stub."
+            );
+            return None;
+        }
+        (None, _) => return None,
+    };
+    match crate::library_registry::companion::fetch_verified_utf8(url, sha) {
+        Ok(body) => Some(body),
+        Err(e) => {
+            eprintln!(
+                "  Warning: failed to fetch PowerShell body for library hook \
+                 '{lib_name}': {e}. Falling back to the Windows stub."
+            );
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -553,28 +625,15 @@ mod library_sources_tests {
         }
     }
 
-    fn seed_hook_in_cache(name: &str, version: &str, bash: Option<&str>, event: &str) {
-        let url = format!("https://test.example.com/{name}/manifest.json");
+    fn seed_item_in_cache(item: LibraryHookItem) {
+        let url = format!("https://test.example.com/{}/manifest.json", item.name);
         let manifest = Manifest {
             schema_version: MANIFEST_SCHEMA_VERSION,
             publisher: "test".into(),
             description: String::new(),
             homepage: String::new(),
             generated_at: String::new(),
-            items: vec![LibraryItem::AiHook(LibraryHookItem {
-                name: name.into(),
-                version: version.into(),
-                description: String::new(),
-                event: event.into(),
-                matcher: Some("Bash".into()),
-                bash: bash.map(str::to_string),
-                bash_url: None,
-                bash_sha256: None,
-                powershell: Some("Write-Host fake".into()),
-                powershell_url: None,
-                powershell_sha256: None,
-                timeout_ms: 4_000,
-            })],
+            items: vec![LibraryItem::AiHook(item)],
         };
         let path = library_registry::cache::manifest_cache_path(&url).unwrap();
         library_registry::cache::write_manifest(&path, &manifest).unwrap();
@@ -586,6 +645,41 @@ mod library_sources_tests {
             refresh_interval_secs: 86_400,
             manifest_sha256: None,
         });
+    }
+
+    fn seed_hook_in_cache(name: &str, version: &str, bash: Option<&str>, event: &str) {
+        seed_item_in_cache(LibraryHookItem {
+            name: name.into(),
+            version: version.into(),
+            description: String::new(),
+            event: event.into(),
+            matcher: Some("Bash".into()),
+            bash: bash.map(str::to_string),
+            bash_url: None,
+            bash_sha256: None,
+            powershell: Some("Write-Host fake".into()),
+            powershell_url: None,
+            powershell_sha256: None,
+            timeout_ms: 4_000,
+        });
+    }
+
+    /// Drop a script body into the library cache root and return
+    /// `(containment-safe file:// URL, sha256 pin)`. The companion
+    /// fetcher honors `file://` only inside the cache root, so this
+    /// exercises the real fetch + verify pipeline without a network.
+    fn seed_companion_body(filename: &str, body: &[u8]) -> (String, String) {
+        let root = library_registry::cache::cache_root().unwrap();
+        let path = root.join(filename);
+        std::fs::write(&path, body).unwrap();
+        let url = format!("file://{}", path.canonicalize().unwrap().display());
+        let sha = {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(body);
+            hex::encode(h.finalize())
+        };
+        (url, sha)
     }
 
     /// Happy path — `use = "<name>"` resolves against a library
@@ -625,12 +719,12 @@ mod library_sources_tests {
         unpin_jarvy_home();
     }
 
-    /// Library item with no inline `bash` body and no companion fetch
-    /// (PRD-054 follow-up phase) must fail with a clear UnknownLibraryHook
-    /// error citing the v1 limitation.
+    /// Library item with neither an inline `bash` body nor a
+    /// `bash_url` reference must fail with a clear UnknownLibraryHook
+    /// error — there is nothing to provision.
     #[test]
     #[serial(jarvy_home_env)]
-    fn resolve_third_party_library_url_only_returns_unknown_with_phase_message() {
+    fn resolve_third_party_library_bodyless_item_returns_unknown() {
         let _home = pin_jarvy_home();
         library_registry::clear_cache();
         seed_hook_in_cache("url-only-hook", "1.0.0", None, "pre_tool_use");
@@ -643,11 +737,138 @@ mod library_sources_tests {
         match err {
             AiHookError::UnknownLibraryHook(msg) => {
                 assert!(
-                    msg.contains("PRD-054 follow-up phase") || msg.contains("inline"),
-                    "expected phase message, got {msg}"
+                    msg.contains("inline") && msg.contains("bash_url"),
+                    "expected bodyless message, got {msg}"
                 );
             }
             other => panic!("expected UnknownLibraryHook, got {other:?}"),
+        }
+        library_registry::clear_cache();
+        unpin_jarvy_home();
+    }
+
+    /// PRD-054 companion-fetch phase — `bash_url` + `bash_sha256`
+    /// resolve by fetching the body and verifying the pin.
+    #[test]
+    #[serial(jarvy_home_env)]
+    fn resolve_third_party_library_bash_url_fetches_verified_body() {
+        let _home = pin_jarvy_home();
+        library_registry::clear_cache();
+        let body = b"#!/bin/sh\necho fetched-hook-body\n";
+        let (url, sha) = seed_companion_body("hook-body.sh", body);
+        seed_item_in_cache(LibraryHookItem {
+            name: "remote-body-hook".into(),
+            version: "1.0.0".into(),
+            description: String::new(),
+            event: "pre_tool_use".into(),
+            matcher: Some("Bash".into()),
+            bash: None,
+            bash_url: Some(url),
+            bash_sha256: Some(sha),
+            powershell: None,
+            powershell_url: None,
+            powershell_sha256: None,
+            timeout_ms: 4_000,
+        });
+
+        let entry = HookEntry {
+            use_library: Some("remote-body-hook".to_string()),
+            ..Default::default()
+        };
+        let outcome = resolve_one(&entry, false, ConfigOrigin::Local).expect("resolved");
+        match outcome {
+            ResolveOutcome::Resolved(r) => {
+                assert_eq!(
+                    r.bash_command.as_ref(),
+                    std::str::from_utf8(body).unwrap(),
+                    "resolved body must be the fetched + verified artifact"
+                );
+                assert_eq!(
+                    r.library_source.as_deref(),
+                    Some("library:remote-body-hook")
+                );
+            }
+            other => panic!("expected Resolved, got {other:?}"),
+        }
+        library_registry::clear_cache();
+        unpin_jarvy_home();
+    }
+
+    /// A tampered body (sha pin doesn't match) must refuse resolution —
+    /// the whole point of the mandatory pin.
+    #[test]
+    #[serial(jarvy_home_env)]
+    fn resolve_third_party_library_bash_url_sha_mismatch_refuses() {
+        let _home = pin_jarvy_home();
+        library_registry::clear_cache();
+        let (url, _real_sha) = seed_companion_body("tampered-hook.sh", b"echo tampered");
+        let wrong_sha = "a".repeat(64);
+        seed_item_in_cache(LibraryHookItem {
+            name: "tampered-hook".into(),
+            version: "1.0.0".into(),
+            description: String::new(),
+            event: "pre_tool_use".into(),
+            matcher: None,
+            bash: None,
+            bash_url: Some(url),
+            bash_sha256: Some(wrong_sha),
+            powershell: None,
+            powershell_url: None,
+            powershell_sha256: None,
+            timeout_ms: 4_000,
+        });
+
+        let entry = HookEntry {
+            use_library: Some("tampered-hook".to_string()),
+            ..Default::default()
+        };
+        let err = resolve_one(&entry, false, ConfigOrigin::Local).expect_err("must refuse");
+        match err {
+            AiHookError::LibraryCompanion { name, source } => {
+                assert_eq!(name, "tampered-hook");
+                assert_eq!(source.kind(), "sha_mismatch");
+            }
+            other => panic!("expected LibraryCompanion, got {other:?}"),
+        }
+        library_registry::clear_cache();
+        unpin_jarvy_home();
+    }
+
+    /// `bash_url` without `bash_sha256` is an unverifiable reference —
+    /// refused outright, never fetched.
+    #[test]
+    #[serial(jarvy_home_env)]
+    fn resolve_third_party_library_bash_url_without_sha_refused() {
+        let _home = pin_jarvy_home();
+        library_registry::clear_cache();
+        seed_item_in_cache(LibraryHookItem {
+            name: "unpinned-hook".into(),
+            version: "1.0.0".into(),
+            description: String::new(),
+            event: "pre_tool_use".into(),
+            matcher: None,
+            bash: None,
+            bash_url: Some("https://cdn.example.com/hook.sh".into()),
+            bash_sha256: None,
+            powershell: None,
+            powershell_url: None,
+            powershell_sha256: None,
+            timeout_ms: 4_000,
+        });
+
+        let entry = HookEntry {
+            use_library: Some("unpinned-hook".to_string()),
+            ..Default::default()
+        };
+        let err = resolve_one(&entry, false, ConfigOrigin::Local).expect_err("must refuse");
+        match err {
+            AiHookError::InvalidEntry { reason, .. } => {
+                assert!(
+                    reason.contains("unverified fetch refused"),
+                    "expected refusal reason, got {reason}"
+                );
+            }
+            other => panic!("expected InvalidEntry, got {other:?}"),
         }
         library_registry::clear_cache();
         unpin_jarvy_home();

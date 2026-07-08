@@ -8,8 +8,13 @@
 //!    item's `version` (no version drift surprises).
 //! 3. Fetch `SKILL.md` over HTTPS (bounded read).
 //! 4. sha256-verify against the manifest entry.
-//! 5. Write to every target agent's `skills/<name>/SKILL.md`.
-//! 6. Drop a `.jarvy-skill.json` sidecar so subsequent runs can detect
+//! 5. Fetch + sha-verify every `companion_files` entry (templates,
+//!    helper scripts published alongside SKILL.md). Filenames are
+//!    path-safety validated first — a hostile manifest cannot escape
+//!    the skill directory.
+//! 6. Write to every target agent's `skills/<name>/SKILL.md` plus the
+//!    companions alongside it.
+//! 7. Drop a `.jarvy-skill.json` sidecar so subsequent runs can detect
 //!    drift and `jarvy skills status` can report what's installed.
 
 use super::agents::SkillAgent;
@@ -61,6 +66,23 @@ pub enum SkillError {
 
     #[error("no agents installed; nothing to install to")]
     NoAgents,
+
+    #[error(
+        "companion file for skill `{skill}` refused: {reason}. \
+         Companion filenames must be relative paths without `..`, `\\`, \
+         drive letters, or control characters"
+    )]
+    CompanionRefused { skill: String, reason: String },
+
+    #[error("companion `{filename}` for skill `{skill}` failed: {source}")]
+    Companion {
+        skill: String,
+        filename: String,
+        // Boxed to keep `SkillError` under clippy's result_large_err
+        // threshold (mem-box-large-variant).
+        #[source]
+        source: Box<crate::library_registry::companion::CompanionError>,
+    },
 }
 
 impl SkillError {
@@ -73,6 +95,8 @@ impl SkillError {
             SkillError::ShaMismatch { .. } => "sha_mismatch",
             SkillError::Io(_) => "io",
             SkillError::NoAgents => "no_agents",
+            SkillError::CompanionRefused { .. } => "companion_refused",
+            SkillError::Companion { .. } => "companion",
         }
     }
 }
@@ -130,6 +154,10 @@ pub fn install_skill(
     let mut skipped = Vec::new();
 
     let body = fetch_skill_md(&item)?;
+    // Fetch + verify EVERY companion before writing anything to any
+    // agent — a mid-list fetch failure must not leave a half-installed
+    // skill directory behind.
+    let companions = fetch_companions(&item)?;
 
     for agent in target_agents {
         if !narrow.is_empty() && !narrow.contains(agent.slug()) {
@@ -149,7 +177,14 @@ pub fn install_skill(
         std::fs::create_dir_all(&skill_dir)?;
         let skill_md_path = skill_dir.join("SKILL.md");
         std::fs::write(&skill_md_path, &body)?;
-        write_sidecar(&skill_dir, name, &item.version, &item.skill_md_sha256)?;
+        for (relpath, companion_body) in &companions {
+            let dest = skill_dir.join(relpath);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, companion_body)?;
+        }
+        write_sidecar(&skill_dir, name, &item)?;
         installed_agents.push(*agent);
     }
 
@@ -241,12 +276,107 @@ fn fetch_skill_md(item: &crate::library_registry::LibrarySkillItem) -> Result<Ve
     Ok(body)
 }
 
-fn write_sidecar(skill_dir: &Path, name: &str, version: &str, sha256: &str) -> std::io::Result<()> {
+/// Fetch + sha-verify every `companion_files` entry (PRD-054
+/// companion-fetch phase). Filenames are path-safety validated BEFORE
+/// any network I/O so a hostile manifest is refused without side
+/// effects. Returns `(validated relative path, verified body)` pairs.
+fn fetch_companions(
+    item: &crate::library_registry::LibrarySkillItem,
+) -> Result<Vec<(String, Vec<u8>)>, SkillError> {
+    // Validate all filenames first — refuse the whole item on the
+    // first bad name rather than fetching some artifacts and then
+    // bailing.
+    for companion in &item.companion_files {
+        if let Err(reason) = validate_companion_filename(&companion.filename) {
+            // The filename itself is attacker-controllable — log the
+            // skill + reason only (mirrors `workspace.member_invalid`).
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "library.companion.refused_filename",
+                    skill = %item.name,
+                    reason = %reason,
+                );
+            }
+            return Err(SkillError::CompanionRefused {
+                skill: item.name.clone(),
+                reason: reason.to_string(),
+            });
+        }
+    }
+
+    let mut out = Vec::with_capacity(item.companion_files.len());
+    for companion in &item.companion_files {
+        let body =
+            crate::library_registry::companion::fetch_verified(&companion.url, &companion.sha256)
+                .map_err(|source| SkillError::Companion {
+                skill: item.name.clone(),
+                // Validated above — free of control bytes, safe to echo.
+                filename: companion.filename.clone(),
+                source: Box::new(source),
+            })?;
+        out.push((companion.filename.clone(), body));
+    }
+    Ok(out)
+}
+
+/// Path-safety gate for manifest-declared companion filenames.
+///
+/// Accepts simple names (`helper.sh`) and forward-slash relative
+/// subpaths (`rules/extra.md`). Refuses anything that could escape or
+/// clobber the skill directory: absolute paths, `..`/`.` components,
+/// backslashes, drive-letter colons, control bytes, and the two
+/// jarvy-owned files (`SKILL.md`, `.jarvy-skill.json`).
+fn validate_companion_filename(filename: &str) -> Result<(), &'static str> {
+    if filename.is_empty() {
+        return Err("empty filename");
+    }
+    if filename.len() > 512 {
+        return Err("filename longer than 512 bytes");
+    }
+    if filename.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err("control byte in filename");
+    }
+    if filename.contains('\\') {
+        return Err("backslash in filename (use forward slashes)");
+    }
+    if filename.contains(':') {
+        return Err("colon in filename (drive letters / ADS refused)");
+    }
+    if filename.starts_with('/') {
+        return Err("absolute path refused");
+    }
+    for component in filename.split('/') {
+        if component.is_empty() {
+            return Err("empty path component (double or trailing slash)");
+        }
+        if component == "." || component == ".." {
+            return Err("`.` / `..` path component refused");
+        }
+    }
+    if filename == "SKILL.md" || filename == ".jarvy-skill.json" {
+        return Err("companion may not overwrite a jarvy-owned file");
+    }
+    Ok(())
+}
+
+fn write_sidecar(
+    skill_dir: &Path,
+    name: &str,
+    item: &crate::library_registry::LibrarySkillItem,
+) -> std::io::Result<()> {
     let meta = SidecarMeta {
         skill: name.to_string(),
-        version: version.to_string(),
-        skill_md_sha256: sha256.to_string(),
+        version: item.version.clone(),
+        skill_md_sha256: item.skill_md_sha256.clone(),
         installed_at: chrono::Utc::now().to_rfc3339(),
+        companions: item
+            .companion_files
+            .iter()
+            .map(|c| SidecarCompanion {
+                filename: c.filename.clone(),
+                sha256: c.sha256.clone(),
+            })
+            .collect(),
     };
     let bytes = serde_json::to_vec_pretty(&meta).map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::InvalidData, format!("sidecar: {e}"))
@@ -266,6 +396,16 @@ struct SidecarMeta {
     version: String,
     skill_md_sha256: String,
     installed_at: String,
+    /// Companion files installed alongside SKILL.md. `default` so
+    /// pre-companion sidecars still parse for `jarvy skills status`.
+    #[serde(default)]
+    companions: Vec<SidecarCompanion>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SidecarCompanion {
+    filename: String,
+    sha256: String,
 }
 
 #[cfg(test)]
@@ -369,6 +509,129 @@ mod tests {
         };
         let bytes = fetch_skill_md(&item).expect("matching uppercase sha must accept");
         assert_eq!(bytes, body);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("JARVY_HOME");
+        }
+    }
+
+    // =================================================================
+    // PRD-054 companion-fetch phase — filename path-safety gate +
+    // fetch-verify pipeline.
+    // =================================================================
+
+    #[test]
+    fn companion_filename_accepts_simple_and_subpath_names() {
+        assert!(validate_companion_filename("helper.sh").is_ok());
+        assert!(validate_companion_filename("template.yaml").is_ok());
+        assert!(validate_companion_filename("rules/own-borrow.md").is_ok());
+        assert!(validate_companion_filename("a/b/c.txt").is_ok());
+        // Nested SKILL.md is harmless — only the root one is jarvy-owned.
+        assert!(validate_companion_filename("examples/SKILL.md").is_ok());
+    }
+
+    #[test]
+    fn companion_filename_refuses_escape_and_clobber_shapes() {
+        for bad in [
+            "",
+            "../evil.sh",
+            "a/../../evil.sh",
+            "./sneaky.sh",
+            "/etc/passwd",
+            "a//b.txt",
+            "trailing/",
+            "back\\slash.ps1",
+            "C:evil.bat",
+            "ads:stream",
+            "ctrl\x1b[31mchar",
+            "nul\0byte",
+            "SKILL.md",
+            ".jarvy-skill.json",
+        ] {
+            assert!(
+                validate_companion_filename(bad).is_err(),
+                "must refuse {bad:?}"
+            );
+        }
+        let too_long = "a".repeat(513);
+        assert!(validate_companion_filename(&too_long).is_err());
+    }
+
+    #[test]
+    #[serial(jarvy_home_env)]
+    fn fetch_companions_refuses_traversal_before_any_fetch() {
+        let item = LibrarySkillItem {
+            name: "hostile-skill".into(),
+            version: "1.0.0".into(),
+            description: String::new(),
+            skill_md_url: "https://cdn.example.com/SKILL.md".into(),
+            skill_md_sha256: "irrelevant".into(),
+            companion_files: vec![crate::library_registry::manifest::SkillCompanionFile {
+                filename: "../../.bashrc".into(),
+                // Unreachable URL — validation must refuse before fetch.
+                url: "https://127.0.0.1:1/x".into(),
+                sha256: "a".repeat(64),
+            }],
+            supported_agents: Vec::new(),
+        };
+        let err = fetch_companions(&item).expect_err("traversal must refuse");
+        match err {
+            SkillError::CompanionRefused { skill, .. } => assert_eq!(skill, "hostile-skill"),
+            other => panic!("expected CompanionRefused, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[serial(jarvy_home_env)]
+    fn fetch_companions_verifies_sha_and_returns_bodies() {
+        let home = tempdir().unwrap();
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("JARVY_HOME", home.path());
+        }
+        let cache_root = crate::library_registry::cache::cache_root().unwrap();
+        let body = b"companion template body";
+        let path = cache_root.join("companion-src.md");
+        std::fs::write(&path, body).unwrap();
+        let url = format!("file://{}", path.canonicalize().unwrap().display());
+
+        let item = LibrarySkillItem {
+            name: "companion-skill".into(),
+            version: "1.0.0".into(),
+            description: String::new(),
+            skill_md_url: String::new(),
+            skill_md_sha256: String::new(),
+            companion_files: vec![crate::library_registry::manifest::SkillCompanionFile {
+                filename: "rules/template.md".into(),
+                url: url.clone(),
+                sha256: sha256_hex(body),
+            }],
+            supported_agents: Vec::new(),
+        };
+        let fetched = fetch_companions(&item).expect("valid companion fetches");
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].0, "rules/template.md");
+        assert_eq!(fetched[0].1, body);
+
+        // sha mismatch on the same body must refuse.
+        let item_bad = LibrarySkillItem {
+            companion_files: vec![crate::library_registry::manifest::SkillCompanionFile {
+                filename: "rules/template.md".into(),
+                url,
+                sha256: "b".repeat(64),
+            }],
+            ..item
+        };
+        let err = fetch_companions(&item_bad).expect_err("wrong sha must refuse");
+        match err {
+            SkillError::Companion {
+                filename, source, ..
+            } => {
+                assert_eq!(filename, "rules/template.md");
+                assert_eq!(source.kind(), "sha_mismatch");
+            }
+            other => panic!("expected Companion, got {other:?}"),
+        }
         #[allow(unsafe_code)]
         unsafe {
             std::env::remove_var("JARVY_HOME");

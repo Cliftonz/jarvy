@@ -143,7 +143,9 @@ Each item carries a `kind` discriminator. Today: `ai_hook`, `mcp_server`, `skill
 }
 ```
 
-Either `bash` (inline body) or `bash_url` + `bash_sha256` (off-manifest body that's sha-verified at fetch time). v1 supports the inline form only — `bash_url` parses but fetching it is a follow-up phase.
+Either `bash` (inline body) or `bash_url` + `bash_sha256` (off-manifest body fetched over bounded HTTPS and verified against the sha pin before use). Inline `bash` wins when both are present. A `bash_url` without `bash_sha256` is refused outright — there is no unverified fetch path. `powershell_url` + `powershell_sha256` work the same way for the Windows variant, except fetch failures there are advisory (Jarvy falls back to the warned Windows stub instead of failing provisioning on macOS/Linux).
+
+Fetched bodies land in a content-addressed cache (`~/.jarvy/library.d/companions/<sha256>`) — because the manifest pins the content hash, repeat resolves are served offline and two libraries referencing the same artifact share one cache entry.
 
 `event` is one of: `pre_tool_use`, `post_tool_use`, `user_prompt_submit`, `session_start`, `stop`, `pre_compact`, `pre_shell_execution`.
 
@@ -174,11 +176,17 @@ Either `bash` (inline body) or `bash_url` + `bash_sha256` (off-manifest body tha
   "description": "...",
   "skill_md_url": "https://cdn.myorg.com/jarvy/skills/code-review-2.1.0/SKILL.md",
   "skill_md_sha256": "abc123...",
+  "companion_files": [
+    { "filename": "helper.sh", "url": "https://cdn.myorg.com/jarvy/skills/code-review-2.1.0/helper.sh", "sha256": "def456..." },
+    { "filename": "rules/checklist.md", "url": "https://cdn.myorg.com/jarvy/skills/code-review-2.1.0/rules/checklist.md", "sha256": "789abc..." }
+  ],
   "supported_agents": ["claude-code", "cursor"]
 }
 ```
 
 `skill_md_sha256` is **required** and **enforced**. Jarvy refuses to install when the fetched body's sha256 doesn't match the manifest entry. A publisher MUST cut a new version + manifest entry when content changes; mutating a versioned artifact in place will surface a clear `library.sha_mismatch` event.
+
+`companion_files` (optional) lists extra files installed alongside `SKILL.md` — templates, helper scripts, rule files. Every entry carries a **mandatory** `sha256` pin, enforced the same way. `filename` is a forward-slash relative path inside the skill directory; subdirectories are allowed (`rules/checklist.md`), but absolute paths, `..`/`.` components, backslashes, drive-letter colons, control bytes, and the jarvy-owned names `SKILL.md` / `.jarvy-skill.json` are refused (`library.companion.refused_filename`). Companions are fetched + verified **before** anything is written, so a tampered or hostile entry never leaves a half-installed skill directory. The `.jarvy-skill.json` sidecar records each companion's filename + sha for drift detection.
 
 ---
 
@@ -224,6 +232,14 @@ Manifests cache to disk at:
 ~/.jarvy/library.d/<sha256-of-url>/manifest.json
 ```
 
+Companion artifacts (hook `bash_url` / `powershell_url` bodies, skill `companion_files`) cache content-addressed at:
+
+```
+~/.jarvy/library.d/companions/<sha256-of-content>
+```
+
+Because the manifest pins the content hash, a companion cache hit is immutable-by-construction: it's verified by re-hashing on read, corrupted entries fall through to a re-fetch, and repeat installs are served offline.
+
 The URL hash is collision-free; the directory layout is internal and may change. Use `jarvy library list` (when shipped) or read it directly with `jq`.
 
 Refetch happens on every `apply` / `install` call unless the on-disk copy is fresher than `refresh_interval_secs` (default 86400 = 24h). On network failure, the cached copy is served with a `library.fetch.cached_hit reason="fetch_failed"` event so you can tell from logs that you're running stale.
@@ -244,6 +260,10 @@ All events route through the existing OTEL pipeline. Stable contract:
 | `library.signature_disabled` | `require_signature = false` | `url` |
 | `library.signature_unenforced` | `require_signature = true` (cosign not yet enforced in v1) | `url`, `advice` |
 | `library.remote_refused` | trust-gate refusal | `consumer` |
+| `library.companion.fetched` | companion artifact fetched + sha-verified | `url`, `bytes`, `from_cache` (debug level on cache hits) |
+| `library.companion.sha_mismatch` | fetched body doesn't match the manifest pin | `url`, `expected`, `actual` |
+| `library.companion.fetch_failed` | any other companion fetch error | `url`, `error_kind`, `error` |
+| `library.companion.refused_filename` | skill companion filename failed path-safety validation | `skill`, `reason` (filename itself NOT logged — attacker-controllable) |
 | `skills.installed` | per-skill install | `skill`, `version`, `agent_count`, `skipped_count` |
 
 The full envelope (including the git scheme events under `library.git.*`) lives in `CLAUDE.md::Telemetry/Event Taxonomy`.
@@ -361,8 +381,6 @@ The clone is shallow (`--depth 1`). Re-running `jarvy skills install` refreshes 
 
 - Cosign signature enforcement (PRD-054 phase 5)
 - `jarvy library {sync, list, show, clean}` subcommand (phase 6)
-- `bash_url` / `powershell_url` companion fetch for ai_hook items (today only inline `bash:` bodies are honored)
-- Companion file fetch for skill items (today only `SKILL.md` lands; templates / helper scripts skip)
 - Public reference library (a community-maintained manifest of common hooks)
 - `git+ssh://` auth for private repos (PRD-055 follow-up)
 - Sparse-checkout for large repos (PRD-055 follow-up)

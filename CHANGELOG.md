@@ -29,6 +29,19 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
+**Added:**
+
+- Library manifests can now reference item bodies by URL instead of
+  inlining them (PRD-054 companion-fetch phase): `ai_hook` items honor
+  `bash_url` / `powershell_url` (each requiring a matching `*_sha256`
+  pin), and `skill` items install their `companion_files` (templates,
+  helper scripts) alongside `SKILL.md`. Every companion fetch is
+  HTTPS-bounded, sha256-verified against the manifest pin (no
+  unverified fetch path), cached content-addressed under
+  `~/.jarvy/library.d/companions/`, and skill companion filenames are
+  path-safety validated so a hostile manifest cannot escape the skill
+  directory. New telemetry: `library.companion.{fetched,sha_mismatch,fetch_failed,refused_filename}`.
+
 **Fixes:**
 
 - The `curl … | bash` installer (`install.sh`) now verifies the downloaded
