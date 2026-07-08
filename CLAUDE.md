@@ -4,6 +4,54 @@
 
 Guidance for Claude Code working in this repo. Per-module deep dives live in `src/<module>/` and `docs/`; this file captures only what can't be derived by reading the code.
 
+## Model Routing & Orchestration (Fable 5 workflow)
+
+Fable 5 drives this repo. It is expensive — delegate token-heavy grunt work to
+cheaper models via the shell-out skills below; keep taste- and judgment-heavy
+work on Fable/Opus. Reasoning effort stays **high** — never x-high/max/ultracode
+for routine work (it overthinks, overbuilds, and costs multiples for marginal gain).
+
+**Glossary** (evaluation axes used throughout):
+- **Intelligence** — how hard a problem the model handles unsupervised
+- **Taste** — UI/UX, code quality, API design, copy
+- **Cost** — effective cost given active subscriptions (Claude Code + Codex CLI)
+
+**Routing table** (1–10; cost 10 = cheapest):
+
+| Model | Cost | Intelligence | Taste | Default use |
+|---|---|---|---|---|
+| GPT via `codex exec` | 9 | 8 | 4 | Bulk mechanical work: clear-spec implementations, migrations, log digging, big-file reading, independent second-opinion reviews |
+| Sonnet 5 | 5 | 6 | 5 | Sub-agent fan-out; thin proxy wrapper around external CLIs inside workflows (low effort) |
+| Opus 4.8 | 6 | 8 | 8 | Reviews and plans when Fable budget matters |
+| Fable 5 | 3 | 10 | 10 | Orchestration, architecture, API design, final review, anything user-facing |
+| Haiku 4.5 | — | skip | — | Not for real work |
+
+**Routing rules:**
+- These are defaults, not limits. If a cheaper model's output misses the bar,
+  rerun with a smarter model **without asking**. Judge the output, not the price tag.
+- Use cheap models to gather information and try things before moving work to
+  an expensive one; never let cost pick the wrong model for the final pass.
+- Bulk/mechanical → codex (see `external-review` / `external-implementation`
+  skills). Taste- or user-facing → Fable or Opus.
+- Reviews of plans and implementations: Fable/Opus primary; codex as an extra
+  independent perspective.
+- Prompting codex: keep prompts much simpler than for Claude — one or two
+  sentences of task + focus. Don't prompt it like it's Claude.
+
+**Orchestration rules:**
+- Don't pre-define agent archetypes — invent the right reviewers/implementers
+  per task; every review has different needs.
+- Workflows can only spawn Claude models. To use codex inside a workflow,
+  spawn Sonnet at low effort as a thin wrapper that shells out to the codex
+  CLI and reports back; label those sub-agents with a `codex-proxy:` prefix.
+- Checkpoint-driven sequences (CI must pass → review → merge → rebase next)
+  are orchestrated from the main session with worktrees — not one giant
+  workflow, which barrels past checkpoints or stalls. Use workflows for what
+  they're strong at: multi-agent review fan-out before a merge.
+- Time-to-complete is an architecture signal on ad-hoc fixes: <3 min = low-risk;
+  ~15 min = look closer before merging; 1 h+ = the architecture in that area is
+  the problem — go deeper, don't merge blind.
+
 ## Build Commands
 
 ```bash
