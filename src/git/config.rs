@@ -62,6 +62,15 @@ pub struct GitConfig {
     #[serde(default)]
     pub scope: ConfigScope,
 
+    /// Authorize applying this `[git]` block when the config was fetched from a
+    /// remote URL (`ConfigOrigin::Remote`). Off by default — a remote config
+    /// cannot mutate git config (least of all the shared `~/.gitconfig`) without
+    /// the user opting in, mirroring `[packages] allow_remote` /
+    /// `[git_hooks] allow_remote`. Even when `true`, remote-sourced writes are
+    /// forced to `--local` scope so a remote can never touch the global config.
+    #[serde(default)]
+    pub allow_remote: bool,
+
     /// Apply Jarvy's default git config for keys the user left unset. Host-aware:
     /// `core.autocrlf` (`true` on Windows, `input` elsewhere), `core.longpaths`
     /// (`true` on Windows), `core.precomposeunicode` (`true` on macOS). Plus a
@@ -243,6 +252,7 @@ editor = "vim"
 autocrlf = "input"
 scope = "global"
 os_defaults = false
+allow_remote = true
 
 [aliases]
 co = "checkout"
@@ -274,6 +284,7 @@ st = "status"
         assert_eq!(config.autocrlf, Some(AutoCrlf::Input));
         assert_eq!(config.scope, ConfigScope::Global);
         assert_eq!(config.os_defaults, Some(false));
+        assert!(config.allow_remote);
         assert_eq!(config.aliases.len(), 4);
         assert_eq!(config.aliases.get("co"), Some(&"checkout".to_string()));
         assert_eq!(config.extra.len(), 2);

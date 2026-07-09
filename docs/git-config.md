@@ -161,24 +161,40 @@ For git config keys Jarvy doesn't model as first-class fields, use `[git.extra]`
 "branch.main.rebase" = "true"
 ```
 
-Rules and guardrails:
+Every entry runs a layered gauntlet before it reaches `git config`:
+
+1. **Key grammar / flag-injection.** Keys must match the dotted grammar `section.key` / `section.subsection.key` with chars in `[A-Za-z0-9._-]`, ≤ 256 bytes. Keys starting with `-`, missing a `.`, or with empty segments are refused. Keys needing `:` or `/` (e.g. `url.<base>.insteadOf`) are not supported by this map.
+2. **Option-injection on the value.** Values starting with `-` (e.g. `--unset`) are refused — git would parse them as an option, not data.
+3. **Exec-capable keys** (RCE guard) — keys whose value git *executes* are refused **outright, for any value**: `core.pager`, `core.editor`, `core.sshCommand`, `sequence.editor`, `diff.external`, `core.hooksPath`, `core.fsmonitor` (except the builtin `true`/`false` toggle), `credential.helper`, `gpg[.<fmt>].program`, `uploadpack.packObjectsHook`, and the `filter.<n>.{clean,smudge,process}`, `<n>.textconv`, `mergetool.<n>.cmd`, `difftool.<n>.cmd` families. The `!`-only filter cannot catch these (they need no marker), so they are denied by key. Override deliberately with `JARVY_ALLOW_GIT_EXEC_KEYS=1`.
+4. **Security-guardrail downgrades** — values that weaken a git defense are refused: `core.protectNTFS`/`core.protectHFS` = false (`.git`-path smuggling), `safe.directory = *` (CVE-2022-24765), `safe.bareRepository = all` (embedded bare-repo attack), and `fsck.*` / `fetch.fsck.*` / `receive.fsck.*` = `ignore` plus `transfer`/`fetch`/`receive.fsckObjects` = false (object-integrity checks). Override with `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1`.
+5. **`!`-shell values** are refused for every key (leading whitespace included — git trims it, so `" !cmd"` is caught too).
+
+Also:
 
 - Applied **last**, so an entry here overrides a modeled field targeting the same key.
-- Keys must match the dotted grammar `section.key` / `section.subsection.key` with chars in `[A-Za-z0-9._-]`. Keys starting with `-`, missing a `.`, or with empty segments are refused (flag-injection guard). Keys needing `:` or `/` (e.g. `url.<base>.insteadOf`) are not supported by this map.
-- Values starting with `!` are refused for **every** extra key — git would run them as a shell command. Prefer a modeled field for the few keys that legitimately need shell (none currently exposed).
-- **Security guardrails** — values that weaken a git defense are refused: `core.protectNTFS`/`core.protectHFS` = false (`.git`-path smuggling), `safe.directory = *` (CVE-2022-24765 ownership check), and `fsck.* = ignore` (object-integrity checks). Set `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1` to override deliberately.
 - Prefer a typed field when one exists (`autocrlf`, `editor`, etc.); reach for `[git.extra]` only when there's no first-party analogue.
+
+## Remote configs (`--from <url>`)
+
+A config fetched from a remote URL (`ConfigOrigin::Remote`) **cannot apply `[git]` at all** unless it sets `allow_remote = true` — mirroring `[packages] allow_remote` / `[git_hooks] allow_remote`. This closes the "remote broadens trust" hole: without the gate a remote config could write attacker-chosen keys (including exec-capable ones) to your shared `~/.gitconfig`. Even **with** `allow_remote = true`, remote-sourced writes are forced to `--local` scope, so a remote can never touch the global config.
+
+```toml
+[git]
+allow_remote = true   # required to apply [git] from a --from URL; still local-scoped
+```
+
+Preview before applying an untrusted config: `jarvy setup --dry-run` now lists every OS-default and `[git.extra]` key that would be written.
 
 ## What Runs
 
-`jarvy setup` invokes `git config --<scope> <key> <value>` for each setting. The order:
+`jarvy setup` invokes `git config --<scope> <key> <value>` for each setting (after the remote-origin trust gate above). The order:
 
 1. Identity (`user.name`, `user.email`)
 2. Signing config (if enabled)
 3. Defaults (`init.defaultBranch`, `pull.rebase`, etc.)
 4. Line endings (`core.autocrlf`, `core.eol`)
 5. Credential helper
-6. OS-aware + recommended defaults (`core.autocrlf`, Windows `core.longpaths`, macOS `core.precomposeunicode`, `fetch.prune`, `rerere.enabled`, `merge.conflictStyle` — unset keys only)
+6. OS-aware + recommended defaults (`core.autocrlf`, Windows `core.longpaths`, macOS `core.precomposeunicode`, `fetch.prune`, `rerere.enabled`, `merge.conflictStyle` — unset keys only; keys already matching are skipped so re-runs don't re-write)
 7. Aliases
 8. Extra keys (`[git.extra]`, override-last)
 

@@ -1245,6 +1245,34 @@ fn run_git_phase(config: &Config, dry_run: bool) {
     let Some(git_config) = config.get_git() else {
         return;
     };
+
+    // Trust gate: a config fetched from a remote URL may not mutate git config
+    // (least of all the shared ~/.gitconfig) unless the user opted in via
+    // `[git] allow_remote`. Mirrors run_git_hooks_phase / `[packages] allow_remote`.
+    let is_remote = config.origin == crate::ai_hooks::ConfigOrigin::Remote;
+    if is_remote && !git_config.allow_remote {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "git_config.remote_refused",
+                reason = "allow_remote_not_set",
+                "refused `[git]` configuration from a remote-origin config"
+            );
+        }
+        eprintln!(
+            "Warning: skipping [git] configuration from a remote config.\n  \
+             Set `[git] allow_remote = true` in the source config — or copy it locally —\n  \
+             to authorize git configuration from this origin."
+        );
+        return;
+    }
+
+    // Even an authorized remote config is forced to `--local` scope, so a remote
+    // can never write the developer's global ~/.gitconfig.
+    let mut git_config = git_config.clone();
+    if is_remote {
+        git_config.scope = crate::git::ConfigScope::Local;
+    }
+
     if dry_run {
         println!("\n=== Git Configuration (dry-run) ===");
         if let Some(ref name) = git_config.user_name {
@@ -1272,12 +1300,51 @@ fn run_git_phase(config: &Config, dry_run: bool) {
                 git_config.aliases.len()
             );
         }
+        // Preview the OS-aware / recommended defaults and every `[git.extra]`
+        // key — the highest-risk writes to review before applying a config.
+        for (key, value) in crate::git::GitSetup::new(git_config.clone()).os_default_plan() {
+            println!("[DRY-RUN] Would set git config {key}: {value}");
+        }
+        let mut extra: Vec<(&String, &String)> = git_config.extra.iter().collect();
+        extra.sort_by(|a, b| a.0.cmp(b.0));
+        for (key, value) in extra {
+            println!("[DRY-RUN] Would set git config {key}: {value}");
+        }
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "git_config.phase_previewed",
+                os_defaults_enabled = git_config.os_defaults.unwrap_or(true),
+                extra_key_count = git_config.extra.len(),
+            );
+        }
     } else {
         println!("\n=== Git Configuration ===");
+        let started = std::time::Instant::now();
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "git_config.phase_started",
+                remote = is_remote,
+                scope = ?git_config.scope,
+            );
+        }
         let setup = crate::git::GitSetup::new(git_config.clone());
-        match setup.configure() {
+        let result = setup.configure();
+        let ok = result.is_ok();
+        match result {
             Ok(()) => println!("Git configuration applied successfully"),
-            Err(e) => eprintln!("Warning: Git configuration failed: {e}"),
+            Err(ref e) => eprintln!("Warning: Git configuration failed: {e}"),
+        }
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "git_config.phase_completed",
+                ok,
+                remote = is_remote,
+                signing = git_config.signing,
+                aliases = git_config.aliases.len(),
+                extra_key_count = git_config.extra.len(),
+                os_defaults_enabled = git_config.os_defaults.unwrap_or(true),
+                duration_ms = started.elapsed().as_millis() as u64,
+            );
         }
     }
 }

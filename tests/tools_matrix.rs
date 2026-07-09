@@ -78,6 +78,7 @@ fn new_tools_batch_is_registered() {
         "locust",
         "playwright",
         "putty",
+        "structurizr",
         "task",
     ] {
         assert!(
