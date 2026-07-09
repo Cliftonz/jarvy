@@ -62,9 +62,34 @@ pub struct GitConfig {
     #[serde(default)]
     pub scope: ConfigScope,
 
+    /// Apply Jarvy's default git config for keys the user left unset. Host-aware:
+    /// `core.autocrlf` (`true` on Windows, `input` elsewhere), `core.longpaths`
+    /// (`true` on Windows), `core.precomposeunicode` (`true` on macOS). Plus a
+    /// cross-platform recommended set: `fetch.prune`, `rerere.enabled`,
+    /// `merge.conflictStyle = zdiff3`. `None`/absent = enabled (mirrors the
+    /// always-on per-OS `credential.helper` default); set `os_defaults = false`
+    /// to opt out. Explicit typed fields (e.g. `autocrlf`) and `[git.extra]`
+    /// entries always win over these.
+    #[serde(default)]
+    pub os_defaults: Option<bool>,
+
     /// Git aliases
     #[serde(default)]
     pub aliases: HashMap<String, String>,
+
+    /// Free-form escape hatch for git config keys Jarvy doesn't model as
+    /// first-class fields (e.g. `core.fsmonitor`, `feature.manyFiles`,
+    /// `diff.colorMoved`). Keys are dotted git config keys (`section.key` or
+    /// `section.subsection.key`); values are written verbatim via
+    /// `git config <scope> <key> <value>`. Applied AFTER the typed keys, so an
+    /// entry here overrides a modeled field if both target the same key.
+    ///
+    /// Values still pass through the `!`-shell refusal in `set_config`, and
+    /// keys are validated (`validate_extra_key`) to reject flag-injection and
+    /// malformed grammar. `.gitconfig` semantics — no first-party analogue in
+    /// jarvy.toml — are the only reason this exists; prefer a typed field.
+    #[serde(default)]
+    pub extra: HashMap<String, String>,
 }
 
 /// Configuration value - can be plain string or sourced from environment
@@ -217,12 +242,17 @@ push_autosetup = true
 editor = "vim"
 autocrlf = "input"
 scope = "global"
+os_defaults = false
 
 [aliases]
 co = "checkout"
 br = "branch"
 ci = "commit"
 st = "status"
+
+[extra]
+"core.fsmonitor" = "true"
+"feature.manyFiles" = "true"
 "#;
         let config: GitConfig = toml::from_str(toml_str).expect("Failed to parse config");
 
@@ -243,7 +273,13 @@ st = "status"
         assert_eq!(config.editor, Some("vim".to_string()));
         assert_eq!(config.autocrlf, Some(AutoCrlf::Input));
         assert_eq!(config.scope, ConfigScope::Global);
+        assert_eq!(config.os_defaults, Some(false));
         assert_eq!(config.aliases.len(), 4);
         assert_eq!(config.aliases.get("co"), Some(&"checkout".to_string()));
+        assert_eq!(config.extra.len(), 2);
+        assert_eq!(
+            config.extra.get("core.fsmonitor"),
+            Some(&"true".to_string())
+        );
     }
 }

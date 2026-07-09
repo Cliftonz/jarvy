@@ -57,8 +57,27 @@ for divergences from generic release skills.
   `--log-file <path>`, `--debug-filter <module>`, and `--profile` /
   `--profile-output` (phase-level timing report). These flags previously
   parsed but were silently dropped.
-- 10 new tools: `allure`, `aws-sam-cli`, `cfn-lint`, `cypress`,
-  `goaccess`, `linkerd`, `locust`, `playwright`, `putty`, `task`.
+- 11 new tools: `allure`, `aws-sam-cli`, `cfn-lint`, `cypress`,
+  `goaccess`, `linkerd`, `locust`, `playwright`, `putty`, `structurizr`,
+  `task`. `structurizr` is the 2026 consolidated "software architecture
+  models as code" tool (C4 model) — installs via Homebrew / Linuxbrew
+  (the old, now-deprecated `structurizr-cli` formula is not used); no
+  first-party winget/choco, so Windows uses the `.war` or Docker image.
+- `[git]` gains three capabilities (see `docs/git-config.md`):
+  - `[git.extra]` — a free-form escape hatch for git config keys Jarvy
+    doesn't model as typed fields (`core.fsmonitor`, `feature.manyFiles`,
+    …). Keys are validated for dotted grammar + flag-injection; applied
+    last so they override modeled fields.
+  - `os_defaults` (default on; `os_defaults = false` opts out) — writes
+    host-aware defaults for **unset** keys: `core.autocrlf`
+    (Windows `true` / else `input`), Windows `core.longpaths`, macOS
+    `core.precomposeunicode`, plus a cross-platform recommended set
+    (`fetch.prune`, `rerere.enabled`, `merge.conflictStyle = zdiff3`).
+    Explicit fields and `[git.extra]` always win.
+  - Security guardrail — `[git.extra]` values that weaken a git defense
+    are refused (`core.protectNTFS`/`protectHFS = false`,
+    `safe.directory = *` (CVE-2022-24765), `fsck.* = ignore`) unless
+    `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1` is set.
 - Default post-install hooks for `rust` (clippy/rustfmt + cargo env),
   `tmux` (TPM plugin manager), `kubectx` (kctx/kns aliases), and `nvim`
   (starter `init.lua`). Unix-only where the tool also ships on Windows.
