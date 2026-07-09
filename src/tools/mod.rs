@@ -226,6 +226,7 @@ pub mod spec;
 pub mod sqlite;
 pub mod starship;
 pub mod stern;
+pub mod structurizr;
 pub mod syft;
 pub mod tailscale;
 pub mod talisman;
