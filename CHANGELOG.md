@@ -69,12 +69,18 @@ for divergences from generic release skills.
     …), applied last so they override modeled fields. Each entry runs a
     layered guard: dotted-grammar/flag-injection key validation, a
     leading-`-` value refusal (argv option-injection), an **outright
-    refusal of keys whose value git executes** (`core.pager`,
-    `core.sshCommand`, `core.hooksPath`, `filter.*.clean`, `*.textconv`,
-    … — RCE the `!`-filter alone missed; `core.fsmonitor=true|false`
-    stays allowed) overridable with `JARVY_ALLOW_GIT_EXEC_KEYS=1`, a
-    security-guardrail-downgrade check, and a `!`-shell-value refusal
-    (leading whitespace included).
+    refusal of keys whose value git executes** (`core.pager`/`editor`/
+    `sshCommand`/`askPass`/`hooksPath`, `pager.<cmd>`, `filter.*.clean`,
+    `*.textconv`, `merge.*.driver`, `remote.*.uploadpack`,
+    `init.templateDir`, … — RCE the `!`-filter alone missed;
+    `core.fsmonitor=true|false` stays allowed) overridable with
+    `JARVY_ALLOW_GIT_EXEC_KEYS=1`, a security-guardrail-downgrade check,
+    and a `!`-shell-value refusal (leading whitespace included). The
+    typed `editor`/`credential_helper` fields (which legitimately set
+    such keys) are value-guarded instead: a bare command/helper + flags
+    is allowed, a shell metacharacter / `!` / program-path value is
+    refused. The dry-run preview runs the same gauntlet, so it shows
+    refusals rather than claiming a blocked key "would be set."
   - `os_defaults` (default on; `os_defaults = false` opts out) — writes
     host-aware defaults for **unset** keys: `core.autocrlf`
     (Windows `true` / else `input`), Windows `core.longpaths`, macOS
@@ -86,12 +92,15 @@ for divergences from generic release skills.
     are refused (`core.protectNTFS`/`protectHFS = false`,
     `safe.directory = *` (CVE-2022-24765), `safe.bareRepository = all`,
     `fsck.*`/`fetch.fsck.*`/`receive.fsck.* = ignore`,
-    `*.fsckObjects = false`) unless `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1`.
+    `*.fsckObjects = false`, `http[.<url>].sslVerify = false`) unless
+    `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1`.
   - Trust boundary — a remote-origin config (`--from <url>`) cannot apply
     `[git]` unless it sets `allow_remote = true`, and even then writes are
     forced to `--local` scope (never `~/.gitconfig`). `jarvy setup
-    --dry-run` now previews every OS-default and `[git.extra]` write.
-    New `git_config.*` telemetry (lifecycle gated; security refusals not).
+    --dry-run` previews every OS-default and `[git.extra]` write. Full
+    `git_config.*` telemetry — lifecycle, adoption (`extra_applied`,
+    `os_defaults_applied`), and security refusals/overrides — all gated
+    behind the telemetry opt-out.
 - Default post-install hooks for `rust` (clippy/rustfmt + cargo env),
   `tmux` (TPM plugin manager), `kubectx` (kctx/kns aliases), and `nvim`
   (starter `init.lua`). Unix-only where the tool also ships on Windows.
