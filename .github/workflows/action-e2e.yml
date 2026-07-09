@@ -74,7 +74,12 @@ jobs:
           # config and sees git satisfied — proves the pipeline, not just
           # the process exit.
           jarvy --version
-          jarvy doctor --file e2e.jarvy.toml --format json > doctor.json
+          # `jarvy doctor` exits non-zero to signal health (1 = warnings,
+          # 2 = errors) — that is NOT a command failure, and we only care
+          # about the JSON content here, so don't let `set -e` abort on it.
+          # (The `run: setup` step above already gates that setup itself
+          # succeeded.) The JSON is written to stdout before the exit code.
+          jarvy doctor --file e2e.jarvy.toml --format json > doctor.json || true
           cat doctor.json
           # git must be present and satisfied in the doctor report.
           python3 - <<'PY'
