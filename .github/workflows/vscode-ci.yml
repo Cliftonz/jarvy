@@ -1,0 +1,60 @@
+# PR-gated build check for the VS Code extension. No secrets, no publish —
+# proves the extension always type-checks, compiles, and packages cleanly.
+# The publish path lives in vscode-publish.yml (tag-triggered).
+name: VS Code Extension CI
+
+on:
+  push:
+    paths:
+      - editors/vscode/**
+      - .github/workflows/vscode-ci.yml
+  pull_request:
+    paths:
+      - editors/vscode/**
+      - .github/workflows/vscode-ci.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: editors/vscode
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Type-check (strict, no emit)
+        run: npm run check
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Unit tests (parseValidationResult schema contract)
+        run: npm test
+
+      - name: Package (.vsix) — validates the manifest and bundled files
+        run: npx --yes @vscode/vsce package --out jarvy-vscode.vsix
+
+      - name: Upload .vsix for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvy-vscode-vsix-ci
+          path: editors/vscode/jarvy-vscode.vsix
+          retention-days: 14

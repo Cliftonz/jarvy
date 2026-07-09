@@ -1,0 +1,72 @@
+# CI for the JetBrains plugin. No secrets, no publish.
+#
+# `build` runs on every relevant PR/push: buildPlugin compiles the Kotlin
+# against the IntelliJ SDK, validates plugin.xml, and produces the zip.
+# `verify` (the IntelliJ Plugin Verifier — downloads whole IDEs, slow) runs
+# weekly + on demand rather than per-PR to keep PR CI fast.
+name: JetBrains Plugin CI
+
+on:
+  push:
+    paths:
+      - editors/jetbrains/**
+      - .github/workflows/jetbrains-ci.yml
+  pull_request:
+    paths:
+      - editors/jetbrains/**
+      - .github/workflows/jetbrains-ci.yml
+  schedule:
+    - cron: '0 4 * * 1'   # Mondays 04:00 UTC — run the heavy verifier weekly
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jetbrains-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: editors/jetbrains
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Build plugin (compileKotlin + patchPluginXml + zip)
+        run: ./gradlew buildPlugin --no-daemon --stacktrace
+
+      - name: Upload plugin zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvy-intellij-plugin-ci
+          path: editors/jetbrains/build/distributions/*.zip
+          retention-days: 14
+
+  verify:
+    # Plugin Verifier pulls full IDE distributions — only worth it weekly or
+    # on demand, not on every PR.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Verify plugin against recommended IDEs
+        run: ./gradlew verifyPlugin --no-daemon --stacktrace

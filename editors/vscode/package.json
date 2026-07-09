@@ -107,7 +107,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "check": "tsc --noEmit -p ./",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "test": "node --test test/*.test.js",
+    "pretest": "npm run compile"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
