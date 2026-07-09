@@ -1,0 +1,5 @@
+[privileges]
+use_sudo = false
+
+[provisioner]
+notarealtool = "1.0.0"

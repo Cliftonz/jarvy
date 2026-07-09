@@ -1,0 +1,67 @@
+# Headless VS Code integration test: launches a real VS Code host with the
+# extension loaded and drives it against the real jarvy binary (built from
+# source), asserting activation + live diagnostics on an invalid jarvy.toml.
+#
+# Heavier than vscode-ci (downloads VS Code, builds jarvy), so it runs on
+# editor OR CLI-source changes and on demand. Linux needs xvfb for the
+# Electron display.
+name: VS Code Integration
+
+on:
+  push:
+    paths:
+      - editors/vscode/**
+      - .github/workflows/vscode-integration.yml
+  pull_request:
+    paths:
+      - editors/vscode/**
+      - .github/workflows/vscode-integration.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build jarvy (the extension shells out to it)
+        run: cargo build --bin jarvy
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - name: Install extension dependencies
+        working-directory: editors/vscode
+        run: npm ci || npm install
+
+      - name: Compile (extension + integration tests)
+        working-directory: editors/vscode
+        run: npm run compile
+
+      - name: Run headless integration tests
+        working-directory: editors/vscode
+        env:
+          JARVY_TELEMETRY: '0'
+        run: |
+          set -euo pipefail
+          # Put the freshly built jarvy on PATH so the extension finds it.
+          export PATH="$GITHUB_WORKSPACE/target/debug:$PATH"
+          jarvy --version
+          # Electron needs a display on Linux.
+          xvfb-run -a npm run test:integration

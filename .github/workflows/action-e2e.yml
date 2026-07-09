@@ -1,0 +1,87 @@
+# End-to-end test of the Action's `run: setup` path (the self-test only
+# exercises `run: validate`). Installs jarvy via the local action, then runs
+# `jarvy setup` against a real jarvy.toml on all three OSes.
+#
+# The sample config pins `git` (preinstalled on every runner), so setup
+# exercises the full pipeline — config load, version check, detection, hook
+# phase, completion — and reaches exit 0 reliably without a flaky
+# package-manager install. (Real fresh-install coverage lives in
+# tool-e2e / e2e-cross-platform.)
+name: Action E2E (setup)
+
+on:
+  push:
+    paths:
+      - action.yml
+      - .github/workflows/action-e2e.yml
+      - dist/scripts/install.sh
+      - dist/scripts/install.ps1
+  pull_request:
+    paths:
+      - action.yml
+      - .github/workflows/action-e2e.yml
+      - dist/scripts/install.sh
+      - dist/scripts/install.ps1
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JARVY_TELEMETRY: '0'
+  GITHUB_TOKEN: ${{ github.token }}   # authenticated install (rate limits)
+
+jobs:
+  setup:
+    name: e2e setup (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write a sample jarvy.toml (git is preinstalled everywhere)
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '[privileges]\nuse_sudo = false\n\n[provisioner]\ngit = "latest"\n' > e2e.jarvy.toml
+          cat e2e.jarvy.toml
+
+      - name: Install jarvy and run setup
+        id: jarvy
+        uses: ./
+        with:
+          version: latest
+          run: setup
+          config-path: e2e.jarvy.toml
+
+      - name: Assert setup ran end-to-end
+        shell: bash
+        env:
+          JARVY_TEST_MODE: '1'
+        run: |
+          set -euo pipefail
+          # The action step above already fails the job if `jarvy setup`
+          # exits non-zero. Re-run doctor to confirm jarvy resolved the
+          # config and sees git satisfied — proves the pipeline, not just
+          # the process exit.
+          jarvy --version
+          jarvy doctor --file e2e.jarvy.toml --format json > doctor.json
+          cat doctor.json
+          # git must be present and satisfied in the doctor report.
+          python3 - <<'PY'
+          import json
+          d = json.load(open("doctor.json"))
+          tools = {t["name"].lower(): t for t in d.get("tools", [])}
+          assert "git" in tools, f"git missing from doctor tools: {list(tools)}"
+          assert tools["git"]["status"] == "ok", f"git not ok: {tools['git']}"
+          print("OK: jarvy setup resolved the config and git is satisfied")
+          PY
