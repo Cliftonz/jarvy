@@ -165,14 +165,18 @@ Every entry runs a layered gauntlet before it reaches `git config`:
 
 1. **Key grammar / flag-injection.** Keys must match the dotted grammar `section.key` / `section.subsection.key` with chars in `[A-Za-z0-9._-]`, ≤ 256 bytes. Keys starting with `-`, missing a `.`, or with empty segments are refused. Keys needing `:` or `/` (e.g. `url.<base>.insteadOf`) are not supported by this map.
 2. **Option-injection on the value.** Values starting with `-` (e.g. `--unset`) are refused — git would parse them as an option, not data.
-3. **Exec-capable keys** (RCE guard) — keys whose value git *executes* are refused **outright, for any value**: `core.pager`, `core.editor`, `core.sshCommand`, `sequence.editor`, `diff.external`, `core.hooksPath`, `core.fsmonitor` (except the builtin `true`/`false` toggle), `credential.helper`, `gpg[.<fmt>].program`, `uploadpack.packObjectsHook`, and the `filter.<n>.{clean,smudge,process}`, `<n>.textconv`, `mergetool.<n>.cmd`, `difftool.<n>.cmd` families. The `!`-only filter cannot catch these (they need no marker), so they are denied by key. Override deliberately with `JARVY_ALLOW_GIT_EXEC_KEYS=1`.
-4. **Security-guardrail downgrades** — values that weaken a git defense are refused: `core.protectNTFS`/`core.protectHFS` = false (`.git`-path smuggling), `safe.directory = *` (CVE-2022-24765), `safe.bareRepository = all` (embedded bare-repo attack), and `fsck.*` / `fetch.fsck.*` / `receive.fsck.*` = `ignore` plus `transfer`/`fetch`/`receive.fsckObjects` = false (object-integrity checks). Override with `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1`.
+3. **Exec-capable keys** (RCE guard) — keys whose value git *executes* are refused **outright, for any value**: `core.pager`, `core.editor`, `core.sshCommand`, `core.askPass`, `sequence.editor`, `diff.external`, `core.hooksPath`, `core.fsmonitor` (except the builtin `true`/`false` toggle), `credential.helper`, `gpg[.<fmt>].program`, `uploadpack.packObjectsHook`, `init.templateDir`, the per-command `pager.<cmd>` family, and the `filter.<n>.{clean,smudge,process}`, `<n>.textconv`, `mergetool.<n>.cmd`, `difftool.<n>.cmd`, `merge.<n>.driver`, `remote.<n>.{uploadpack,receivepack}` families. The `!`-only filter cannot catch these (they need no marker), so they are denied by key. Override deliberately with `JARVY_ALLOW_GIT_EXEC_KEYS=1`.
+4. **Security-guardrail downgrades** — values that weaken a git defense are refused: `core.protectNTFS`/`core.protectHFS` = false (`.git`-path smuggling), `safe.directory = *` (CVE-2022-24765), `safe.bareRepository = all` (embedded bare-repo attack), `fsck.*` / `fetch.fsck.*` / `receive.fsck.*` = `ignore` plus `transfer`/`fetch`/`receive.fsckObjects` = false (object-integrity checks), and `http[.<url>].sslVerify = false` (TLS MITM). Override with `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1`.
 5. **`!`-shell values** are refused for every key (leading whitespace included — git trims it, so `" !cmd"` is caught too).
 
 Also:
 
 - Applied **last**, so an entry here overrides a modeled field targeting the same key.
 - Prefer a typed field when one exists (`autocrlf`, `editor`, etc.); reach for `[git.extra]` only when there's no first-party analogue.
+
+### Typed fields that map to exec-capable keys
+
+`[git.extra]` refuses exec-capable keys outright, but the typed `editor` and `credential_helper` fields exist precisely to set `core.editor` / `credential.helper`. Those funnel through the same writer, which guards by **value**: a bare command plus flags is allowed (`editor = "vim"`, `editor = "code --wait"`, `credential_helper = "osxkeychain"`, `credential_helper = "cache --timeout=3600"`), while a shell metacharacter (`;`, `|`, `&`, `$`, `` ` ``, `()`, `<>`, newline), a leading `!`, or — for `credential.helper` — a program **path** (`/tmp/x`, `./x`, `~/x`) is refused. `JARVY_ALLOW_GIT_EXEC_KEYS=1` overrides.
 
 ## Remote configs (`--from <url>`)
 
@@ -183,7 +187,7 @@ A config fetched from a remote URL (`ConfigOrigin::Remote`) **cannot apply `[git
 allow_remote = true   # required to apply [git] from a --from URL; still local-scoped
 ```
 
-Preview before applying an untrusted config: `jarvy setup --dry-run` now lists every OS-default and `[git.extra]` key that would be written.
+Preview before applying an untrusted config: `jarvy setup --dry-run` lists every OS-default and `[git.extra]` key that would be written. The `[git.extra]` preview runs the **same guard gauntlet** as a real apply, so a key that would be refused (e.g. `core.pager`, `http.sslVerify = false`) is shown as refused in the preview rather than as "would set" — preview matches apply.
 
 ## What Runs
 

@@ -1235,43 +1235,73 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
     }
 }
 
-/// Apply `[git]` configuration (user identity, signing, aliases, line
-/// endings) via `crate::git::GitSetup`. Refusal of `!`-prefixed values is
-/// applied inside `GitSetup::set_config`.
-fn run_git_phase(config: &Config, dry_run: bool) {
+/// Decision for the git-config phase, extracted so the remote-origin trust gate
+/// is unit-testable without running git. See `resolve_git_phase`.
+// Transient, constructed once per setup run and immediately consumed — the
+// size gap between the data-carrying `Apply` and the empty variants is not
+// worth a `Box` indirection here.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub(crate) enum GitPhaseDecision {
+    /// No `[git]` block — nothing to do.
+    Skip,
+    /// Remote-origin config without `allow_remote` — refused (no writes).
+    Refused,
+    /// Apply this config. `scope` is already forced to `Local` for a remote
+    /// origin, so a remote can never touch `~/.gitconfig`.
+    Apply {
+        config: crate::git::GitConfig,
+        is_remote: bool,
+    },
+}
+
+/// Resolve the git-config phase decision. Pure (no git I/O): applies the
+/// remote-origin trust gate and forces `--local` scope for an authorized remote
+/// config. Mirrors `run_git_hooks_phase` / `[packages] allow_remote`.
+pub(crate) fn resolve_git_phase(config: &Config) -> GitPhaseDecision {
     if !config.has_git() {
-        return;
+        return GitPhaseDecision::Skip;
     }
     let Some(git_config) = config.get_git() else {
-        return;
+        return GitPhaseDecision::Skip;
     };
-
-    // Trust gate: a config fetched from a remote URL may not mutate git config
-    // (least of all the shared ~/.gitconfig) unless the user opted in via
-    // `[git] allow_remote`. Mirrors run_git_hooks_phase / `[packages] allow_remote`.
     let is_remote = config.origin == crate::ai_hooks::ConfigOrigin::Remote;
     if is_remote && !git_config.allow_remote {
-        if crate::observability::telemetry_gate::is_enabled() {
-            tracing::warn!(
-                event = "git_config.remote_refused",
-                reason = "allow_remote_not_set",
-                "refused `[git]` configuration from a remote-origin config"
-            );
-        }
-        eprintln!(
-            "Warning: skipping [git] configuration from a remote config.\n  \
-             Set `[git] allow_remote = true` in the source config — or copy it locally —\n  \
-             to authorize git configuration from this origin."
-        );
-        return;
+        return GitPhaseDecision::Refused;
     }
-
-    // Even an authorized remote config is forced to `--local` scope, so a remote
-    // can never write the developer's global ~/.gitconfig.
     let mut git_config = git_config.clone();
     if is_remote {
         git_config.scope = crate::git::ConfigScope::Local;
     }
+    GitPhaseDecision::Apply {
+        config: git_config,
+        is_remote,
+    }
+}
+
+/// Apply `[git]` configuration (user identity, signing, aliases, line endings,
+/// os-defaults, `[git.extra]`) via `crate::git::GitSetup`. Value refusals are
+/// enforced inside `GitSetup`; the remote-origin trust gate is `resolve_git_phase`.
+fn run_git_phase(config: &Config, dry_run: bool) {
+    let (git_config, is_remote) = match resolve_git_phase(config) {
+        GitPhaseDecision::Skip => return,
+        GitPhaseDecision::Refused => {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "git_config.remote_refused",
+                    reason = "allow_remote_not_set",
+                    "refused `[git]` configuration from a remote-origin config"
+                );
+            }
+            eprintln!(
+                "Warning: skipping [git] configuration from a remote config.\n  \
+                 Set `[git] allow_remote = true` in the source config — or copy it locally —\n  \
+                 to authorize git configuration from this origin."
+            );
+            return;
+        }
+        GitPhaseDecision::Apply { config, is_remote } => (config, is_remote),
+    };
 
     if dry_run {
         println!("\n=== Git Configuration (dry-run) ===");
@@ -1302,17 +1332,26 @@ fn run_git_phase(config: &Config, dry_run: bool) {
         }
         // Preview the OS-aware / recommended defaults and every `[git.extra]`
         // key — the highest-risk writes to review before applying a config.
-        for (key, value) in crate::git::GitSetup::new(git_config.clone()).os_default_plan() {
+        // `[git.extra]` runs the SAME guard gauntlet as a real apply (via
+        // extra_write_plan) so the preview cannot claim a key would be set that
+        // the real run refuses.
+        let setup = crate::git::GitSetup::new(git_config.clone());
+        for (key, value) in setup.os_default_plan() {
             println!("[DRY-RUN] Would set git config {key}: {value}");
         }
-        let mut extra: Vec<(&String, &String)> = git_config.extra.iter().collect();
-        extra.sort_by(|a, b| a.0.cmp(b.0));
-        for (key, value) in extra {
-            println!("[DRY-RUN] Would set git config {key}: {value}");
+        match setup.extra_write_plan() {
+            Ok(plan) => {
+                for (key, value) in plan {
+                    println!("[DRY-RUN] Would set git config {key}: {value}");
+                }
+            }
+            Err(e) => println!("[DRY-RUN] [git.extra] would be refused: {e}"),
         }
         if crate::observability::telemetry_gate::is_enabled() {
             tracing::info!(
                 event = "git_config.phase_previewed",
+                remote = is_remote,
+                scope = ?git_config.scope,
                 os_defaults_enabled = git_config.os_defaults.unwrap_or(true),
                 extra_key_count = git_config.extra.len(),
             );
@@ -1330,6 +1369,7 @@ fn run_git_phase(config: &Config, dry_run: bool) {
         let setup = crate::git::GitSetup::new(git_config.clone());
         let result = setup.configure();
         let ok = result.is_ok();
+        let error_kind = result.as_ref().err().map_or("none", |e| e.kind());
         match result {
             Ok(()) => println!("Git configuration applied successfully"),
             Err(ref e) => eprintln!("Warning: Git configuration failed: {e}"),
@@ -1338,7 +1378,9 @@ fn run_git_phase(config: &Config, dry_run: bool) {
             tracing::info!(
                 event = "git_config.phase_completed",
                 ok,
+                error_kind,
                 remote = is_remote,
+                scope = ?git_config.scope,
                 signing = git_config.signing,
                 aliases = git_config.aliases.len(),
                 extra_key_count = git_config.extra.len(),
@@ -2347,6 +2389,52 @@ mod tests {
             "#,
         );
         run_git_phase(&cfg, true);
+    }
+
+    #[test]
+    fn resolve_git_phase_skips_without_git_block() {
+        let cfg = config_from("[provisioner]\ngit = \"latest\"\n");
+        assert!(matches!(resolve_git_phase(&cfg), GitPhaseDecision::Skip));
+    }
+
+    #[test]
+    fn resolve_git_phase_local_config_applies_with_declared_scope() {
+        let cfg = config_from("[provisioner]\n\n[git]\nuser_name = \"x\"\nscope = \"global\"\n");
+        match resolve_git_phase(&cfg) {
+            GitPhaseDecision::Apply { config, is_remote } => {
+                assert!(!is_remote);
+                assert_eq!(config.scope, crate::git::ConfigScope::Global);
+            }
+            other => panic!("expected Apply, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_git_phase_refuses_remote_without_allow_remote() {
+        let mut cfg = config_from("[provisioner]\n\n[git]\nuser_name = \"x\"\n");
+        cfg.mark_remote();
+        assert!(matches!(resolve_git_phase(&cfg), GitPhaseDecision::Refused));
+    }
+
+    #[test]
+    fn resolve_git_phase_remote_authorized_forced_to_local() {
+        // Even with allow_remote + an explicit global scope, a remote config is
+        // clamped to --local so it can never write ~/.gitconfig.
+        let mut cfg = config_from(
+            "[provisioner]\n\n[git]\nuser_name = \"x\"\nscope = \"global\"\nallow_remote = true\n",
+        );
+        cfg.mark_remote();
+        match resolve_git_phase(&cfg) {
+            GitPhaseDecision::Apply { config, is_remote } => {
+                assert!(is_remote);
+                assert_eq!(
+                    config.scope,
+                    crate::git::ConfigScope::Local,
+                    "remote writes must be forced to --local"
+                );
+            }
+            other => panic!("expected Apply(local), got {other:?}"),
+        }
     }
 
     #[test]
