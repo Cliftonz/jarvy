@@ -49,9 +49,9 @@ Lighter checks (no full plugin ZIP):
 ./gradlew verifyPlugin    # run the IntelliJ Plugin Verifier
 ```
 
-> **Note:** The first build downloads the IntelliJ IDEA Community
-> distribution (~1 GB) plus the Gradle distribution. Subsequent builds are
-> cached.
+> **Note:** The first build downloads the unified IntelliJ IDEA platform
+> distribution (~1 GB; since 2025.3 Community and Ultimate ship as one) plus
+> the Gradle distribution. Subsequent builds are cached.
 
 ## Run in a sandbox IDE
 

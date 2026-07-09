@@ -1,14 +1,19 @@
 // Jarvy IntelliJ Platform plugin build script.
 //
 // Uses the IntelliJ Platform Gradle Plugin 2.x (`org.jetbrains.intellij.platform`),
-// NOT the legacy `intellij {}` block. Targets IntelliJ IDEA Community; the
-// concrete version is pinned in gradle.properties so the whole matrix
-// (platform version, since/until build) lives in one place.
+// NOT the legacy `intellij {}` block. Targets the unified IntelliJ IDEA
+// platform (from 2025.3 Community/Ultimate ship as one distribution, product
+// code `IU`); the concrete version is pinned in gradle.properties so the whole
+// matrix (platform version, since/until build) lives in one place.
+//
+// Requires IntelliJ Platform Gradle Plugin >= 2.10.4 (the `intellijIdea(...)`
+// helper + 2025.3 support) which mandates Gradle >= 8.13 — see the pinned
+// wrapper (gradle-8.14.5). Plugin 2.12+ requires Gradle 9, deferred.
 
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.1.0"
-    id("org.jetbrains.intellij.platform") version "2.5.0"
+    id("org.jetbrains.intellij.platform") version "2.10.4"
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -20,7 +25,7 @@ repositories {
     // the plugin verifier, marketplace metadata). The `intellijPlatform`
     // repository DSL is provided by the plugin applied above; it must
     // live here (project scope) rather than in settings.gradle.kts,
-    // where the extension isn't on the classpath under 2.5.0.
+    // where the extension isn't on the classpath under the 2.x plugin.
     intellijPlatform {
         defaultRepositories()
     }
@@ -28,8 +33,11 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // Target IDE: IntelliJ IDEA Community (platformVersion in gradle.properties).
-        intellijIdeaCommunity(providers.gradleProperty("platformVersion"))
+        // Target IDE: the unified IntelliJ IDEA platform (platformVersion in
+        // gradle.properties). Since 2025.3, Community/Ultimate are one
+        // distribution, so the `intellijIdea(...)` helper replaces the former
+        // `intellijIdeaCommunity(...)` / `intellijIdeaUltimate(...)`.
+        intellijIdea(providers.gradleProperty("platformVersion"))
 
         // The bundled TOML language support. Our ExternalAnnotator attaches
         // to the "TOML" language so it can highlight problems in jarvy.toml.
