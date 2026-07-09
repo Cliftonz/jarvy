@@ -49,6 +49,9 @@ credential_helper = "osxkeychain"
 # Scope
 scope = "global"                  # global (~/.gitconfig) | local (.git/config)
 
+# OS-aware defaults (enabled unless set to false)
+os_defaults = true
+
 # Aliases
 [git.aliases]
 co = "checkout"
@@ -126,6 +129,46 @@ last = "log -1 HEAD"
 
 These map directly to `git config --<scope> alias.<name> "<value>"`. Existing aliases are overwritten.
 
+## OS-Aware Defaults
+
+Like `credential.helper`, Jarvy fills in host-appropriate defaults for a few keys the user left unset. Enabled by default; set `os_defaults = false` to opt out.
+
+| Key | Windows | macOS | Linux | Why |
+|-----|---------|-------|-------|-----|
+| `core.autocrlf` | `true` | `input` | `input` | CRLF↔LF conversion — Windows uses CRLF, Unix commits LF untouched |
+| `core.longpaths` | `true` | — | — | Allow paths beyond the 260-char `MAX_PATH` limit |
+| `core.precomposeunicode` | — | `true` | — | Recompose APFS/HFS+ NFD filenames to NFC for cross-platform matches |
+
+Jarvy also applies a small set of **cross-platform recommended defaults** under the same `os_defaults` flag (unset keys only, `[git.extra]` still wins):
+
+| Key | Value | Why |
+|-----|-------|-----|
+| `fetch.prune` | `true` | Drop local refs for branches deleted on the remote |
+| `rerere.enabled` | `true` | Reuse recorded conflict resolutions on re-merge/rebase |
+| `merge.conflictStyle` | `zdiff3` | Show the common base in conflict markers (needs git ≥ 2.35; older git ignores it) |
+
+These are only written when the corresponding value is unset. An explicit typed field (e.g. `autocrlf = "false"`) or a `[git.extra]` entry for the same key always wins — Jarvy never overwrites an explicit value.
+
+## Extra Keys (escape hatch)
+
+For git config keys Jarvy doesn't model as first-class fields, use `[git.extra]`. Keys are dotted git config keys; values are written verbatim via `git config --<scope> <key> <value>`.
+
+```toml
+[git.extra]
+"core.fsmonitor"     = "true"
+"feature.manyFiles"  = "true"
+"diff.colorMoved"    = "zebra"
+"branch.main.rebase" = "true"
+```
+
+Rules and guardrails:
+
+- Applied **last**, so an entry here overrides a modeled field targeting the same key.
+- Keys must match the dotted grammar `section.key` / `section.subsection.key` with chars in `[A-Za-z0-9._-]`. Keys starting with `-`, missing a `.`, or with empty segments are refused (flag-injection guard). Keys needing `:` or `/` (e.g. `url.<base>.insteadOf`) are not supported by this map.
+- Values starting with `!` are refused for **every** extra key — git would run them as a shell command. Prefer a modeled field for the few keys that legitimately need shell (none currently exposed).
+- **Security guardrails** — values that weaken a git defense are refused: `core.protectNTFS`/`core.protectHFS` = false (`.git`-path smuggling), `safe.directory = *` (CVE-2022-24765 ownership check), and `fsck.* = ignore` (object-integrity checks). Set `JARVY_ALLOW_GIT_PROTECT_DOWNGRADE=1` to override deliberately.
+- Prefer a typed field when one exists (`autocrlf`, `editor`, etc.); reach for `[git.extra]` only when there's no first-party analogue.
+
 ## What Runs
 
 `jarvy setup` invokes `git config --<scope> <key> <value>` for each setting. The order:
@@ -135,7 +178,9 @@ These map directly to `git config --<scope> alias.<name> "<value>"`. Existing al
 3. Defaults (`init.defaultBranch`, `pull.rebase`, etc.)
 4. Line endings (`core.autocrlf`, `core.eol`)
 5. Credential helper
-6. Aliases
+6. OS-aware + recommended defaults (`core.autocrlf`, Windows `core.longpaths`, macOS `core.precomposeunicode`, `fetch.prune`, `rerere.enabled`, `merge.conflictStyle` — unset keys only)
+7. Aliases
+8. Extra keys (`[git.extra]`, override-last)
 
 If `git` itself is missing, the whole `[git]` section is skipped with a warning — install Git first.
 
