@@ -239,6 +239,7 @@ pub mod terragrunt;
 pub mod tfsec;
 pub mod tilt;
 pub mod tmux;
+pub mod todoist;
 pub mod tokei;
 pub mod tree;
 pub mod trivy;
