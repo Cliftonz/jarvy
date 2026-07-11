@@ -52,10 +52,10 @@ pub fn read_recent_logs(lines: usize) -> Result<Vec<String>, LogError> {
     let content =
         std::fs::read_to_string(&log_file).map_err(|e| LogError::ReadFailed(e.to_string()))?;
 
-    let all_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let all_lines: Vec<&str> = content.lines().collect();
     let start = all_lines.len().saturating_sub(lines);
 
-    Ok(all_lines[start..].to_vec())
+    Ok(all_lines[start..].iter().map(|s| s.to_string()).collect())
 }
 
 /// Get statistics about log files
@@ -99,26 +99,38 @@ pub fn get_log_stats() -> Result<LogStats, LogError> {
     let log_file = current_log_file();
     if log_file.exists() {
         if let Ok(content) = std::fs::read_to_string(&log_file) {
-            let lines: Vec<&str> = content.lines().collect();
-            if !lines.is_empty() {
-                oldest_entry = lines.first().map(|s| s.to_string());
-                newest_entry = lines.last().map(|s| s.to_string());
-            }
+            let mut newest_line: Option<&str> = None;
 
-            for line in lines {
+            for line in content.lines() {
+                if oldest_entry.is_none() {
+                    oldest_entry = Some(line.to_string());
+                }
+                newest_line = Some(line);
+
                 // Try to parse log level from line (works with both JSON and text formats)
-                if line.contains("\"level\":\"ERROR\"") || line.contains(" ERROR ") {
-                    *entries_by_level.entry("ERROR".to_string()).or_insert(0) += 1;
+                let level = if line.contains("\"level\":\"ERROR\"") || line.contains(" ERROR ") {
+                    Some("ERROR")
                 } else if line.contains("\"level\":\"WARN\"") || line.contains(" WARN ") {
-                    *entries_by_level.entry("WARN".to_string()).or_insert(0) += 1;
+                    Some("WARN")
                 } else if line.contains("\"level\":\"INFO\"") || line.contains(" INFO ") {
-                    *entries_by_level.entry("INFO".to_string()).or_insert(0) += 1;
+                    Some("INFO")
                 } else if line.contains("\"level\":\"DEBUG\"") || line.contains(" DEBUG ") {
-                    *entries_by_level.entry("DEBUG".to_string()).or_insert(0) += 1;
+                    Some("DEBUG")
                 } else if line.contains("\"level\":\"TRACE\"") || line.contains(" TRACE ") {
-                    *entries_by_level.entry("TRACE".to_string()).or_insert(0) += 1;
+                    Some("TRACE")
+                } else {
+                    None
+                };
+                if let Some(level) = level {
+                    if let Some(count) = entries_by_level.get_mut(level) {
+                        *count += 1;
+                    } else {
+                        entries_by_level.insert(level.to_string(), 1);
+                    }
                 }
             }
+
+            newest_entry = newest_line.map(|s| s.to_string());
         }
     }
 
