@@ -7,7 +7,7 @@ site_description: >-
 site_author: Zac Clifton
 repo_url: https://github.com/Cliftonz/jarvy
 repo_name: Cliftonz/jarvy
-edit_uri: edit/main/docs/
+edit_uri: ""
 
 copyright: Copyright &copy; 2025-2026 Zac Clifton
 
@@ -39,8 +39,6 @@ theme:
     code: JetBrains Mono
   features:
     - announce.dismiss
-    - content.action.edit
-    - content.action.view
     - content.code.annotate
     - content.code.copy
     - content.tabs.link
