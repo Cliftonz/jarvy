@@ -733,6 +733,18 @@ pub struct CustomInstallInfo {
     pub has_custom_installer: bool,
 }
 
+/// Default-hook metadata surfaced in the tool index. Only the description
+/// and platform filter are exported — the script body stays out of the
+/// index so consumers (docs generator, MCP) don't ship shell source.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DefaultHookInfo {
+    /// Human-readable description of what the hook does.
+    pub description: String,
+    /// Platform filter ("macos", "linux", "windows", "unix"), if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+}
+
 /// A serializable tool entry for the tool index.
 /// This includes the full ToolSpec data plus metadata about custom installers.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -758,6 +770,15 @@ pub struct ToolIndexEntry {
     /// Tool category for filtering (e.g., "devops", "language", "editor")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Strict dependencies — ALL must be installed before this tool
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depends_on: Option<Vec<String>>,
+    /// Flexible dependencies — at least ONE must be available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depends_on_one_of: Option<Vec<String>>,
+    /// Default post-install hook metadata (description only, no script body)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_hook: Option<DefaultHookInfo>,
 }
 
 impl From<&ToolSpec> for ToolIndexEntry {
@@ -774,6 +795,16 @@ impl From<&ToolSpec> for ToolIndexEntry {
                 has_custom_installer: spec.custom_install.is_some(),
             },
             category: spec.category.map(|s| s.to_string()),
+            depends_on: spec
+                .depends_on
+                .map(|d| d.iter().map(|s| s.to_string()).collect()),
+            depends_on_one_of: spec
+                .depends_on_one_of
+                .map(|d| d.iter().map(|s| s.to_string()).collect()),
+            default_hook: spec.default_hook.as_ref().map(|h| DefaultHookInfo {
+                description: h.description.to_string(),
+                platform: h.platform.map(str::to_string),
+            }),
         }
     }
 }
@@ -791,7 +822,9 @@ pub struct ToolIndex {
 
 impl ToolIndex {
     /// Current version of the tool index format.
-    pub const VERSION: &'static str = "1.0.0";
+    /// 1.1.0: added `depends_on`, `depends_on_one_of`, `default_hook`
+    /// (description + platform only) to entries — additive.
+    pub const VERSION: &'static str = "1.1.0";
 }
 
 /// Manually registered tools that don't use the `define_tool!` macro.
@@ -827,6 +860,9 @@ pub fn generate_tool_index() -> ToolIndex {
                 has_custom_installer: true,
             },
             category: None,
+            depends_on: None,
+            depends_on_one_of: None,
+            default_hook: None,
         });
     }
 
