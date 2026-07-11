@@ -222,6 +222,7 @@ nav:
     - JSON Schema (editor autocomplete): schema/index.md
     - CLI reference (auto): cli-reference.md
     - CLI guide: cli.md
+    - Tool directory (search): tools-directory.md
     - Tool registry (auto): tools-registry.md
     - Tools by category: tools-by-category.md
     - Architecture decisions: decisions.md

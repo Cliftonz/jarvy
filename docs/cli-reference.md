@@ -313,18 +313,12 @@ Usage: jarvy doctor [OPTIONS]
 Options:
   -f, --file <FILE>             Path to the configuration file (optional)
       --tools <TOOLS>           Only check specific tools (comma-separated)
-      --check <CATEGORIES>      Limit checks to categories (comma-separated): path, tools,
-                                hooks. System info is always shown. Omit to run every category.
+      --check <CATEGORIES>      Limit checks to specific categories (comma-separated): path, tools, hooks. System info is always shown as context. Omit to run every category
   -F, --format <OUTPUT_FORMAT>  Output format: json, pretty [default: pretty]
       --extended                Show extended health dashboard with system metrics
       --report <REPORT>         Export diagnostic report as markdown
   -h, --help                    Print help
 ```
-
-`--check` narrows the run to the named sections — e.g. `jarvy doctor --check tools`
-skips PATH and hook probing entirely and reports only tool health. An unknown
-category exits `2` (CONFIG_ERROR) with the valid set. It composes with `--tools`
-and `--extended`.
 
 ### `jarvy diff`
 
