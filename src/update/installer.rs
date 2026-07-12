@@ -164,11 +164,23 @@ impl BinaryInstaller {
     fn download_asset(&self, asset: &ReleaseAsset) -> Result<PathBuf, UpdateError> {
         let target_path = self.staging_dir.join(&asset.name);
 
-        let response = crate::net::agent()
+        // Release-asset URLs 302 to release-assets.githubusercontent.com;
+        // the shared no-redirect agent turns that into an empty-body
+        // "success" (v0.6.0-rc.1 sev-1). Use the redirect-following agent
+        // and refuse anything but a final 200 so a policy regression fails
+        // loudly instead of staging a 0-byte archive.
+        let response = crate::net::github_release_download_agent()
             .get(&asset.browser_download_url)
             .header("User-Agent", crate::net::USER_AGENT)
             .call()
             .map_err(|e| UpdateError::DownloadFailed(e.to_string()))?;
+        if response.status() != 200 {
+            return Err(UpdateError::DownloadFailed(format!(
+                "HTTP {} for {}",
+                response.status(),
+                asset.name
+            )));
+        }
 
         // BufWriter so the ~8KB chunks ureq emits don't translate to
         // ~3,800 raw write(2) syscalls for a 30 MB tarball.
@@ -189,11 +201,19 @@ impl BinaryInstaller {
 
     /// Download checksums file
     fn download_checksums(&self, asset: &ReleaseAsset) -> Result<String, UpdateError> {
-        let response = crate::net::agent()
+        // Same redirect + status story as `download_asset`.
+        let response = crate::net::github_release_download_agent()
             .get(&asset.browser_download_url)
             .header("User-Agent", crate::net::USER_AGENT)
             .call()
             .map_err(|e| UpdateError::DownloadFailed(e.to_string()))?;
+        if response.status() != 200 {
+            return Err(UpdateError::DownloadFailed(format!(
+                "HTTP {} for {}",
+                response.status(),
+                asset.name
+            )));
+        }
 
         let mut body_content = String::new();
         let mut body = response.into_body();

@@ -8,4 +8,4 @@ pub mod url_encode;
 
 #[allow(unused_imports)]
 pub use agent::user_agent;
-pub use agent::{USER_AGENT, agent, github_api_agent};
+pub use agent::{USER_AGENT, agent, github_api_agent, github_release_download_agent};
