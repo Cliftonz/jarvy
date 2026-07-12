@@ -1,6 +1,6 @@
 ---
 title: "Tool registry (auto-generated) — Jarvy"
-description: "Every tool Jarvy knows how to install — 258 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
+description: "Every tool Jarvy knows how to install — 260 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
 tags:
   - reference
   - tools
@@ -12,7 +12,7 @@ tags:
     This page is generated from `jarvy tools --index` by `scripts/gen-docs.sh`. 
     Run that script after registering new tools.
 
-Jarvy currently ships **258 tools**. Reference one in your `jarvy.toml` by its **name**.
+Jarvy currently ships **260 tools**. Reference one in your `jarvy.toml` by its **name**.
 
 | Name | Command | macOS | Linux | Windows | Default hook | Depends on |
 |---|---|---|---|---|---|---|
@@ -127,6 +127,7 @@ Jarvy currently ships **258 tools**. Reference one in your `jarvy.toml` by its *
 | `julia` | `julia` | `cask: julia` | apt: `julia`<br>dnf: `julia`<br>pacman: `julia`<br>apk: `julia` | `winget: Julialang.Julia` |  | — |
 | `just` | `just` | `brew: just` | apt: `just`<br>dnf: `just`<br>pacman: `just`<br>apk: `just` | `winget: Casey.Just` | ✓ | — |
 | `k3d` | `k3d` | `brew: k3d` | — | `winget: k3d-io.k3d` |  | `docker` |
+| `k3s` | `k3s` | — | — | — |  | — |
 | `k6` | `k6` | `brew: k6` | apt: `k6`<br>dnf: `k6`<br>pacman: `k6`<br>apk: `k6` | `winget: Grafana.k6` |  | — |
 | `k9s` | `k9s` | `brew: derailed/k9s/k9s` | apt: `k9s`<br>dnf: `k9s`<br>pacman: `k9s`<br>apk: `k9s` | `winget: Derailed.k9s` | ✓ | `kubectl` |
 | `kaf` | `kaf` | `brew: kaf` | — | — |  | — |
@@ -159,6 +160,7 @@ Jarvy currently ships **258 tools**. Reference one in your `jarvy.toml` by its *
 | `lynis` | `lynis` | `brew: lynis` | apt: `lynis`<br>dnf: `lynis`<br>pacman: `lynis`<br>apk: `lynis` | — |  | — |
 | `make` | `make` | `brew: make` | apt: `make`<br>dnf: `make`<br>pacman: `make`<br>apk: `make` | `winget: GnuWin32.Make` |  | — |
 | `micro` | `micro` | `brew: micro` | apt: `micro`<br>dnf: `micro`<br>pacman: `micro`<br>apk: `micro` | `winget: zyedidia.micro` |  | — |
+| `microk8s` | `microk8s` | — | — | — |  | — |
 | `minikube` | `minikube` | `brew: minikube` | apt: `minikube`<br>dnf: `minikube`<br>pacman: `minikube`<br>apk: `minikube` | `winget: Kubernetes.minikube` | ✓ | `docker`, `podman` |
 | `mise` | `mise` | `brew: mise` | — | `winget: jdx.mise` | ✓ | — |
 | `mockgen` | `mockgen` | `brew: mockery` | apt: `mockery`<br>dnf: `mockery`<br>pacman: `mockery`<br>apk: `mockery` | `winget: vektra.mockery` |  | `go` |

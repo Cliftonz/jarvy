@@ -166,17 +166,33 @@ impl EnsureStamp {
     }
 }
 
-/// Generate the RC snippet for a given shell type
+/// Generate the RC snippet for a given shell type.
+///
+/// Besides the `jarvy ensure` startup check, defines `jr` as shorthand for
+/// `jarvy run` (the npm-run-style `[commands]` runner) — a function rather
+/// than an alias on PowerShell, where aliases can't carry arguments.
 pub fn generate_rc_snippet(shell: ShellType) -> String {
     match shell {
-        ShellType::Fish => "if command -q jarvy\n  jarvy ensure --quiet\nend".to_string(),
+        ShellType::Fish => {
+            "if command -q jarvy\n  jarvy ensure --quiet\n  alias jr 'jarvy run'\nend".to_string()
+        }
         ShellType::PowerShell => {
-            "if (Get-Command jarvy -ErrorAction SilentlyContinue) {\n  jarvy ensure --quiet\n}"
+            "if (Get-Command jarvy -ErrorAction SilentlyContinue) {\n  jarvy ensure --quiet\n  function jr { jarvy run @args }\n}"
+                .to_string()
+        }
+        // Nushell has no `eval` — users `source` this from config.nu
+        // (e.g. `jarvy shell-init --shell nushell | save -f ~/.config/nushell/jarvy.nu`).
+        // The alias must be top-level: `alias` inside an `if` block is
+        // scoped to that block in nu. Aliasing a missing external is fine
+        // at parse time; it only resolves when invoked.
+        ShellType::Nushell => {
+            "alias jr = jarvy run\nif (which jarvy | is-not-empty) {\n  jarvy ensure --quiet\n}"
                 .to_string()
         }
         _ => {
             // Bash, Zsh, Sh
-            "if command -v jarvy &> /dev/null; then\n  jarvy ensure --quiet\nfi".to_string()
+            "if command -v jarvy &> /dev/null; then\n  jarvy ensure --quiet\n  alias jr='jarvy run'\nfi"
+                .to_string()
         }
     }
 }
@@ -432,12 +448,14 @@ mod tests {
         let snippet = generate_rc_snippet(ShellType::Bash);
         assert!(snippet.contains("command -v jarvy"));
         assert!(snippet.contains("jarvy ensure --quiet"));
+        assert!(snippet.contains("alias jr='jarvy run'"));
     }
 
     #[test]
     fn test_generate_rc_snippet_fish() {
         let snippet = generate_rc_snippet(ShellType::Fish);
         assert!(snippet.contains("command -q jarvy"));
+        assert!(snippet.contains("alias jr 'jarvy run'"));
         assert!(snippet.contains("end"));
     }
 
@@ -446,5 +464,16 @@ mod tests {
         let snippet = generate_rc_snippet(ShellType::PowerShell);
         assert!(snippet.contains("Get-Command"));
         assert!(snippet.contains("jarvy ensure --quiet"));
+        assert!(snippet.contains("function jr { jarvy run @args }"));
+    }
+
+    #[test]
+    fn test_generate_rc_snippet_nushell() {
+        let snippet = generate_rc_snippet(ShellType::Nushell);
+        assert!(snippet.contains("which jarvy | is-not-empty"));
+        assert!(snippet.contains("jarvy ensure --quiet"));
+        // Alias must be top-level, before the `if` — nu scopes `alias`
+        // declared inside a block to that block.
+        assert!(snippet.starts_with("alias jr = jarvy run\n"));
     }
 }

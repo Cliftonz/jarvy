@@ -470,3 +470,266 @@ rules = "{abs_path_toml}"
         "absolute path must trigger refusal advisory; stderr was: {stderr}"
     );
 }
+
+/// `jarvy run` (no name) lists `[commands]` entries; JSON envelope carries
+/// name/command/well_known per entry.
+#[test]
+fn run_lists_commands_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\nrun = \"cargo run\"\nhello = \"echo hi\"\n",
+    )
+    .unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.args(["run", "--file"])
+        .arg(&jarvy_toml)
+        .args(["--format", "json"]);
+    let out = c.assert().success().get_output().clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    let commands = v["commands"].as_array().expect("commands array");
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0]["name"], "run");
+    assert_eq!(commands[0]["well_known"], true);
+    assert_eq!(commands[1]["name"], "hello");
+    assert_eq!(commands[1]["command"], "echo hi");
+    assert_eq!(commands[1]["well_known"], false);
+}
+
+/// `jarvy run <name>` executes the command and propagates the child's
+/// exit code — success and failure paths.
+#[test]
+fn run_executes_named_command_and_propagates_exit_code() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\nok = \"echo run-marker-ok\"\nfail = \"exit 3\"\n",
+    )
+    .unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.args(["run", "ok", "--file"]).arg(&jarvy_toml);
+    c.assert()
+        .success()
+        .stdout(predicate::str::contains("run-marker-ok"));
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.args(["run", "fail", "--file"]).arg(&jarvy_toml);
+    c.assert().code(3);
+}
+
+/// Unknown command name exits CONFIG_ERROR (2) and lists what's available.
+#[test]
+fn run_unknown_name_exits_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(&jarvy_toml, "[commands]\nfmt = \"cargo fmt\"\n").unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.args(["run", "nope", "--file"]).arg(&jarvy_toml);
+    c.assert()
+        .code(2)
+        .stderr(predicate::str::contains("No command named `nope`"))
+        .stderr(predicate::str::contains("fmt"));
+}
+
+/// `jarvy run` extra args after `--` are appended to the command line.
+#[test]
+fn run_appends_trailing_args() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(&jarvy_toml, "[commands]\nsay = \"echo\"\n").unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.args(["run", "say", "--file"])
+        .arg(&jarvy_toml)
+        .args(["--", "trailing-marker"]);
+    c.assert()
+        .success()
+        .stdout(predicate::str::contains("trailing-marker"));
+}
+
+/// Missing / malformed jarvy.toml must exit CONFIG_ERROR (2) with a
+/// distinct message — the hard-error loader policy of `jarvy run`.
+#[test]
+fn run_missing_or_invalid_config_exits_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "x", "--file"])
+        .arg(tmp.path().join("absent.toml"));
+    c.assert()
+        .code(2)
+        .stderr(predicate::str::contains("no jarvy.toml found"));
+
+    let bad = tmp.path().join("bad.toml");
+    std::fs::write(&bad, "not valid toml [").unwrap();
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "x", "--file"]).arg(&bad);
+    c.assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot parse"));
+}
+
+/// NUL byte in the resolved command line is refused with CONFIG_ERROR —
+/// pins run_cmd's own check (independent of the menu's classifier).
+#[test]
+fn run_nul_byte_command_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(&jarvy_toml, "[commands]\nbad = \"echo \\u0000hi\"\n").unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "bad", "--file"]).arg(&jarvy_toml);
+    c.assert()
+        .code(2)
+        .stderr(predicate::str::contains("NUL byte"));
+}
+
+/// Signal-killed child (no exit code) maps to process exit 1 — pins the
+/// `status.code().unwrap_or(1)` fallback.
+#[cfg(unix)]
+#[test]
+fn run_signal_killed_child_exits_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(&jarvy_toml, "[commands]\nkillme = \"kill -9 $$\"\n").unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "killme", "--file"]).arg(&jarvy_toml);
+    c.assert().code(1);
+}
+
+/// Pretty listing (the default view), empty-commands message, and the
+/// `setup` hint on the not-found path.
+#[test]
+fn run_pretty_list_and_hint_variants() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\nrun = \"cargo run\"\nfmt = \"cargo fmt\"\n",
+    )
+    .unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "--file"]).arg(&jarvy_toml);
+    c.assert()
+        .success()
+        .stdout(predicate::str::contains("Commands defined in"))
+        .stdout(predicate::str::contains("fmt"))
+        .stdout(predicate::str::contains("Run one with: jarvy run <name>"));
+
+    // Empty [commands] section → friendly empty message, exit 0.
+    let empty = tmp.path().join("empty.toml");
+    std::fs::write(&empty, "[commands]\n").unwrap();
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "--file"]).arg(&empty);
+    c.assert()
+        .success()
+        .stdout(predicate::str::contains("No [commands] defined"));
+
+    // `jarvy run setup` with no setup slot → hint at `jarvy setup`.
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "setup", "--file"]).arg(&empty);
+    c.assert()
+        .code(2)
+        .stderr(predicate::str::contains("`jarvy setup` runs"));
+}
+
+/// Commands execute with the config file's directory as cwd, so
+/// `--file <elsewhere>/jarvy.toml` runs project-relative scripts against
+/// the right project (Codex review finding).
+#[cfg(unix)]
+#[test]
+fn run_executes_in_config_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(&jarvy_toml, "[commands]\nmark = \"touch cwd-marker\"\n").unwrap();
+
+    // Invoke from a DIFFERENT cwd than the config's directory.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.current_dir(elsewhere.path());
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "mark", "--file"]).arg(&jarvy_toml);
+    c.assert().success();
+
+    assert!(
+        tmp.path().join("cwd-marker").exists(),
+        "marker must be created in the config's directory, not the caller's cwd"
+    );
+    assert!(
+        !elsewhere.path().join("cwd-marker").exists(),
+        "marker must NOT land in the caller's cwd"
+    );
+}
+
+/// Trailing-arg quoting survives real execution through `sh -c` — embedded
+/// single quote, double quote, and `$` arrive verbatim.
+#[cfg(unix)]
+#[test]
+fn run_trailing_args_quoting_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(&jarvy_toml, "[commands]\nsay = 'printf \"%s\\n\"'\n").unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "say", "--file"])
+        .arg(&jarvy_toml)
+        .arg("--")
+        .args(["it's", "a\"b", "c$HOME"]);
+    c.assert()
+        .success()
+        .stdout(predicate::str::contains("it's"))
+        .stdout(predicate::str::contains("a\"b"))
+        .stdout(predicate::str::contains("c$HOME"));
+}
+
+/// A Trojan-Source-style hostile `[commands]` key is dropped by the shared
+/// sanitizer before it can resolve — running it reports not-found and the
+/// payload never executes.
+#[test]
+fn run_hostile_command_name_never_resolves() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    // Key embeds an RTL-override char (U+202E) via TOML unicode escape.
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\n\"evil\\u202Ekey\" = \"echo pwned\"\n",
+    )
+    .unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    c.args(["run", "evil\u{202E}key", "--file"])
+        .arg(&jarvy_toml);
+    let out = c.assert().code(2).get_output().clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("pwned"),
+        "hostile-keyed command must never execute"
+    );
+}

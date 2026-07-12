@@ -304,6 +304,12 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             interactive::user_select();
             0
         }
+        Some(Commands::Run {
+            name,
+            args,
+            file,
+            output_format,
+        }) => commands::run_cmd::run_run(file, name.as_deref(), args, output_format),
         Some(Commands::External(_)) => unreachable!("External subcommand handled before init"),
     }
 }
@@ -508,6 +514,11 @@ fn handle_completions(shell: &str, instructions: bool) -> i32 {
             return 1;
         }
     };
+    // Low-cardinality shell label — per-shell completions adoption
+    // (nushell etc.) is otherwise invisible.
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(event = "completions.generated", shell = %shell_type);
+    }
     let mut cmd = Cli::command();
     let completions = commands::completions::generate_completions_string(&mut cmd, shell_type);
     println!("{}", completions);

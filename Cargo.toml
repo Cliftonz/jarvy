@@ -48,6 +48,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 jarvy-templates = { version = "0.2.0", path = "crates/jarvy-templates" }
 clap = { version = "4.6", features = ["derive"] }
 clap_complete = "4.6"
+clap_complete_nushell = "4.6"
 strsim = "0.11"
 inquire = "0.9"
 serde = { version = "1.0", features = ["derive"] }

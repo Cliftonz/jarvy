@@ -119,3 +119,22 @@ fn ensure_quiet_in_test_mode_is_silent_or_skips() {
     // assert the binary doesn't panic.
     assert!(out.status.code().is_some());
 }
+
+/// `--shell nushell` / `--shell fish` reach generate_rc_snippet through
+/// real CLI dispatch, and the `jr` alias survives to stdout (dispatch-level
+/// pin for the per-shell snippets; unit tests cover the strings).
+#[test]
+fn shell_init_nushell_and_fish_emit_jr_alias() {
+    let mut c = jarvy();
+    c.args(["shell-init", "--shell", "nushell"]);
+    c.assert()
+        .success()
+        .stdout(predicate::str::contains("alias jr = jarvy run"))
+        .stdout(predicate::str::contains("jarvy ensure --quiet"));
+
+    let mut c = jarvy();
+    c.args(["shell-init", "--shell", "fish"]);
+    c.assert()
+        .success()
+        .stdout(predicate::str::contains("alias jr 'jarvy run'"));
+}

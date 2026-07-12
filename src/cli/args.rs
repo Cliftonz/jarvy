@@ -198,7 +198,7 @@ pub enum Commands {
         /// Output for shell eval (export statements)
         #[clap(long)]
         export: bool,
-        /// Shell type to use (bash, zsh, fish). Auto-detected if not specified.
+        /// Shell type to use (bash, zsh, fish, sh, powershell, nushell). Auto-detected if not specified.
         #[clap(long)]
         shell_type: Option<String>,
         /// Force overwrite of existing .env file (even if not created by Jarvy)
@@ -396,7 +396,7 @@ pub enum Commands {
     },
     /// Generate shell completions
     Completions {
-        /// Shell to generate completions for (bash, zsh, fish, powershell, elvish)
+        /// Shell to generate completions for (bash, zsh, fish, powershell, elvish, nushell)
         shell: String,
         /// Show installation instructions
         #[clap(long)]
@@ -515,7 +515,7 @@ pub enum Commands {
     /// Add `eval "$(jarvy shell-init)"` to your .bashrc/.zshrc.
     #[clap(name = "shell-init")]
     ShellInit {
-        /// Shell type (bash, zsh, fish, sh, powershell). Auto-detected if not specified.
+        /// Shell type (bash, zsh, fish, sh, powershell, nushell). Auto-detected if not specified.
         #[clap(long)]
         shell: Option<String>,
     },
@@ -624,6 +624,23 @@ pub enum Commands {
         /// Path to the configuration file
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
+    },
+    /// Run a named command from `[commands]` in jarvy.toml (npm-run style).
+    /// With no name, lists the available commands.
+    Run {
+        /// Command name: a well-known slot (run, test, setup) or any extra
+        /// `[commands]` key. Omit to list what's defined.
+        name: Option<String>,
+        /// Extra arguments appended to the command line, after `--`
+        /// (e.g. `jarvy run test -- --nocapture`)
+        #[clap(last = true)]
+        args: Vec<String>,
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+        /// Output format for the listing: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
     },
     /// Catch-all for unknown subcommands and their args
     #[clap(external_subcommand)]

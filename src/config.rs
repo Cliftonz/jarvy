@@ -452,6 +452,90 @@ pub struct CommandsConfig {
     pub extras: HashMap<String, String>,
 }
 
+/// Why `read_commands_config` failed. `kind()` is the bounded label used
+/// for telemetry; `Display` is the human message.
+#[derive(Debug)]
+pub enum CommandsLoadError {
+    Missing(PathBuf),
+    Unreadable(PathBuf, std::io::Error),
+    Parse(PathBuf, toml::de::Error),
+}
+
+impl CommandsLoadError {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            CommandsLoadError::Missing(_) => "missing",
+            CommandsLoadError::Unreadable(..) => "unreadable",
+            CommandsLoadError::Parse(..) => "parse",
+        }
+    }
+}
+
+impl std::fmt::Display for CommandsLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandsLoadError::Missing(p) => {
+                write!(f, "no jarvy.toml found at {}", p.display())
+            }
+            CommandsLoadError::Unreadable(p, e) => {
+                write!(f, "cannot read {}: {}", p.display(), e)
+            }
+            CommandsLoadError::Parse(p, e) => {
+                write!(f, "cannot parse {}: {}", p.display(), e)
+            }
+        }
+    }
+}
+
+/// Load + sanitize the `[commands]` section from a jarvy.toml. Mechanics
+/// only — error POLICY belongs to the caller: the interactive menu
+/// defaults to an empty config (`.unwrap_or_default()`), while `jarvy run`
+/// surfaces every variant as a hard CONFIG_ERROR. Keeping one loader stops
+/// the parse/sanitize steps drifting between the two consumers.
+pub fn read_commands_config(path: &std::path::Path) -> Result<CommandsConfig, CommandsLoadError> {
+    if !path.exists() {
+        return Err(CommandsLoadError::Missing(path.to_path_buf()));
+    }
+    let contents = fs::read_to_string(path)
+        .map_err(|e| CommandsLoadError::Unreadable(path.to_path_buf(), e))?;
+    #[derive(Deserialize, Default)]
+    struct Partial {
+        #[serde(default)]
+        commands: CommandsConfig,
+    }
+    let mut cfg = toml::from_str::<Partial>(&contents)
+        .map_err(|e| CommandsLoadError::Parse(path.to_path_buf(), e))?
+        .commands;
+    sanitize_extras_keys(&mut cfg);
+    Ok(cfg)
+}
+
+/// Refuse `[commands]` extras keys that would compromise any surface that
+/// displays or resolves them (interactive menu labels, `jarvy run`
+/// listings). TOML quoted keys preserve arbitrary Unicode including ANSI
+/// escape sequences, bidi overrides (Trojan Source), and zero-width
+/// characters — a hostile `jarvy.toml` could ship two visually-identical
+/// entries (one safe, one `rm -rf $HOME`) and trick the user into picking
+/// the wrong one.
+///
+/// Allowlist: ASCII alphanumeric + `-` `_` `:` `.` — the natural shape
+/// of command-script names like `build`, `migrate`, `format:check`,
+/// `publish.release`. Refused keys are dropped silently (no entry appears)
+/// and the count is reported via the gated telemetry event.
+pub(crate) fn sanitize_extras_keys(cfg: &mut CommandsConfig) {
+    let before = cfg.extras.len();
+    cfg.extras
+        .retain(|k, _| !k.is_empty() && k.chars().all(is_safe_extras_char));
+    let removed = before - cfg.extras.len();
+    if removed > 0 && crate::observability::telemetry_gate::is_enabled() {
+        tracing::warn!(event = "commands.extras_refused_keys", count = removed,);
+    }
+}
+
+fn is_safe_extras_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.')
+}
+
 #[derive(Deserialize, Debug, Default)]
 pub struct PrivilegeConfig {
     // Global default; if None, a sensible per-OS default is used
@@ -957,6 +1041,74 @@ docker = "latest"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sanitizer's own documented threat model: bidi overrides,
+    /// zero-width chars, ANSI escapes, control bytes, empty keys — all
+    /// dropped; plain command-script names survive. This is the gauntlet
+    /// both the interactive menu AND `jarvy run` rely on for their
+    /// name-safety guarantees.
+    #[test]
+    fn sanitize_extras_keys_drops_hostile_keys() {
+        let cases: &[(&str, bool)] = &[
+            ("build", true),
+            ("format:check", true),
+            ("publish.release", true),
+            ("my_task-2", true),
+            ("", false),
+            ("evil\u{202e}live", false), // RTL override (Trojan Source)
+            ("safe\u{200b}", false),     // zero-width space
+            ("red\x1b[31m", false),      // ANSI escape
+            ("bell\x07", false),         // control byte
+            ("two words", false),        // space
+            ("naïve", false),            // non-ASCII
+            ("cmd\nrm -rf", false),      // newline
+        ];
+        for (key, kept) in cases {
+            let mut cfg = CommandsConfig::default();
+            cfg.extras.insert(key.to_string(), "echo hi".to_string());
+            sanitize_extras_keys(&mut cfg);
+            assert_eq!(
+                cfg.extras.contains_key(*key),
+                *kept,
+                "key {key:?} expected kept={kept}"
+            );
+        }
+    }
+
+    #[test]
+    fn read_commands_config_distinguishes_error_kinds() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("jarvy.toml");
+        assert!(matches!(
+            read_commands_config(&missing),
+            Err(CommandsLoadError::Missing(_))
+        ));
+
+        let bad = dir.path().join("bad.toml");
+        fs::write(&bad, "not valid toml [").unwrap();
+        let err = read_commands_config(&bad).unwrap_err();
+        assert!(matches!(err, CommandsLoadError::Parse(..)));
+        assert_eq!(err.kind(), "parse");
+
+        let good = dir.path().join("good.toml");
+        fs::write(&good, "[commands]\nfmt = \"cargo fmt\"\n").unwrap();
+        let cfg = read_commands_config(&good).unwrap();
+        assert_eq!(cfg.extras.get("fmt").map(String::as_str), Some("cargo fmt"));
+    }
+
+    #[test]
+    fn read_commands_config_sanitizes_extras() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("jarvy.toml");
+        fs::write(
+            &path,
+            "[commands]\nok = \"echo hi\"\n\"bad\\u202ekey\" = \"echo evil\"\n",
+        )
+        .unwrap();
+        let cfg = read_commands_config(&path).unwrap();
+        assert!(cfg.extras.contains_key("ok"));
+        assert_eq!(cfg.extras.len(), 1, "hostile key must be dropped");
+    }
 
     /// Regression guard against drift between `Config` and
     /// `TOP_LEVEL_SECTIONS`. If a new top-level field is added to

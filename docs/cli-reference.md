@@ -77,6 +77,7 @@ Commands:
   hooks         Manage git hook frameworks (pre-commit, husky, lefthook)
   skills        Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
   wizard        Agent-driven setup: hand the project to your local AI agent (Claude Code, Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to `jarvy quickstart` when no agent is installed
+  run           Run a named command from `[commands]` in jarvy.toml (npm-run style). With no name, lists the available commands
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -185,7 +186,7 @@ Options:
       --shell                    Update shell rc file only
       --dry-run                  Show what would happen without making changes
       --export                   Output for shell eval (export statements)
-      --shell-type <SHELL_TYPE>  Shell type to use (bash, zsh, fish). Auto-detected if not specified
+      --shell-type <SHELL_TYPE>  Shell type to use (bash, zsh, fish, sh, powershell, nushell). Auto-detected if not specified
       --force                    Force overwrite of existing .env file (even if not created by Jarvy)
   -h, --help                     Print help
 ```
@@ -421,7 +422,7 @@ Generate shell completions
 Usage: jarvy completions [OPTIONS] <SHELL>
 
 Arguments:
-  <SHELL>  Shell to generate completions for (bash, zsh, fish, powershell, elvish)
+  <SHELL>  Shell to generate completions for (bash, zsh, fish, powershell, elvish, nushell)
 
 Options:
       --instructions  Show installation instructions
@@ -683,7 +684,7 @@ Output shell initialization snippet for RC files. Add `eval "$(jarvy shell-init)
 Usage: jarvy shell-init [OPTIONS]
 
 Options:
-      --shell <SHELL>  Shell type (bash, zsh, fish, sh, powershell). Auto-detected if not specified
+      --shell <SHELL>  Shell type (bash, zsh, fish, sh, powershell, nushell). Auto-detected if not specified
   -h, --help           Print help
 ```
 
@@ -850,6 +851,23 @@ Options:
       --apply                   Apply proposed changes. Without `--apply` the wizard previews only
   -F, --format <OUTPUT_FORMAT>  Output format: pretty (default) | json [default: pretty]
   -f, --file <FILE>             Path to the configuration file [default: ./jarvy.toml]
+  -h, --help                    Print help
+```
+
+### `jarvy run`
+
+```text
+Run a named command from `[commands]` in jarvy.toml (npm-run style). With no name, lists the available commands
+
+Usage: jarvy run [OPTIONS] [NAME] [-- <ARGS>...]
+
+Arguments:
+  [NAME]     Command name: a well-known slot (run, test, setup) or any extra `[commands]` key. Omit to list what's defined
+  [ARGS]...  Extra arguments appended to the command line, after `--` (e.g. `jarvy run test -- --nocapture`)
+
+Options:
+  -f, --file <FILE>             Path to the configuration file [default: ./jarvy.toml]
+  -F, --format <OUTPUT_FORMAT>  Output format for the listing: json, pretty [default: pretty]
   -h, --help                    Print help
 ```
 

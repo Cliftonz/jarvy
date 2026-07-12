@@ -1,7 +1,9 @@
 //! Shell completion generation for jarvy CLI
 //!
-//! Generates shell completions for bash, zsh, fish, and PowerShell.
-//! Uses clap_complete to generate completions from the CLI definition.
+//! Generates shell completions for bash, zsh, fish, PowerShell, elvish,
+//! and nushell. Uses clap_complete (plus clap_complete_nushell — nushell
+//! isn't in clap_complete's built-in `Shell` enum) to generate completions
+//! from the CLI definition.
 
 use clap::Command;
 use clap_complete::{Shell, generate};
@@ -15,6 +17,7 @@ pub enum CompletionShell {
     Fish,
     PowerShell,
     Elvish,
+    Nushell,
 }
 
 impl std::fmt::Display for CompletionShell {
@@ -25,6 +28,7 @@ impl std::fmt::Display for CompletionShell {
             CompletionShell::Fish => write!(f, "fish"),
             CompletionShell::PowerShell => write!(f, "powershell"),
             CompletionShell::Elvish => write!(f, "elvish"),
+            CompletionShell::Nushell => write!(f, "nushell"),
         }
     }
 }
@@ -39,30 +43,36 @@ impl std::str::FromStr for CompletionShell {
             "fish" => Ok(CompletionShell::Fish),
             "powershell" | "pwsh" | "ps1" => Ok(CompletionShell::PowerShell),
             "elvish" => Ok(CompletionShell::Elvish),
+            "nushell" | "nu" => Ok(CompletionShell::Nushell),
             _ => Err(format!(
-                "Unknown shell '{}'. Supported: bash, zsh, fish, powershell, elvish",
+                "Unknown shell '{}'. Supported: bash, zsh, fish, powershell, elvish, nushell",
                 s
             )),
         }
     }
 }
 
-impl From<CompletionShell> for Shell {
-    fn from(shell: CompletionShell) -> Self {
-        match shell {
-            CompletionShell::Bash => Shell::Bash,
-            CompletionShell::Zsh => Shell::Zsh,
-            CompletionShell::Fish => Shell::Fish,
-            CompletionShell::PowerShell => Shell::PowerShell,
-            CompletionShell::Elvish => Shell::Elvish,
+/// Generate shell completions and write to the provided writer.
+/// Nushell dispatches to its own generator type; the rest map onto
+/// clap_complete's built-in `Shell` enum (which is why there is no
+/// total `From<CompletionShell> for Shell` impl).
+pub fn generate_completions<W: io::Write>(cmd: &mut Command, shell: CompletionShell, buf: &mut W) {
+    match shell {
+        CompletionShell::Nushell => {
+            generate(clap_complete_nushell::Nushell, cmd, "jarvy", buf);
+        }
+        other => {
+            let shell = match other {
+                CompletionShell::Bash => Shell::Bash,
+                CompletionShell::Zsh => Shell::Zsh,
+                CompletionShell::Fish => Shell::Fish,
+                CompletionShell::PowerShell => Shell::PowerShell,
+                CompletionShell::Elvish => Shell::Elvish,
+                CompletionShell::Nushell => unreachable!("handled above"),
+            };
+            generate(shell, cmd, "jarvy", buf);
         }
     }
-}
-
-/// Generate shell completions and write to the provided writer
-pub fn generate_completions<W: io::Write>(cmd: &mut Command, shell: CompletionShell, buf: &mut W) {
-    let shell: Shell = shell.into();
-    generate(shell, cmd, "jarvy", buf);
 }
 
 /// Generate shell completions as a string
@@ -122,6 +132,14 @@ Elvish:
 
   # Add to ~/.elvish/rc.elv:
   # use jarvy
+
+Nushell:
+  # Generate completions
+  mkdir ~/.config/nushell/completions
+  jarvy completions nushell | save -f ~/.config/nushell/completions/jarvy.nu
+
+  # Add to ~/.config/nushell/config.nu:
+  # source ~/.config/nushell/completions/jarvy.nu
 "#
     .to_string()
 }
@@ -160,6 +178,31 @@ mod tests {
             "pwsh".parse::<CompletionShell>().unwrap(),
             CompletionShell::PowerShell
         );
+        assert_eq!(
+            "nushell".parse::<CompletionShell>().unwrap(),
+            CompletionShell::Nushell
+        );
+        assert_eq!(
+            "nu".parse::<CompletionShell>().unwrap(),
+            CompletionShell::Nushell
+        );
+    }
+
+    #[test]
+    fn test_nushell_completions_generate_non_empty() {
+        let mut cmd = clap::Command::new("jarvy").subcommand(clap::Command::new("setup"));
+        let out = generate_completions_string(&mut cmd, CompletionShell::Nushell);
+        // Structural assertions — "contains jarvy" alone would pass on a
+        // truncated stub. `export extern` is nushell's completion-signature
+        // keyword; the subcommand line proves the Command tree was walked.
+        assert!(
+            out.contains("export extern"),
+            "nushell completions should declare externs; got:\n{out}"
+        );
+        assert!(
+            out.contains("jarvy setup"),
+            "nushell completions should cover the subcommand; got:\n{out}"
+        );
     }
 
     #[test]
@@ -186,5 +229,6 @@ mod tests {
         assert!(instructions.contains("Zsh:"));
         assert!(instructions.contains("Fish:"));
         assert!(instructions.contains("PowerShell:"));
+        assert!(instructions.contains("Nushell:"));
     }
 }

@@ -35,15 +35,23 @@ pub enum ShellType {
     Fish,
     Sh,
     PowerShell,
+    Nushell,
 }
 
 impl ShellType {
-    /// Get the export syntax for this shell
-    pub fn export_syntax(&self) -> (&'static str, &'static str) {
+    /// Render one env-var export statement for this shell. The key must
+    /// already have passed `is_valid_env_var_name` and the value must
+    /// already be quoted via `shell_quote` — this only supplies the
+    /// per-shell statement shape. (Replaces the old `export_syntax`
+    /// prefix/suffix tuple, which hardcoded `KEY=VALUE` in the middle and
+    /// so emitted invalid fish syntax — fish wants `set -gx KEY VALUE` —
+    /// and couldn't express nushell's space-mandatory `$env.KEY = VALUE`.)
+    pub fn export_line(&self, key: &str, quoted_value: &str) -> String {
         match self {
-            ShellType::Fish => ("set -gx ", ""),
-            ShellType::PowerShell => ("$env:", ""),
-            _ => ("export ", ""),
+            ShellType::Fish => format!("set -gx {} {}", key, quoted_value),
+            ShellType::PowerShell => format!("$env:{}={}", key, quoted_value),
+            ShellType::Nushell => format!("$env.{} = {}", key, quoted_value),
+            _ => format!("export {}={}", key, quoted_value),
         }
     }
 
@@ -62,6 +70,10 @@ impl ShellType {
             ShellType::PowerShell => {
                 home.join(".config/powershell/Microsoft.PowerShell_profile.ps1")
             }
+            #[cfg(windows)]
+            ShellType::Nushell => home.join("AppData/Roaming/nushell/config.nu"),
+            #[cfg(not(windows))]
+            ShellType::Nushell => home.join(".config/nushell/config.nu"),
         }
     }
 
@@ -79,6 +91,7 @@ impl std::fmt::Display for ShellType {
             ShellType::Fish => write!(f, "fish"),
             ShellType::Sh => write!(f, "sh"),
             ShellType::PowerShell => write!(f, "powershell"),
+            ShellType::Nushell => write!(f, "nushell"),
         }
     }
 }
@@ -108,18 +121,10 @@ impl Default for ShellConfig {
 
 /// Detect the current shell type from environment
 pub fn detect_shell() -> ShellType {
-    // Check SHELL environment variable
-    if let Ok(shell) = std::env::var("SHELL") {
-        let shell_lower = shell.to_lowercase();
-        if shell_lower.contains("zsh") {
-            return ShellType::Zsh;
-        } else if shell_lower.contains("bash") {
-            return ShellType::Bash;
-        } else if shell_lower.contains("fish") {
-            return ShellType::Fish;
-        } else if shell_lower.contains("pwsh") || shell_lower.contains("powershell") {
-            return ShellType::PowerShell;
-        }
+    if let Ok(shell) = std::env::var("SHELL")
+        && let Some(t) = shell_type_from_shell_var(&shell)
+    {
+        return t;
     }
 
     // Default to bash on Unix, sh elsewhere
@@ -133,6 +138,27 @@ pub fn detect_shell() -> ShellType {
     }
 }
 
+/// Map a `$SHELL` value (path or bare name) to a `ShellType`. Pure —
+/// separated from `detect_shell` so the branch logic is table-testable
+/// without mutating process-global env state.
+fn shell_type_from_shell_var(shell: &str) -> Option<ShellType> {
+    let shell_lower = shell.to_lowercase();
+    if shell_lower.contains("zsh") {
+        Some(ShellType::Zsh)
+    } else if shell_lower.contains("bash") {
+        Some(ShellType::Bash)
+    } else if shell_lower.contains("fish") {
+        Some(ShellType::Fish)
+    } else if shell_lower.contains("pwsh") || shell_lower.contains("powershell") {
+        Some(ShellType::PowerShell)
+    } else if shell_lower.ends_with("/nu") || shell_lower == "nu" || shell_lower.contains("nushell")
+    {
+        Some(ShellType::Nushell)
+    } else {
+        None
+    }
+}
+
 /// Parse shell type from string
 pub fn parse_shell(s: &str) -> Result<ShellType, ShellError> {
     match s.to_lowercase().as_str() {
@@ -141,6 +167,7 @@ pub fn parse_shell(s: &str) -> Result<ShellType, ShellError> {
         "fish" => Ok(ShellType::Fish),
         "sh" => Ok(ShellType::Sh),
         "powershell" | "pwsh" => Ok(ShellType::PowerShell),
+        "nushell" | "nu" => Ok(ShellType::Nushell),
         _ => Err(ShellError::UnsupportedShell(s.to_string())),
     }
 }
@@ -248,8 +275,6 @@ fn update_rc_content(
             shell.comment_prefix()
         ));
 
-        let (export_prefix, export_suffix) = shell.export_syntax();
-
         // Sort keys for deterministic output
         let mut keys: Vec<_> = vars.keys().collect();
         keys.sort();
@@ -272,10 +297,7 @@ fn update_rc_content(
             let raw_value = &vars[key];
             let expanded_value = expand_value(raw_value, ctx);
             let quoted_value = shell_quote(&expanded_value, shell);
-            lines.push(format!(
-                "{}{}={}{}",
-                export_prefix, key, quoted_value, export_suffix
-            ));
+            lines.push(shell.export_line(key, &quoted_value));
         }
 
         lines.push(JARVY_END.to_string());
@@ -304,6 +326,14 @@ pub(crate) fn is_valid_env_var_name(name: &str) -> bool {
 /// Quote a value for shell syntax
 fn shell_quote(value: &str, shell: ShellType) -> String {
     match shell {
+        ShellType::Nushell => {
+            // Nushell double-quoted strings escape only `\` and `"`; `$`
+            // is literal (interpolation needs the `$"..."` form) and a
+            // POSIX-style `\$` would be an *invalid* escape. Always quote
+            // — bare words are commands/values with their own parse rules.
+            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{}\"", escaped)
+        }
         ShellType::Fish => {
             // Fish uses different quoting rules
             if value.contains('\'') {
@@ -353,8 +383,6 @@ pub fn preview_shell_rc(
     let mut lines = Vec::new();
     lines.push(JARVY_START.to_string());
 
-    let (export_prefix, export_suffix) = shell.export_syntax();
-
     let mut keys: Vec<_> = vars.keys().collect();
     keys.sort();
 
@@ -372,10 +400,7 @@ pub fn preview_shell_rc(
         let raw_value = &vars[key];
         let expanded_value = expand_value(raw_value, ctx);
         let quoted_value = shell_quote(&expanded_value, shell);
-        lines.push(format!(
-            "{}{}={}{}",
-            export_prefix, key, quoted_value, export_suffix
-        ));
+        lines.push(shell.export_line(key, &quoted_value));
     }
 
     lines.push(JARVY_END.to_string());
@@ -397,6 +422,61 @@ mod tests {
     fn test_detect_shell() {
         // Just verify it doesn't panic
         let _shell = detect_shell();
+    }
+
+    #[test]
+    fn shell_var_mapping_covers_every_branch() {
+        // Table-tests the pure $SHELL → ShellType mapping so a typo in any
+        // pattern (e.g. starts_with instead of ends_with for nu) fails
+        // loudly instead of surviving the no-panic smoke test above.
+        let cases: &[(&str, Option<ShellType>)] = &[
+            ("/bin/zsh", Some(ShellType::Zsh)),
+            ("/usr/bin/bash", Some(ShellType::Bash)),
+            ("/usr/bin/fish", Some(ShellType::Fish)),
+            ("pwsh", Some(ShellType::PowerShell)),
+            ("/usr/local/bin/powershell", Some(ShellType::PowerShell)),
+            ("/usr/bin/nu", Some(ShellType::Nushell)),
+            ("nu", Some(ShellType::Nushell)),
+            ("/opt/nushell/nushell", Some(ShellType::Nushell)),
+            ("NU", Some(ShellType::Nushell)), // case-insensitive
+            ("/bin/csh", None),               // unknown → platform default
+            ("/usr/bin/menu", None),          // "nu" substring must NOT match
+            ("", None),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                shell_type_from_shell_var(input),
+                *expected,
+                "mapping for $SHELL={input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rc_file_paths_per_shell() {
+        let home = std::path::Path::new("/home/u");
+        let cases: &[(ShellType, &str)] = &[
+            (ShellType::Bash, ".bashrc"),
+            (ShellType::Zsh, ".zshrc"),
+            (ShellType::Fish, ".config/fish/config.fish"),
+            (ShellType::Sh, ".profile"),
+            #[cfg(not(windows))]
+            (
+                ShellType::PowerShell,
+                ".config/powershell/Microsoft.PowerShell_profile.ps1",
+            ),
+            #[cfg(not(windows))]
+            (ShellType::Nushell, ".config/nushell/config.nu"),
+            #[cfg(windows)]
+            (ShellType::Nushell, "AppData/Roaming/nushell/config.nu"),
+        ];
+        for (shell, suffix) in cases {
+            let path = shell.rc_file(home);
+            assert!(
+                path.ends_with(suffix),
+                "{shell} rc_file {path:?} should end with {suffix}"
+            );
+        }
     }
 
     #[test]
@@ -456,14 +536,45 @@ mod tests {
         assert_eq!(parse_shell("zsh").unwrap(), ShellType::Zsh);
         assert_eq!(parse_shell("fish").unwrap(), ShellType::Fish);
         assert_eq!(parse_shell("BASH").unwrap(), ShellType::Bash);
+        assert_eq!(parse_shell("nushell").unwrap(), ShellType::Nushell);
+        assert_eq!(parse_shell("nu").unwrap(), ShellType::Nushell);
         assert!(parse_shell("unknown").is_err());
     }
 
     #[test]
-    fn test_shell_export_syntax() {
-        assert_eq!(ShellType::Bash.export_syntax(), ("export ", ""));
-        assert_eq!(ShellType::Zsh.export_syntax(), ("export ", ""));
-        assert_eq!(ShellType::Fish.export_syntax(), ("set -gx ", ""));
+    fn test_shell_export_line() {
+        assert_eq!(
+            ShellType::Bash.export_line("FOO", "\"v\""),
+            "export FOO=\"v\""
+        );
+        assert_eq!(
+            ShellType::Zsh.export_line("FOO", "\"v\""),
+            "export FOO=\"v\""
+        );
+        // Fish assigns with a space, never `=` — `set -gx FOO=v` would set
+        // a variable literally named `FOO=v` (pre-export_line bug).
+        assert_eq!(ShellType::Fish.export_line("FOO", "'v'"), "set -gx FOO 'v'");
+        assert_eq!(
+            ShellType::PowerShell.export_line("FOO", "\"v\""),
+            "$env:FOO=\"v\""
+        );
+        // Nushell requires spaces around `=` in assignments.
+        assert_eq!(
+            ShellType::Nushell.export_line("FOO", "\"v\""),
+            "$env.FOO = \"v\""
+        );
+    }
+
+    #[test]
+    fn test_shell_quote_nushell() {
+        // Always quoted; `\` and `"` escaped; `$` left literal (nu plain
+        // double-quoted strings don't interpolate and `\$` is invalid).
+        assert_eq!(shell_quote("plain", ShellType::Nushell), "\"plain\"");
+        assert_eq!(
+            shell_quote("a \"b\" \\c", ShellType::Nushell),
+            "\"a \\\"b\\\" \\\\c\""
+        );
+        assert_eq!(shell_quote("$HOME", ShellType::Nushell), "\"$HOME\"");
     }
 
     #[test]
@@ -544,7 +655,9 @@ mod tests {
         let ctx = EnvContext::new();
         let result = update_rc_content("", ShellType::Fish, &vars, &ctx);
 
-        assert!(result.contains("set -gx MY_VAR=my_value"));
+        // Space, not `=` — fish's `set` treats `MY_VAR=my_value` as the
+        // variable NAME (the pre-export_line output was broken).
+        assert!(result.contains("set -gx MY_VAR my_value"));
     }
 
     #[test]

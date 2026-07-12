@@ -6,7 +6,8 @@
 use inquire::{InquireError, Select};
 
 use crate::commands;
-use crate::config::CommandsConfig;
+use crate::commands::shared::{sanitize_for_display, short_cmd_hash, spawn_shell};
+use crate::config::{CommandsConfig, read_commands_config};
 use crate::onboarding::{WelcomeBannerConfig, is_first_run, mark_initialized, show_welcome_banner};
 use crate::output::Outputable;
 use crate::setup::setup;
@@ -144,50 +145,11 @@ pub fn user_select() {
 }
 
 /// Load the [commands] section from jarvy.toml in the current directory.
+/// Menu policy: any load failure (missing, unreadable, unparsable) falls
+/// back to an empty config — the menu still renders its defaults. `jarvy
+/// run` uses the same loader with hard-error policy instead.
 fn load_commands_config() -> CommandsConfig {
-    let path = std::path::Path::new("jarvy.toml");
-    if !path.exists() {
-        return CommandsConfig::default();
-    }
-    let Ok(contents) = std::fs::read_to_string(path) else {
-        return CommandsConfig::default();
-    };
-    // Partial parse: only extract the commands section
-    #[derive(serde::Deserialize, Default)]
-    struct Partial {
-        #[serde(default)]
-        commands: CommandsConfig,
-    }
-    let mut cfg = toml::from_str::<Partial>(&contents)
-        .map(|p| p.commands)
-        .unwrap_or_default();
-    sanitize_extras_keys(&mut cfg);
-    cfg
-}
-
-/// Refuse `[commands]` extras keys that would compromise the interactive
-/// menu. TOML quoted keys preserve arbitrary Unicode including ANSI
-/// escape sequences, bidi overrides (Trojan Source), and zero-width
-/// characters — a hostile `jarvy.toml` could ship two visually-identical
-/// menu entries (one safe, one `rm -rf $HOME`) and trick the user into
-/// picking the wrong one.
-///
-/// Allowlist: ASCII alphanumeric + `-` `_` `:` `.` — the natural shape
-/// of command-script names like `build`, `migrate`, `format:check`,
-/// `publish.release`. Refused keys are dropped silently (no menu entry
-/// appears) and the count is reported via tracing.
-fn sanitize_extras_keys(cfg: &mut CommandsConfig) {
-    let before = cfg.extras.len();
-    cfg.extras
-        .retain(|k, _| !k.is_empty() && k.chars().all(is_safe_extras_char));
-    let removed = before - cfg.extras.len();
-    if removed > 0 {
-        tracing::warn!(event = "commands.extras_refused_keys", count = removed,);
-    }
-}
-
-fn is_safe_extras_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.')
+    read_commands_config(std::path::Path::new("jarvy.toml")).unwrap_or_default()
 }
 
 /// Default `run` command. Single source of truth so the SAFE_DEFAULTS check
@@ -231,35 +193,6 @@ pub(crate) fn classify_shell_command(cmd: &str) -> ShellCommandPolicy {
     ShellCommandPolicy::NeedsConfirmation
 }
 
-/// Strip ANSI escape sequences and other control characters from text that
-/// will be displayed to the user. Prevents a malicious jarvy.toml from
-/// hiding parts of a command behind escape codes during the y/n prompt.
-pub(crate) fn sanitize_for_display(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip CSI sequences `ESC [ ... letter`.
-            if matches!(chars.peek(), Some('[')) {
-                chars.next();
-                while let Some(&n) = chars.peek() {
-                    chars.next();
-                    if n.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            }
-            continue;
-        }
-        if (c as u32) < 0x20 && c != '\t' {
-            out.push('?');
-            continue;
-        }
-        out.push(c);
-    }
-    out
-}
-
 /// Run a shell command string, displaying its output.
 /// If the command is a custom one from jarvy.toml (not a safe default),
 /// the user is prompted to confirm before execution.
@@ -299,11 +232,7 @@ fn run_shell_command(cmd: &str, label: &str) {
     }
 
     let safe_default = SAFE_DEFAULTS.contains(&cmd);
-    let cmd_hash = {
-        use sha2::{Digest, Sha256};
-        let bytes = Sha256::digest(cmd.as_bytes());
-        hex::encode(&bytes[..8])
-    };
+    let cmd_hash = short_cmd_hash(cmd);
     let start = std::time::Instant::now();
     tracing::info!(
         event = "interactive.command.start",
@@ -313,7 +242,7 @@ fn run_shell_command(cmd: &str, label: &str) {
     );
 
     println!("Running {} command: {}", label, cmd);
-    match std::process::Command::new("sh").arg("-c").arg(cmd).status() {
+    match spawn_shell(cmd, None) {
         Ok(status) => {
             tracing::info!(
                 event = "interactive.command.complete",
@@ -403,20 +332,6 @@ mod tests {
             classify_shell_command("cargo run\0extra"),
             ShellCommandPolicy::Refused(_)
         ));
-    }
-
-    #[test]
-    fn sanitize_strips_ansi_escapes() {
-        let raw = "\x1b[31mevil\x1b[0m cargo test";
-        let cleaned = sanitize_for_display(raw);
-        assert_eq!(cleaned, "evil cargo test");
-    }
-
-    #[test]
-    fn sanitize_replaces_control_chars() {
-        let raw = "abc\x07def";
-        let cleaned = sanitize_for_display(raw);
-        assert_eq!(cleaned, "abc?def");
     }
 }
 

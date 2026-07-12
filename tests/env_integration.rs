@@ -178,7 +178,43 @@ FISH_VAR = "fish_value"
     .env("JARVY_TEST_MODE", "1")
     .assert()
     .success()
-    .stdout(predicate::str::contains("set -gx FISH_VAR=fish_value"));
+    .stdout(predicate::str::contains("set -gx FISH_VAR fish_value"));
+}
+
+/// Test env command shell mode for nushell — CLI-level pin for the
+/// `$env.KEY = "value"` export syntax (the fish `set -gx K=V` bug was
+/// caught by exactly this style of test).
+#[test]
+fn test_env_shell_mode_nushell() {
+    let dir = tempdir().unwrap();
+    let config_path = dir.path().join("jarvy.toml");
+
+    fs::write(
+        &config_path,
+        r#"
+[provisioner]
+jq = "latest"
+
+[env.vars]
+NU_VAR = "nu_value"
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("jarvy");
+    cmd.args([
+        "env",
+        "--file",
+        config_path.to_str().unwrap(),
+        "--dry-run",
+        "--shell",
+        "--shell-type",
+        "nushell",
+    ])
+    .env("JARVY_TEST_MODE", "1")
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("$env.NU_VAR = \"nu_value\""));
 }
 
 /// Test setup command includes env setup in dry-run
