@@ -1,6 +1,6 @@
 {
   "name": "jarvy-mcp",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Run Jarvy's MCP server via npm - downloads the platform-native jarvy binary (SHA256-verified) on install.",
   "mcpName": "io.github.cliftonz/jarvy",
   "license": "(MIT OR Apache-2.0)",

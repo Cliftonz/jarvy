@@ -8,20 +8,20 @@
     "source": "github"
   },
   "websiteUrl": "https://jarvy.dev",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "jarvy-mcp",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "transport": {
         "type": "stdio"
       }
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/cliftonz/jarvy:0.5.2",
+      "identifier": "ghcr.io/cliftonz/jarvy:0.6.0",
       "transport": {
         "type": "stdio"
       }
