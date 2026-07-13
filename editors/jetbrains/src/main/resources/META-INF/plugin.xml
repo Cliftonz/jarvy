@@ -1,5 +1,10 @@
 <idea-plugin>
-    <id>com.jarvy.intellij</id>
+    <!-- Marketplace-facing plugin ID. Must not contain template words
+         ('intellij', 'jetbrains', …) — the Plugin Verifier hard-fails the
+         artifact otherwise (TemplateWordInPluginId). Renamed from
+         com.jarvy.intellij before first Marketplace publication; the ID
+         is immutable once published. -->
+    <id>com.jarvy</id>
     <name>Jarvy</name>
     <version>0.1.0</version>
     <vendor email="zac@bearbinarydevelopment.com" url="https://github.com/zacclifton/Jarvy">Zac Clifton</vendor>
