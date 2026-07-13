@@ -27,10 +27,31 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [Unreleased]
+## [v0.6.0] — jarvy run, editor integrations, git config hardening (2026-07-13)
+
+**Known issues:**
+
+- Upgrading **from v0.5.x** with `jarvy update --method binary` fails with
+  `Checksum verification failed`: the v0.5.x updater does not follow the
+  HTTP redirects GitHub now serves on release-asset downloads (fixed in
+  this release, but the fix cannot reach the old binary doing the
+  upgrade). Workaround: reinstall via the install script
+  (`curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash`)
+  or your package manager. Upgrades *from* v0.6.0 onward work.
 
 **Features:**
 
+- `jarvy run [name] [-- args]` — npm-run-style command runner for a
+  `[commands]` table in `jarvy.toml`. An explicitly named command is
+  treated as consent (shell chaining allowed; the command is printed
+  ANSI-stripped before exec), the child's exit code is propagated, and
+  the working directory is the config file's directory. Bare `jarvy run`
+  lists the available commands; there is no implicit `cargo run`/`cargo
+  test` fallback, and NUL-bearing (on Windows, also `%`-bearing)
+  `-- args` are refused. `jarvy shell-init` emits a snippet defining `jr`
+  as shorthand, and shell-init/completions gain **nushell** support
+  alongside bash/zsh/fish/sh/powershell. Telemetry: `run.command.*`,
+  `shell_init.generated`, `completions.generated`.
 - `jarvy doctor --check <path,tools,hooks>` — limit the health run to
   specific categories (system info is always shown as context). Skips the
   unselected probes entirely; an unknown category exits `2` with the valid
@@ -57,12 +78,17 @@ for divergences from generic release skills.
   `--log-file <path>`, `--debug-filter <module>`, and `--profile` /
   `--profile-output` (phase-level timing report). These flags previously
   parsed but were silently dropped.
-- 11 new tools: `allure`, `aws-sam-cli`, `cfn-lint`, `cypress`,
-  `goaccess`, `linkerd`, `locust`, `playwright`, `putty`, `structurizr`,
-  `task`. `structurizr` is the 2026 consolidated "software architecture
-  models as code" tool (C4 model) — installs via Homebrew / Linuxbrew
-  (the old, now-deprecated `structurizr-cli` formula is not used); no
-  first-party winget/choco, so Windows uses the `.war` or Docker image.
+- 15 new tools: `allure`, `aws-sam-cli`, `cfn-lint`, `cypress`,
+  `goaccess`, `k3s`, `linkerd`, `locust`, `microk8s`, `playwright`,
+  `putty`, `structurizr`, `task`, `tmux`, `todoist`. `structurizr` is
+  the 2026 consolidated "software architecture models as code" tool
+  (C4 model) — installs via Homebrew / Linuxbrew (the old,
+  now-deprecated `structurizr-cli` formula is not used); no first-party
+  winget/choco, so Windows uses the `.war` or Docker image. `k3s` and
+  `microk8s` cover single-node local Kubernetes: k3s is Linux-only and
+  installs from a commit-pinned, sha256-verified copy of the upstream
+  installer (no floating `get.k3s.io` fetch); microk8s installs via snap
+  on Linux or Canonical's Multipass-backed Homebrew tap on macOS.
 - `[git]` gains three capabilities (see `docs/git-config.md`):
   - `[git.extra]` — a free-form escape hatch for git config keys Jarvy
     doesn't model as typed fields (`core.fsmonitor`, `feature.manyFiles`,
@@ -165,6 +191,21 @@ for divergences from generic release skills.
 
 **Fixes:**
 
+- `jarvy update --method binary` now follows HTTP redirects when
+  downloading release assets, fixing `Checksum verification failed` on
+  every binary self-update (GitHub serves release-asset downloads via
+  redirect). This was the sev-1 that v0.6.0-rc.2 was cut for; see the
+  known-issues note above for upgrading *from* v0.5.x.
+- `cargo jarvy new-tool <name>` scaffolding no longer generates
+  uncompilable module wiring.
+- The ghcr.io Docker image build no longer fails with ``linker
+  `musl-gcc` not found``: the x86_64-musl linker pin in
+  `.cargo/config.toml` (needed by the Ubuntu cross-build) is overridden
+  back to `cc` inside the Alpine builder stage.
+- The JetBrains plugin ID was renamed `com.jarvy.intellij` → `com.jarvy`
+  before first Marketplace publication — the Plugin Verifier hard-fails
+  IDs containing template words like "intellij", which broke the weekly
+  `verifyPlugin` CI job.
 - `install.sh` no longer exits `1` after a successful install. The
   `EXIT`-trap cleanup referenced a `local tmp_dir` that was out of scope
   when the trap fired at script exit; under `set -u` that threw
@@ -191,6 +232,10 @@ for divergences from generic release skills.
 
 **Internal:**
 
+- Log reading and stats (`jarvy logs view` / `logs stats`) no longer
+  allocate per line on the no-sanitization fast path.
+- New searchable tool directory in the docs site with per-OS install
+  commands for every registered tool.
 - Add end-to-end coverage for the download → install → upgrade path, which
   previously had none: unit tests for `install.sh` (checksum accept/reject,
   channel filter, platform-triple mapping), a `shellcheck` / `bash -n` /
