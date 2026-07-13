@@ -476,13 +476,13 @@ jobs:
       id-token: write  # Required for Sigstore OIDC
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Download SBOMs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sbom-${{ env.VERSION }}
           path: artifacts/sbom
@@ -548,19 +548,19 @@ jobs:
           fetch-tags: true
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Download SBOMs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sbom-${{ env.VERSION }}
           path: sbom
 
       - name: Download signatures
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: signed-artifacts-${{ env.VERSION }}
           path: signatures
