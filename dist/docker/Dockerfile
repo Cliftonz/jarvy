@@ -30,6 +30,12 @@ RUN apk add --no-cache build-base
 WORKDIR /src
 COPY . .
 
+# .cargo/config.toml pins the x86_64-musl linker to `musl-gcc` for the
+# Ubuntu cross-build in release.yml. Alpine's host toolchain IS musl and
+# ships no musl-gcc wrapper, so override back to cc here (cargo env vars
+# take precedence over config files). The aarch64 leg has no pin.
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=cc
+
 # Cargo.lock is intentionally untracked in this repo (CI floats to
 # latest-compatible), so no --locked here.
 RUN cargo build --release -p jarvy \
