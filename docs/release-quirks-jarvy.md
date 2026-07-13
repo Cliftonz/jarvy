@@ -107,20 +107,23 @@ Implications:
   would override the fallback and produce inconsistent rc release notes
   between iterations.
 
-## Release published as draft
+## Release auto-publishes (draft is transient)
 
-The workflow sets `draft: true` on `softprops/action-gh-release`. After the
-workflow completes, manually verify all artifacts are present and signatures
-verify, then publish the draft:
+**Updated 2026-07-13 (observed on v0.6.0):** the workflow creates a draft
+release shell, uploads all assets, and then **auto-promotes the draft to
+published** in the same run (`gh release edit --draft=false`, `--latest`
+for stables). The draft exists only as an upload staging area; there is no
+manual publish step anymore.
 
-```bash
-gh release edit vX.Y.Z --draft=false
-```
+Implication: **the tag push is the point of no return** — publication and
+the downstream `release: published` dispatches (publish-packages,
+release-paths, verify-release, prerelease-soak) all follow automatically.
+Verify everything (CI, CHANGELOG, promotion criteria) BEFORE pushing the
+tag; post-publish the verify-release.yml run is the asset check of record.
 
-This is an extra manual step compared to the skills' "tag pushes → release
-publishes" assumption. The point of no return is the **draft publish**, not
-the tag push — though once the tag is pushed the assets are built and
-signed atomically.
+(Historic behavior: the workflow used to stop at the draft and required a
+manual `gh release edit vX.Y.Z --draft=false` after artifact verification.
+Skills or notes that still reference the manual publish step are stale.)
 
 ## `release:published` events use the tag's commit, not main HEAD
 
