@@ -1078,6 +1078,10 @@ fn check_tool_version(name: &str, version: &str) -> ToolVersionStatus {
     // Check if version is satisfied
     let satisfied = match (spec, manual_cmd) {
         (Some(spec), _) => spec.is_satisfied(version),
+        // nvm has no binary — it's a shell function; `has()` (PATH lookup)
+        // is unconditionally false on POSIX, which marked nvm needs-install
+        // on every run. Probe its filesystem marker instead.
+        (None, Some(_)) if name_lower == "nvm" => crate::tools::nvm::is_installed(),
         (None, Some(cmd)) => has(cmd),
         // This case is unreachable due to the early return above
         (None, None) => false,

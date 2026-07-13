@@ -251,9 +251,10 @@ fn perform_upgrade(name: &str, _target_version: &str) -> Result<String, String> 
             return Err("rustup not found".to_string());
         }
         // nvm needs to be sourced, this is tricky; for now, suggest manual
-        // upgrade. Match guard collapses the inner `if has("nvm")` per
+        // upgrade. Match guard collapses the inner `if` per
         // clippy::collapsible_match (added as a deny-level lint in Rust 1.95).
-        "node" if has("nvm") => {
+        // Probe the nvm.sh marker, not PATH — nvm is a shell function.
+        "node" if crate::tools::nvm::is_installed() => {
             return Err("Use 'nvm install <version>' to upgrade node".to_string());
         }
         "node" => {
