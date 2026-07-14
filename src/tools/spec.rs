@@ -343,8 +343,14 @@ impl ToolSpec {
         if let Some(custom_fn) = self.custom_install {
             return custom_fn(min_hint);
         }
+        self.install_platform()
+    }
 
-        // Platform-specific installation
+    /// Platform-slot installation, bypassing `custom_install`. Public
+    /// within the crate so a custom installer can fall back to its own
+    /// spec's declarative platform path without recursing into itself
+    /// (node does this: nvm route when applicable, else brew/apt/winget).
+    pub(crate) fn install_platform(&self) -> Result<(), InstallError> {
         #[cfg(target_os = "macos")]
         {
             return self.install_macos();

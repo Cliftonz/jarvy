@@ -211,7 +211,10 @@ Pass criteria:
 - State file migrates cleanly; no schema-version errors
 - `jarvy drift check` exits 0 (no drift) or correctly reports tool version
   differences if the rc bumps default tool versions
-- `~/.jarvy/update-state.json` records `previous_version` for rollback
+- `~/.jarvy/rollback-info.json` records the previous version + backup
+  path for rollback (`update-state.json` is the update-*checker*'s
+  throttle/notify state, not the rollback record — doc drift fixed
+  2026-07-14, #54 item 3)
 
 ### Path 3 — Skip-Version Upgrade (minor and major bumps only)
 

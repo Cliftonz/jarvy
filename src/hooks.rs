@@ -434,7 +434,20 @@ pub fn detect_shell() -> String {
     }
     #[cfg(not(windows))]
     {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+        // Deterministic default: bash (sh where bash is absent, e.g.
+        // minimal Alpine). Hooks used to run under $SHELL, which made the
+        // same jarvy.toml behave differently per developer — zsh doesn't
+        // word-split unquoted variables, so a POSIX-idiomatic
+        // `for t in $LIST` hook silently degenerated to one iteration
+        // (issue #60; bit a real consumer's post_setup on 2026-07-13).
+        // Users who want their login shell's semantics opt in via
+        // `[hooks.config] shell = "zsh"` — the same knob that existed
+        // before, just no longer the silent default.
+        if crate::tools::common::has("bash") {
+            "bash".to_string()
+        } else {
+            "/bin/sh".to_string()
+        }
     }
 }
 
@@ -535,6 +548,12 @@ mod tests {
         assert!(!shell.is_empty());
         #[cfg(windows)]
         assert_eq!(shell, "powershell");
+        // Unix: deterministic POSIX shell, never the user's $SHELL (#60).
+        #[cfg(not(windows))]
+        assert!(
+            shell == "bash" || shell == "/bin/sh",
+            "hook shell must default to bash/sh, got {shell}"
+        );
     }
 
     #[test]
