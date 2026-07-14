@@ -248,6 +248,15 @@ jobs:
           fi
           echo "✓ N-1 verified: $OBSERVED"
 
+      # The updater hard-requires cosign for Sigstore verification of the
+      # downloaded archive (refuses with "cosign is not installed" unless
+      # --allow-unsigned). Runners don't ship cosign — without this step
+      # Path 2 fails AFTER the checksum passes, testing the error path
+      # instead of the upgrade path. Same pinned installer as release.yml.
+      - name: Install cosign (required by jarvy update signature verify)
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        uses: sigstore/cosign-installer@v3
+
       - name: Path 2 — jarvy update --version <target> --method binary
         if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
         shell: bash
