@@ -27,6 +27,7 @@ pub mod skills;
 pub mod ticket;
 pub mod tools;
 pub mod update;
+pub mod version;
 pub mod wizard;
 pub mod workspace;
 

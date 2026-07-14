@@ -10,8 +10,12 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Current version of Jarvy
-pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Current version of Jarvy. Tag-aware (crate::version::JARVY_VERSION): an rc
+/// release build compares as `0.X.Y-rc.N`, which also makes rc → rc.N+1
+/// updates on the beta channel resolvable — with the bare crate version,
+/// `0.X.Y` compared greater than every `0.X.Y-rc.*` and rc users were
+/// never offered the next rc.
+pub const CURRENT_VERSION: &str = crate::version::JARVY_VERSION;
 
 /// Update state persisted between runs
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -269,8 +269,17 @@ jobs:
         with:
           tool: cargo-packager,cargo-generate-rpm
 
+      # JARVY_BUILD_TAG bakes the exact release tag (sans leading v)
+      # into the binary at compile time via option_env! — so an rc
+      # build reports `jarvy 0.7.0-rc.1` instead of the bare Cargo
+      # version, making rc iterations distinguishable by --version
+      # (issue #54 item 1) and letting the update checker compare true
+      # prerelease versions.
       - name: Build the application
-        run: cargo build --release ${{ matrix.build_args }}
+        shell: bash
+        run: |
+          export JARVY_BUILD_TAG="${VERSION#v}"
+          cargo build --release ${{ matrix.build_args }}
 
       # Produce a raw binary tarball for each Linux target. AUR's
       # `jarvy-bin` PKGBUILD downloads this directly — no .deb / .rpm
@@ -336,6 +345,10 @@ jobs:
       - name: Package Binary
         shell: bash
         run: |
+          # cargo-packager can trigger its own cargo build; keep the
+          # build-tag env consistent so a rebuild doesn't silently drop
+          # the rc suffix from --version.
+          export JARVY_BUILD_TAG="${VERSION#v}"
           if [ "${{ matrix.cross }}" = "true" ] && [ "${{ matrix.sysroot }}" != "" ]; then
             cargo packager --target=${{ matrix.rust_target }} --formats=deb --release --verbose
           elif [ "${{ matrix.cross }}" = "true" ] && [ -z "${{ matrix.sysroot }}" ]; then

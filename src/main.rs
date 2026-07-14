@@ -60,6 +60,8 @@ mod update;
 mod wizard;
 mod workspace;
 
+mod version;
+
 use analytics::init_logging;
 use cli::{Cli, Commands};
 use config::Config;

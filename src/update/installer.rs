@@ -147,14 +147,18 @@ impl BinaryInstaller {
         }
 
         // Record rollback info
-        RollbackManager::record_update(env!("CARGO_PKG_VERSION"), release.version(), &backup_path)?;
+        RollbackManager::record_update(
+            crate::version::JARVY_VERSION,
+            release.version(),
+            &backup_path,
+        )?;
 
         // Cleanup staging
         let _ = fs::remove_dir_all(&self.staging_dir);
         let _ = fs::create_dir_all(&self.staging_dir);
 
         Ok(InstallResult {
-            previous_version: env!("CARGO_PKG_VERSION").to_string(),
+            previous_version: crate::version::JARVY_VERSION.to_string(),
             new_version: release.version().to_string(),
             backup_path,
         })
@@ -390,7 +394,7 @@ impl BinaryInstaller {
             .unwrap_or_default()
             .as_secs();
 
-        let backup_name = format!("jarvy-{}-{}", env!("CARGO_PKG_VERSION"), timestamp);
+        let backup_name = format!("jarvy-{}-{}", crate::version::JARVY_VERSION, timestamp);
         let backup_path = self.backup_dir.join(backup_name);
 
         fs::copy(current_exe, &backup_path)
@@ -413,13 +417,29 @@ impl BinaryInstaller {
                 .map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
         }
 
-        // Use self_update for atomic replacement
-        self_update::Move::from_source(new_binary)
-            .replace_using_temp(target)
-            .to_dest(target)
-            .map_err(|e| UpdateError::InstallationFailed(e.to_string()))?;
-
-        Ok(())
+        // Use self_update for atomic replacement. On Windows the rename
+        // can transiently fail with "Access is denied" while Defender /
+        // an indexer holds a handle on the freshly extracted binary
+        // (observed pass-then-fail on identical CI runs — issue #63), so
+        // retry a few times with backoff there. Unix renames don't
+        // contend with scanners; one attempt.
+        let attempts: u32 = if cfg!(windows) { 3 } else { 1 };
+        let mut last_err = None;
+        for attempt in 0..attempts {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(500 * u64::from(attempt)));
+            }
+            match self_update::Move::from_source(new_binary)
+                .replace_using_temp(target)
+                .to_dest(target)
+            {
+                Ok(()) => return Ok(()),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(UpdateError::InstallationFailed(
+            last_err.map(|e| e.to_string()).unwrap_or_default(),
+        ))
     }
 
     /// Verify the new installation works

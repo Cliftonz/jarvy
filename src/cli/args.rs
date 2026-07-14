@@ -52,7 +52,9 @@ mod default_value_test {
 #[derive(Parser)]
 #[clap(
     name = "jarvy",
-    version = env!("CARGO_PKG_VERSION"),
+    // Tag-aware version (see crate::version::JARVY_VERSION): rc release builds
+    // report the full 0.X.Y-rc.N, dev builds the crate version.
+    version = crate::version::JARVY_VERSION,
     author = "Zac Clifton",
     about = "Jarvy: a helper to configure and verify your computer",
     long_about = "Jarvy helps you set up and verify your computer based on a jarvy.toml configuration.\n\nUSAGE:\n    jarvy <COMMAND> [OPTIONS]\n\nEXAMPLES:\n    jarvy --help\n    jarvy configure\n    jarvy setup --file ./jarvy.toml\n    jarvy get --format json --output report.json\n\nRun without a subcommand to use the interactive menu."
