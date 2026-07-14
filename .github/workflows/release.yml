@@ -54,6 +54,26 @@ jobs:
           tag-prefix: "v"
           check-release-exists: "true"
 
+      # Fail fast if Cargo.toml wasn't bumped to match the tag. The
+      # bundlers name .deb/.rpm/.msi/.dmg from the CARGO version and the
+      # binary self-reports it, so a mismatch ships a release whose
+      # assets and --version contradict the tag — v0.6.1 (withdrawn)
+      # shipped `jarvy 0.6.0` binaries this way and broke the updater
+      # with a perpetual update loop. Pre-release tags compare against
+      # the target stable (vX.Y.Z-rc.N ↔ X.Y.Z) per the CHANGELOG
+      # policy: rc tags never carry their own Cargo version.
+      - name: Verify Cargo.toml version matches tag
+        run: |
+          set -euo pipefail
+          TARGET="${GITHUB_REF_NAME#v}"   # strip leading v
+          TARGET="${TARGET%%-*}"          # strip prerelease suffix (-rc.N, -beta.N)
+          CARGO_VER=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$CARGO_VER" != "$TARGET" ]; then
+            echo "::error::Cargo.toml version (${CARGO_VER}) does not match tag target (${TARGET}). Bump Cargo.toml before tagging — see the v0.6.1 postmortem."
+            exit 1
+          fi
+          echo "Cargo.toml version ${CARGO_VER} matches tag target ${TARGET}."
+
   # Hard gate: refuse to ship if the Test workflow (test.yml) hasn't
   # gone green for this tag's commit SHA. test.yml + release.yml both
   # trigger on the same `v*` tag push but run in parallel — without

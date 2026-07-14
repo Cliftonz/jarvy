@@ -27,7 +27,12 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [v0.6.1] — nvm detection fix (2026-07-14)
+## [v0.6.2] — nvm detection fix (2026-07-14)
+
+Corrected re-release of the withdrawn v0.6.1 — identical code plus the
+version bump v0.6.1 was missing and a release-workflow guard that makes
+the mistake impossible to repeat (the tag now refuses to build unless
+Cargo.toml matches it).
 
 **Fixes:**
 
@@ -53,6 +58,15 @@ This is also the first release upgradable *to* via
 `jarvy update --method binary` from v0.6.0 — the redirect fix shipped in
 v0.6.0 makes the updater work going forward (upgrading *from* v0.5.x
 still requires the install script or a package manager).
+
+## [v0.6.1] — WITHDRAWN (2026-07-14)
+
+Withdrawn ~40 minutes after publication: the version-bump commit was
+missed before tagging, so every binary and package asset self-identified
+as `0.6.0`, breaking `jarvy update` with a perpetual update loop. No
+downstream channel consumed it (crates.io skipped, Chocolatey failed on
+the name mismatch). Use [v0.6.2] — the corrected re-release of the same
+code.
 
 ## [v0.6.0] — jarvy run, editor integrations, git config hardening (2026-07-13)
 
