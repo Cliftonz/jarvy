@@ -1,26 +1,30 @@
 name: Pre-Release Soak Gate
 
-# Automated 24h soak gate for the currently-live rc / beta / alpha tag.
+# Automated soak-window gate for the currently-live rc / beta / alpha tag.
 # Complements the existing per-publish workflows:
 #
 #   - `verify-release.yml`   — Path 8 (asset integrity + signatures) at t=0
 #   - `release-paths.yml`    — Paths 2/3/4 (upgrade / skip-version / rollback) at t=0
-#   - `prerelease-soak.yml`  — Path 1 (fresh install) + promotion-readiness at t=24h+
+#   - `prerelease-soak.yml`  — Path 1 (fresh install) + promotion-readiness once
+#                              the bump-kind window has elapsed
 #
 # `docs/release-testing.md#soak-window` requires a minimum soak of 24h for
 # patch / 72h for minor / 7d for major before promoting an rc to stable.
 # Pre-existing paths (2/3/4/8) all run at t=0 — meaning the ONLY thing
 # blocking promotion after publish is the wall-clock wait. This workflow
-# closes that: 24h after publish, if the rc is still the current one,
-# run Path 1 + snapshot the state of the other paths + post a
-# promotion-readiness comment on the release + open/update a
-# `release-soak: <tag>` tracking issue.
+# closes that: once the bump-kind-appropriate window has elapsed after
+# publish, if the rc is still the current one, run Path 1 + snapshot the
+# state of the other paths + post a promotion-readiness comment on the
+# release + open/update a `release-soak: <tag>` tracking issue.
+# Force-dispatched runs (release.yml dispatches every tag with
+# force=true for immediate validation) run the paths but never post the
+# soak-passed signal (issue #53).
 #
 # Idempotence & supersession:
 #   - Skips if the release the schedule finds isn't the newest prerelease
 #     (a newer `-rc.(N+1)` was cut in the interim; soak the newer one).
 #   - Skips if a prior successful run of this workflow already posted the
-#     "soak-24h-passed" label to the tracking issue.
+#     "soak-window-passed" label to the tracking issue.
 #   - No-op returns are silent (info-level Actions summary only) so the
 #     scheduled cron doesn't spam maintainers when there's nothing to do.
 #
@@ -57,10 +61,11 @@ concurrency:
 env:
   JARVY_TELEMETRY: '0'
   # Minimum soak in hours before Path 1 fires. Matches
-  # docs/release-testing.md's patch-bump minimum. Minor + major soak
-  # windows (72h / 7d) are the maintainer's call — this gate only
-  # enforces the floor.
-  MIN_SOAK_HOURS: '24'
+  # The minimum window is bump-kind aware (24h patch / 72h minor /
+  # 168h major, per docs/release-testing.md#soak-window) and computed
+  # in the gate job's `window` step — there is deliberately no global
+  # constant to fall back to (issue #53: a hardcoded 24h labeled a
+  # minor bump as soaked one minute after publish).
 
 jobs:
   # ============================================================================
@@ -71,7 +76,12 @@ jobs:
     name: Decide whether to soak
     runs-on: ubuntu-latest
     outputs:
-      should_soak: ${{ steps.decide.outputs.should_soak }}
+      # should_soak comes from the `window` step (final go/no-go); when
+      # `decide` short-circuits, `window` is skipped and this is empty,
+      # which downstream `== 'true'` checks treat as false.
+      should_soak: ${{ steps.window.outputs.should_soak }}
+      window_elapsed: ${{ steps.window.outputs.window_elapsed }}
+      min_soak_hours: ${{ steps.window.outputs.min_soak_hours }}
       tag: ${{ steps.decide.outputs.tag }}
       is_prerelease: ${{ steps.decide.outputs.is_prerelease }}
       published_at: ${{ steps.decide.outputs.published_at }}
@@ -142,35 +152,31 @@ jobs:
             exit 0
           fi
 
-          # Wall-clock check: ≥ MIN_SOAK_HOURS since publish.
-          if [ "$FORCE" = "true" ]; then
-            echo "Force flag set — skipping wall-clock + supersession checks."
-          else
-            NOW_EPOCH=$(date -u +%s)
-            PUB_EPOCH=$(date -u -d "$PUBLISHED_AT" +%s 2>/dev/null || \
-                        python3 -c "from datetime import datetime; print(int(datetime.fromisoformat('$PUBLISHED_AT'.replace('Z','+00:00')).timestamp()))")
-            AGE_HOURS=$(( (NOW_EPOCH - PUB_EPOCH) / 3600 ))
-            echo "Release age: ${AGE_HOURS}h (min: ${MIN_SOAK_HOURS}h)"
-            if [ "$AGE_HOURS" -lt "$MIN_SOAK_HOURS" ]; then
-              echo "supersession_reason=too_young_${AGE_HOURS}h" >> "$GITHUB_OUTPUT"
-              echo "should_soak=false" >> "$GITHUB_OUTPUT"
-              echo "Release younger than ${MIN_SOAK_HOURS}h — schedule will re-check."
-              exit 0
-            fi
-          fi
+          # Wall-clock check moved to the `window` step below — it needs
+          # bump_kind (computed next) to pick the right minimum (issue #53).
 
           # Already-soaked check: search issues for the tracking label.
-          # Label shape: `soak-24h-passed-<tag>` (dashes only — avoids
+          # Label shape: `soak-window-passed-<tag>` (dashes only — avoids
           # any URL-encode surprises through the gh CLI + issue-search
           # index). Attached by the summary job at the end of a
-          # successful soak.
+          # successful soak. The legacy `soak-24h-passed-<tag>` name is
+          # checked too so pre-rename issues stay recognized.
           ALREADY=$(gh issue list \
             --repo "${{ github.repository }}" \
             --state all \
-            --label "soak-24h-passed-$TAG" \
+            --label "soak-window-passed-$TAG" \
             --limit 1 \
             --json number \
             --jq 'length')
+          if [ "$ALREADY" -eq 0 ]; then
+            ALREADY=$(gh issue list \
+              --repo "${{ github.repository }}" \
+              --state all \
+              --label "soak-24h-passed-$TAG" \
+              --limit 1 \
+              --json number \
+              --jq 'length')
+          fi
           if [ "$ALREADY" -gt 0 ]; then
             echo "already_soaked=true" >> "$GITHUB_OUTPUT"
             echo "should_soak=false" >> "$GITHUB_OUTPUT"
@@ -217,6 +223,51 @@ jobs:
           fi
           echo "rc=$rc_ver last_stable=$st_ver bump_kind=$BUMP"
           echo "bump_kind=$BUMP" >> "$GITHUB_OUTPUT"
+
+      # Bump-kind-aware wall-clock gate (issue #53). Runs AFTER bump
+      # detection so the minimum matches docs/release-testing.md:
+      # 24h patch / 72h minor / 168h major. Emits:
+      #   window_elapsed — the honest wall-clock verdict; the summary
+      #     job's soak-passed label REQUIRES it, so a force=true run
+      #     (release.yml dispatches every tag with force for immediate
+      #     Path 1/5 validation) can no longer label a 1-minute-old
+      #     release as soaked.
+      #   should_soak — final go/no-go for the path jobs; force keeps
+      #     these running on young releases (that's its purpose).
+      - name: Evaluate soak window
+        id: window
+        if: steps.decide.outputs.should_soak == 'true'
+        env:
+          FORCE: ${{ inputs.force }}
+          PUBLISHED_AT: ${{ steps.decide.outputs.published_at }}
+          BUMP_KIND: ${{ steps.bump.outputs.bump_kind }}
+        run: |
+          set -euo pipefail
+          case "$BUMP_KIND" in
+            major) MIN_SOAK_HOURS=168 ;;
+            minor) MIN_SOAK_HOURS=72 ;;
+            *)     MIN_SOAK_HOURS=24 ;;
+          esac
+          echo "min_soak_hours=$MIN_SOAK_HOURS" >> "$GITHUB_OUTPUT"
+
+          NOW_EPOCH=$(date -u +%s)
+          PUB_EPOCH=$(date -u -d "$PUBLISHED_AT" +%s 2>/dev/null || \
+                      python3 -c "from datetime import datetime; print(int(datetime.fromisoformat('$PUBLISHED_AT'.replace('Z','+00:00')).timestamp()))")
+          AGE_HOURS=$(( (NOW_EPOCH - PUB_EPOCH) / 3600 ))
+          echo "Release age: ${AGE_HOURS}h (min for ${BUMP_KIND}: ${MIN_SOAK_HOURS}h)"
+
+          if [ "$AGE_HOURS" -ge "$MIN_SOAK_HOURS" ]; then
+            echo "window_elapsed=true" >> "$GITHUB_OUTPUT"
+            echo "should_soak=true" >> "$GITHUB_OUTPUT"
+          elif [ "$FORCE" = "true" ]; then
+            echo "Force flag set — running validation paths, but the window has NOT elapsed; no soak-passed signal will be posted."
+            echo "window_elapsed=false" >> "$GITHUB_OUTPUT"
+            echo "should_soak=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release younger than ${MIN_SOAK_HOURS}h — schedule will re-check."
+            echo "window_elapsed=false" >> "$GITHUB_OUTPUT"
+            echo "should_soak=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Summarize decision
         if: always()
@@ -760,6 +811,7 @@ jobs:
     if: |
       always() &&
       needs.gate.outputs.should_soak == 'true' &&
+      needs.gate.outputs.window_elapsed == 'true' &&
       needs.fresh-install.result == 'success' &&
       needs.path5-multi-tool.result == 'success' &&
       needs.path6-breaking-config.result != 'failure' &&
@@ -820,17 +872,19 @@ jobs:
               --repo "${{ github.repository }}" \
               --title "$TITLE" \
               --label release-soak \
-              --body "Auto-created by \`prerelease-soak.yml\`. Populated during the 24h soak window; label \`soak-24h-passed-$TAG\` added when the gate passes.")
+              --body "Auto-created by \`prerelease-soak.yml\`. Populated during the soak window (24h patch / 72h minor / 168h major); label \`soak-window-passed-$TAG\` added when the bump-kind-appropriate window has elapsed AND the path matrix passed.")
             EXISTING=$(echo "$EXISTING" | grep -oE '[0-9]+$')
           fi
           echo "number=$EXISTING" >> "$GITHUB_OUTPUT"
 
       - name: Ensure soak-passed label exists (repo-wide)
+        env:
+          MIN_HOURS: ${{ needs.gate.outputs.min_soak_hours }}
         run: |
           set -euo pipefail
-          LABEL="soak-24h-passed-$TAG"
+          LABEL="soak-window-passed-$TAG"
           if ! gh label list --repo "${{ github.repository }}" --limit 200 --json name --jq '.[].name' | grep -qxF "$LABEL"; then
-            gh label create "$LABEL" --repo "${{ github.repository }}" --color 0e8a16 --description "24h soak passed on $TAG"
+            gh label create "$LABEL" --repo "${{ github.repository }}" --color 0e8a16 --description "${MIN_HOURS}h soak window passed on $TAG"
           fi
 
       - name: Attach label + summary comment
@@ -838,17 +892,18 @@ jobs:
           ISSUE_NUM: ${{ steps.issue.outputs.number }}
           COMPANION_OK: ${{ steps.companion.outputs.companion_ok }}
           BUMP_KIND: ${{ needs.gate.outputs.bump_kind }}
+          MIN_HOURS: ${{ needs.gate.outputs.min_soak_hours }}
           PATH5_RESULT: ${{ needs.path5-multi-tool.result }}
           PATH6_RESULT: ${{ needs.path6-breaking-config.result }}
           PATH7_RESULT: ${{ needs.path7-migration-replay.result }}
         run: |
           set -euo pipefail
-          gh issue edit "$ISSUE_NUM" --repo "${{ github.repository }}" --add-label "soak-24h-passed-$TAG"
+          gh issue edit "$ISSUE_NUM" --repo "${{ github.repository }}" --add-label "soak-window-passed-$TAG"
           gh issue comment "$ISSUE_NUM" --repo "${{ github.repository }}" --body "$(cat <<EOF
-          ## 24h soak gate — PASSED
+          ## Soak window gate — PASSED (${MIN_HOURS}h minimum for a ${BUMP_KIND} bump)
 
           - Tag: \`$TAG\`
-          - Bump kind: \`$BUMP_KIND\`
+          - Bump kind: \`$BUMP_KIND\` → minimum window ${MIN_HOURS}h
           - Published: ${{ needs.gate.outputs.published_at }}
           - Path 1 (fresh install) — PASS on Ubuntu, macOS, Windows
           - Path 5 (multi-tool setup timing) — \`$PATH5_RESULT\`
@@ -856,10 +911,11 @@ jobs:
           - Path 7 (migration replay, major-only) — \`$PATH7_RESULT\`
           - Companion workflows (release-paths, verify-release) status: \`$COMPANION_OK\`
 
-          **Promotion readiness signal:** this label attaches when the
-          minimum wall-clock window has elapsed AND Path 1 has passed
-          on every cohort platform. Companion status is advisory only —
-          verify via \`gh run list\` before promoting.
+          **Promotion readiness signal:** this label attaches only after
+          the bump-kind-appropriate wall-clock window has genuinely
+          elapsed (force-dispatched validation runs never attach it) AND
+          Path 1 has passed on every cohort platform. Companion status
+          is advisory only — verify via \`gh run list\` before promoting.
 
           Next: run the \`cutting-release\` skill to promote \`$TAG\` to
           stable, if maintainer soak observations agree. This label does
@@ -869,12 +925,16 @@ jobs:
           )"
 
       - name: Comment on the release
+        env:
+          MIN_HOURS: ${{ needs.gate.outputs.min_soak_hours }}
         run: |
           set -euo pipefail
           gh release view "$TAG" --repo "${{ github.repository }}" --json body --jq '.body' > /tmp/body.md
-          # Append the soak signal to the body if not already present.
-          if ! grep -q "24h soak: PASSED" /tmp/body.md; then
-            printf "\n\n---\n\n**24h soak: PASSED** — see #%s for the audit trail.\n" \
-              "${{ steps.issue.outputs.number }}" >> /tmp/body.md
+          # Append the soak signal to the body if not already present
+          # (also match the legacy 24h wording so old bodies don't get
+          # a duplicate footer).
+          if ! grep -qE "(24h soak|soak window.*): PASSED" /tmp/body.md; then
+            printf "\n\n---\n\n**Soak window (%sh): PASSED** — see #%s for the audit trail.\n" \
+              "$MIN_HOURS" "${{ steps.issue.outputs.number }}" >> /tmp/body.md
             gh release edit "$TAG" --repo "${{ github.repository }}" --notes-file /tmp/body.md
           fi
