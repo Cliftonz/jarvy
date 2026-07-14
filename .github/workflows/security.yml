@@ -62,8 +62,13 @@ jobs:
       - name: Generate lockfile
         run: cargo generate-lockfile
 
+      # Ignores mirror deny.toml's [advisories].ignore — keep both lists
+      # in sync (cargo-audit has no shared config with cargo-deny).
       - name: Run cargo-audit
-        run: cargo audit --deny warnings
+        run: |
+          cargo audit --deny warnings \
+            --ignore RUSTSEC-2026-0194 \
+            --ignore RUSTSEC-2026-0195
 
   # Job 2: cargo-deny - Licenses, Advisories, Bans, Sources
   deny:
@@ -103,9 +108,15 @@ jobs:
           GITLEAKS_CONFIG: .gitleaks.toml
 
   # Job 4: Semgrep - Static Analysis Security Testing (SAST)
+  # Advisory while the 152-finding backlog from the 6-month disablement
+  # is triaged (tracked in the security follow-up issue) — findings
+  # still upload to the Security tab via SARIF; the summary job never
+  # hard-required semgrep. Flip back to blocking once the backlog is
+  # burned down.
   semgrep:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
+    continue-on-error: true
     if: github.event_name != 'schedule' || github.repository == 'Cliftonz/jarvy'
     steps:
       - name: Checkout

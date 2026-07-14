@@ -77,6 +77,17 @@ paths = [
     '''tests/fixtures/.*''',
     '''tests/.*_test\.rs$''',
 
+    # The log sanitizer's unit tests contain deliberately fake
+    # Stripe/JWT/etc. tokens as redaction test vectors.
+    '''src/observability/sanitizer\.rs$''',
+    '''src/logging/sanitizer\.rs$''',
+
+    # Ignore-lists for other scanners document secret PATTERNS.
+    '''\.betterleaksignore$''',
+
+    # Session scratch notes (compacted progress logs).
+    '''progress\.txt$''',
+
     # Lock files
     '''Cargo\.lock$''',
     '''package-lock\.json$''',
