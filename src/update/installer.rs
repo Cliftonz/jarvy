@@ -436,19 +436,25 @@ impl BinaryInstaller {
 
     /// Restore backup after failed installation
     fn restore_backup(&self, backup: &Path, target: &Path) -> Result<(), UpdateError> {
-        fs::copy(backup, target)
-            .map_err(|e| UpdateError::RollbackFailed(format!("Restore failed: {}", e)))?;
-
+        // Same ETXTBSY hazard as `Rollback::restore_backup`: the restore
+        // target is the running executable, so `fs::copy` into it fails on
+        // Linux. Atomic temp-rename via self_update, matching
+        // `replace_binary`. Consumes the backup file.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(target)
+            let mut perms = fs::metadata(backup)
                 .map_err(|e| UpdateError::RollbackFailed(e.to_string()))?
                 .permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(target, perms)
+            fs::set_permissions(backup, perms)
                 .map_err(|e| UpdateError::RollbackFailed(e.to_string()))?;
         }
+
+        self_update::Move::from_source(backup)
+            .replace_using_temp(target)
+            .to_dest(target)
+            .map_err(|e| UpdateError::RollbackFailed(format!("Restore failed: {}", e)))?;
 
         Ok(())
     }

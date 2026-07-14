@@ -131,20 +131,26 @@ impl RollbackManager {
 
     /// Restore backup file to target path
     fn restore_backup(backup: &Path, target: &Path) -> Result<(), UpdateError> {
-        fs::copy(backup, target)
-            .map_err(|e| UpdateError::RollbackFailed(format!("Restore failed: {}", e)))?;
-
-        // Set executable permissions on Unix
+        // `fs::copy` wrote INTO the running executable, which Linux refuses
+        // with ETXTBSY ("Text file busy") — the rollback target IS the
+        // binary executing this code. Use the same atomic temp-rename dance
+        // as `Installer::replace_binary`. Found by release-paths Path 4 on
+        // v0.6.2 — the first run in which that path ever executed.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(target)
+            let mut perms = fs::metadata(backup)
                 .map_err(|e| UpdateError::RollbackFailed(e.to_string()))?
                 .permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(target, perms)
+            fs::set_permissions(backup, perms)
                 .map_err(|e| UpdateError::RollbackFailed(e.to_string()))?;
         }
+
+        self_update::Move::from_source(backup)
+            .replace_using_temp(target)
+            .to_dest(target)
+            .map_err(|e| UpdateError::RollbackFailed(format!("Restore failed: {}", e)))?;
 
         Ok(())
     }
