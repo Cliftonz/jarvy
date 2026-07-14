@@ -813,13 +813,104 @@ jobs:
           done
           echo "All ${#files[@]} assets uploaded successfully."
 
+      # ========================================================================
+      # DRAFT VERIFICATION GATE (gate model, 2026-07-14). The draft is
+      # the last checkpoint where nothing user-facing has happened: no
+      # public URLs, `latest` untouched, auto-updaters blind to it. A
+      # failure here means the draft simply never publishes — no
+      # withdrawal banner, no rollback, no stranded users. v0.6.1
+      # (binaries self-reporting 0.6.0) published because verification
+      # only ran AFTER the release went live; this step would have
+      # stopped it even without the verify_tag Cargo guard.
+      #
+      # Verifies the assets AS UPLOADED (re-downloaded from the draft
+      # via the API, not the local build dirs) so truncated or failed
+      # uploads are caught too.
+      # ========================================================================
+      - name: Install cosign (draft verification)
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify draft before publishing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VDIR=$(mktemp -d)
+          echo "Downloading draft assets for ${VERSION} into ${VDIR}..."
+          gh release download "${VERSION}" --repo "${{ github.repository }}" --dir "$VDIR"
+          cd "$VDIR"
+
+          FAIL=0
+
+          # 1. Checksums: every jarvy* artifact must be listed in
+          #    SHA256SUMS.txt and match its recomputed digest.
+          [ -s SHA256SUMS.txt ] || { echo "::error::SHA256SUMS.txt missing/empty in draft"; exit 1; }
+          for f in jarvy*; do
+            case "$f" in *.sig|*.pem|*.bundle) continue;; esac
+            [ -f "$f" ] || continue
+            EXPECTED=$(grep -F " $f" SHA256SUMS.txt | awk '{print $1}' | head -1)
+            if [ -z "$EXPECTED" ]; then
+              echo "::error::$f has no SHA256SUMS.txt entry"; FAIL=1; continue
+            fi
+            ACTUAL=$(sha256sum "$f" | awk '{print $1}')
+            if [ "$EXPECTED" != "$ACTUAL" ]; then
+              echo "::error::$f checksum mismatch (uploaded asset differs from manifest)"; FAIL=1
+            fi
+          done
+
+          # 2. Cosign: every jarvy* artifact verifies against its .sig/.pem.
+          for f in jarvy*; do
+            case "$f" in *.sig|*.pem|*.bundle) continue;; esac
+            [ -f "$f" ] || continue
+            if [ ! -f "$f.sig" ] || [ ! -f "$f.pem" ]; then
+              echo "::error::$f missing .sig/.pem companion"; FAIL=1; continue
+            fi
+            if ! cosign verify-blob \
+                --signature "$f.sig" --certificate "$f.pem" \
+                --certificate-identity-regexp "https://github.com/${{ github.repository }}/" \
+                --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+                "$f" >/dev/null 2>&1; then
+              echo "::error::cosign verification failed for $f"; FAIL=1
+            fi
+          done
+
+          # 3. SBOMs parse with their format-distinguishing keys.
+          jq -e '.spdxVersion' sbom.spdx.json >/dev/null || { echo "::error::sbom.spdx.json invalid"; FAIL=1; }
+          jq -e '.bomFormat' sbom.cdx.json >/dev/null || { echo "::error::sbom.cdx.json invalid"; FAIL=1; }
+
+          # 4. Version smoke — the v0.6.1 catcher. Extract the runner-native
+          #    tarball and require --version to contain the tag's version.
+          TARBALL="jarvy-${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          if [ -f "$TARBALL" ]; then
+            tar xzf "$TARBALL" -C "$(mktemp -d -p .)" --strip-components=0
+            BIN=$(find . -maxdepth 2 -name jarvy -type f | head -1)
+            REPORTED=$("$BIN" --version | awk '{print $2}')
+            if [[ "$REPORTED" != *"${VERSION#v}"* ]]; then
+              echo "::error::binary reports '$REPORTED', expected '${VERSION#v}' — refusing to publish a mislabeled release (see the v0.6.1 postmortem, #62)"
+              FAIL=1
+            else
+              echo "Version smoke OK: binary reports $REPORTED"
+            fi
+          else
+            echo "::error::$TARBALL missing from draft — cannot version-smoke"; FAIL=1
+          fi
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo "::error::Draft verification FAILED — the draft will NOT be published. Delete the draft + tag, fix, and re-tag:"
+            echo "  gh release delete ${VERSION} --yes && git push origin :refs/tags/${VERSION} && git tag -d ${VERSION}"
+            exit 1
+          fi
+          echo "Draft verification passed — publishing."
+
       # Promote the draft to a published release. Stable releases also
       # get marked `--latest`; pre-releases (rc / beta / alpha) leave
       # the GitHub "Latest" pin alone so users on the stable channel
       # aren't auto-served a pre-release artifact. v0.4.0 was the
       # canary that exposed the missing step: workflow created the
       # draft + uploaded 61 assets, then stopped without publishing,
-      # forcing a manual `gh release edit --draft=false`.
+      # forcing a manual `gh release edit --draft=false`. Runs ONLY
+      # after 'Verify draft before publishing' succeeds — the automated
+      # replacement for the old manual draft checkpoint.
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

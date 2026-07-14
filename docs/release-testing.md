@@ -23,6 +23,60 @@ Before starting validation, confirm:
   fault-injection drills are required.
 - **Cohort environment**: see [Cohort Environment](#cohort-environment) below.
 
+## Release model: gates, not windows (2026-07-14)
+
+Releases ship when **every automated gate is green**, not after a
+wall-clock wait. Rationale: every escaped or near-escaped defect to date
+(v0.6.0-rc.1's redirect sev-1, v0.6.1's mislabeled binaries, the dead
+rollback path, ETXTBSY) was caught by tests/CI — none by waiting. At the
+current cohort size the soak window bought no real signal; the margin it
+represented is being rebuilt as executable gates instead (each incident
+adds one — that is the contract for future incidents too: fix + a gate
+that would have caught it).
+
+The gate pipeline on a tag push, in order — a failure at ANY stage stops
+the release before users can see it:
+
+1. **verify_tag** — signed tag, release doesn't already exist, and
+   `Cargo.toml` matches the tag target (v0.6.1 postmortem, #62).
+2. **wait_for_tests** — full cross-OS Test matrix green on the tag SHA.
+3. **build + sign + upload to a DRAFT** — no public URLs, `latest`
+   untouched, auto-updaters blind to it.
+4. **Draft verification gate** — the draft's assets are re-downloaded
+   via the API and verified: checksums vs SHA256SUMS.txt, cosign
+   signatures, SBOM shape, and a binary `--version` smoke that must
+   report the tag's version. Red here = the draft never publishes;
+   delete draft + tag, fix, re-tag. Nothing to withdraw.
+5. **Publish** — only now does the release (and `latest`, for stables)
+   go live, followed by the package-manager dispatches.
+6. **Post-publish fleet** (release-paths, verify-release, installer-e2e,
+   package-install-e2e, prerelease-soak's Path 1/5) — these exercise the
+   PUBLIC install/upgrade paths that cannot run against a draft. They
+   are **rollback triggers, not gates**: any red here is investigated
+   immediately and a sev-1 invokes the Rollback Path below.
+
+**When is an rc + soak still required?** Only for changes to the
+update chain itself — the one surface where a bad release can brick the
+mechanism that delivers its own fix (the v0.5.x binary-update lesson:
+those users are stranded until they reinstall out-of-band):
+
+- `src/update/**`
+- `dist/scripts/install.sh`, `dist/scripts/install.ps1`
+- `.github/workflows/release.yml`
+- Distro packaging (`dist/homebrew/**`, `dist/debian/**`, `dist/rpm/**`,
+  `dist/aur/**`, `dist/windows/**`)
+- Any **major** bump
+
+Everything else — tool registry, setup, roles, drift, git config,
+telemetry, docs — ships direct-to-stable behind the gates. The
+per-surface rows in the old trigger matrix remain useful as a review
+checklist, but they no longer force an rc.
+
+As telemetry adoption grows, post-publish gating should move from
+time-based to **signal-based**: elevated `setup.failure` /
+`tool.install.failure` rates in the first hours after publish
+auto-trigger the withdrawal banner. Gate on evidence, never the calendar.
+
 ## CI gate (automatic — runs on every tag push)
 
 `release.yml` will not build, sign, or publish artifacts unless the
@@ -67,8 +121,14 @@ Validation Progress for vX.Y.Z-rc.N:
 
 ## Trigger Matrix
 
-Validation is **required** if the diff between the last stable tag and the
-candidate tag touches any of these surfaces:
+**Gate-model note (2026-07-14):** only the update-chain rows below —
+Self-update, Install scripts, Distro packaging, Release workflow — plus
+any **major** bump still *require* an rc + soak. The remaining rows are
+a review checklist (know what you're shipping), not an rc trigger; those
+changes ship direct-to-stable behind the release gates above.
+
+An rc + operator validation is **required** if the diff between the last
+stable tag and the candidate tag touches any of these surfaces:
 
 | Surface | Files / paths |
 |---|---|
@@ -346,6 +406,11 @@ against a state that has already been touched by the rc defeats the point.
 
 ## Soak Window
 
+**Applies only when an rc was required** (update-chain changes or major
+bumps — see the gate model above). Direct-to-stable releases have no
+window; their post-publish protection is the validation fleet + the 48h
+watch + the Rollback Path.
+
 After the pre-soak matrix passes, declare the soak window open by commenting
 on the soak issue. Minimum durations:
 
@@ -395,6 +460,10 @@ traffic.
   Does not block promotion; track as a follow-up issue.
 
 ## Promotion Criteria
+
+**rc → stable promotions only** (update-chain changes / majors).
+Direct-to-stable releases are gated automatically by the pipeline in
+the gate-model section instead.
 
 When the minimum soak duration has elapsed, **all** must be true to promote:
 
@@ -510,10 +579,15 @@ If a sev-1 surfaces after the stable tag has shipped:
 
 ## Anti-Patterns to Refuse
 
-- "Skip the soak, it's a tiny change" — if the trigger matrix matched, the
-  soak is required. The trigger matrix is the contract.
-- "Promote early, the cohort env looks fine" — the soak window is a fixed
-  minimum, not a target.
+- "Skip the rc, it touches the updater" — the update-chain rows of the
+  trigger matrix are the contract: a broken update path strands users
+  with no self-serve fix. Non-update-chain changes ship direct-to-stable
+  behind the gates; update-chain changes never do.
+- "Promote the rc early, the cohort env looks fine" — when an rc IS
+  required, its soak window is a fixed minimum, not a target.
+- "The draft verification is red but the assets look fine to me" — the
+  gate exists because 'looks fine' published v0.6.1. Delete the draft +
+  tag, fix, re-tag. Never hand-publish around a red gate.
 - "Just edit the GitHub release notes if something breaks" — assets are
   immutable. A withdrawal banner is the only in-band signal; the rollback
   path is what actually protects users.

@@ -107,23 +107,30 @@ Implications:
   would override the fallback and produce inconsistent rc release notes
   between iterations.
 
-## Release auto-publishes (draft is transient)
+## Release auto-publishes — behind a draft-verification gate
 
-**Updated 2026-07-13 (observed on v0.6.0):** the workflow creates a draft
-release shell, uploads all assets, and then **auto-promotes the draft to
-published** in the same run (`gh release edit --draft=false`, `--latest`
-for stables). The draft exists only as an upload staging area; there is no
-manual publish step anymore.
+**Updated 2026-07-14 (gate model):** the workflow creates a draft, uploads
+all assets, then runs a **draft-verification gate** — re-downloads the
+draft's assets via the API and checks checksums, cosign signatures, SBOM
+shape, and a binary `--version` smoke against the tag — and only on green
+auto-promotes to published (`--draft=false`, `--latest` for stables).
 
-Implication: **the tag push is the point of no return** — publication and
-the downstream `release: published` dispatches (publish-packages,
-release-paths, verify-release, prerelease-soak) all follow automatically.
-Verify everything (CI, CHANGELOG, promotion criteria) BEFORE pushing the
-tag; post-publish the verify-release.yml run is the asset check of record.
+Implications:
 
-(Historic behavior: the workflow used to stop at the draft and required a
-manual `gh release edit vX.Y.Z --draft=false` after artifact verification.
-Skills or notes that still reference the manual publish step are stale.)
+- The tag push commits you to the *pipeline*, but a bad build now
+  self-aborts at the draft: nothing user-facing happens, no withdrawal
+  needed. Recovery from a red gate is delete draft + tag, fix, re-tag.
+- Never hand-publish a draft around a red gate (`gh release edit
+  --draft=false` by hand) — the gate is the checkpoint that replaced the
+  manual verify step; bypassing it is how v0.6.1 class mistakes ship.
+- Post-publish, verify-release.yml re-checks the PUBLIC assets and the
+  rest of the fleet exercises the public install/upgrade paths — those
+  are rollback triggers, not gates.
+
+(History: pre-2026-07-13 the workflow stopped at the draft for a manual
+publish; 2026-07-13 it auto-published with verification only afterwards —
+which let the mislabeled v0.6.1 ship, see issue #62; the gate landed
+2026-07-14.)
 
 ## `release:published` events use the tag's commit, not main HEAD
 
