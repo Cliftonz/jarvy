@@ -24,18 +24,23 @@ fn version_exits_zero() {
     c.assert().success();
 }
 
+// Unknown-command contract (changed after the release-paths incident where
+// `jarvy rollback` — no such command — exited 0 in CI and only a downstream
+// version assert caught it): with no TTY, exit 2 immediately and do NOT open
+// the interactive menu, regardless of JARVY_TEST_MODE. The menu fallback is
+// TTY-only. Tests run without a TTY, so they observe the exit-2 path.
 #[test]
 fn unknown_triggers_handler_and_no_init() {
     let mut c = cmd();
     c.env("JARVY_INIT_PROBE", "1");
     c.arg("frobnicate");
     c.assert()
-        .success()
+        .code(2)
         .stderr(predicate::str::contains(
             "Unrecognized command: 'frobnicate'",
         ))
         .stderr(predicate::str::contains("TEST: initialize called").not())
-        .stdout(predicate::str::contains("TEST: user_select invoked"));
+        .stdout(predicate::str::contains("TEST: user_select invoked").not());
 }
 
 #[test]
@@ -54,9 +59,9 @@ fn unknown_plus_known_like_args_falls_back() {
     c.env("JARVY_INIT_PROBE", "1");
     c.args(["z", "--format", "json"]);
     c.assert()
-        .success()
+        .code(2)
         .stderr(predicate::str::contains("Unrecognized command: 'z'"))
-        .stdout(predicate::str::contains("TEST: user_select invoked"));
+        .stdout(predicate::str::contains("TEST: user_select invoked").not());
 }
 
 #[test]
@@ -65,10 +70,10 @@ fn case_mismatch_subcommand_is_unknown() {
     c.env("JARVY_INIT_PROBE", "1");
     c.args(["SeTuP"]);
     c.assert()
-        .success()
+        .code(2)
         // unknown path returns before init
         .stderr(predicate::str::contains("TEST: initialize called").not())
-        .stdout(predicate::str::contains("TEST: user_select invoked"));
+        .stdout(predicate::str::contains("TEST: user_select invoked").not());
 }
 
 #[test]

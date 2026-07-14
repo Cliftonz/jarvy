@@ -77,7 +77,17 @@ fn main() {
         } else {
             eprintln!("Unrecognized command");
         }
-        // Fall back to an interactive menu
+        // Non-interactive callers (CI, scripts, pipes) get a non-zero exit
+        // so a typo'd subcommand can't masquerade as success — release-paths
+        // ran `jarvy rollback` (no such command), got exit 0, and only the
+        // downstream version assert caught it. Exit 2 matches clap's own
+        // usage-error convention. Deliberately NOT gated on JARVY_TEST_MODE:
+        // CI sets that var (release-paths does), and it must not re-open
+        // the exit-0 hole this closes.
+        if !update::config::is_interactive() {
+            std::process::exit(2);
+        }
+        // Fall back to an interactive menu for humans at a TTY
         interactive::user_select();
         return;
     }

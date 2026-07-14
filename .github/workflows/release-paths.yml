@@ -296,12 +296,15 @@ jobs:
           jarvy --help > /dev/null
           jarvy validate --help > /dev/null
 
-      - name: Path 4 — jarvy rollback
+      # `rollback` is a flag on `update`, not a subcommand — `jarvy rollback`
+      # doesn't exist, and until the exit-2-on-unknown-command fix it failed
+      # SILENTLY (exit 0), leaving the verify step to catch the stale binary.
+      - name: Path 4 — jarvy update --rollback
         if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
         shell: bash
         env:
           JARVY_TEST_MODE: '1'
-        run: jarvy rollback
+        run: jarvy update --rollback
 
       - name: Verify rollback restored N-1
         if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'

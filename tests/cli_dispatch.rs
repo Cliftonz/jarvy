@@ -86,9 +86,12 @@ fn unknown_never_writes_output_file_even_if_arg_present() {
     let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
     c.env("JARVY_TEST_MODE", "1");
     c.args(["frobnicate", "--output", pathbuf.to_str().unwrap()]);
+    // Non-TTY unknown command exits 2 without opening the menu (see
+    // tests/cli_unknown.rs contract note); the file-side assert below is
+    // the point of this test and is unchanged.
     c.assert()
-        .success()
-        .stdout(predicate::str::contains("TEST: user_select invoked"));
+        .code(2)
+        .stdout(predicate::str::contains("TEST: user_select invoked").not());
 
     assert!(
         std::fs::read_to_string(&pathbuf).is_err(),

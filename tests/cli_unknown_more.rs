@@ -14,10 +14,12 @@ fn multiple_unknown_tokens_fall_back_once() {
     c.env("JARVY_INIT_PROBE", "1");
     c.args(["foo", "bar", "baz"]);
     c.assert()
-        .success()
+        // exit 2 + no menu: unknown commands are non-interactive usage
+        // errors when there's no TTY (see tests/cli_unknown.rs contract note)
+        .code(2)
         .stderr(predicate::str::contains("Unrecognized command: 'foo'"))
         .stderr(predicate::str::contains("TEST: initialize called").not())
-        .stdout(predicate::str::contains("TEST: user_select invoked"));
+        .stdout(predicate::str::contains("TEST: user_select invoked").not());
 }
 
 #[test]
