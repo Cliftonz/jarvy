@@ -869,6 +869,14 @@ jobs:
       #                         doubles as immediate per-tag validation;
       #                         the scheduled cron still re-runs at 24h+
       #                         for the wall-clock endurance signal.
+      #   installer-e2e.yml   → install.sh / install.ps1 against the real
+      #                         published assets
+      #   package-install-e2e.yml → .deb/apt, .rpm/dnf, cargo, .msi matrix
+      #
+      # installer-e2e + package-install-e2e were keyed on
+      # `release: published` since they landed but were never in this
+      # dispatch list, so they had ZERO runs ever (found 2026-07-14) —
+      # the recursion guard silently ate every trigger.
       - name: Dispatch downstream validation workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -898,4 +906,19 @@ jobs:
             --ref "${VERSION}" \
             -f tag="${VERSION}" \
             -f force=true
+          echo "Dispatched prerelease-soak.yml against ${VERSION}."
+
+          # Universal install scripts against the real published assets.
+          gh workflow run installer-e2e.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${VERSION}" \
+            -f tag="${VERSION}"
+          echo "Dispatched installer-e2e.yml against ${VERSION}."
+
+          # Native package matrix (.deb/apt, .rpm/dnf, cargo, .msi).
+          gh workflow run package-install-e2e.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${VERSION}" \
+            -f tag="${VERSION}"
+          echo "Dispatched package-install-e2e.yml against ${VERSION}."
           echo "Dispatched prerelease-soak.yml against ${VERSION} (force=true)."

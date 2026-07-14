@@ -55,6 +55,13 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
 
+      # Cargo.lock is intentionally untracked in this repo (CI floats to
+      # latest-compatible), but cargo-audit refuses to run without one.
+      # Generate it fresh — auditing the latest-compatible resolution is
+      # exactly what this job should check anyway.
+      - name: Generate lockfile
+        run: cargo generate-lockfile
+
       - name: Run cargo-audit
         run: cargo audit --deny warnings
 
@@ -65,6 +72,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Cargo.lock is untracked (see audit job note); cargo-deny needs one.
+      - name: Generate lockfile
+        run: cargo generate-lockfile
 
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2

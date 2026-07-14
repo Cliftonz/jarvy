@@ -18,9 +18,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Sharded: the single-job run outgrew GitHub's HARD 6h ceiling for
+  # hosted-runner jobs (killed at exactly 6h00m on 2026-07-04 and
+  # 2026-07-11; last single-job success was 5h37m). `timeout-minutes`
+  # cannot be raised past that ceiling, so split the mutant list across
+  # 4 parallel shards (~1.5h each) via cargo-mutants' --shard.
   mutation-test:
-    name: Mutation Testing
+    name: Mutation Testing (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v7
 
@@ -39,6 +48,7 @@ jobs:
           if [ -z "$MODULES" ]; then
             # Default critical modules
             cargo mutants --timeout 300 --jobs 4 \
+              --shard ${{ matrix.shard }}/4 \
               -f src/config.rs \
               -f src/tools/common.rs \
               -- --lib
@@ -49,7 +59,8 @@ jobs:
             for module in "${MODULE_ARRAY[@]}"; do
               ARGS="$ARGS -f src/${module}.rs"
             done
-            cargo mutants --timeout 300 --jobs 4 $ARGS -- --lib
+            cargo mutants --timeout 300 --jobs 4 \
+              --shard ${{ matrix.shard }}/4 $ARGS -- --lib
           fi
         continue-on-error: true
 
@@ -106,6 +117,6 @@ jobs:
       - name: Upload mutation results
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: mutation-results
+          name: mutation-results-shard-${{ matrix.shard }}
           path: mutants.out/
           retention-days: 30
