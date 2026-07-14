@@ -27,6 +27,33 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.6.1] — nvm detection fix (2026-07-14)
+
+**Fixes:**
+
+- nvm is now detected via its filesystem marker
+  (`${NVM_DIR:-$HOME/.nvm}/nvm.sh`) instead of shell probes. nvm is a
+  shell function, not a binary, so the previous PATH lookup and
+  `bash -lc` probes could never see it — every `jarvy setup` with `nvm`
+  in the config re-downloaded and re-ran the installer, and the version
+  check reported nvm as needing install forever. Detection now converges
+  after one install, and `jarvy upgrade node` correctly suggests
+  `nvm install` when node is nvm-managed. (Windows is unaffected:
+  nvm-windows is a real binary.)
+
+**Internal:**
+
+- CI action bumps (Dependabot): `actions/checkout` 4→7,
+  `actions/download-artifact` 7→8, `actions/setup-java` 4→5,
+  `azure/setup-helm` 4.3.0→5.0.1, `docker/setup-buildx-action` 3→4.
+  The release-critical ones were smoke-validated by dispatch runs
+  before this release.
+
+This is also the first release upgradable *to* via
+`jarvy update --method binary` from v0.6.0 — the redirect fix shipped in
+v0.6.0 makes the updater work going forward (upgrading *from* v0.5.x
+still requires the install script or a package manager).
+
 ## [v0.6.0] — jarvy run, editor integrations, git config hardening (2026-07-13)
 
 **Known issues:**
