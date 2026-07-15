@@ -873,12 +873,17 @@ jobs:
           FAIL=0
 
           # 1. Checksums: every jarvy* artifact must be listed in
-          #    SHA256SUMS.txt and match its recomputed digest.
+          #    SHA256SUMS.txt and match its recomputed digest. Manifest
+          #    entries carry BUILD PATHS (./generate-rpm/jarvy-*.rpm),
+          #    not bare asset names — match by basename. awk (exit 0 on
+          #    no match) instead of grep so `set -e` can't kill the
+          #    substitution before the empty-check runs (the silent
+          #    3ms failure of rc.1 attempt 3, run 29421421209).
           [ -s SHA256SUMS.txt ] || { echo "::error::SHA256SUMS.txt missing/empty in draft"; exit 1; }
           for f in jarvy*; do
             case "$f" in *.sig|*.pem|*.bundle) continue;; esac
             [ -f "$f" ] || continue
-            EXPECTED=$(grep -F " $f" SHA256SUMS.txt | awk '{print $1}' | head -1)
+            EXPECTED=$(awk -v name="$f" '{ p=$2; gsub(/^.*\//, "", p); if (p == name) { print $1; exit } }' SHA256SUMS.txt)
             if [ -z "$EXPECTED" ]; then
               echo "::error::$f has no SHA256SUMS.txt entry"; FAIL=1; continue
             fi
