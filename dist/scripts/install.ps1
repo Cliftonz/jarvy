@@ -111,6 +111,14 @@ function Get-ExpectedSha {
     $sumsUrl = "https://github.com/$JarvyRepo/releases/download/v$Version/SHA256SUMS.txt"
     try {
         $sums = (Invoke-WebRequest -Uri $sumsUrl -UseBasicParsing).Content
+        # GitHub's release CDN serves the file as application/octet-stream,
+        # so PowerShell 7 returns .Content as Byte[] — splitting that
+        # yields no matchable lines and verification silently skipped
+        # (this path never worked under pwsh 7 until installer-e2e
+        # exercised it, 2026-07-15). Decode explicitly.
+        if ($sums -is [byte[]]) {
+            $sums = [System.Text.Encoding]::UTF8.GetString($sums)
+        }
     }
     catch {
         return $null
