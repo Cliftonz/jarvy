@@ -27,6 +27,74 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.6.3] — updater reliability + installer integrity (2026-07-16)
+
+First release under the gate model (see `docs/release-testing.md`):
+soaked as `v0.6.3-rc.1` for the 24h patch window because it changes the
+update chain.
+
+**Security:**
+
+- **`install.sh` / `install.ps1` checksum verification actually fires
+  now.** Two stacked bugs meant `curl | bash` and PowerShell installs
+  were silently skipping integrity verification: `SHA256SUMS.txt`
+  entries carry build paths that the lookup never matched, and under
+  PowerShell 7 the sums file arrived as raw bytes that never split into
+  lines. Both installers now match entries by basename and decode the
+  manifest explicitly — a tampered download aborts the install on every
+  platform. Caught by the new installer end-to-end suite on its first
+  run. `SHA256SUMS.txt` entries are also generated as bare asset names
+  going forward (the pathed entries likewise broke Chocolatey's publish
+  step on v0.6.1).
+
+**Fixes:**
+
+- `jarvy update --rollback` no longer fails with `Text file busy` on
+  Linux — the restore path wrote over the running executable; it now
+  uses the same atomic temp-rename as the forward update. The consumed
+  backup also no longer leaves an orphaned file in `~/.jarvy/backup/`.
+- Windows binary updates retry the final swap (3× with backoff) when
+  Defender or an indexer briefly holds the freshly extracted binary
+  (`Access is denied` flake).
+- Release binaries embed the exact release tag: an rc build reports
+  `jarvy 0.6.3-rc.1` from `--version` instead of the bare crate
+  version, and the update checker compares true prerelease versions —
+  beta-channel users were previously never offered the next rc.
+- Unknown subcommands (`jarvy rollback`, typos) exit `2` in
+  non-interactive contexts instead of printing a menu prompt and
+  exiting `0` — scripts and CI can no longer mistake a typo for
+  success. Humans at a TTY still get the interactive menu.
+
+**Changed:**
+
+- Hooks run under `bash` (or `sh`) on Unix instead of the user's
+  `$SHELL`. zsh's lack of word splitting silently broke POSIX-style
+  hooks depending on who ran them — the same `jarvy.toml` now behaves
+  identically for every developer. Opt back into a specific shell with
+  `[hooks.config] shell = "zsh"`.
+- A pinned `node` version installs through nvm when nvm is configured
+  (`nvm install <ver> && nvm alias default <ver>`), so `node = "24"`
+  is honored and a second package-manager node no longer shadows nvm's.
+  Ranges and `latest` keep the platform installer.
+
+**Known issues:**
+
+- Upgrading **from v0.6.2 on Windows** with `jarvy update --method
+  binary` can intermittently fail with `Access is denied` — the retry
+  fix ships in this release but the binary performing that upgrade is
+  v0.6.2's. Re-run the update or use the install script. Upgrades from
+  v0.6.3 onward retry automatically.
+
+**Internal:**
+
+- Release pipeline hardening after the v0.6.1 incident: a
+  draft-verification gate (checksums, cosign, SBOMs, and a binary
+  `--version` smoke) must pass before any release publishes; the
+  Cargo.toml↔tag guard refuses to build a mislabeled tag; and the
+  installer/package e2e suites now actually run on every release.
+  Soak-window automation is bump-kind aware and no longer labels
+  force-dispatched validation runs (#53).
+
 ## [v0.6.2] — nvm detection fix (2026-07-14)
 
 Corrected re-release of the withdrawn v0.6.1 — identical code plus the
