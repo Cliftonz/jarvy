@@ -845,6 +845,11 @@ jobs:
           # re-downloading gigabytes.
           VDIR=$(mktemp -d)
           echo "Collecting local artifact set into ${VDIR}..."
+          # globstar so ** recurses — the upload step sets it too (line
+          # ~774); without it the macOS/Windows artifacts nested one
+          # level deeper are silently skipped (caught by this gate's own
+          # API cross-check on the second rc.1 attempt, run 29418763068).
+          shopt -s globstar nullglob
           for f in artifacts/**/jarvy* sbom/sbom.* signatures/**/*.sig signatures/**/*.pem signatures/**/*.bundle SHA256SUMS.txt; do
             [ -f "$f" ] && cp "$f" "$VDIR/"
           done
