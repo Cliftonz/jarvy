@@ -603,11 +603,18 @@ jobs:
         with:
           subject-path: artifacts/**/jarvy*
 
+      # Entries are BARE ASSET NAMES (basename), matching what release
+      # assets are actually called. The old `sha256sum ./<path>` emitted
+      # build paths (./release/jarvy-*.tar.gz, ./generate-rpm/*.rpm),
+      # which broke every consumer that looked entries up by asset name:
+      # install.sh/install.ps1 silently skipped checksum verification and
+      # Chocolatey's substitute step failed on v0.6.1. Consumers stay
+      # basename-tolerant for pre-existing releases with pathed manifests.
       - name: Generate SHA256 checksums
         run: |
           cd artifacts
           find . -type f -name 'jarvy*' ! -name '*.sig' ! -name '*.pem' ! -name '*.bundle' | while read -r file; do
-            sha256sum "$file" >> SHA256SUMS.txt
+            (cd "$(dirname "$file")" && sha256sum "$(basename "$file")") >> SHA256SUMS.txt
           done
           # Also checksum SBOMs
           cd ../sbom

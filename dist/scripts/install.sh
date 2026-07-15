@@ -284,13 +284,17 @@ fetch_expected_sha() {
     done
     [ -n "$sums" ] || return 1
 
-    # Strip an optional leading `./` from the filename column, then match
-    # the basename exactly. awk exits 1 when no line matched so the caller
-    # can distinguish "missing entry" from "empty digest".
+    # Match by BASENAME: entries carry build paths (./release/jarvy-*.tar.gz,
+    # ./generate-rpm/jarvy-*.rpm), so stripping only a leading `./` never
+    # matched pathed entries and verification silently fell through to the
+    # warn-and-proceed branch — on every release with pathed entries (caught
+    # by installer-e2e's first-ever run, 2026-07-15). awk exits 1 when no
+    # line matched so the caller can distinguish "missing entry" from
+    # "empty digest".
     echo "$sums" | awk -v want="$archive_name" '
         {
             name = $2
-            sub(/^\.\//, "", name)
+            gsub(/^.*\//, "", name)
             if (name == want) { print $1; found = 1; exit }
         }
         END { if (!found) exit 1 }

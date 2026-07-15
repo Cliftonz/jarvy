@@ -42,9 +42,15 @@ assert_rc() {
 CURL_SHOULD_FAIL=0
 curl() {
     if [ "$CURL_SHOULD_FAIL" = "1" ]; then return 22; fi
+    # Entry shapes cover all manifest generations: bare `./` prefix,
+    # BUILD-PATHED (./release/... — pre-2026-07-15 release.yml emitted
+    # these and lookups silently missed them), and bare basename (what
+    # release.yml emits now).
     cat <<'SUMS'
 1111111111111111111111111111111111111111111111111111111111111111  ./jarvy-v1.2.3-x86_64-unknown-linux-musl.tar.gz
 2222222222222222222222222222222222222222222222222222222222222222  ./jarvy-v1.2.3-aarch64-apple-darwin.tar.gz
+4444444444444444444444444444444444444444444444444444444444444444  ./release/jarvy-v1.2.3-aarch64-unknown-linux-gnu.tar.gz
+5555555555555555555555555555555555555555555555555555555555555555  jarvy-v1.2.3-x86_64-pc-windows-msvc.zip
 3333333333333333333333333333333333333333333333333333333333333333  sbom.spdx.json
 SUMS
 }
@@ -85,6 +91,12 @@ assert_eq "matches the darwin digest" \
 GOT="$(fetch_expected_sha "1.2.3" "jarvy-v1.2.3-x86_64-unknown-linux-musl.tar.gz")"
 assert_eq "matches the musl digest" \
     "1111111111111111111111111111111111111111111111111111111111111111" "$GOT"
+GOT="$(fetch_expected_sha "1.2.3" "jarvy-v1.2.3-aarch64-unknown-linux-gnu.tar.gz")"
+assert_eq "matches a BUILD-PATHED entry by basename (installer-e2e first-run regression)" \
+    "4444444444444444444444444444444444444444444444444444444444444444" "$GOT"
+GOT="$(fetch_expected_sha "1.2.3" "jarvy-v1.2.3-x86_64-pc-windows-msvc.zip")"
+assert_eq "matches a bare-basename entry" \
+    "5555555555555555555555555555555555555555555555555555555555555555" "$GOT"
 fetch_expected_sha "1.2.3" "jarvy-v1.2.3-nonexistent.tar.gz" >/dev/null
 assert_rc "unlisted archive returns non-zero" 1 $?
 CURL_SHOULD_FAIL=1

@@ -118,7 +118,10 @@ function Get-ExpectedSha {
     foreach ($line in $sums -split "`n") {
         $parts = ($line.Trim() -split '\s+', 2)
         if ($parts.Count -lt 2) { continue }
-        $name = $parts[1].Trim() -replace '^\./', ''
+        # Entries carry build paths (./release/jarvy-*.tar.gz) — match by
+        # basename. Stripping only './' silently skipped verification on
+        # every pathed entry (caught by installer-e2e's first run).
+        $name = ($parts[1].Trim() -split '[\\/]')[-1]
         if ($name -eq $ArchiveName) {
             return $parts[0].Trim().ToLower()
         }
