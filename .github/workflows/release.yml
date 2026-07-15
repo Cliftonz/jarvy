@@ -835,9 +835,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Verification runs against the LOCAL artifact set (the exact
+          # bytes the previous step uploaded) plus an API cross-check of
+          # the draft's asset list — name, byte size, and count must
+          # match the local files. `gh release download` cannot fetch
+          # draft assets reliably in CI (exits 1 silently — first rc.1
+          # attempt, run 29411967702), and the API cross-check catches
+          # the same truncated/missing-upload class without
+          # re-downloading gigabytes.
           VDIR=$(mktemp -d)
-          echo "Downloading draft assets for ${VERSION} into ${VDIR}..."
-          gh release download "${VERSION}" --repo "${{ github.repository }}" --dir "$VDIR"
+          echo "Collecting local artifact set into ${VDIR}..."
+          for f in artifacts/**/jarvy* sbom/sbom.* signatures/**/*.sig signatures/**/*.pem signatures/**/*.bundle SHA256SUMS.txt; do
+            [ -f "$f" ] && cp "$f" "$VDIR/"
+          done
+
+          # API cross-check: every local file must exist on the draft
+          # with the same byte size, and the draft must carry no extras.
+          # (/releases/tags/<tag> does not return drafts; list + match.)
+          gh api "repos/${{ github.repository }}/releases?per_page=20" \
+            --jq ".[] | select(.tag_name == \"${VERSION}\" and .draft == true) | .assets[] | \"\(.name)\t\(.size)\"" \
+            | sort > /tmp/draft-assets.txt
+          [ -s /tmp/draft-assets.txt ] || { echo "::error::draft for ${VERSION} not found or has no assets"; exit 1; }
+          (cd "$VDIR" && for f in *; do printf '%s\t%s\n' "$f" "$(stat -c%s "$f")"; done | sort) > /tmp/local-assets.txt
+          if ! diff -u /tmp/local-assets.txt /tmp/draft-assets.txt; then
+            echo "::error::draft asset list differs from the local artifact set (name or byte-size mismatch above) — truncated or missing upload"
+            exit 1
+          fi
+          echo "API cross-check OK: $(wc -l < /tmp/draft-assets.txt) assets match by name + size."
+
           cd "$VDIR"
 
           FAIL=0
