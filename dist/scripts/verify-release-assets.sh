@@ -91,7 +91,11 @@ step "Verifying every jarvy* artifact appears in SHA256SUMS.txt"
 MISSING=0
 while IFS= read -r asset; do
   base="$(basename "$asset")"
-  if ! grep -qE "(^|/)${base}\$" "$SUMS"; then
+  # Accept the name after a slash (pathed entries, releases ≤ v0.6.3-rc.1)
+  # OR after whitespace (bare basenames, the v0.6.3+ manifest format).
+  # `(^|/)` alone missed every bare entry and flagged all 15 artifacts of
+  # the first bare-name release as missing.
+  if ! grep -qE "(^|/|[[:space:]])${base}\$" "$SUMS"; then
     printf '  \033[1;31m✗\033[0m %s missing from SHA256SUMS.txt\n' "$base" >&2
     MISSING=$((MISSING+1))
   fi
