@@ -393,15 +393,18 @@ jobs:
         run: |
           set -euo pipefail
           cd _soak
-          # Tag is `v0.5.0-rc.1`; `jarvy --version` reports `jarvy 0.5.0`.
-          # Strip the `v` prefix and the `-rc.N` suffix for the comparison —
-          # Cargo.toml only carries the semver-major-minor-patch.
-          EXPECTED=$(echo "$TAG" | sed -E 's/^v//; s/-(rc|beta|alpha)\.[0-9]+$//')
+          # Since JARVY_BUILD_TAG (v0.6.3-rc.1), release binaries report
+          # the EXACT tag version — `jarvy 0.6.3-rc.1`, rc suffix
+          # included. Require exact equality with the tag; accept the
+          # bare core too so re-soaks of pre-JARVY_BUILD_TAG releases
+          # (≤ v0.6.2 reported the crate version) don't false-fail.
+          EXPECTED=$(echo "$TAG" | sed -E 's/^v//')
+          CORE=$(echo "$EXPECTED" | sed -E 's/-(rc|beta|alpha)\.[0-9]+$//')
           REPORTED=$(./jarvy --version | awk '{print $2}')
-          echo "Expected: $EXPECTED"
+          echo "Expected: $EXPECTED (legacy core: $CORE)"
           echo "Reported: $REPORTED"
-          if [ "$EXPECTED" != "$REPORTED" ]; then
-            echo "::error::Version mismatch: tag $TAG → expected $EXPECTED, jarvy --version reports $REPORTED"
+          if [ "$REPORTED" != "$EXPECTED" ] && [ "$REPORTED" != "$CORE" ]; then
+            echo "::error::Version mismatch: tag $TAG → expected $EXPECTED (or legacy $CORE), jarvy --version reports $REPORTED"
             exit 1
           fi
 
