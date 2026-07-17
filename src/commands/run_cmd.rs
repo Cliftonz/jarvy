@@ -107,6 +107,51 @@ pub fn run_run(file: &str, name: Option<&str>, extra_args: &[String], output_for
         return error_codes::CONFIG_ERROR;
     }
 
+    // Run from the config file's directory so project-relative commands
+    // (`cargo test`, `./scripts/build`) act on the project that defined
+    // them, not the caller's cwd. A bare `jarvy.toml` has an empty parent
+    // — treat that as "current dir" (None).
+    let workdir = path.parent().filter(|p| !p.as_os_str().is_empty());
+
+    // npm-style lifecycle hooks: `pre<name>` runs before the command and
+    // `post<name>` after it, when defined in [commands]. Matching npm's
+    // semantics: extra `--` args go to the MAIN command only, a failing
+    // pre aborts the run, and post only runs after a successful main —
+    // the first non-zero exit anywhere is the process exit code.
+    let pre_name = format!("pre{}", name);
+    if let Some(pre_cmd) = resolve(&cfg, &pre_name) {
+        let code = execute_one(&pre_name, pre_cmd, &[], workdir);
+        if code != 0 {
+            eprintln!(
+                "`{}` failed (exit {}); not running `{}`",
+                sanitize_for_display(&pre_name),
+                code,
+                label
+            );
+            return code;
+        }
+    }
+
+    let code = execute_one(name, cmd, extra_args, workdir);
+    if code != 0 {
+        return code;
+    }
+
+    let post_name = format!("post{}", name);
+    if let Some(post_cmd) = resolve(&cfg, &post_name) {
+        let post_code = execute_one(&post_name, post_cmd, &[], workdir);
+        if post_code != 0 {
+            return post_code;
+        }
+    }
+    0
+}
+
+/// Execute one `[commands]` entry: NUL guard, telemetry start/complete/
+/// failed under its own label, `> cmd` echo, spawn, exit-code mapping.
+/// Shared by the main command and its pre/post lifecycle hooks.
+fn execute_one(name: &str, cmd: &str, extra_args: &[String], workdir: Option<&Path>) -> i32 {
+    let label = sanitize_for_display(name);
     let full_cmd = append_args(cmd, extra_args);
     if full_cmd.contains('\0') {
         eprintln!("Refusing to run `{}`: command contains NUL byte", label);
@@ -139,11 +184,6 @@ pub fn run_run(file: &str, name: Option<&str>, extra_args: &[String], output_for
         );
     }
 
-    // Run from the config file's directory so project-relative commands
-    // (`cargo test`, `./scripts/build`) act on the project that defined
-    // them, not the caller's cwd. A bare `jarvy.toml` has an empty parent
-    // — treat that as "current dir" (None).
-    let workdir = path.parent().filter(|p| !p.as_os_str().is_empty());
     println!("> {}", sanitize_for_display(&full_cmd));
     match spawn_shell(&full_cmd, workdir) {
         Ok(status) => {

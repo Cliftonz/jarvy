@@ -61,6 +61,35 @@ setup = "jarvy setup"    # what "Set up environment" executes
 Any other key (`build`, `dev`, `deploy`, …) is an *extra* command,
 available only through `jarvy run <name>`.
 
+### Lifecycle hooks: `pre<name>` and `post<name>`
+
+Exactly like npm: if `pre<name>` or `post<name>` keys exist, `jarvy run
+<name>` runs them around the main command:
+
+```toml
+[commands]
+prebuild = "npm run clean"
+build    = "npm run compile"
+postbuild = "cp -r dist/ ../server/static"
+```
+
+```console
+$ jarvy run build
+> npm run clean
+> npm run compile
+> cp -r dist/ ../server/static
+```
+
+Semantics (matching npm):
+
+- A failing `pre` hook **aborts the run** — the main command never
+  starts, and the hook's exit code becomes the process exit code.
+- `post` runs only after a **successful** main command; a failing
+  `post` fails the run with its exit code.
+- Extra `--` arguments go to the **main command only**, never to hooks.
+- Hooks are ordinary `[commands]` entries — they appear in the listing
+  and can be run directly (`jarvy run prebuild`).
+
 ## Running commands
 
 ### By name
@@ -153,7 +182,7 @@ snippet for your rc file.
 | `npm run build` | `jarvy run build` |
 | `npm test` / `npm start` | well-known `test` / `run` keys (also drive the interactive menu) |
 | `npm run test -- --watch` | `jarvy run test -- --watch` |
-| `pre`/`post` scripts | not supported — chain explicitly with `&&` |
+| `prebuild` / `postbuild` scripts | same names, same semantics |
 | `npm run env` | not supported — commands inherit your shell environment untouched |
 
 ## Telemetry

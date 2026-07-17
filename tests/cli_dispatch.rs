@@ -736,3 +736,116 @@ fn run_hostile_command_name_never_resolves() {
         "hostile-keyed command must never execute"
     );
 }
+
+// ---------------------------------------------------------------------------
+// npm-style pre/post lifecycle hooks: `jarvy run X` runs preX → X → postX.
+// ---------------------------------------------------------------------------
+
+fn run_cmd_with(jarvy_toml: &std::path::Path, args: &[&str]) -> Command {
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1").env("JARVY_TELEMETRY", "0");
+    // --file must precede any `--` in args — everything after `--` is
+    // trailing child args, and a late --file would be swallowed there.
+    c.args(["run", "--file"]).arg(jarvy_toml);
+    c.args(args);
+    c
+}
+
+#[test]
+fn run_pre_and_post_hooks_execute_in_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\n\
+         prebuild = \"echo marker-pre\"\n\
+         build = \"echo marker-main\"\n\
+         postbuild = \"echo marker-post\"\n",
+    )
+    .unwrap();
+
+    let out = run_cmd_with(&jarvy_toml, &["build"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let pre = stdout.find("marker-pre").expect("pre ran");
+    let main = stdout.find("marker-main").expect("main ran");
+    let post = stdout.find("marker-post").expect("post ran");
+    assert!(pre < main && main < post, "order must be pre → main → post");
+}
+
+#[test]
+fn run_failing_pre_aborts_main_and_propagates_its_code() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\npredeploy = \"exit 7\"\ndeploy = \"echo deployed\"\n",
+    )
+    .unwrap();
+
+    let out = run_cmd_with(&jarvy_toml, &["deploy"])
+        .assert()
+        .code(7)
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("deployed"),
+        "main must not run after a failing pre hook"
+    );
+}
+
+#[test]
+fn run_post_skipped_when_main_fails_and_post_failure_propagates() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\nship = \"exit 4\"\npostship = \"echo post-ran\"\n",
+    )
+    .unwrap();
+    let out = run_cmd_with(&jarvy_toml, &["ship"])
+        .assert()
+        .code(4)
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("post-ran"),
+        "post must not run after a failing main"
+    );
+
+    // A failing post fails the whole run with its own exit code.
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\nship = \"echo shipped\"\npostship = \"exit 5\"\n",
+    )
+    .unwrap();
+    run_cmd_with(&jarvy_toml, &["ship"]).assert().code(5);
+}
+
+#[test]
+fn run_extra_args_go_to_main_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\npregreet = \"echo pre:\"\ngreet = \"echo main:\"\n",
+    )
+    .unwrap();
+
+    let out = run_cmd_with(&jarvy_toml, &["greet", "--", "EXTRA"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("main: EXTRA"), "main gets the extra args");
+    assert!(
+        !stdout.contains("pre: EXTRA"),
+        "pre hook must not receive extra args"
+    );
+}
