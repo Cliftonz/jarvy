@@ -27,6 +27,50 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.6.4] — task-runner lifecycle hooks + jr one-command setup (2026-07-18)
+
+**Features:**
+
+- **npm-style lifecycle hooks for `jarvy run`** — if `pre<name>` or
+  `post<name>` keys exist in `[commands]`, `jarvy run <name>` runs them
+  around the main command with npm's exact semantics: a failing pre
+  aborts the run (its exit code propagates), post only runs after a
+  successful main, a failing post fails the run, and extra `--` args go
+  to the main command only. The more readable colon spelling works too
+  (`"pre:build"` / `"post:build"`, quoted — TOML bare keys can't
+  contain `:`); when both spellings are defined the colon form wins and
+  a note is printed. Hooks are ordinary entries: listed, directly
+  runnable, same safety guards.
+- **`jarvy shell-init --apply`** — wires the `jr` (= `jarvy run`)
+  shorthand into your shell rc file with one command, whatever way you
+  installed jarvy (previously nothing did this automatically —
+  `cargo install` users never got `jr` without hand-editing their rc).
+  Idempotent; supports bash/zsh/sh/fish/PowerShell, and nushell via a
+  materialized `~/.jarvy/init.nu` (re-run `--apply` after upgrading).
+- Bare `jarvy run` with no `[commands]` table now prints a real
+  getting-started guide (worked example, the three usage forms, cwd
+  rule, `jr` tip) instead of a one-line hint.
+- New docs page: [Task runner](https://github.com/Cliftonz/jarvy/blob/main/docs/run.md)
+  — npm-run-style documentation including a "Coming from npm?" mapping
+  table.
+
+**Fixes:**
+
+- Every jarvy invocation warned `plugin directory has insecure
+  permissions` for users who never created `~/.jarvy/tools.d` — the
+  permission probe conflated "directory doesn't exist" with "unsafe
+  permissions". An absent plugin directory is now a silent no-op; the
+  security gate still fires for directories that exist with loose
+  permissions.
+
+**Internal:**
+
+- `verify-release-assets.sh` accepts the bare-basename `SHA256SUMS.txt`
+  entries introduced in v0.6.3 (its listing regex previously required a
+  path separator before the name).
+- This repo's own `jarvy.toml` gained a `[commands]` table — jarvy's
+  development tasks now dogfood `jarvy run`.
+
 ## [v0.6.3] — updater reliability + installer integrity (2026-07-16)
 
 First release under the gate model (see `docs/release-testing.md`):
