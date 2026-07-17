@@ -88,9 +88,11 @@ echo "=========================================="
 echo ""
 echo "Next steps:"
 echo "  1. Install pre-commit hooks: pip install pre-commit && pre-commit install"
-echo "  2. Build the project: cargo build"
-echo "  3. Run tests: cargo test --verbose"
-echo "  4. Run lints: cargo clippy --all-features -- -D warnings"
+echo "  2. Build the project:  jarvy run build"
+echo "  3. Run the tests:      jarvy run test   (jarvy run test-lib for the quick loop)"
+echo "  4. Full pre-push gate: jarvy run ci"
+echo ""
+echo "All commands: jarvy run   (tip: 'jarvy shell-init' gives you 'jr' as shorthand)"
 echo ""
 """
 
@@ -149,3 +151,29 @@ update_rc = false
 agents = ["claude-code", "cursor", "codex"]
 scope = "project"
 allow_custom_servers = false
+
+# =============================================================================
+# Task runner — `jarvy run <name>` (or `jr <name>` after `jarvy shell-init`).
+# Extra args pass through after `--`, e.g.:
+#   jarvy run test -- config::            # one test filter
+#   jarvy run new-tool -- mytool          # scaffold a tool
+# Commands run from this file's directory (the repo root).
+# =============================================================================
+[commands]
+build = "cargo build"
+release = "cargo build --release"
+check = "cargo check"
+fmt = "cargo fmt --all"
+fmt-check = "cargo fmt --all -- --check"
+lint = "cargo clippy --all-features -- -D warnings"
+# CI-equivalent test invocation (--all-features turns on test-bypass,
+# so the loopback/redirected-home integration tests actually run).
+test = "cargo test --all-features -- --show-output"
+# Quicker local loop: lib tests only.
+test-lib = "cargo test --lib"
+# Installer script unit tests (checksum gate, channel filter, platform map).
+test-install = "bash dist/scripts/tests/install_sh_test.sh"
+# The full pre-push gate, same order CI runs it.
+ci = "cargo fmt --all -- --check && cargo clippy --all-features -- -D warnings && cargo test --all-features -- --show-output"
+# Scaffold a new tool: jarvy run new-tool -- <name>
+new-tool = "cargo run -p cargo-jarvy -- new-tool"
