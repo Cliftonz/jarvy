@@ -252,7 +252,25 @@ fn list_commands(file: &str, cfg: &CommandsConfig, output_format: &str) -> i32 {
 
     if entries.is_empty() {
         println!("No [commands] defined in {}.", file);
-        println!("\nAdd some, e.g.:\n\n[commands]\nbuild = \"cargo build\"");
+        println!(
+            "\n\
+             Add a [commands] table to {file} — each entry is a name and the\n\
+             shell command it runs (like npm scripts):\n\
+             \n\
+             [commands]\n\
+             build = \"cargo build\"\n\
+             test  = \"cargo test\"\n\
+             dev   = \"docker compose up -d && cargo watch -x run\"\n\
+             \n\
+             Then:\n\
+             \n\
+             jarvy run build          # run one by name\n\
+             jarvy run test -- --lib  # pass extra args after `--`\n\
+             jarvy run                # list what's defined\n\
+             \n\
+             Commands run from the directory containing {file}.\n\
+             Tip: `jarvy shell-init` sets up `jr` as a shorthand for `jarvy run`.",
+        );
         return 0;
     }
     let width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
