@@ -374,6 +374,13 @@ fn emit_index_miss(reason: &'static str) {
 /// for the same name wins — by call order in `load_user_tools`,
 /// remote-synced tools override user-authored ones if they share a name.
 fn load_tools_from_dir(dir: &std::path::Path, accepted: &mut HashMap<String, PluginTool>) {
+    // Absent dir = nothing to load, silently. Without this,
+    // `is_path_safe_to_load`'s metadata() failure conflated NotFound
+    // with unsafe permissions and every jarvy invocation warned
+    // "insecure permissions" at users who never created tools.d.
+    if !dir.exists() {
+        return;
+    }
     if !is_path_safe_to_load(dir) {
         tracing::warn!(
             event = "plugins.tools_d_unsafe_perms",
@@ -627,6 +634,19 @@ pub fn _test_clear() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn absent_tools_dir_loads_nothing_silently() {
+        // NotFound must be a silent no-op, not an "insecure permissions"
+        // warning — the metadata()-error conflation warned at every user
+        // who never created ~/.jarvy/tools.d.
+        let mut accepted = HashMap::new();
+        load_tools_from_dir(
+            std::path::Path::new("/definitely/not/a/real/tools.d"),
+            &mut accepted,
+        );
+        assert!(accepted.is_empty());
+    }
 
     #[test]
     fn validates_package_name_allowlist() {
