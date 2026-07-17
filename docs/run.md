@@ -73,6 +73,19 @@ build    = "npm run compile"
 postbuild = "cp -r dist/ ../server/static"
 ```
 
+Both spellings work — npm's concatenated `prebuild` and the more
+readable `pre:build` (colon keys must be quoted in TOML):
+
+```toml
+[commands]
+"pre:build"  = "npm run clean"
+build        = "npm run compile"
+"post:build" = "cp -r dist/ ../server/static"
+```
+
+If both spellings are defined for the same command, the colon form wins
+and a note is printed so the duplicate gets cleaned up.
+
 ```console
 $ jarvy run build
 > npm run clean

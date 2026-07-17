@@ -828,6 +828,41 @@ fn run_post_skipped_when_main_fails_and_post_failure_propagates() {
 }
 
 #[test]
+fn run_colon_form_hooks_execute_and_win_over_concat() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jarvy_toml = tmp.path().join("jarvy.toml");
+    // Colon keys need quoting in TOML (bare keys can't contain `:`).
+    std::fs::write(
+        &jarvy_toml,
+        "[commands]\n\
+         \"pre:build\" = \"echo colon-pre\"\n\
+         prebuild = \"echo concat-pre\"\n\
+         build = \"echo main-ran\"\n\
+         \"post:build\" = \"echo colon-post\"\n",
+    )
+    .unwrap();
+
+    let out = run_cmd_with(&jarvy_toml, &["build"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stdout.contains("colon-pre"), "colon pre must run");
+    assert!(
+        !stdout.contains("concat-pre"),
+        "concat pre must be skipped when the colon form exists"
+    );
+    assert!(stdout.contains("main-ran"));
+    assert!(stdout.contains("colon-post"), "colon post must run");
+    assert!(
+        stderr.contains("both `pre:build` and `prebuild`"),
+        "duplicate-hook note must surface, got: {stderr}"
+    );
+}
+
+#[test]
 fn run_extra_args_go_to_main_only() {
     let tmp = tempfile::tempdir().unwrap();
     let jarvy_toml = tmp.path().join("jarvy.toml");

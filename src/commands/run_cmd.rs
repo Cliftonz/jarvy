@@ -113,13 +113,13 @@ pub fn run_run(file: &str, name: Option<&str>, extra_args: &[String], output_for
     // — treat that as "current dir" (None).
     let workdir = path.parent().filter(|p| !p.as_os_str().is_empty());
 
-    // npm-style lifecycle hooks: `pre<name>` runs before the command and
-    // `post<name>` after it, when defined in [commands]. Matching npm's
-    // semantics: extra `--` args go to the MAIN command only, a failing
-    // pre aborts the run, and post only runs after a successful main —
-    // the first non-zero exit anywhere is the process exit code.
-    let pre_name = format!("pre{}", name);
-    if let Some(pre_cmd) = resolve(&cfg, &pre_name) {
+    // npm-style lifecycle hooks: `pre<name>`/`pre:<name>` runs before the
+    // command and `post<name>`/`post:<name>` after it, when defined in
+    // [commands]. Matching npm's semantics: extra `--` args go to the
+    // MAIN command only, a failing pre aborts the run, and post only runs
+    // after a successful main — the first non-zero exit anywhere is the
+    // process exit code.
+    if let Some((pre_name, pre_cmd)) = resolve_hook(&cfg, "pre", name) {
         let code = execute_one(&pre_name, pre_cmd, &[], workdir);
         if code != 0 {
             eprintln!(
@@ -137,14 +137,37 @@ pub fn run_run(file: &str, name: Option<&str>, extra_args: &[String], output_for
         return code;
     }
 
-    let post_name = format!("post{}", name);
-    if let Some(post_cmd) = resolve(&cfg, &post_name) {
+    if let Some((post_name, post_cmd)) = resolve_hook(&cfg, "post", name) {
         let post_code = execute_one(&post_name, post_cmd, &[], workdir);
         if post_code != 0 {
             return post_code;
         }
     }
     0
+}
+
+/// Resolve a lifecycle hook for `name` in either spelling: `pre:build`
+/// (colon, checked first) or `prebuild` (npm concatenation). When both
+/// are defined the colon form wins — it's the more explicit spelling —
+/// and a note is printed so the duplicate gets cleaned up rather than
+/// silently ignored.
+fn resolve_hook<'a>(cfg: &'a CommandsConfig, kind: &str, name: &str) -> Option<(String, &'a str)> {
+    let colon = format!("{}:{}", kind, name);
+    let concat = format!("{}{}", kind, name);
+    match (resolve(cfg, &colon), resolve(cfg, &concat)) {
+        (Some(cmd), Some(_)) => {
+            eprintln!(
+                "note: both `{}` and `{}` are defined; running `{}`",
+                sanitize_for_display(&colon),
+                sanitize_for_display(&concat),
+                sanitize_for_display(&colon)
+            );
+            Some((colon, cmd))
+        }
+        (Some(cmd), None) => Some((colon, cmd)),
+        (None, Some(cmd)) => Some((concat, cmd)),
+        (None, None) => None,
+    }
 }
 
 /// Execute one `[commands]` entry: NUL guard, telemetry start/complete/
