@@ -878,9 +878,16 @@ fn run_extra_args_go_to_main_only() {
         .get_output()
         .clone();
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("main: EXTRA"), "main gets the extra args");
-    assert!(
-        !stdout.contains("pre: EXTRA"),
-        "pre hook must not receive extra args"
-    );
+    // Line-based + quote-tolerant: Windows appends args as "EXTRA" and
+    // cmd.exe's echo prints the quotes, so `main: EXTRA` never appears
+    // verbatim there (broke the rc.1 Test gate on windows-latest). The
+    // `> ` command-echo lines are excluded by the starts_with check.
+    let main_got_args = stdout
+        .lines()
+        .any(|l| l.starts_with("main:") && l.contains("EXTRA"));
+    let pre_got_args = stdout
+        .lines()
+        .any(|l| l.starts_with("pre:") && l.contains("EXTRA"));
+    assert!(main_got_args, "main gets the extra args, got:\n{stdout}");
+    assert!(!pre_got_args, "pre hook must not receive extra args");
 }
