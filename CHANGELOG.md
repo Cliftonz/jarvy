@@ -27,7 +27,7 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [v0.6.4] — task-runner lifecycle hooks + jr one-command setup (2026-07-18)
+## [v0.6.4] — task-runner lifecycle hooks + jr one-command setup (2026-07-17)
 
 **Features:**
 
