@@ -179,6 +179,7 @@ nav:
 
   - Guides:
     - Roles guide: roles.md
+    - Task runner (jarvy run): run.md
     - Hooks guide: hooks.md
     - Git hooks (pre-commit / husky / lefthook / native): git-hooks.md
     - Replacing Husky with Jarvy: replace-husky.md

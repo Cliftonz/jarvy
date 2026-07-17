@@ -473,14 +473,24 @@ windows = false
 
 ## Custom Commands (`[commands]`)
 
-Override the interactive menu defaults.
+Named shell commands for the [`jarvy run` task runner](run.md) (npm-run
+style). The well-known keys `run` / `test` / `setup` also drive the
+corresponding interactive-menu entries; any other key is an extra
+command available via `jarvy run <name>`.
 
 ```toml
 [commands]
 run = "npm start"
 test = "npm test"
 setup = "jarvy setup"
+build = "npm run build"          # extra: `jarvy run build`
+dev = "docker compose up -d && npm run dev"
 ```
+
+Extra CLI arguments pass through after `--`
+(`jarvy run test -- --watch`); commands execute from the directory
+containing the config file. Full semantics, the `jr` shorthand, and an
+npm comparison: [Task runner](run.md).
 
 ---
 
