@@ -514,12 +514,16 @@ pub enum Commands {
         action: TicketAction,
     },
     /// Output shell initialization snippet for RC files.
-    /// Add `eval "$(jarvy shell-init)"` to your .bashrc/.zshrc.
+    /// Print a shell snippet (defines `jr`, runs `jarvy ensure`) for your rc file,
+    /// or wire it up directly with --apply.
     #[clap(name = "shell-init")]
     ShellInit {
         /// Shell type (bash, zsh, fish, sh, powershell, nushell). Auto-detected if not specified.
         #[clap(long)]
         shell: Option<String>,
+        /// Write the loader line into your shell rc file (idempotent) instead of printing the snippet.
+        #[clap(long)]
+        apply: bool,
     },
     /// Ensure base tools are installed (lightweight check for shell startup).
     /// Reads tool list from [shell_init] in ~/.jarvy/config.toml.

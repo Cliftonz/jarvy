@@ -258,8 +258,8 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             allow_unsigned,
         }) => handle_update(action, version, channel, method, *rollback, *allow_unsigned),
         Some(Commands::Drift { file, action }) => commands::run_drift(file, action),
-        Some(Commands::ShellInit { shell }) => {
-            commands::shell_init_cmd::run_shell_init(shell.as_deref())
+        Some(Commands::ShellInit { shell, apply }) => {
+            commands::shell_init_cmd::run_shell_init(shell.as_deref(), *apply)
         }
         Some(Commands::Ensure {
             force,

@@ -450,9 +450,10 @@ main() {
     log_success "Installation complete!"
     echo ""
     echo "Get started:"
-    echo "    jarvy --help      # Show help"
-    echo "    jarvy configure   # Create jarvy.toml"
-    echo "    jarvy setup       # Install tools"
+    echo "    jarvy --help                # Show help"
+    echo "    jarvy configure             # Create jarvy.toml"
+    echo "    jarvy setup                 # Install tools"
+    echo "    jarvy shell-init --apply    # Set up 'jr' (jarvy run) in your shell"
     echo ""
 }
 

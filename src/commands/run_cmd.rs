@@ -269,7 +269,7 @@ fn list_commands(file: &str, cfg: &CommandsConfig, output_format: &str) -> i32 {
              jarvy run                # list what's defined\n\
              \n\
              Commands run from the directory containing {file}.\n\
-             Tip: `jarvy shell-init` sets up `jr` as a shorthand for `jarvy run`.",
+             Tip: `jarvy shell-init --apply` sets up `jr` as a shorthand for `jarvy run`.",
         );
         return 0;
     }
