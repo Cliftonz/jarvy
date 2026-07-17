@@ -420,14 +420,24 @@ impl BinaryInstaller {
         // Use self_update for atomic replacement. On Windows the rename
         // can transiently fail with "Access is denied" while Defender /
         // an indexer holds a handle on the freshly extracted binary
-        // (observed pass-then-fail on identical CI runs — issue #63), so
-        // retry a few times with backoff there. Unix renames don't
-        // contend with scanners; one attempt.
-        let attempts: u32 = if cfg!(windows) { 3 } else { 1 };
+        // (issue #63). The original 3×(500ms,1s) backoff still lost to a
+        // Defender scan on the v0.6.4-rc.1 release-paths run, so: 5
+        // attempts, exponential 500ms→4s (~7.5s worst-case total), and
+        // each retry prints — silent retries made it impossible to tell
+        // from CI logs whether the backoff fired at all. Unix renames
+        // don't contend with scanners; one attempt.
+        let attempts: u32 = if cfg!(windows) { 5 } else { 1 };
         let mut last_err = None;
         for attempt in 0..attempts {
             if attempt > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(500 * u64::from(attempt)));
+                let delay = std::time::Duration::from_millis(500 * (1u64 << (attempt - 1)));
+                eprintln!(
+                    "Binary swap blocked (attempt {}/{}); retrying in {:.1}s — antivirus may be scanning the new binary...",
+                    attempt,
+                    attempts,
+                    delay.as_secs_f32()
+                );
+                std::thread::sleep(delay);
             }
             match self_update::Move::from_source(new_binary)
                 .replace_using_temp(target)
