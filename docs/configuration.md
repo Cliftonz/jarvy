@@ -489,8 +489,11 @@ dev = "docker compose up -d && npm run dev"
 
 Extra CLI arguments pass through after `--`
 (`jarvy run test -- --watch`); commands execute from the directory
-containing the config file. Full semantics, the `jr` shorthand, and an
-npm comparison: [Task runner](run.md).
+containing the config file. Lifecycle hooks run around a command when
+defined — `prebuild`/`"pre:build"` before, `postbuild`/`"post:build"`
+after (npm semantics: failing pre aborts, post only on success). Full
+semantics, the `jr` shorthand, and an npm comparison:
+[Task runner](run.md).
 
 ---
 

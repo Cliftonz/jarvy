@@ -62,7 +62,7 @@ jarvy init --template node-pnpm
 [npm]/[pip]/[cargo]   # language-specific packages
 [hooks]         # lockfile sync, completions, project setup
 [env.vars]      # sensible defaults (NODE_ENV, PYTHONUNBUFFERED, …)
-[commands]      # run / test / build / lint aliases for the interactive menu
+[commands]      # jarvy run tasks (npm-run style, incl. pre/post hooks) + interactive-menu entries
 [drift]         # drift detection enabled with appropriate track_files
 ```
 

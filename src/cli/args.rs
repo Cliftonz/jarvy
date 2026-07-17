@@ -632,7 +632,10 @@ pub enum Commands {
         file: String,
     },
     /// Run a named command from `[commands]` in jarvy.toml (npm-run style).
-    /// With no name, lists the available commands.
+    /// Lifecycle hooks run around it when defined: `pre<name>`/`pre:<name>`
+    /// before, `post<name>`/`post:<name>` after (post only on success; extra
+    /// `--` args go to the main command only). With no name, lists the
+    /// available commands.
     Run {
         /// Command name: a well-known slot (run, test, setup) or any extra
         /// `[commands]` key. Omit to list what's defined.

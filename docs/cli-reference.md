@@ -66,7 +66,7 @@ Commands:
   drift         Detect configuration drift in the environment
   logs          View and manage log files
   ticket        Generate debug tickets for support
-  shell-init    Output shell initialization snippet for RC files. Add `eval "$(jarvy shell-init)"` to your .bashrc/.zshrc
+  shell-init    Output shell initialization snippet for RC files. Print a shell snippet (defines `jr`, runs `jarvy ensure`) for your rc file, or wire it up directly with --apply
   ensure        Ensure base tools are installed (lightweight check for shell startup). Reads tool list from [shell_init] in ~/.jarvy/config.toml
   explain       Get detailed information about a specific tool
   audit         Run security scanners and produce a unified audit report
@@ -77,7 +77,7 @@ Commands:
   hooks         Manage git hook frameworks (pre-commit, husky, lefthook)
   skills        Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
   wizard        Agent-driven setup: hand the project to your local AI agent (Claude Code, Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to `jarvy quickstart` when no agent is installed
-  run           Run a named command from `[commands]` in jarvy.toml (npm-run style). With no name, lists the available commands
+  run           Run a named command from `[commands]` in jarvy.toml (npm-run style). Lifecycle hooks run around it when defined: `pre<name>`/`pre:<name>` before, `post<name>`/`post:<name>` after (post only on success; extra `--` args go to the main command only). With no name, lists the available commands
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -679,12 +679,13 @@ Options:
 ### `jarvy shell-init`
 
 ```text
-Output shell initialization snippet for RC files. Add `eval "$(jarvy shell-init)"` to your .bashrc/.zshrc
+Output shell initialization snippet for RC files. Print a shell snippet (defines `jr`, runs `jarvy ensure`) for your rc file, or wire it up directly with --apply
 
 Usage: jarvy shell-init [OPTIONS]
 
 Options:
       --shell <SHELL>  Shell type (bash, zsh, fish, sh, powershell, nushell). Auto-detected if not specified
+      --apply          Write the loader line into your shell rc file (idempotent) instead of printing the snippet
   -h, --help           Print help
 ```
 
@@ -857,7 +858,7 @@ Options:
 ### `jarvy run`
 
 ```text
-Run a named command from `[commands]` in jarvy.toml (npm-run style). With no name, lists the available commands
+Run a named command from `[commands]` in jarvy.toml (npm-run style). Lifecycle hooks run around it when defined: `pre<name>`/`pre:<name>` before, `post<name>`/`post:<name>` after (post only on success; extra `--` args go to the main command only). With no name, lists the available commands
 
 Usage: jarvy run [OPTIONS] [NAME] [-- <ARGS>...]
 
