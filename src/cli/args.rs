@@ -403,6 +403,9 @@ pub enum Commands {
         /// Show installation instructions
         #[clap(long)]
         instructions: bool,
+        /// Restore INFO on the console (startup one-shots default to WARN)
+        #[clap(short, long)]
+        verbose: bool,
     },
     /// Browse and use pre-built configuration templates
     Templates {
@@ -524,6 +527,9 @@ pub enum Commands {
         /// Write the loader line into your shell rc file (idempotent) instead of printing the snippet.
         #[clap(long)]
         apply: bool,
+        /// Restore INFO on the console (startup one-shots default to WARN)
+        #[clap(short, long)]
+        verbose: bool,
     },
     /// Ensure base tools are installed (lightweight check for shell startup).
     /// Reads tool list from [shell_init] in ~/.jarvy/config.toml.
@@ -537,6 +543,9 @@ pub enum Commands {
         /// Run in foreground (override background default)
         #[clap(long)]
         foreground: bool,
+        /// Restore INFO on the console (startup one-shots default to WARN)
+        #[clap(short, long)]
+        verbose: bool,
     },
     /// Get detailed information about a specific tool
     Explain {

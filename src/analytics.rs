@@ -86,9 +86,10 @@ pub(crate) fn cli_log_directives(
         LogLevel::Verbose => format!("warn,jarvy=debug,{OTEL_OFF}"),
         LogLevel::Debug => format!("debug,{OTEL_OFF}"),
         LogLevel::Trace => format!("trace,{OTEL_OFF}"),
-        // Quiet / Normal reach here only via a `--debug-filter` module
-        // (level itself isn't a filter override); keep the default floor.
-        LogLevel::Quiet | LogLevel::Normal => {
+        // Quiet / WarnOnly / Normal reach here only via a
+        // `--debug-filter` module (level itself isn't a filter
+        // override); keep the default floor.
+        LogLevel::Quiet | LogLevel::WarnOnly | LogLevel::Normal => {
             format!("warn,jarvy=info,{OTEL_OFF}")
         }
     };
@@ -201,10 +202,16 @@ pub fn init_logging(
     let mut console_layers: Vec<Box<dyn Layer<BaseSubscriber> + Send + Sync>> = Vec::new();
 
     let json_console = obs.is_some_and(|o| o.log.format == crate::observability::LogFormat::Json);
-    let console_quiet = obs
-        .map(|o| o.log.level == crate::observability::LogLevel::Quiet)
-        .unwrap_or(false);
-    let quiet_filter = console_quiet.then_some(LevelFilter::ERROR);
+    // Console cap (per-layer). `Quiet` (--quiet on setup) → ERROR only.
+    // `WarnOnly` (startup one-shots) → WARN + ERROR so actionable
+    // warnings still surface on shell open without INFO noise. Registry
+    // filter is untouched either way — file appender + OTLP keep their
+    // INFO floor so `~/.jarvy/logs/jarvy.log` remains the debug source.
+    let quiet_filter = obs.and_then(|o| match o.log.level {
+        crate::observability::LogLevel::Quiet => Some(LevelFilter::ERROR),
+        crate::observability::LogLevel::WarnOnly => Some(LevelFilter::WARN),
+        _ => None,
+    });
 
     let console_file = obs.and_then(|o| o.log.file.as_deref()).and_then(|path| {
         match std::fs::OpenOptions::new()

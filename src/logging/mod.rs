@@ -191,6 +191,119 @@ pub fn clean_logs(max_age_days: u32, all: bool) -> Result<(usize, u64), LogError
     Ok((removed_files, removed_bytes))
 }
 
+/// Per-file result from `strip_log_lines`.
+#[derive(Debug, Clone)]
+pub struct StripResult {
+    pub path: PathBuf,
+    pub lines_removed: usize,
+    pub bytes_saved: u64,
+}
+
+/// Compile a `--filter` pattern into a matcher.
+///
+/// `event=NAME` matches the JSON-encoded structured field
+/// `"event":"NAME"` (whitespace-tolerant), which is the shape jarvy's
+/// file appender writes. Anything else falls back to a raw substring
+/// match on the line.
+fn build_line_matcher(pattern: &str) -> Box<dyn Fn(&str) -> bool + Send + Sync> {
+    if let Some(name) = pattern.strip_prefix("event=") {
+        let needle_tight = format!("\"event\":\"{}\"", name);
+        let needle_spaced = format!("\"event\": \"{}\"", name);
+        Box::new(move |line| line.contains(&needle_tight) || line.contains(&needle_spaced))
+    } else {
+        let needle = pattern.to_string();
+        Box::new(move |line| line.contains(&needle))
+    }
+}
+
+/// Strip lines matching `pattern` from rotated log files.
+///
+/// Active `jarvy.log` is skipped — it may be held open by other jarvy
+/// processes, and writes race with the file appender. Without `all`,
+/// only files older than `max_age_days` are touched (intersects the
+/// existing retention gate so `--filter` alone doesn't silently
+/// rewrite fresh files). With `all`, every rotated file is scanned.
+///
+/// When `dry_run` is true, no files are written; the returned per-file
+/// counts reflect what would be stripped.
+pub fn strip_log_lines(
+    pattern: &str,
+    max_age_days: u32,
+    all: bool,
+    dry_run: bool,
+) -> Result<Vec<StripResult>, LogError> {
+    let log_dir = default_log_directory();
+    if !log_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let active = current_log_file();
+    let max_age_secs = max_age_days as u64 * 24 * 60 * 60;
+    let now = std::time::SystemTime::now();
+    let matches = build_line_matcher(pattern);
+
+    let mut results: Vec<StripResult> = Vec::new();
+    for entry in std::fs::read_dir(&log_dir)?.flatten() {
+        let path = entry.path();
+        if !path.is_file() || path == active {
+            continue;
+        }
+
+        if !all {
+            let eligible = path
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|mt| now.duration_since(mt).ok())
+                .is_some_and(|age| age.as_secs() > max_age_secs);
+            if !eligible {
+                continue;
+            }
+        }
+
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let trailing_newline = content.ends_with('\n');
+        let mut kept = String::with_capacity(content.len());
+        let mut lines_removed = 0usize;
+        let mut bytes_saved: u64 = 0;
+        for line in content.lines() {
+            if matches(line) {
+                lines_removed += 1;
+                // +1 for the newline that came with the line
+                bytes_saved += line.len() as u64 + 1;
+            } else {
+                kept.push_str(line);
+                kept.push('\n');
+            }
+        }
+        if !trailing_newline && !kept.is_empty() {
+            kept.pop();
+        }
+
+        if lines_removed == 0 {
+            continue;
+        }
+
+        if !dry_run {
+            let tmp = path.with_extension("stripping");
+            std::fs::write(&tmp, kept.as_bytes())?;
+            std::fs::rename(&tmp, &path)?;
+        }
+
+        results.push(StripResult {
+            path,
+            lines_removed,
+            bytes_saved,
+        });
+    }
+
+    Ok(results)
+}
+
 /// Format bytes as human-readable size
 pub fn format_size(bytes: u64) -> String {
     if bytes >= 1024 * 1024 * 1024 {
@@ -212,6 +325,99 @@ mod tests {
     /// `default_log_directory()` reads JARVY_HOME — concurrent tests
     /// that pin a tempdir into JARVY_HOME otherwise race with the
     /// `.jarvy/logs` suffix assertion.
+    #[test]
+    fn build_matcher_event_prefix_hits_structured_field() {
+        let m = build_line_matcher("event=tools_d_unsafe_perms");
+        assert!(m(r#"{"level":"WARN","fields":{"event":"tools_d_unsafe_perms"}}"#));
+        assert!(m(r#"{"fields":{"event": "tools_d_unsafe_perms","x":1}}"#));
+        // Substring collision in message payload must NOT match.
+        assert!(!m(r#"{"fields":{"message":"tools_d_unsafe_perms happened"}}"#));
+    }
+
+    #[test]
+    fn build_matcher_bare_pattern_is_substring() {
+        let m = build_line_matcher("shell_init.generated");
+        assert!(m(r#"{"fields":{"event":"shell_init.generated"}}"#));
+        assert!(m("prefix shell_init.generated suffix"));
+        assert!(!m("nothing to see"));
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn strip_log_lines_removes_matches_and_skips_active() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // SAFETY: single-threaded test group `jarvy_home_env`.
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("JARVY_HOME", tmp.path());
+        }
+        let logs = tmp.path().join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+
+        // Rotated file with mixed lines
+        let rotated = logs.join("jarvy.log.2026-01-01");
+        std::fs::write(
+            &rotated,
+            "{\"fields\":{\"event\":\"noise\"}}\n\
+             {\"fields\":{\"event\":\"keep_me\"}}\n\
+             {\"fields\":{\"event\":\"noise\"}}\n",
+        )
+        .unwrap();
+        // Backdate so the retention gate (default 30 days) treats it as old.
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 24 * 3600);
+        filetime::set_file_mtime(&rotated, filetime::FileTime::from_system_time(old)).unwrap();
+
+        // Active file must NOT be touched even if it contains matches.
+        let active = logs.join("jarvy.log");
+        std::fs::write(&active, "{\"fields\":{\"event\":\"noise\"}}\n").unwrap();
+
+        let results = strip_log_lines("event=noise", 30, false, false).expect("strip");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].lines_removed, 2);
+        assert_eq!(results[0].path, rotated);
+
+        let after = std::fs::read_to_string(&rotated).unwrap();
+        assert_eq!(after, "{\"fields\":{\"event\":\"keep_me\"}}\n");
+        // Active untouched.
+        assert_eq!(
+            std::fs::read_to_string(&active).unwrap(),
+            "{\"fields\":{\"event\":\"noise\"}}\n"
+        );
+
+        // SAFETY: same group.
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("JARVY_HOME");
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn strip_log_lines_dry_run_reports_without_writing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("JARVY_HOME", tmp.path());
+        }
+        let logs = tmp.path().join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        let rotated = logs.join("jarvy.log.2026-01-02");
+        let body = "{\"fields\":{\"event\":\"drop\"}}\n{\"fields\":{\"event\":\"stay\"}}\n";
+        std::fs::write(&rotated, body).unwrap();
+
+        // --all bypasses the age gate.
+        let results = strip_log_lines("event=drop", 30, true, true).expect("strip");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].lines_removed, 1);
+        // File unchanged.
+        assert_eq!(std::fs::read_to_string(&rotated).unwrap(), body);
+
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("JARVY_HOME");
+        }
+    }
+
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn test_default_log_directory() {

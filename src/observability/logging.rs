@@ -14,6 +14,11 @@ use std::path::PathBuf;
 pub enum LogLevel {
     /// Errors only (--quiet)
     Quiet,
+    /// Errors + warnings only. Used as the console default for
+    /// startup one-shot commands (`shell-init` / `ensure` /
+    /// `completions`) so INFO doesn't leak into every new shell
+    /// while actionable warnings still surface.
+    WarnOnly,
     /// Info and above (default)
     #[default]
     Normal,

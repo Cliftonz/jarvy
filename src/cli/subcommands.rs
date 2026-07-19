@@ -394,6 +394,12 @@ pub enum LogsAction {
         /// Show what would be removed without removing
         #[clap(long)]
         dry_run: bool,
+        /// Strip matching lines from rotated log files instead of deleting files.
+        /// Accepts `event=NAME` (JSON-field match) or a bare substring.
+        /// Active jarvy.log is always skipped. Without `--all`, only
+        /// files past the retention age are touched.
+        #[clap(long, value_name = "PATTERN")]
+        filter: Option<String>,
         /// Output format: json, pretty
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,

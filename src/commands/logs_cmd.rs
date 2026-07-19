@@ -18,8 +18,9 @@ pub fn run_logs_command(action: LogsAction) -> i32 {
         LogsAction::Clean {
             all,
             dry_run,
+            filter,
             output_format,
-        } => handle_logs_clean(all, dry_run, &output_format),
+        } => handle_logs_clean(all, dry_run, filter.as_deref(), &output_format),
         LogsAction::Config { output_format } => handle_logs_config(&output_format),
     }
 }
@@ -154,7 +155,15 @@ fn handle_logs_stats(output_format: &str) -> i32 {
 const DEFAULT_MAX_AGE_DAYS: u32 = 30;
 
 /// Clean old log files
-fn handle_logs_clean(all: bool, dry_run: bool, output_format: &str) -> i32 {
+fn handle_logs_clean(
+    all: bool,
+    dry_run: bool,
+    filter: Option<&str>,
+    output_format: &str,
+) -> i32 {
+    if let Some(pattern) = filter {
+        return handle_logs_clean_filter(pattern, all, dry_run, output_format);
+    }
     let log_dir = logging::default_log_directory();
 
     if dry_run {
@@ -262,6 +271,84 @@ fn handle_logs_clean(all: bool, dry_run: bool, output_format: &str) -> i32 {
                 );
             } else {
                 eprintln!("Error cleaning logs: {}", e);
+            }
+            1
+        }
+    }
+}
+
+/// Strip matching lines from rotated log files (line-strip mode).
+fn handle_logs_clean_filter(pattern: &str, all: bool, dry_run: bool, output_format: &str) -> i32 {
+    match logging::strip_log_lines(pattern, DEFAULT_MAX_AGE_DAYS, all, dry_run) {
+        Ok(results) => {
+            let files_touched = results.len();
+            let total_lines: usize = results.iter().map(|r| r.lines_removed).sum();
+            let total_bytes: u64 = results.iter().map(|r| r.bytes_saved).sum();
+
+            if output_format == "json" {
+                let per_file: Vec<serde_json::Value> = results
+                    .iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "path": r.path.display().to_string(),
+                            "lines_removed": r.lines_removed,
+                            "bytes_saved": r.bytes_saved,
+                        })
+                    })
+                    .collect();
+                let json = serde_json::json!({
+                    "dry_run": dry_run,
+                    "filter": pattern,
+                    "files_touched": files_touched,
+                    "lines_removed": total_lines,
+                    "bytes_saved": total_bytes,
+                    "per_file": per_file,
+                });
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json).unwrap_or_else(|_| json.to_string())
+                );
+                return 0;
+            }
+
+            if results.is_empty() {
+                println!("No lines matched `{}`.", pattern);
+                return 0;
+            }
+
+            for r in &results {
+                let verb = if dry_run { "Would strip" } else { "Stripped" };
+                println!(
+                    "{} {} line{} from {} ({})",
+                    verb,
+                    r.lines_removed,
+                    if r.lines_removed == 1 { "" } else { "s" },
+                    r.path.display(),
+                    logging::format_size(r.bytes_saved),
+                );
+            }
+            let verb = if dry_run {
+                "Would strip"
+            } else {
+                "Stripped"
+            };
+            println!(
+                "\n{} {} lines across {} files ({})",
+                verb,
+                total_lines,
+                files_touched,
+                logging::format_size(total_bytes),
+            );
+            0
+        }
+        Err(e) => {
+            if output_format == "json" {
+                println!(
+                    "{}",
+                    serde_json::json!({"status": "error", "error": e.to_string()})
+                );
+            } else {
+                eprintln!("Error stripping logs: {}", e);
             }
             1
         }

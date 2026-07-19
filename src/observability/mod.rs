@@ -75,6 +75,19 @@ impl ObservabilityConfig {
         }
     }
 
+    /// Console default for startup one-shot commands (`shell-init`,
+    /// `ensure`, `completions`) — WARN-only cap on the console layer,
+    /// file appender + OTLP untouched. Overridden by `-v` on the
+    /// same command, which restores INFO.
+    pub fn startup_quiet() -> Self {
+        Self {
+            log: LogConfig {
+                level: LogLevel::WarnOnly,
+                ..LogConfig::default()
+            },
+        }
+    }
+
     /// True when the CLI expresses *filtering* intent that should widen
     /// the registry `EnvFilter` and take precedence over `RUST_LOG`.
     ///

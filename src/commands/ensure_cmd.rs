@@ -67,6 +67,11 @@ pub fn run_ensure(force: bool, quiet: bool, foreground: bool) -> i32 {
         if !quiet {
             eprintln!("jarvy ensure: {}", e);
         }
+        // Point the user at the full trace even in `--quiet` mode.
+        // With the WarnOnly console default, INFO/DEBUG only reach
+        // the file appender — users would otherwise have to know
+        // that path exists.
+        eprintln!("jarvy ensure: see ~/.jarvy/logs/jarvy.log for details");
         return 1;
     }
 

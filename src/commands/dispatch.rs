@@ -226,6 +226,7 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
         Some(Commands::Completions {
             shell,
             instructions,
+            verbose: _,
         }) => handle_completions(shell, *instructions),
         Some(Commands::Templates { action }) => handle_templates(action),
         Some(Commands::Quickstart {
@@ -258,13 +259,16 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             allow_unsigned,
         }) => handle_update(action, version, channel, method, *rollback, *allow_unsigned),
         Some(Commands::Drift { file, action }) => commands::run_drift(file, action),
-        Some(Commands::ShellInit { shell, apply }) => {
-            commands::shell_init_cmd::run_shell_init(shell.as_deref(), *apply)
-        }
+        Some(Commands::ShellInit {
+            shell,
+            apply,
+            verbose: _,
+        }) => commands::shell_init_cmd::run_shell_init(shell.as_deref(), *apply),
         Some(Commands::Ensure {
             force,
             quiet,
             foreground,
+            verbose: _,
         }) => commands::ensure_cmd::run_ensure(*force, *quiet, *foreground),
         Some(Commands::Logs { action }) => commands::run_logs_command(action.clone()),
         Some(Commands::Ticket { action }) => commands::run_ticket_command(action.clone()),

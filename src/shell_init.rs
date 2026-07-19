@@ -172,12 +172,22 @@ impl EnsureStamp {
 /// `jarvy run` (the npm-run-style `[commands]` runner) — a function rather
 /// than an alias on PowerShell, where aliases can't carry arguments.
 pub fn generate_rc_snippet(shell: ShellType) -> String {
+    // Failure surface: with the WarnOnly console default the rc line
+    // is otherwise silent — a broken ensure would loop invisibly on
+    // every new shell. The `|| echo` (or Windows equivalent) writes
+    // one line to stderr on non-zero exit so the user gets a lead.
     match shell {
         ShellType::Fish => {
-            "if command -q jarvy\n  jarvy ensure --quiet\n  alias jr 'jarvy run'\nend".to_string()
+            "if command -q jarvy\n  \
+             jarvy ensure --quiet; or echo \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" >&2\n  \
+             alias jr 'jarvy run'\nend"
+                .to_string()
         }
         ShellType::PowerShell => {
-            "if (Get-Command jarvy -ErrorAction SilentlyContinue) {\n  jarvy ensure --quiet\n  function jr { jarvy run @args }\n}"
+            "if (Get-Command jarvy -ErrorAction SilentlyContinue) {\n  \
+             jarvy ensure --quiet\n  \
+             if ($LASTEXITCODE -ne 0) { Write-Error \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" }\n  \
+             function jr { jarvy run @args }\n}"
                 .to_string()
         }
         // Nushell has no `eval` — users `source` this from config.nu
@@ -186,12 +196,17 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
         // scoped to that block in nu. Aliasing a missing external is fine
         // at parse time; it only resolves when invoked.
         ShellType::Nushell => {
-            "alias jr = jarvy run\nif (which jarvy | is-not-empty) {\n  jarvy ensure --quiet\n}"
+            "alias jr = jarvy run\n\
+             if (which jarvy | is-not-empty) {\n  \
+             try { jarvy ensure --quiet } catch { \
+             print -e \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" }\n}"
                 .to_string()
         }
         _ => {
             // Bash, Zsh, Sh
-            "if command -v jarvy &> /dev/null; then\n  jarvy ensure --quiet\n  alias jr='jarvy run'\nfi"
+            "if command -v jarvy &> /dev/null; then\n  \
+             jarvy ensure --quiet || echo \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" >&2\n  \
+             alias jr='jarvy run'\nfi"
                 .to_string()
         }
     }
