@@ -395,18 +395,7 @@ fn yadm_repo_dir() -> Option<std::path::PathBuf> {
 }
 
 fn command_on_path(cmd: &str) -> bool {
-    let (probe, arg) = if cfg!(target_os = "windows") {
-        ("where", cmd)
-    } else {
-        ("which", cmd)
-    };
-    Command::new(probe)
-        .arg(arg)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    crate::tools::common::command_on_path(cmd)
 }
 
 fn emit_skipped(reason: &'static str) {

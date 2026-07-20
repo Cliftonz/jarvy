@@ -323,6 +323,49 @@ fn has_uncached(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Return true iff `cmd` resolves on `PATH`. Different from [`has`]:
+/// - `has` runs `<cmd> --version` and checks exit code — proves the
+///   binary is *runnable*. Right for tools jarvy is about to invoke.
+/// - `command_on_path` shells out to `which` (POSIX) / `where`
+///   (Windows) — proves the binary is *reachable*. Right for
+///   detection paths where we care about presence but don't want to
+///   pay the cost (or side effects) of invoking `--version`.
+///
+/// Backed by the same process-lifetime `RwLock<HashMap>` cache as
+/// `has`, keyed on `cmd` + a discriminator so the two questions
+/// don't collide. Consolidates three previous copies that had
+/// drifted (one broken on Windows because it used `which`
+/// unconditionally — see `services::mod`, `services::preflight`,
+/// `dotfiles`).
+pub fn command_on_path(cmd: &str) -> bool {
+    let key = format!("__path::{cmd}");
+    if let Ok(read) = has_cache().read() {
+        if let Some(&hit) = read.get(&key) {
+            return hit;
+        }
+    }
+    let result = command_on_path_uncached(cmd);
+    if let Ok(mut write) = has_cache().write() {
+        write.insert(key, result);
+    }
+    result
+}
+
+fn command_on_path_uncached(cmd: &str) -> bool {
+    let (probe, arg) = if cfg!(target_os = "windows") {
+        ("where", cmd)
+    } else {
+        ("which", cmd)
+    };
+    Command::new(probe)
+        .arg(arg)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Canonical error message emitted when a cargo-installed tool
 /// (`bacon`, `cargo-nextest`, `release-plz`, …) finds no `cargo` on
 /// PATH. Deduped from three per-tool `InstallError::Prereq(...)` sites

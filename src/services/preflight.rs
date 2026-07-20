@@ -140,22 +140,13 @@ pub fn podman_daemon_hint() -> String {
     "Start the Podman socket: systemctl --user start podman.socket".to_string()
 }
 
-/// Cheap PATH lookup — uses `which` on POSIX, `where` on Windows. Kept
-/// duplicated (rather than reusing `services::command_exists`) so this
-/// module has no upward dependencies on the services module surface.
+/// Cheap PATH lookup — delegates to the shared, memoized,
+/// OS-aware `tools::common::command_on_path`. The earlier local
+/// copy of this helper predated the consolidation; keeping it as a
+/// thin re-export means module-internal call sites don't need to
+/// change.
 fn command_on_path(cmd: &str) -> bool {
-    let (probe, arg) = if cfg!(target_os = "windows") {
-        ("where", cmd)
-    } else {
-        ("which", cmd)
-    };
-    Command::new(probe)
-        .arg(arg)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    crate::tools::common::command_on_path(cmd)
 }
 
 #[cfg(test)]

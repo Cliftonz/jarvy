@@ -309,15 +309,15 @@ pub fn get_backend(backend: ServiceBackend) -> Box<dyn ServiceBackendOps> {
     }
 }
 
-/// Check if a command exists in PATH
+/// Check if a command exists in PATH. Thin alias over the shared
+/// `tools::common::command_on_path` — kept as a module-private
+/// name so call sites in this crate can `use super::command_exists`
+/// without threading a new import through six files. Fixes an
+/// earlier bug where this shelled to `which` unconditionally, which
+/// silently returned `false` on every Windows box and broke the
+/// Podman/Docker backend detection this diff was meant to support.
 fn command_exists(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    crate::tools::common::command_on_path(cmd)
 }
 
 /// Run a command and capture output.
