@@ -8,9 +8,12 @@
 #![allow(dead_code)] // Public API for service management
 
 mod docker_compose;
+mod podman_compose;
+mod preflight;
 mod tilt;
 
 pub use docker_compose::DockerComposeBackend;
+pub use podman_compose::PodmanComposeBackend;
 pub use tilt::TiltBackend;
 
 use std::fmt;
@@ -22,6 +25,8 @@ use std::process::{Command, Output, Stdio};
 pub enum ServiceBackend {
     /// Docker Compose (docker-compose.yml or compose.yml)
     DockerCompose,
+    /// Podman Compose (falls back to Docker Compose config files)
+    PodmanCompose,
     /// Tilt (Tiltfile)
     Tilt,
 }
@@ -31,6 +36,7 @@ impl ServiceBackend {
     pub fn name(&self) -> &'static str {
         match self {
             Self::DockerCompose => "Docker Compose",
+            Self::PodmanCompose => "Podman Compose",
             Self::Tilt => "Tilt",
         }
     }
@@ -38,7 +44,7 @@ impl ServiceBackend {
     /// Returns the default config file name(s)
     pub fn config_files(&self) -> &'static [&'static str] {
         match self {
-            Self::DockerCompose => &[
+            Self::DockerCompose | Self::PodmanCompose => &[
                 "docker-compose.yml",
                 "docker-compose.yaml",
                 "compose.yml",
@@ -52,6 +58,7 @@ impl ServiceBackend {
     pub fn check_command(&self) -> &'static str {
         match self {
             Self::DockerCompose => "docker",
+            Self::PodmanCompose => "podman",
             Self::Tilt => "tilt",
         }
     }
@@ -68,6 +75,13 @@ impl fmt::Display for ServiceBackend {
 pub enum ServiceError {
     /// Backend tool not installed
     BackendNotInstalled(ServiceBackend),
+    /// Backend binary is installed but its daemon is not reachable.
+    /// `hint` is a platform-aware, user-actionable next step (e.g.
+    /// "Start Docker Desktop" / "colima start" / "sudo systemctl start docker").
+    DaemonNotRunning {
+        backend: ServiceBackend,
+        hint: String,
+    },
     /// Config file not found
     ConfigNotFound(ServiceBackend),
     /// Command execution failed
@@ -90,6 +104,9 @@ impl fmt::Display for ServiceError {
                     "{} is not installed. Install it with: jarvy setup",
                     backend
                 )
+            }
+            Self::DaemonNotRunning { backend, hint } => {
+                write!(f, "{} daemon is not running. {}", backend, hint)
             }
             Self::ConfigNotFound(backend) => {
                 write!(f, "No {} config file found in project", backend)
@@ -161,6 +178,19 @@ pub trait ServiceBackendOps {
     /// Find the config file in the given directory
     fn find_config(&self, dir: &Path) -> Option<PathBuf>;
 
+    /// Preflight check: verify the backend's daemon is reachable.
+    ///
+    /// Default implementation is a no-op (`Ok(())`). Backends whose CLI
+    /// tool talks to a long-running daemon (Docker, Podman rootful,
+    /// Colima-backed Docker) should override to probe the daemon with
+    /// a low-overhead command like `docker info` before attempting
+    /// `start` / `status`. Returning `Err(DaemonNotRunning { hint })`
+    /// short-circuits `start()` / `status()` with an actionable
+    /// message instead of a raw `compose up` failure.
+    fn check_daemon(&self) -> Result<(), ServiceError> {
+        Ok(())
+    }
+
     /// Start services
     fn start(&self, config_path: &Path, detach: bool) -> Result<ServiceResult, ServiceError>;
 
@@ -177,15 +207,29 @@ pub trait ServiceBackendOps {
     }
 }
 
-/// Detect which service backend is available in the given directory
+/// Detect which service backend is available in the given directory.
+///
+/// Priority: Docker Compose > Podman Compose > Tilt.
+///
+/// Docker and Podman share config files (`docker-compose.yml` / `compose.yml`),
+/// so the disambiguator is which CLI is installed. If `docker` is on PATH
+/// we pick Docker Compose; if only `podman` is on PATH we pick Podman
+/// Compose. Users who want to force Podman despite Docker also being
+/// installed can set `[services] compose_file` with a `podman-compose`
+/// variant or extend the config in a follow-up.
 pub fn detect_backend(dir: &Path) -> Option<(ServiceBackend, PathBuf)> {
-    // Docker Compose takes priority
     let docker = DockerComposeBackend;
     if let Some(path) = docker.find_config(dir) {
+        if docker.is_installed() {
+            return Some((ServiceBackend::DockerCompose, path));
+        }
+        let podman = PodmanComposeBackend;
+        if podman.is_installed() {
+            return Some((ServiceBackend::PodmanCompose, path));
+        }
         return Some((ServiceBackend::DockerCompose, path));
     }
 
-    // Try Tilt
     let tilt = TiltBackend;
     if let Some(path) = tilt.find_config(dir) {
         return Some((ServiceBackend::Tilt, path));
@@ -228,9 +272,16 @@ pub fn detect_backend_with_config(
     tilt_file: Option<&Path>,
 ) -> Option<(ServiceBackend, PathBuf)> {
     // If compose_file is explicitly set, use it (containment-checked).
+    // Docker wins when both are installed; podman only if docker is absent.
     if let Some(compose) = compose_file {
         if let Some(path) = resolve_within_project(dir, compose, "compose_file") {
             if path.exists() {
+                if DockerComposeBackend.is_installed() {
+                    return Some((ServiceBackend::DockerCompose, path));
+                }
+                if PodmanComposeBackend.is_installed() {
+                    return Some((ServiceBackend::PodmanCompose, path));
+                }
                 return Some((ServiceBackend::DockerCompose, path));
             }
         }
@@ -253,6 +304,7 @@ pub fn detect_backend_with_config(
 pub fn get_backend(backend: ServiceBackend) -> Box<dyn ServiceBackendOps> {
     match backend {
         ServiceBackend::DockerCompose => Box::new(DockerComposeBackend),
+        ServiceBackend::PodmanCompose => Box::new(PodmanComposeBackend),
         ServiceBackend::Tilt => Box::new(TiltBackend),
     }
 }

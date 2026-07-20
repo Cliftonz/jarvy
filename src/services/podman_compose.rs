@@ -1,6 +1,19 @@
-//! Docker Compose service backend
+//! Podman Compose service backend.
+//!
+//! Mirrors [`super::docker_compose::DockerComposeBackend`] but talks to
+//! `podman` instead of `docker`. Podman ships two compose-compatible
+//! entry points: the modern `podman compose` subcommand (Podman v4+
+//! wraps docker-compose v2 or podman-compose) and the standalone
+//! `podman-compose` PyPI package. Detection prefers the modern
+//! subcommand, falling back to standalone.
+//!
+//! Config files are the same `docker-compose.yml` / `compose.yml`
+//! set — Podman deliberately reads Docker's format. The disambiguator
+//! between Docker Compose and Podman Compose in
+//! `services::detect_backend` is which CLI is on PATH, not which file
+//! is present.
 
-use super::preflight::{docker_daemon_hint, probe_container_daemon, DaemonState};
+use super::preflight::{podman_daemon_hint, probe_container_daemon, DaemonState};
 use super::{
     command_exists, run_command, ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult,
     ServiceStatus,
@@ -9,13 +22,13 @@ use crate::observability::telemetry_gate;
 use crate::telemetry;
 use std::path::{Path, PathBuf};
 
-/// Docker Compose backend implementation
-pub struct DockerComposeBackend;
+/// Podman Compose backend implementation.
+pub struct PodmanComposeBackend;
 
-impl DockerComposeBackend {
-    /// Check if 'docker compose' subcommand is available (modern Docker)
-    fn has_docker_compose_v2() -> bool {
-        std::process::Command::new("docker")
+impl PodmanComposeBackend {
+    /// `podman compose` subcommand available (modern podman v4+).
+    fn has_podman_compose_subcommand() -> bool {
+        std::process::Command::new("podman")
             .args(["compose", "version"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -24,28 +37,30 @@ impl DockerComposeBackend {
             .unwrap_or(false)
     }
 
-    /// Check if legacy 'docker-compose' command is available
-    fn has_docker_compose_v1() -> bool {
-        command_exists("docker-compose")
+    /// Standalone `podman-compose` binary available.
+    fn has_standalone_podman_compose() -> bool {
+        command_exists("podman-compose")
     }
 
-    /// Get the compose command prefix (either "docker compose" or "docker-compose")
+    /// Return `(cmd, prefix_args)` for the best available compose entry point.
+    /// Prefer the built-in subcommand; fall back to standalone.
     fn compose_command() -> (&'static str, Vec<&'static str>) {
-        if Self::has_docker_compose_v2() {
-            ("docker", vec!["compose"])
+        if Self::has_podman_compose_subcommand() {
+            ("podman", vec!["compose"])
         } else {
-            ("docker-compose", vec![])
+            ("podman-compose", vec![])
         }
     }
 }
 
-impl ServiceBackendOps for DockerComposeBackend {
+impl ServiceBackendOps for PodmanComposeBackend {
     fn is_installed(&self) -> bool {
-        command_exists("docker") && (Self::has_docker_compose_v2() || Self::has_docker_compose_v1())
+        command_exists("podman")
+            && (Self::has_podman_compose_subcommand() || Self::has_standalone_podman_compose())
     }
 
     fn find_config(&self, dir: &Path) -> Option<PathBuf> {
-        for filename in ServiceBackend::DockerCompose.config_files() {
+        for filename in ServiceBackend::PodmanCompose.config_files() {
             let path = dir.join(filename);
             if path.exists() {
                 return Some(path);
@@ -56,15 +71,15 @@ impl ServiceBackendOps for DockerComposeBackend {
 
     fn check_daemon(&self) -> Result<(), ServiceError> {
         let started = std::time::Instant::now();
-        let state = probe_container_daemon("docker");
+        let state = probe_container_daemon("podman");
         let duration_ms = started.elapsed().as_millis() as u64;
         if telemetry_gate::is_enabled() {
             tracing::debug!(
                 event = "services.daemon_check",
-                backend = "docker",
+                backend = "podman",
                 state = ?state,
                 duration_ms,
-                "docker daemon preflight"
+                "podman daemon preflight"
             );
         }
         match state {
@@ -73,14 +88,14 @@ impl ServiceBackendOps for DockerComposeBackend {
                 if telemetry_gate::is_enabled() {
                     tracing::warn!(
                         event = "services.daemon_down",
-                        backend = "docker",
+                        backend = "podman",
                         duration_ms,
-                        "docker daemon is not reachable"
+                        "podman daemon is not reachable"
                     );
                 }
                 Err(ServiceError::DaemonNotRunning {
-                    backend: ServiceBackend::DockerCompose,
-                    hint: docker_daemon_hint(),
+                    backend: ServiceBackend::PodmanCompose,
+                    hint: podman_daemon_hint(),
                 })
             }
         }
@@ -89,7 +104,7 @@ impl ServiceBackendOps for DockerComposeBackend {
     fn start(&self, config_path: &Path, detach: bool) -> Result<ServiceResult, ServiceError> {
         if !self.is_installed() {
             return Err(ServiceError::BackendNotInstalled(
-                ServiceBackend::DockerCompose,
+                ServiceBackend::PodmanCompose,
             ));
         }
         self.check_daemon()?;
@@ -110,16 +125,16 @@ impl ServiceBackendOps for DockerComposeBackend {
         let output = run_command(cmd, &args_ref, working_dir)?;
 
         if output.status.success() {
-            telemetry::service_operation("docker-compose", "start", true);
+            telemetry::service_operation("podman-compose", "start", true);
             Ok(ServiceResult {
                 success: true,
                 message: "Services started successfully".to_string(),
-                backend: ServiceBackend::DockerCompose,
+                backend: ServiceBackend::PodmanCompose,
             })
         } else {
-            telemetry::service_operation("docker-compose", "start", false);
+            telemetry::service_operation("podman-compose", "start", false);
             Err(ServiceError::CommandFailed {
-                backend: ServiceBackend::DockerCompose,
+                backend: ServiceBackend::PodmanCompose,
                 operation: "start",
                 stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                 exit_code: output.status.code(),
@@ -130,7 +145,7 @@ impl ServiceBackendOps for DockerComposeBackend {
     fn stop(&self, config_path: &Path) -> Result<ServiceResult, ServiceError> {
         if !self.is_installed() {
             return Err(ServiceError::BackendNotInstalled(
-                ServiceBackend::DockerCompose,
+                ServiceBackend::PodmanCompose,
             ));
         }
 
@@ -147,16 +162,16 @@ impl ServiceBackendOps for DockerComposeBackend {
         let output = run_command(cmd, &args_ref, working_dir)?;
 
         if output.status.success() {
-            telemetry::service_operation("docker-compose", "stop", true);
+            telemetry::service_operation("podman-compose", "stop", true);
             Ok(ServiceResult {
                 success: true,
                 message: "Services stopped successfully".to_string(),
-                backend: ServiceBackend::DockerCompose,
+                backend: ServiceBackend::PodmanCompose,
             })
         } else {
-            telemetry::service_operation("docker-compose", "stop", false);
+            telemetry::service_operation("podman-compose", "stop", false);
             Err(ServiceError::CommandFailed {
-                backend: ServiceBackend::DockerCompose,
+                backend: ServiceBackend::PodmanCompose,
                 operation: "stop",
                 stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                 exit_code: output.status.code(),
@@ -167,18 +182,18 @@ impl ServiceBackendOps for DockerComposeBackend {
     fn status(&self, config_path: &Path) -> Result<ServiceStatus, ServiceError> {
         if !self.is_installed() {
             return Ok(ServiceStatus {
-                backend: ServiceBackend::DockerCompose,
+                backend: ServiceBackend::PodmanCompose,
                 installed: false,
                 running: false,
-                details: "Docker Compose is not installed".to_string(),
+                details: "Podman Compose is not installed".to_string(),
             });
         }
         if let Err(ServiceError::DaemonNotRunning { hint, .. }) = self.check_daemon() {
             return Ok(ServiceStatus {
-                backend: ServiceBackend::DockerCompose,
+                backend: ServiceBackend::PodmanCompose,
                 installed: true,
                 running: false,
-                details: format!("Docker daemon is not running. {hint}"),
+                details: format!("Podman daemon is not running. {hint}"),
             });
         }
 
@@ -197,13 +212,11 @@ impl ServiceBackendOps for DockerComposeBackend {
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-        // Check if any containers are running
-        // docker compose ps shows running containers, empty or just header means nothing running
         let lines: Vec<&str> = stdout.lines().collect();
-        let running = lines.len() > 1; // More than just header line
+        let running = lines.len() > 1;
 
         Ok(ServiceStatus {
-            backend: ServiceBackend::DockerCompose,
+            backend: ServiceBackend::PodmanCompose,
             installed: true,
             running,
             details: if running {
@@ -229,7 +242,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         File::create(temp.path().join("docker-compose.yml")).unwrap();
 
-        let backend = DockerComposeBackend;
+        let backend = PodmanComposeBackend;
         let result = backend.find_config(temp.path());
         assert!(result.is_some());
         assert!(result.unwrap().ends_with("docker-compose.yml"));
@@ -243,7 +256,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         File::create(temp.path().join("compose.yml")).unwrap();
 
-        let backend = DockerComposeBackend;
+        let backend = PodmanComposeBackend;
         let result = backend.find_config(temp.path());
         assert!(result.is_some());
     }
@@ -253,7 +266,7 @@ mod tests {
         use tempfile::TempDir;
 
         let temp = TempDir::new().unwrap();
-        let backend = DockerComposeBackend;
+        let backend = PodmanComposeBackend;
         let result = backend.find_config(temp.path());
         assert!(result.is_none());
     }
