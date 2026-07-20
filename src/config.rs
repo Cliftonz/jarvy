@@ -1324,6 +1324,10 @@ auto_install = false
 
 [git_hooks]
 enabled = true
+
+[dotfiles]
+manager = "chezmoi"
+repo = "github:zac/dotfiles"
 "#;
         let mut cfg: Config = toml::from_str(toml_str).unwrap();
         // Baseline: every sub-config defaults to Local.
@@ -1342,6 +1346,10 @@ enabled = true
         );
         assert_eq!(
             cfg.git_hooks.as_ref().unwrap().origin,
+            crate::ai_hooks::ConfigOrigin::Local
+        );
+        assert_eq!(
+            cfg.dotfiles.as_ref().unwrap().origin,
             crate::ai_hooks::ConfigOrigin::Local
         );
 
@@ -1366,6 +1374,10 @@ enabled = true
         );
         assert_eq!(
             cfg.git_hooks.as_ref().unwrap().origin,
+            crate::ai_hooks::ConfigOrigin::Remote
+        );
+        assert_eq!(
+            cfg.dotfiles.as_ref().unwrap().origin,
             crate::ai_hooks::ConfigOrigin::Remote
         );
     }

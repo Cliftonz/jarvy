@@ -35,10 +35,22 @@ pub enum DaemonState {
     /// Probe command failed to spawn (binary not in PATH). Caller should
     /// have short-circuited via `is_installed` before probing; treat as `Down`.
     Missing,
+    /// Probe was killed by the [`PROBE_TIMEOUT`] wall-clock cap. Distinct
+    /// from [`Down`] so on-call can graph "hung apiserver" separately from
+    /// "daemon returned non-zero fast." Emitted as
+    /// `services.daemon_probe_timeout` upstream.
+    Timeout,
 }
 
 /// Wall-clock cap on daemon-probe subprocess. Runs on hot paths, keep low.
-const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Poll granularity for `try_wait`. 20 ms is a compromise between "wake
+/// up promptly when the child returns" (a healthy `docker info` on a
+/// warm daemon returns in 20–80 ms) and "don't burn CPU on tight
+/// polling." Was 50 ms — the average half-tick of 25 ms was measurable
+/// on the interactive `jarvy services status` path.
+pub(crate) const PROBE_POLL: Duration = Duration::from_millis(20);
 
 /// Probe a container-runtime daemon by asking for its server version.
 ///
@@ -47,9 +59,21 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 /// string — a round-trip through the daemon socket, so a stopped daemon
 /// exits non-zero even though the client binary is fine.
 pub fn probe_container_daemon(cli: &str) -> DaemonState {
+    probe_with_args(
+        cli,
+        &["info", "--format", "{{.ServerVersion}}"],
+        PROBE_TIMEOUT,
+    )
+}
+
+/// Argv-taking variant used by tests and by future non-container probes
+/// that want the same spawn + poll + kill + wall-clock-cap machinery.
+/// Kept `pub(crate)` so it isn't part of the public jarvy API but can
+/// be exercised directly from `#[cfg(test)]`.
+pub(crate) fn probe_with_args(cli: &str, args: &[&str], timeout: Duration) -> DaemonState {
     let started = Instant::now();
     let spawn = Command::new(cli)
-        .args(["info", "--format", "{{.ServerVersion}}"])
+        .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null())
@@ -70,12 +94,12 @@ pub fn probe_container_daemon(cli: &str) -> DaemonState {
                 };
             }
             Ok(None) => {
-                if started.elapsed() >= PROBE_TIMEOUT {
+                if started.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return DaemonState::Down;
+                    return DaemonState::Timeout;
                 }
-                std::thread::sleep(Duration::from_millis(50));
+                std::thread::sleep(PROBE_POLL);
             }
             Err(_) => return DaemonState::Down,
         }
@@ -155,5 +179,42 @@ mod tests {
         // A binary name no reasonable environment has.
         let state = probe_container_daemon("jarvy-nonexistent-daemon-probe-target");
         assert_eq!(state, DaemonState::Missing);
+    }
+
+    /// The load-bearing invariant of this module: a hanging subprocess
+    /// is killed within roughly [`PROBE_TIMEOUT`] wall-clock. Without
+    /// this test a regression bumping the constant to `Duration::from_secs(300)`
+    /// would ship silently and every `jarvy services status` would
+    /// block for 5 minutes on a stopped Docker Desktop. Uses a short
+    /// custom timeout (500 ms) via [`probe_with_args`] so the test
+    /// itself finishes fast.
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn probe_respects_timeout_bound() {
+        let short = Duration::from_millis(500);
+        let started = Instant::now();
+        // `sleep 10` never returns in the test window; the probe MUST
+        // kill it and report Timeout.
+        let state = probe_with_args("sleep", &["10"], short);
+        let elapsed = started.elapsed();
+        assert_eq!(state, DaemonState::Timeout, "state should be Timeout, got {state:?}");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "probe exceeded budget: took {elapsed:?}"
+        );
+        assert!(
+            elapsed >= short.saturating_sub(Duration::from_millis(100)),
+            "probe returned suspiciously early: took {elapsed:?}"
+        );
+    }
+
+    /// A subprocess that exits fast + non-zero must map to `Down`,
+    /// NOT `Timeout` — the two states drive different runbooks.
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn probe_fast_nonzero_maps_to_down_not_timeout() {
+        // `false` exits 1 immediately.
+        let state = probe_with_args("false", &[], Duration::from_secs(3));
+        assert_eq!(state, DaemonState::Down);
     }
 }

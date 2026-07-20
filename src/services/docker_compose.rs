@@ -69,11 +69,23 @@ impl ServiceBackendOps for DockerComposeBackend {
         }
         match state {
             DaemonState::Running => Ok(()),
-            DaemonState::Down | DaemonState::Missing => {
+            DaemonState::Down | DaemonState::Missing | DaemonState::Timeout => {
                 if telemetry_gate::is_enabled() {
+                    // Distinct event for timeout so on-call can graph
+                    // "hung daemon" separately from "daemon exited fast."
+                    if state == DaemonState::Timeout {
+                        tracing::warn!(
+                            event = "services.daemon_probe_timeout",
+                            backend = "docker",
+                            timeout_ms = super::preflight::PROBE_TIMEOUT.as_millis() as u64,
+                            duration_ms,
+                            "docker daemon probe hit hard timeout, treated as down"
+                        );
+                    }
                     tracing::warn!(
                         event = "services.daemon_down",
                         backend = "docker",
+                        state = ?state,
                         duration_ms,
                         "docker daemon is not reachable"
                     );

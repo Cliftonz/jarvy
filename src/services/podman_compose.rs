@@ -84,11 +84,21 @@ impl ServiceBackendOps for PodmanComposeBackend {
         }
         match state {
             DaemonState::Running => Ok(()),
-            DaemonState::Down | DaemonState::Missing => {
+            DaemonState::Down | DaemonState::Missing | DaemonState::Timeout => {
                 if telemetry_gate::is_enabled() {
+                    if state == DaemonState::Timeout {
+                        tracing::warn!(
+                            event = "services.daemon_probe_timeout",
+                            backend = "podman",
+                            timeout_ms = super::preflight::PROBE_TIMEOUT.as_millis() as u64,
+                            duration_ms,
+                            "podman daemon probe hit hard timeout, treated as down"
+                        );
+                    }
                     tracing::warn!(
                         event = "services.daemon_down",
                         backend = "podman",
+                        state = ?state,
                         duration_ms,
                         "podman daemon is not reachable"
                     );
