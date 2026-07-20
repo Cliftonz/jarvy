@@ -1822,6 +1822,11 @@ fn run_services_phase(config: &Config, file: &str, is_ci: bool, dry_run: bool) {
 /// keeps going. Skipped silently when the block is absent.
 fn run_dotfiles_phase(config: &Config, dry_run: bool) {
     let Some(cfg) = config.dotfiles.as_ref() else {
+        // Emit `dotfiles.phase_absent` so the adoption-rate query
+        // has a denominator — otherwise the numerator (phase_started
+        // et al.) is unbounded and PMs can't compute "of eligible
+        // setup runs, how many opted into dotfiles?"
+        crate::dotfiles::emit_phase_absent();
         return;
     };
     if dry_run {
@@ -1830,7 +1835,7 @@ fn run_dotfiles_phase(config: &Config, dry_run: bool) {
         println!("\nApplying [dotfiles] via {}...", cfg.manager.cli());
     }
     match crate::dotfiles::run_phase(cfg, dry_run) {
-        crate::dotfiles::PhaseOutcome::Applied => {
+        crate::dotfiles::PhaseOutcome::Applied { .. } => {
             println!("Dotfiles applied.");
         }
         crate::dotfiles::PhaseOutcome::NoOp => {

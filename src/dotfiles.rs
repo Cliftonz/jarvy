@@ -99,12 +99,48 @@ impl DotfilesManager {
     }
 }
 
+/// Which apply-flavor a success path actually took — carried on
+/// `PhaseOutcome::Applied` and emitted as
+/// `dotfiles.phase_completed.apply_kind`. Retention analytics needs
+/// this: "initial_clone" vs "update" are entirely different funnel
+/// states (adoption vs retention), and lumping them together hides
+/// spikes in fleet re-provisioning (which can be a security
+/// signal — dotfiles cloned from a compromised remote config).
+///
+/// Cardinality: 4. Bounded string enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplyKind {
+    /// chezmoi init --apply / yadm clone — first-time provisioning.
+    InitialClone,
+    /// chezmoi update — pull + re-apply on an already-inited source.
+    Update,
+    /// chezmoi git pull — pull only (apply = false path).
+    GitPullOnly,
+    /// yadm pull — pull only (already-cloned).
+    Pull,
+}
+
+impl ApplyKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InitialClone => "initial_clone",
+            Self::Update => "update",
+            Self::GitPullOnly => "git_pull_only",
+            Self::Pull => "pull",
+        }
+    }
+}
+
 /// Outcome of the dotfiles phase — reported via telemetry and
 /// (for the setup lead) printed to stdout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhaseOutcome {
-    /// Manager applied the repo (fresh clone OR update).
-    Applied,
+    /// Manager applied the repo. `kind` distinguishes clone vs
+    /// update so retention analytics can separate adoption from
+    /// re-use.
+    Applied {
+        kind: ApplyKind,
+    },
     /// Nothing to do — repo already present and `apply = false`.
     NoOp,
     /// Block existed but was disabled for a legitimate reason
@@ -136,14 +172,14 @@ pub enum PhaseOutcome {
 pub fn run_phase(cfg: &DotfilesConfig, dry_run: bool) -> PhaseOutcome {
     // Trust gate first — same shape as `[git_hooks]` and `[packages]`.
     if cfg.origin == crate::ai_hooks::ConfigOrigin::Remote && !cfg.allow_remote {
-        emit_refused("allow_remote_not_set");
+        emit_refused(cfg.manager.cli(), "allow_remote_not_set");
         return PhaseOutcome::Refused {
             reason: "allow_remote_not_set",
         };
     }
 
     if cfg.repo.trim().is_empty() {
-        emit_skipped("empty_repo");
+        emit_skipped(cfg.manager.cli(), "empty_repo");
         return PhaseOutcome::Skipped {
             reason: "empty_repo",
         };
@@ -156,27 +192,27 @@ pub fn run_phase(cfg: &DotfilesConfig, dry_run: bool) -> PhaseOutcome {
     // flag surface (`--source`, `--exclude`, ...) with the same risk.
     // Command::args just tokenizes — the safety must live here.
     if !valid_repo_arg(&cfg.repo) {
-        emit_refused("invalid_repo");
+        emit_refused(cfg.manager.cli(), "invalid_repo");
         return PhaseOutcome::Refused {
             reason: "invalid_repo",
         };
     }
 
     if dry_run {
-        emit_skipped("dry_run");
+        emit_skipped(cfg.manager.cli(), "dry_run");
         return PhaseOutcome::Skipped { reason: "dry_run" };
     }
 
     // Stow doesn't fit a single "apply" verb — skip with hint.
     if cfg.manager == DotfilesManager::Stow {
-        emit_skipped("stow_manual");
+        emit_skipped(cfg.manager.cli(), "stow_manual");
         return PhaseOutcome::Skipped {
             reason: "stow_manual",
         };
     }
 
     if !command_on_path(cfg.manager.cli()) {
-        emit_skipped("manager_not_installed");
+        emit_skipped(cfg.manager.cli(), "manager_not_installed");
         return PhaseOutcome::Skipped {
             reason: "manager_not_installed",
         };
@@ -199,17 +235,29 @@ pub fn run_phase(cfg: &DotfilesConfig, dry_run: bool) -> PhaseOutcome {
     };
 
     let duration_ms = started.elapsed().as_millis() as u64;
+    let apply_mode = if cfg.apply { "auto_apply" } else { "clone_only" };
     if telemetry_gate::is_enabled() {
         match &outcome {
-            PhaseOutcome::Applied => tracing::info!(
+            PhaseOutcome::Applied { kind } => tracing::info!(
                 event = "dotfiles.phase_completed",
                 manager = cfg.manager.cli(),
+                apply_kind = kind.as_str(),
+                apply_mode,
                 duration_ms,
                 "dotfiles phase completed"
+            ),
+            PhaseOutcome::NoOp => tracing::info!(
+                event = "dotfiles.phase_completed",
+                manager = cfg.manager.cli(),
+                apply_kind = "noop",
+                apply_mode,
+                duration_ms,
+                "dotfiles phase noop (clone_only + already-present)"
             ),
             PhaseOutcome::Failed { error_kind, .. } => tracing::warn!(
                 event = "dotfiles.phase_failed",
                 manager = cfg.manager.cli(),
+                apply_mode,
                 duration_ms,
                 error_kind = %error_kind,
                 "dotfiles phase failed"
@@ -231,21 +279,30 @@ fn apply_chezmoi(repo: &str, apply: bool) -> PhaseOutcome {
         .map(|p| p.join(".git").exists())
         .unwrap_or(false);
 
-    let output = if !inited {
+    let (output, kind) = if !inited {
         let mut args = vec!["init"];
         if apply {
             args.push("--apply");
         }
         args.push("--");
         args.push(repo);
-        dotfile_command("chezmoi").args(&args).output()
+        (
+            dotfile_command("chezmoi").args(&args).output(),
+            ApplyKind::InitialClone,
+        )
     } else if apply {
-        dotfile_command("chezmoi").arg("update").output()
+        (
+            dotfile_command("chezmoi").arg("update").output(),
+            ApplyKind::Update,
+        )
     } else {
-        dotfile_command("chezmoi").args(["git", "pull"]).output()
+        (
+            dotfile_command("chezmoi").args(["git", "pull"]).output(),
+            ApplyKind::GitPullOnly,
+        )
     };
 
-    map_subprocess_output("chezmoi", output)
+    map_subprocess_output("chezmoi", output, kind)
 }
 
 /// Run yadm. First run: `yadm clone <repo>`. Subsequent runs when
@@ -254,15 +311,21 @@ fn apply_chezmoi(repo: &str, apply: bool) -> PhaseOutcome {
 fn apply_yadm(repo: &str, apply: bool) -> PhaseOutcome {
     let cloned = yadm_repo_dir().map(|p| p.exists()).unwrap_or(false);
 
-    let output = if !cloned {
-        dotfile_command("yadm").args(["clone", "--", repo]).output()
+    let (output, kind) = if !cloned {
+        (
+            dotfile_command("yadm").args(["clone", "--", repo]).output(),
+            ApplyKind::InitialClone,
+        )
     } else if apply {
-        dotfile_command("yadm").arg("pull").output()
+        (
+            dotfile_command("yadm").arg("pull").output(),
+            ApplyKind::Pull,
+        )
     } else {
         return PhaseOutcome::NoOp;
     };
 
-    map_subprocess_output("yadm", output)
+    map_subprocess_output("yadm", output, kind)
 }
 
 /// Shared tail: turn a subprocess result into a `PhaseOutcome`. Uses
@@ -270,9 +333,13 @@ fn apply_yadm(repo: &str, apply: bool) -> PhaseOutcome {
 /// `error_kind` — the raw stderr (which typically carries the repo
 /// URL with any embedded token) stays in the human-facing `error`
 /// string for the setup lead's stderr line and never reaches OTLP.
-fn map_subprocess_output(cli: &'static str, r: std::io::Result<std::process::Output>) -> PhaseOutcome {
+fn map_subprocess_output(
+    cli: &'static str,
+    r: std::io::Result<std::process::Output>,
+    kind: ApplyKind,
+) -> PhaseOutcome {
     match r {
-        Ok(o) if o.status.success() => PhaseOutcome::Applied,
+        Ok(o) if o.status.success() => PhaseOutcome::Applied { kind },
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             let error_kind = classify_dotfiles_error(&stderr);
@@ -398,22 +465,38 @@ fn command_on_path(cmd: &str) -> bool {
     crate::tools::common::command_on_path(cmd)
 }
 
-fn emit_skipped(reason: &'static str) {
+fn emit_skipped(manager: &'static str, reason: &'static str) {
     if telemetry_gate::is_enabled() {
         tracing::info!(
             event = "dotfiles.phase_skipped",
-            reason = reason,
+            manager,
+            reason,
             "dotfiles phase skipped"
         );
     }
 }
 
-fn emit_refused(reason: &'static str) {
+fn emit_refused(manager: &'static str, reason: &'static str) {
     if telemetry_gate::is_enabled() {
         tracing::warn!(
             event = "dotfiles.remote_refused",
-            reason = reason,
-            "remote config attempted to apply [dotfiles] without allow_remote"
+            manager,
+            reason,
+            "[dotfiles] refused (remote trust gate or input-safety gate)"
+        );
+    }
+}
+
+/// Emitted when `[dotfiles]` is absent from `jarvy.toml`. Fires
+/// once per `jarvy setup` invocation regardless of overlay state.
+/// This is the denominator for "of setup runs, how many are eligible
+/// to adopt the dotfiles feature?" — without it, adoption rate is
+/// unbounded (the numerator, `dotfiles.phase_*`, has no base).
+pub fn emit_phase_absent() {
+    if telemetry_gate::is_enabled() {
+        tracing::debug!(
+            event = "dotfiles.phase_absent",
+            "no [dotfiles] block in project config"
         );
     }
 }
