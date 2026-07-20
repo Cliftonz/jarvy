@@ -323,6 +323,83 @@ fn has_uncached(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Outcome of [`probe_with_timeout`]. Distinct from `Result<Output, io::Error>`
+/// because `Timeout` needs to be reportable separately from a fast
+/// non-zero exit — different runbooks. Keeps the helper 30 lines.
+#[derive(Debug)]
+pub enum ProbeResult {
+    /// Child exited within the timeout. Carries the raw `Output`; the
+    /// caller decides whether `status.success()` maps to "reachable."
+    Completed(std::process::Output),
+    /// `PROBE_TIMEOUT` wall-clock cap fired; child was killed.
+    Timeout,
+    /// `Command::spawn` returned `Err(io::ErrorKind::NotFound)` — binary
+    /// not on PATH. Distinct from Timeout / non-zero exit.
+    Missing,
+    /// `Command::spawn` returned `Err(io::ErrorKind::PermissionDenied)`
+    /// — binary present but not executable by this user.
+    PermissionDenied,
+    /// Any other IO error during spawn or wait.
+    IoError(std::io::Error),
+}
+
+/// Spawn `<cmd> <args>` and either return its output or kill it when
+/// `timeout` elapses. Poll interval is 20 ms. Used by:
+///
+/// - `commands::diagnose` k8s-liveness probes — `minikube status`,
+///   `kind get clusters`, `k3d cluster list` have no CLI-level
+///   timeout flag, so a stale cluster hangs the diagnose command
+///   until the child exits (tens of seconds for minikube). This
+///   helper enforces the "hard 2-second budget" the diagnose doc
+///   comment claims.
+/// - future non-container preflights that want the same spawn +
+///   poll + kill + wall-clock-cap machinery without depending on
+///   `services::preflight` (which returns a services-specific
+///   `DaemonState`).
+///
+/// stdout / stderr are captured (piped). stdin is `null`.
+pub fn probe_with_timeout(
+    cmd: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> ProbeResult {
+    use std::time::Instant;
+    let started = Instant::now();
+    let spawn = Command::new(cmd)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .stdin(std::process::Stdio::null())
+        .spawn();
+    let mut child = match spawn {
+        Ok(c) => c,
+        Err(e) => {
+            return match e.kind() {
+                std::io::ErrorKind::NotFound => ProbeResult::Missing,
+                std::io::ErrorKind::PermissionDenied => ProbeResult::PermissionDenied,
+                _ => ProbeResult::IoError(e),
+            }
+        }
+    };
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => match child.wait_with_output() {
+                Ok(out) => return ProbeResult::Completed(out),
+                Err(e) => return ProbeResult::IoError(e),
+            },
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return ProbeResult::Timeout;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(e) => return ProbeResult::IoError(e),
+        }
+    }
+}
+
 /// Return true iff `cmd` resolves on `PATH`. Different from [`has`]:
 /// - `has` runs `<cmd> --version` and checks exit code — proves the
 ///   binary is *runnable*. Right for tools jarvy is about to invoke.

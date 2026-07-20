@@ -22,6 +22,25 @@ use crate::observability::telemetry_gate;
 use crate::telemetry;
 use std::path::{Path, PathBuf};
 
+/// Pure fallback resolver — pick a compose entry point given the two
+/// runtime-probe booleans. Extracted for testability; the wrapper
+/// `PodmanComposeBackend::compose_command` supplies live probes.
+/// `subcmd` (Podman v4+ `podman compose`) always wins when available.
+/// Returns None when neither is present so tests can assert the
+/// missing-both branch explicitly.
+pub(super) fn compose_command_from(
+    subcmd: bool,
+    standalone: bool,
+) -> Option<(&'static str, Vec<&'static str>)> {
+    if subcmd {
+        Some(("podman", vec!["compose"]))
+    } else if standalone {
+        Some(("podman-compose", vec![]))
+    } else {
+        None
+    }
+}
+
 /// Podman Compose backend implementation.
 pub struct PodmanComposeBackend;
 
@@ -45,11 +64,11 @@ impl PodmanComposeBackend {
     /// Return `(cmd, prefix_args)` for the best available compose entry point.
     /// Prefer the built-in subcommand; fall back to standalone.
     fn compose_command() -> (&'static str, Vec<&'static str>) {
-        if Self::has_podman_compose_subcommand() {
-            ("podman", vec!["compose"])
-        } else {
-            ("podman-compose", vec![])
-        }
+        compose_command_from(
+            Self::has_podman_compose_subcommand(),
+            Self::has_standalone_podman_compose(),
+        )
+        .unwrap_or(("podman-compose", vec![]))
     }
 
     /// Bounded label for `services.backend_selected.podman_variant`.
@@ -319,5 +338,33 @@ mod tests {
         let backend = PodmanComposeBackend;
         let result = backend.find_config(temp.path());
         assert!(result.is_none());
+    }
+
+    /// Compose entry-point fallback — the subcommand-vs-standalone
+    /// decision is load-bearing (Podman v3 users only have the
+    /// standalone binary; v4+ users get both; some distros ship only
+    /// one). Pure fn so we can table-drive without touching PATH.
+    #[test]
+    fn compose_command_fallback_is_correct() {
+        assert_eq!(
+            compose_command_from(true, false),
+            Some(("podman", vec!["compose"])),
+            "subcmd only -> podman compose"
+        );
+        assert_eq!(
+            compose_command_from(false, true),
+            Some(("podman-compose", vec![])),
+            "standalone only -> podman-compose"
+        );
+        assert_eq!(
+            compose_command_from(true, true),
+            Some(("podman", vec!["compose"])),
+            "both -> subcmd wins"
+        );
+        assert_eq!(
+            compose_command_from(false, false),
+            None,
+            "neither -> None so caller can fall back / refuse"
+        );
     }
 }

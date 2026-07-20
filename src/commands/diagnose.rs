@@ -561,25 +561,80 @@ fn check_dependencies(tool_name: &str, _spec: &ToolSpec) -> Vec<DependencyStatus
     deps
 }
 
-/// `kubectl cluster-info --request-timeout=2s` — does the current
-/// kube-context actually reach an apiserver? Returned as a
-/// `DependencyStatus` so it slots into the existing diagnose report
-/// alongside daemon checks.
-fn kubectl_cluster_info_dep() -> DependencyStatus {
-    let output = Command::new("kubectl")
-        .args(["cluster-info", "--request-timeout=2s"])
-        .output();
-    let (ok, detail) = match output {
-        Ok(o) if o.status.success() => (true, "kube-context reachable".to_string()),
-        Ok(o) => (
-            false,
-            format!(
-                "kube-context unreachable ({})",
-                String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("no stderr").trim()
-            ),
+/// Wall-clock cap on every k8s liveness probe. The diagnose doc
+/// comment above claims a "hard 2-second timeout" — this constant
+/// is what actually enforces it (previously only kubectl honored
+/// `--request-timeout=2s`; minikube / kind / k3d have no CLI-level
+/// timeout flag and could hang for tens of seconds on a stale
+/// cluster).
+const K8S_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Bounded taxonomy for `diagnose.tool_probed.state`. Cardinality 5.
+/// Any new state must be added here explicitly so PMs / on-call get a
+/// stable enum in the analytics stream.
+fn probe_state_label(reachable: bool, res: &crate::tools::common::ProbeResult) -> &'static str {
+    if reachable {
+        return "reachable";
+    }
+    match res {
+        crate::tools::common::ProbeResult::Missing => "binary_missing",
+        crate::tools::common::ProbeResult::PermissionDenied => "permission_denied",
+        crate::tools::common::ProbeResult::Timeout => "timeout",
+        crate::tools::common::ProbeResult::IoError(_) => "spawn_failed",
+        crate::tools::common::ProbeResult::Completed(_) => "unreachable",
+    }
+}
+
+/// Emit `diagnose.tool_probed` — the per-probe analytics event that
+/// answers "what fraction of jarvy users diagnose kubectl / minikube /
+/// kind / k3d, and how many hit a reachable cluster?" Bounded fields,
+/// no user input in any attribute. Gated on `telemetry_gate`.
+fn emit_tool_probed(
+    tool: &'static str,
+    state: &'static str,
+    cluster_count: Option<usize>,
+    probe_ms: u64,
+) {
+    if !crate::observability::telemetry_gate::is_enabled() {
+        return;
+    }
+    let hit_timeout = probe_ms >= K8S_PROBE_TIMEOUT.as_millis() as u64;
+    match cluster_count {
+        Some(count) => tracing::info!(
+            event = "diagnose.tool_probed",
+            tool,
+            state,
+            cluster_count = count,
+            probe_ms,
+            hit_timeout,
+            "k8s liveness probe"
         ),
-        Err(_) => (false, "kubectl not runnable".to_string()),
-    };
+        None => tracing::info!(
+            event = "diagnose.tool_probed",
+            tool,
+            state,
+            probe_ms,
+            hit_timeout,
+            "k8s liveness probe"
+        ),
+    }
+}
+
+/// `kubectl cluster-info --request-timeout=2s` — does the current
+/// kube-context actually reach an apiserver? Wrapped in
+/// [`probe_with_timeout`] so we don't rely solely on kubectl's flag
+/// (which older versions ignore for cluster-info, and doesn't cover
+/// DNS/connect stalls on the kubeconfig server URL).
+fn kubectl_cluster_info_dep() -> DependencyStatus {
+    let started = std::time::Instant::now();
+    let res = crate::tools::common::probe_with_timeout(
+        "kubectl",
+        &["cluster-info", "--request-timeout=2s"],
+        K8S_PROBE_TIMEOUT,
+    );
+    let probe_ms = started.elapsed().as_millis() as u64;
+    let (ok, detail) = interpret_kubectl(&res);
+    emit_tool_probed("kubectl", probe_state_label(ok, &res), None, probe_ms);
     DependencyStatus {
         name: "kubectl cluster reachable".to_string(),
         available: ok,
@@ -587,28 +642,41 @@ fn kubectl_cluster_info_dep() -> DependencyStatus {
     }
 }
 
-/// `minikube status --format={{.Host}}` — is the minikube VM running?
-fn minikube_status_dep() -> DependencyStatus {
-    let output = Command::new("minikube")
-        .args(["status", "--format={{.Host}}"])
-        .output();
-    let (ok, detail) = match output {
-        Ok(o) if o.status.success() => {
-            let host = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            (
-                host.eq_ignore_ascii_case("Running"),
-                format!("minikube host: {host}"),
-            )
+fn interpret_kubectl(res: &crate::tools::common::ProbeResult) -> (bool, String) {
+    use crate::tools::common::ProbeResult;
+    match res {
+        ProbeResult::Completed(o) if o.status.success() => {
+            (true, "kube-context reachable".to_string())
         }
-        Ok(o) => (
+        ProbeResult::Completed(o) => (
             false,
             format!(
-                "minikube status failed ({})",
-                String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("").trim()
+                "kube-context unreachable ({})",
+                String::from_utf8_lossy(&o.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("no stderr")
+                    .trim()
             ),
         ),
-        Err(_) => (false, "minikube not runnable".to_string()),
-    };
+        ProbeResult::Missing => (false, "kubectl binary missing".to_string()),
+        ProbeResult::PermissionDenied => (false, "kubectl not executable".to_string()),
+        ProbeResult::Timeout => (false, "kubectl probe timed out (2s)".to_string()),
+        ProbeResult::IoError(e) => (false, format!("kubectl spawn failed: {e}")),
+    }
+}
+
+/// `minikube status --format={{.Host}}` — is the minikube VM running?
+fn minikube_status_dep() -> DependencyStatus {
+    let started = std::time::Instant::now();
+    let res = crate::tools::common::probe_with_timeout(
+        "minikube",
+        &["status", "--format={{.Host}}"],
+        K8S_PROBE_TIMEOUT,
+    );
+    let probe_ms = started.elapsed().as_millis() as u64;
+    let (ok, detail) = parse_minikube_status(&res);
+    emit_tool_probed("minikube", probe_state_label(ok, &res), None, probe_ms);
     DependencyStatus {
         name: "minikube VM running".to_string(),
         available: ok,
@@ -616,23 +684,41 @@ fn minikube_status_dep() -> DependencyStatus {
     }
 }
 
-/// `kind get clusters` — is there at least one kind cluster provisioned?
-/// A machine with the kind CLI but no clusters is a common state (fresh
-/// install), so we surface the count rather than a hard "not running."
-fn kind_clusters_dep() -> DependencyStatus {
-    let output = Command::new("kind").arg("get").arg("clusters").output();
-    let (ok, detail) = match output {
-        Ok(o) if o.status.success() => {
-            let clusters: Vec<&str> = std::str::from_utf8(&o.stdout)
-                .unwrap_or("")
-                .lines()
-                .filter(|l| !l.trim().is_empty() && !l.contains("No kind clusters"))
-                .collect();
-            let count = clusters.len();
-            (count > 0, format!("kind clusters: {count}"))
+fn parse_minikube_status(res: &crate::tools::common::ProbeResult) -> (bool, String) {
+    use crate::tools::common::ProbeResult;
+    match res {
+        ProbeResult::Completed(o) if o.status.success() => {
+            let host = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            (
+                host.eq_ignore_ascii_case("Running"),
+                format!("minikube host: {host}"),
+            )
         }
-        Ok(_) | Err(_) => (false, "kind get clusters failed".to_string()),
-    };
+        ProbeResult::Completed(o) => (
+            false,
+            format!(
+                "minikube status failed ({})",
+                String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("").trim()
+            ),
+        ),
+        ProbeResult::Missing => (false, "minikube binary missing".to_string()),
+        ProbeResult::PermissionDenied => (false, "minikube not executable".to_string()),
+        ProbeResult::Timeout => (false, "minikube probe timed out (2s)".to_string()),
+        ProbeResult::IoError(e) => (false, format!("minikube spawn failed: {e}")),
+    }
+}
+
+/// `kind get clusters` — is there at least one kind cluster provisioned?
+fn kind_clusters_dep() -> DependencyStatus {
+    let started = std::time::Instant::now();
+    let res = crate::tools::common::probe_with_timeout(
+        "kind",
+        &["get", "clusters"],
+        K8S_PROBE_TIMEOUT,
+    );
+    let probe_ms = started.elapsed().as_millis() as u64;
+    let (ok, detail, count) = parse_kind_clusters(&res);
+    emit_tool_probed("kind", probe_state_label(ok, &res), Some(count), probe_ms);
     DependencyStatus {
         name: "kind clusters present".to_string(),
         available: ok,
@@ -640,26 +726,51 @@ fn kind_clusters_dep() -> DependencyStatus {
     }
 }
 
+fn parse_kind_clusters(res: &crate::tools::common::ProbeResult) -> (bool, String, usize) {
+    use crate::tools::common::ProbeResult;
+    match res {
+        ProbeResult::Completed(o) if o.status.success() => {
+            let count = std::str::from_utf8(&o.stdout)
+                .unwrap_or("")
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.contains("No kind clusters"))
+                .count();
+            (count > 0, format!("kind clusters: {count}"), count)
+        }
+        _ => (false, "kind get clusters failed".to_string(), 0),
+    }
+}
+
 /// `k3d cluster list --no-headers` — is there at least one k3d cluster?
 fn k3d_clusters_dep() -> DependencyStatus {
-    let output = Command::new("k3d")
-        .args(["cluster", "list", "--no-headers"])
-        .output();
-    let (ok, detail) = match output {
-        Ok(o) if o.status.success() => {
+    let started = std::time::Instant::now();
+    let res = crate::tools::common::probe_with_timeout(
+        "k3d",
+        &["cluster", "list", "--no-headers"],
+        K8S_PROBE_TIMEOUT,
+    );
+    let probe_ms = started.elapsed().as_millis() as u64;
+    let (ok, detail, count) = parse_k3d_clusters(&res);
+    emit_tool_probed("k3d", probe_state_label(ok, &res), Some(count), probe_ms);
+    DependencyStatus {
+        name: "k3d clusters present".to_string(),
+        available: ok,
+        details: Some(detail),
+    }
+}
+
+fn parse_k3d_clusters(res: &crate::tools::common::ProbeResult) -> (bool, String, usize) {
+    use crate::tools::common::ProbeResult;
+    match res {
+        ProbeResult::Completed(o) if o.status.success() => {
             let count = std::str::from_utf8(&o.stdout)
                 .unwrap_or("")
                 .lines()
                 .filter(|l| !l.trim().is_empty())
                 .count();
-            (count > 0, format!("k3d clusters: {count}"))
+            (count > 0, format!("k3d clusters: {count}"), count)
         }
-        Ok(_) | Err(_) => (false, "k3d cluster list failed".to_string()),
-    };
-    DependencyStatus {
-        name: "k3d clusters present".to_string(),
-        available: ok,
-        details: Some(detail),
+        _ => (false, "k3d cluster list failed".to_string(), 0),
     }
 }
 
@@ -1047,16 +1158,93 @@ mod tests {
     /// regression would silently drop coverage.
     #[test]
     fn check_dependencies_routes_k8s_tools() {
-        // Use a synthetic spec — the fn ignores it for k8s branches.
-        // Build a minimal spec via the same const we'd use for docker.
-        // We can't construct ToolSpec directly (private fields), so
-        // just probe by name and assert count.
-        //
-        // Sidestep: call the individual helpers we test above. Routing
-        // itself is a match arm — trivially correct given the shape
-        // tests pass. Keep this as a doc test alternative.
-        // (Intentionally minimal — the shape tests above are the load-bearing check.)
         let kubectl = kubectl_cluster_info_dep();
         assert_eq!(kubectl.name, "kubectl cluster reachable");
+    }
+
+    /// Table-driven parser tests — the pure parse_* functions extracted
+    /// from the probe helpers so we can exercise real stdout without
+    /// needing kubectl/minikube/kind/k3d installed. Guards the case-
+    /// insensitivity / whitespace-trim behavior + the "No kind
+    /// clusters" filter.
+    #[test]
+    fn parse_minikube_status_cases() {
+        use crate::tools::common::ProbeResult;
+        let mk = |success: bool, stdout: &str| {
+            let output = std::process::Output {
+                status: {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::process::ExitStatusExt;
+                        std::process::ExitStatus::from_raw(if success { 0 } else { 256 })
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        // Placeholder — the test is gated below.
+                        std::process::Command::new("true").status().unwrap()
+                    }
+                },
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+            };
+            ProbeResult::Completed(output)
+        };
+        #[cfg(unix)]
+        {
+            let cases: &[(&str, bool)] = &[
+                ("Running\n", true),
+                ("running", true), // case-insensitive
+                ("Stopped\n", false),
+                ("", false),
+                ("Nonexistent", false),
+            ];
+            for (stdout, expected) in cases {
+                let (ok, _) = parse_minikube_status(&mk(true, stdout));
+                assert_eq!(ok, *expected, "stdout={stdout:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_kind_clusters_counts_correctly() {
+        use crate::tools::common::ProbeResult;
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let mk = |stdout: &str| ProbeResult::Completed(std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+            });
+            let (ok, _, count) = parse_kind_clusters(&mk("kind\nkind-2\n"));
+            assert!(ok);
+            assert_eq!(count, 2);
+            let (ok, _, count) = parse_kind_clusters(&mk(""));
+            assert!(!ok);
+            assert_eq!(count, 0);
+            let (ok, _, count) = parse_kind_clusters(&mk("No kind clusters found.\n"));
+            assert!(!ok);
+            assert_eq!(count, 0);
+        }
+    }
+
+    #[test]
+    fn parse_k3d_clusters_counts_correctly() {
+        use crate::tools::common::ProbeResult;
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let mk = |stdout: &str| ProbeResult::Completed(std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+            });
+            let (ok, _, count) = parse_k3d_clusters(&mk("dev  1/1  1/1\nprod 1/1  1/1\n"));
+            assert!(ok);
+            assert_eq!(count, 2);
+            let (ok, _, count) = parse_k3d_clusters(&mk(""));
+            assert!(!ok);
+            assert_eq!(count, 0);
+        }
     }
 }
