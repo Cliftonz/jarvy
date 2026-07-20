@@ -400,6 +400,11 @@ pub enum LogsAction {
         /// files past the retention age are touched.
         #[clap(long, value_name = "PATTERN")]
         filter: Option<String>,
+        /// Allow stripping high-value security refusal events (`git_config.*_refused`,
+        /// `mcp.mutation.wizard_bypass_unexpected_client`, etc.) — refused by default
+        /// because those are audit trail for security decisions.
+        #[clap(long)]
+        allow_forensic_strip: bool,
         /// Output format: json, pretty
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,

@@ -75,10 +75,8 @@ impl ObservabilityConfig {
         }
     }
 
-    /// Console default for startup one-shot commands (`shell-init`,
-    /// `ensure`, `completions`) — WARN-only cap on the console layer,
-    /// file appender + OTLP untouched. Overridden by `-v` on the
-    /// same command, which restores INFO.
+    /// Console default for startup one-shots — see [`LogLevel::WarnOnly`]
+    /// for the full rationale. `-v` on the same command restores INFO.
     pub fn startup_quiet() -> Self {
         Self {
             log: LogConfig {

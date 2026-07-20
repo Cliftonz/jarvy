@@ -166,49 +166,64 @@ impl EnsureStamp {
     }
 }
 
+/// One-line lead pointing users at the log for post-mortem on a
+/// silent shell-startup failure. Const so wording drift across the
+/// six shell branches is impossible (the strings themselves must
+/// stay literal — rc files consume them on future shell starts).
+pub const RC_LOG_HINT: &str = "jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log";
+
 /// Generate the RC snippet for a given shell type.
 ///
 /// Besides the `jarvy ensure` startup check, defines `jr` as shorthand for
 /// `jarvy run` (the npm-run-style `[commands]` runner) — a function rather
 /// than an alias on PowerShell, where aliases can't carry arguments.
+///
+/// The snippet sets `JARVY_ENSURE_INVOCATION=rc_snippet` before calling
+/// `jarvy ensure` so `ensure` can tag its telemetry with the invocation
+/// source (distinguishes rc-triggered from manual runs).
+///
+/// Failure surface: with the WarnOnly console default the rc line
+/// is otherwise silent — a broken ensure would loop invisibly on
+/// every new shell. The `|| echo` (or Windows equivalent) writes
+/// one line to stderr on non-zero exit so the user gets a lead.
 pub fn generate_rc_snippet(shell: ShellType) -> String {
-    // Failure surface: with the WarnOnly console default the rc line
-    // is otherwise silent — a broken ensure would loop invisibly on
-    // every new shell. The `|| echo` (or Windows equivalent) writes
-    // one line to stderr on non-zero exit so the user gets a lead.
     match shell {
-        ShellType::Fish => {
+        ShellType::Fish => format!(
             "if command -q jarvy\n  \
-             jarvy ensure --quiet; or echo \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" >&2\n  \
-             alias jr 'jarvy run'\nend"
-                .to_string()
-        }
-        ShellType::PowerShell => {
-            "if (Get-Command jarvy -ErrorAction SilentlyContinue) {\n  \
+             env JARVY_ENSURE_INVOCATION=rc_snippet jarvy ensure --quiet; \
+             or echo \"{hint}\" >&2\n  \
+             alias jr 'jarvy run'\nend",
+            hint = RC_LOG_HINT
+        ),
+        ShellType::PowerShell => format!(
+            "if (Get-Command jarvy -ErrorAction SilentlyContinue) {{\n  \
+             $env:JARVY_ENSURE_INVOCATION = 'rc_snippet'\n  \
              jarvy ensure --quiet\n  \
-             if ($LASTEXITCODE -ne 0) { Write-Error \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" }\n  \
-             function jr { jarvy run @args }\n}"
-                .to_string()
-        }
-        // Nushell has no `eval` — users `source` this from config.nu
-        // (e.g. `jarvy shell-init --shell nushell | save -f ~/.config/nushell/jarvy.nu`).
+             $__jarvy_exit = $LASTEXITCODE\n  \
+             Remove-Item Env:JARVY_ENSURE_INVOCATION -ErrorAction SilentlyContinue\n  \
+             if ($__jarvy_exit -ne 0) {{ Write-Error \"{hint}\" }}\n  \
+             function jr {{ jarvy run @args }}\n}}",
+            hint = RC_LOG_HINT
+        ),
+        // Nushell has no `eval` — users `source` this from config.nu.
         // The alias must be top-level: `alias` inside an `if` block is
-        // scoped to that block in nu. Aliasing a missing external is fine
-        // at parse time; it only resolves when invoked.
-        ShellType::Nushell => {
+        // scoped to that block in nu.
+        ShellType::Nushell => format!(
             "alias jr = jarvy run\n\
-             if (which jarvy | is-not-empty) {\n  \
-             try { jarvy ensure --quiet } catch { \
-             print -e \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" }\n}"
-                .to_string()
-        }
-        _ => {
+             if (which jarvy | is-not-empty) {{\n  \
+             try {{ with-env {{JARVY_ENSURE_INVOCATION: \"rc_snippet\"}} \
+             {{ jarvy ensure --quiet }} }} catch \
+             {{ print -e \"{hint}\" }}\n}}",
+            hint = RC_LOG_HINT
+        ),
+        _ => format!(
             // Bash, Zsh, Sh
             "if command -v jarvy &> /dev/null; then\n  \
-             jarvy ensure --quiet || echo \"jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log\" >&2\n  \
-             alias jr='jarvy run'\nfi"
-                .to_string()
-        }
+             JARVY_ENSURE_INVOCATION=rc_snippet jarvy ensure --quiet \
+             || echo \"{hint}\" >&2\n  \
+             alias jr='jarvy run'\nfi",
+            hint = RC_LOG_HINT
+        ),
     }
 }
 

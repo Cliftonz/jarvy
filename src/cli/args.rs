@@ -17,6 +17,12 @@ use super::subcommands::*;
 /// below asserts they stay in sync.
 pub const DEFAULT_CONFIG_FILE: &str = "./jarvy.toml";
 
+/// Shared clap help text for the `-v` flag on startup one-shot commands
+/// (`shell-init`, `ensure`, `completions`). One const, one wording —
+/// all three variants reference it so drift is impossible.
+pub const STARTUP_VERBOSE_HELP: &str =
+    "Restore INFO on the console (startup one-shots default to WARN — actionable warnings surface but INFO is suppressed on shell open)";
+
 #[cfg(test)]
 mod default_value_test {
     use super::*;
@@ -403,8 +409,7 @@ pub enum Commands {
         /// Show installation instructions
         #[clap(long)]
         instructions: bool,
-        /// Restore INFO on the console (startup one-shots default to WARN)
-        #[clap(short, long)]
+        #[clap(short, long, help = STARTUP_VERBOSE_HELP)]
         verbose: bool,
     },
     /// Browse and use pre-built configuration templates
@@ -527,8 +532,7 @@ pub enum Commands {
         /// Write the loader line into your shell rc file (idempotent) instead of printing the snippet.
         #[clap(long)]
         apply: bool,
-        /// Restore INFO on the console (startup one-shots default to WARN)
-        #[clap(short, long)]
+        #[clap(short, long, help = STARTUP_VERBOSE_HELP)]
         verbose: bool,
     },
     /// Ensure base tools are installed (lightweight check for shell startup).
@@ -537,14 +541,14 @@ pub enum Commands {
         /// Force re-check, ignore stamp file
         #[clap(long)]
         force: bool,
-        /// Suppress all output
+        /// Suppress this command's own stderr lines. Console tracing is
+        /// already capped at WARN by default for startup one-shots.
         #[clap(short, long)]
         quiet: bool,
         /// Run in foreground (override background default)
         #[clap(long)]
         foreground: bool,
-        /// Restore INFO on the console (startup one-shots default to WARN)
-        #[clap(short, long)]
+        #[clap(short, long, help = STARTUP_VERBOSE_HELP, conflicts_with = "quiet")]
         verbose: bool,
     },
     /// Get detailed information about a specific tool
@@ -694,6 +698,34 @@ pub fn parse_update_channel(s: &str) -> Option<update::Channel> {
         _ => {
             eprintln!("Unknown update channel '{}'. Using stable.", s);
             Some(update::Channel::Stable)
+        }
+    }
+}
+
+impl Commands {
+    /// True for commands that run from the shell rc on every new
+    /// terminal (`shell-init`, `ensure`, `completions`). Consumers:
+    /// `main.rs` obs_config default (WarnOnly console cap) and
+    /// banner mute. Adding a fourth one-shot = one line here, not
+    /// five sites across three modules.
+    pub fn is_startup_oneshot(&self) -> bool {
+        matches!(
+            self,
+            Commands::Ensure { .. }
+                | Commands::ShellInit { .. }
+                | Commands::Completions { .. }
+        )
+    }
+
+    /// The `-v` flag value for startup one-shots. `Some(true)` means
+    /// the user asked to reopen INFO on the console. `None` for
+    /// non-startup commands (they don't carry the flag).
+    pub fn startup_verbose(&self) -> Option<bool> {
+        match self {
+            Commands::Ensure { verbose, .. }
+            | Commands::ShellInit { verbose, .. }
+            | Commands::Completions { verbose, .. } => Some(*verbose),
+            _ => None,
         }
     }
 }

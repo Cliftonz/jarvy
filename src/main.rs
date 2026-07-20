@@ -184,44 +184,37 @@ fn main() {
     // Two obs-config sources:
     //   1. `jarvy setup` reads its own `-q/-v/--log-format/--log-file
     //      /--debug-filter` flags into `ObservabilityConfig::from_flags`.
-    //   2. Startup one-shots (`shell-init` / `ensure` / `completions`)
-    //      default to WARN on the console via `startup_quiet()` so INFO
-    //      doesn't leak into every new shell. They also accept `-v` to
-    //      restore INFO when the user runs them manually to debug.
-    //
-    // File appender + OTLP are untouched for #2 — the registry filter
-    // stays at INFO so `~/.jarvy/logs/jarvy.log` remains the debug
-    // source. `ensure --quiet` still forces WarnOnly (redundant with
-    // the default but backward-compat).
-    let obs_config = match &cli.command {
-        Some(Commands::Setup {
-            quiet,
-            verbose,
-            log_format,
-            log_file,
-            debug_filter,
-            ..
-        }) => Some(observability::ObservabilityConfig::from_flags(
+    //   2. Startup one-shots (see `Commands::is_startup_oneshot`) default
+    //      to `startup_quiet()` (see `LogLevel::WarnOnly` for the full
+    //      rationale). `-v` on those commands reopens INFO.
+    let obs_config = if let Some(Commands::Setup {
+        quiet,
+        verbose,
+        log_format,
+        log_file,
+        debug_filter,
+        ..
+    }) = &cli.command
+    {
+        Some(observability::ObservabilityConfig::from_flags(
             *quiet,
             *verbose,
             log_format.as_deref(),
             debug_filter.as_deref(),
             log_file.as_deref(),
-        )),
-        Some(Commands::Ensure { verbose, .. })
-        | Some(Commands::ShellInit { verbose, .. })
-        | Some(Commands::Completions { verbose, .. }) => {
-            if *verbose {
-                // `-v` on a startup one-shot reopens INFO — used when
-                // the user runs the command manually to debug.
-                Some(observability::ObservabilityConfig::from_flags(
-                    false, 1, None, None, None,
-                ))
-            } else {
-                Some(observability::ObservabilityConfig::startup_quiet())
-            }
+        ))
+    } else if let Some(cmd) = cli.command.as_ref()
+        && cmd.is_startup_oneshot()
+    {
+        if cmd.startup_verbose() == Some(true) {
+            Some(observability::ObservabilityConfig::from_flags(
+                false, 1, None, None, None,
+            ))
+        } else {
+            Some(observability::ObservabilityConfig::startup_quiet())
         }
-        _ => None,
+    } else {
+        None
     };
 
     init_logging(&telemetry_config, obs_config.as_ref());
@@ -254,15 +247,12 @@ fn main() {
     if let Some(sb) = sandbox::detect() {
         // Walk argv with peek so `--format json` (space form) is
         // recognised alongside `--format=json` (equals form).
-        // Startup one-shots (shell-init/ensure/completions) mute the
-        // banner unconditionally — they run from shell rc on every
-        // new terminal and the banner is pure noise there.
-        let is_startup_oneshot = matches!(
-            &cli.command,
-            Some(Commands::Ensure { .. })
-                | Some(Commands::ShellInit { .. })
-                | Some(Commands::Completions { .. })
-        );
+        // Startup one-shots mute the banner unconditionally — pure noise
+        // on every new terminal (see `Commands::is_startup_oneshot`).
+        let is_startup_oneshot = cli
+            .command
+            .as_ref()
+            .is_some_and(|c| c.is_startup_oneshot());
         let mut muted =
             is_startup_oneshot || std::env::var("JARVY_QUIET").as_deref() == Ok("1");
         if !muted {

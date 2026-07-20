@@ -199,6 +199,131 @@ fn diagnose_known_tool_runs() {
     assert!(String::from_utf8_lossy(&out).contains("Diagnosing: git"));
 }
 
+/// Startup one-shots (`shell-init` / `ensure` / `completions`) must
+/// leave stderr empty on the common path. INFO tracing or the seamless
+/// banner leaking to stderr on every new terminal was the user
+/// complaint that motivated the WarnOnly console cap.
+///
+/// The file appender at `~/.jarvy/logs/jarvy.log` still writes at INFO;
+/// this test only pins the *console* silence.
+#[test]
+fn shell_init_stderr_is_silent() {
+    let home = TempDir::new().unwrap();
+    let mut c = jarvy(&home);
+    // Force a sandbox provider so the banner code path is exercised
+    // (if it wasn't muted, stderr would carry the banner line).
+    c.env("CLAUDECODE", "1");
+    c.env("JARVY_HOME", home.path());
+    c.args(["shell-init", "--shell", "zsh"]);
+    let output = c.assert().success().get_output().clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.is_empty(),
+        "shell-init leaked to stderr: {stderr:?}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("jarvy ensure"),
+        "shell-init snippet missing from stdout: {stdout:?}"
+    );
+}
+
+/// `ensure --quiet` (the rc-snippet invocation shape) must be silent
+/// even under a forced seamless-mode sandbox. Renamed from the earlier
+/// `..._in_seamless_mode` to reflect that `--quiet` (not the sandbox)
+/// is what forces the silence path — the test name previously misled.
+#[test]
+fn ensure_stderr_silent_with_quiet_flag() {
+    let home = TempDir::new().unwrap();
+    let mut c = jarvy(&home);
+    c.env("CLAUDECODE", "1");
+    c.env("JARVY_HOME", home.path());
+    c.args(["ensure", "--quiet"]);
+    let output = c.assert().success().get_output().clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.is_empty(), "ensure leaked to stderr: {stderr:?}");
+}
+
+/// **WARN reaches stderr under the WarnOnly cap.**
+///
+/// The whole point of `LogLevel::WarnOnly` is that actionable warnings
+/// still surface. Without this guard, a one-line change of the cap to
+/// `LevelFilter::ERROR` would silently regress every operator warning.
+///
+/// Seeds `$JARVY_HOME/tools.d` with a world-writable dir on Unix —
+/// triggers the `plugins.tools_d_unsafe_perms` WARN inside
+/// `tools::register_all()` (runs on every jarvy invocation). Asserts
+/// WARN reaches stderr but INFO (e.g. `plugins.registered`) does not.
+#[cfg(unix)]
+#[test]
+fn shell_init_warn_reaches_stderr_under_warnonly() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempDir::new().unwrap();
+    let jarvy_home = home.path().join(".jarvy");
+    std::fs::create_dir_all(jarvy_home.join("tools.d")).unwrap();
+    std::fs::set_permissions(
+        jarvy_home.join("tools.d"),
+        std::fs::Permissions::from_mode(0o777),
+    )
+    .unwrap();
+
+    let mut c = jarvy(&home);
+    c.env("JARVY_HOME", &jarvy_home);
+    c.args(["shell-init", "--shell", "zsh"]);
+    let output = c.assert().success().get_output().clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("tools_d_unsafe_perms") || stderr.contains("insecure permissions"),
+        "WARN must survive WarnOnly cap and reach stderr: {stderr:?}"
+    );
+    assert!(
+        !stderr.contains("plugins.registered"),
+        "INFO must be suppressed under WarnOnly: {stderr:?}"
+    );
+}
+
+/// `shell-init -v` restores INFO on the console — escape hatch for
+/// debugging a broken rc snippet. Asserts on the jarvy-owned witness
+/// event (`shell_init.started`) rather than an unrelated event —
+/// decouples the test from refactors of plugin loading.
+#[test]
+fn shell_init_verbose_reopens_info_on_console() {
+    let home = TempDir::new().unwrap();
+    let mut c = jarvy(&home);
+    c.env("JARVY_HOME", home.path());
+    c.args(["shell-init", "--shell", "zsh", "-v"]);
+    let output = c.assert().success().get_output().clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("shell_init.started"),
+        "-v must restore INFO tracing on stderr: {stderr:?}"
+    );
+}
+
+/// The rc snippet emitted by `shell-init` must include the log-file
+/// lead (`|| echo` or per-shell equivalent) so a broken `ensure` no
+/// longer loops invisibly on shell startup. Also verifies the
+/// `JARVY_ENSURE_INVOCATION=rc_snippet` marker for telemetry
+/// attribution of rc-triggered runs.
+#[test]
+fn shell_init_snippet_carries_failure_surface_and_invocation_marker() {
+    for shell in ["bash", "zsh", "sh", "fish", "powershell", "nushell"] {
+        let home = TempDir::new().unwrap();
+        let mut c = jarvy(&home);
+        c.args(["shell-init", "--shell", shell]);
+        let output = c.assert().success().get_output().clone();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("~/.jarvy/logs/jarvy.log"),
+            "{shell} snippet missing log-file lead: {stdout:?}"
+        );
+        assert!(
+            stdout.contains("JARVY_ENSURE_INVOCATION"),
+            "{shell} snippet missing rc-invocation marker: {stdout:?}"
+        );
+    }
+}
+
 #[test]
 fn diagnose_export_writes_json_report() {
     let home = TempDir::new().unwrap();

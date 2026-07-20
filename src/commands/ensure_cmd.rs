@@ -4,9 +4,23 @@
 //! Reads [shell_init] from ~/.jarvy/config.toml.
 
 use crate::init::initialize;
+use crate::logging;
+use crate::observability::telemetry_gate;
 use crate::shell_init::{self, EnsureStamp};
 
+/// Env var set by the rc snippet so `ensure` can distinguish
+/// rc-triggered runs from manual invocations in telemetry.
+const RC_INVOCATION_ENV: &str = "JARVY_ENSURE_INVOCATION";
+
+fn invocation_source() -> &'static str {
+    match std::env::var(RC_INVOCATION_ENV).as_deref() {
+        Ok("rc_snippet") => "rc_snippet",
+        _ => "manual",
+    }
+}
+
 pub fn run_ensure(force: bool, quiet: bool, foreground: bool) -> i32 {
+    let source = invocation_source();
     let config = initialize();
 
     let shell_init = match config.shell_init {
@@ -34,6 +48,7 @@ pub fn run_ensure(force: bool, quiet: bool, foreground: bool) -> i32 {
         let exe = match std::env::current_exe() {
             Ok(e) => e,
             Err(err) => {
+                emit_failed("current_exe", &err.to_string(), "background", source);
                 if !quiet {
                     eprintln!("jarvy ensure: cannot find executable: {}", err);
                 }
@@ -54,6 +69,10 @@ pub fn run_ensure(force: bool, quiet: bool, foreground: bool) -> i32 {
         match cmd.spawn() {
             Ok(_) => {}
             Err(e) => {
+                // Background spawn failure is invisible to the user
+                // (rc snippet's `|| echo` sees exit 0 here) — the
+                // file-log event is the only trail on-call has.
+                emit_failed("spawn", &e.to_string(), "background", source);
                 if !quiet {
                     eprintln!("jarvy ensure: failed to spawn background process: {}", e);
                 }
@@ -64,16 +83,45 @@ pub fn run_ensure(force: bool, quiet: bool, foreground: bool) -> i32 {
 
     // Foreground mode: do the actual work
     if let Err(e) = shell_init::run_ensure(&shell_init, force, quiet) {
+        emit_failed("run_ensure", &e, "foreground", source);
         if !quiet {
             eprintln!("jarvy ensure: {}", e);
         }
         // Point the user at the full trace even in `--quiet` mode.
-        // With the WarnOnly console default, INFO/DEBUG only reach
-        // the file appender — users would otherwise have to know
-        // that path exists.
-        eprintln!("jarvy ensure: see ~/.jarvy/logs/jarvy.log for details");
+        // `jarvy ticket create` bundles logs through the redaction
+        // pass; recommend that over the raw path so sensitive fields
+        // (hostnames, workspace paths, stderr tails) don't ship
+        // unredacted into support channels.
+        eprintln!(
+            "jarvy ensure: run `jarvy ticket create` to bundle logs with redaction;\n\
+             raw log at {} if you need it",
+            logging::current_log_file().display()
+        );
         return 1;
     }
 
+    emit_completed("foreground", source);
     0
+}
+
+fn emit_failed(error_kind: &str, error: &str, mode: &'static str, invocation_source: &'static str) {
+    if telemetry_gate::is_enabled() {
+        tracing::error!(
+            event = "ensure.failed",
+            error_kind = error_kind,
+            error = error,
+            mode = mode,
+            invocation_source = invocation_source,
+        );
+    }
+}
+
+fn emit_completed(mode: &'static str, invocation_source: &'static str) {
+    if telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "ensure.completed",
+            mode = mode,
+            invocation_source = invocation_source,
+        );
+    }
 }

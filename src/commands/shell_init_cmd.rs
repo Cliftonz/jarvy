@@ -12,6 +12,15 @@ use crate::observability::telemetry_gate;
 use crate::shell_init::generate_rc_snippet;
 
 pub fn run_shell_init(shell: Option<&str>, apply: bool) -> i32 {
+    // Dedicated INFO witness that tests can assert on to prove the
+    // console layer's INFO cap. Assertion-time coupling to another
+    // event's fire pattern (e.g. `plugins.registered`) is fragile —
+    // that event may be renamed, gated, or moved. This one exists
+    // to be asserted on. NOT gated: its whole purpose is being a
+    // stable console-visible signal, mirroring `plugins.registered`
+    // which is also ungated for the same lifecycle-signal reason.
+    tracing::info!(event = "shell_init.started", "shell-init invoked");
+
     let shell_type = match shell {
         Some(s) => match parse_shell(s) {
             Ok(st) => st,

@@ -192,7 +192,10 @@ pub fn gate_mutation(
         if crate::observability::telemetry_gate::is_enabled() {
             let session_id = std::env::var("JARVY_WIZARD_SESSION_ID").unwrap_or_default();
             let client_name = ctx.client_name.unwrap_or("unknown");
-            tracing::info!(
+            // WARN (not INFO) so the WarnOnly startup-oneshot console
+            // cap still surfaces this on shell startup — bypass grants
+            // are security-audit signal, not routine ops chatter.
+            tracing::warn!(
                 event = "mcp.mutation.wizard_bypass",
                 tool = tool_name,
                 client = client_name,

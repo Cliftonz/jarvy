@@ -9,24 +9,42 @@
 
 use std::path::PathBuf;
 
-/// Log verbosity level
+/// Log verbosity level.
+///
+/// **`WarnOnly` is the canonical explanation for the startup one-shot
+/// console cap.** Other sites (`ObservabilityConfig::startup_quiet`,
+/// `main.rs` obs_config wiring, `ensure_cmd.rs` failure eprintln,
+/// `analytics.rs::init_logging`) point back here rather than
+/// re-explaining. Wording refinements happen once.
+///
+/// The variants apply as a **per-layer cap on the console stream only**.
+/// Registry `EnvFilter` and the file appender at `~/.jarvy/logs/jarvy.log`
+/// are untouched — the file log stays the debug source of truth even
+/// when the console is quieted.
+///
+/// `#[non_exhaustive]` per SKILL.md `api-non-exhaustive` — adding a
+/// variant should not silently break external matchers that use
+/// wildcard arms.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum LogLevel {
-    /// Errors only (--quiet)
+    /// Errors only. `--quiet` on `jarvy setup`.
     Quiet,
-    /// Errors + warnings only. Used as the console default for
-    /// startup one-shot commands (`shell-init` / `ensure` /
-    /// `completions`) so INFO doesn't leak into every new shell
-    /// while actionable warnings still surface.
+    /// Errors + warnings. **Console default for startup one-shot
+    /// commands** (`shell-init`, `ensure`, `completions`). INFO/DEBUG/
+    /// TRACE are suppressed on the console so shells stay silent, but
+    /// actionable warnings (perms drift, deprecations, remote-config
+    /// refusals) still reach stderr. NOT user-selectable via
+    /// `[logging] level` — this is an internal cap.
     WarnOnly,
-    /// Info and above (default)
+    /// Info and above (default).
     #[default]
     Normal,
-    /// Warnings included (--verbose / -v)
+    /// Warnings included (`--verbose` / `-v` on setup).
     Verbose,
-    /// Full debug logs (--debug / -vv)
+    /// Full debug logs (`-vv`).
     Debug,
-    /// Trace-level detail (--trace / -vvv)
+    /// Trace-level detail (`-vvv`).
     Trace,
 }
 

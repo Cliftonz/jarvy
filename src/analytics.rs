@@ -202,11 +202,7 @@ pub fn init_logging(
     let mut console_layers: Vec<Box<dyn Layer<BaseSubscriber> + Send + Sync>> = Vec::new();
 
     let json_console = obs.is_some_and(|o| o.log.format == crate::observability::LogFormat::Json);
-    // Console cap (per-layer). `Quiet` (--quiet on setup) → ERROR only.
-    // `WarnOnly` (startup one-shots) → WARN + ERROR so actionable
-    // warnings still surface on shell open without INFO noise. Registry
-    // filter is untouched either way — file appender + OTLP keep their
-    // INFO floor so `~/.jarvy/logs/jarvy.log` remains the debug source.
+    // Per-layer console cap. See `LogLevel::WarnOnly` for full rationale.
     let quiet_filter = obs.and_then(|o| match o.log.level {
         crate::observability::LogLevel::Quiet => Some(LevelFilter::ERROR),
         crate::observability::LogLevel::WarnOnly => Some(LevelFilter::WARN),

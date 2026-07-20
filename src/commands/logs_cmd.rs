@@ -19,8 +19,15 @@ pub fn run_logs_command(action: LogsAction) -> i32 {
             all,
             dry_run,
             filter,
+            allow_forensic_strip,
             output_format,
-        } => handle_logs_clean(all, dry_run, filter.as_deref(), &output_format),
+        } => handle_logs_clean(
+            all,
+            dry_run,
+            filter.as_deref(),
+            allow_forensic_strip,
+            &output_format,
+        ),
         LogsAction::Config { output_format } => handle_logs_config(&output_format),
     }
 }
@@ -159,10 +166,17 @@ fn handle_logs_clean(
     all: bool,
     dry_run: bool,
     filter: Option<&str>,
+    allow_forensic_strip: bool,
     output_format: &str,
 ) -> i32 {
     if let Some(pattern) = filter {
-        return handle_logs_clean_filter(pattern, all, dry_run, output_format);
+        return handle_logs_clean_filter(
+            pattern,
+            all,
+            dry_run,
+            allow_forensic_strip,
+            output_format,
+        );
     }
     let log_dir = logging::default_log_directory();
 
@@ -278,70 +292,75 @@ fn handle_logs_clean(
 }
 
 /// Strip matching lines from rotated log files (line-strip mode).
-fn handle_logs_clean_filter(pattern: &str, all: bool, dry_run: bool, output_format: &str) -> i32 {
-    match logging::strip_log_lines(pattern, DEFAULT_MAX_AGE_DAYS, all, dry_run) {
-        Ok(results) => {
-            let files_touched = results.len();
-            let total_lines: usize = results.iter().map(|r| r.lines_removed).sum();
-            let total_bytes: u64 = results.iter().map(|r| r.bytes_saved).sum();
+///
+/// Emits gated telemetry (`logs.strip.{started,completed,failed,forensic_refused}`)
+/// so audit reconstruction of "what did the operator strip and when" is
+/// possible after the fact. The pattern text is NEVER emitted — only
+/// `pattern_kind` (event vs substring). For `event=NAME` matches the
+/// bounded taxonomy name is safe to log.
+fn handle_logs_clean_filter(
+    pattern: &str,
+    all: bool,
+    dry_run: bool,
+    allow_forensic_strip: bool,
+    output_format: &str,
+) -> i32 {
+    logging::sweep_stale_strip_tmp();
 
-            if output_format == "json" {
-                let per_file: Vec<serde_json::Value> = results
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "path": r.path.display().to_string(),
-                            "lines_removed": r.lines_removed,
-                            "bytes_saved": r.bytes_saved,
-                        })
-                    })
-                    .collect();
-                let json = serde_json::json!({
-                    "dry_run": dry_run,
-                    "filter": pattern,
-                    "files_touched": files_touched,
-                    "lines_removed": total_lines,
-                    "bytes_saved": total_bytes,
-                    "per_file": per_file,
-                });
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json).unwrap_or_else(|_| json.to_string())
-                );
-                return 0;
-            }
+    // Classify pattern up-front for telemetry — mirrors what the
+    // matcher itself will do, but without holding onto raw text.
+    let (pattern_kind, event_name): (&'static str, Option<String>) =
+        if let Some(name) = pattern.strip_prefix("event=") {
+            ("event", Some(name.to_string()))
+        } else {
+            ("substring", None)
+        };
 
-            if results.is_empty() {
-                println!("No lines matched `{}`.", pattern);
-                return 0;
-            }
-
-            for r in &results {
-                let verb = if dry_run { "Would strip" } else { "Stripped" };
-                println!(
-                    "{} {} line{} from {} ({})",
-                    verb,
-                    r.lines_removed,
-                    if r.lines_removed == 1 { "" } else { "s" },
-                    r.path.display(),
-                    logging::format_size(r.bytes_saved),
-                );
-            }
-            let verb = if dry_run {
-                "Would strip"
-            } else {
-                "Stripped"
-            };
-            println!(
-                "\n{} {} lines across {} files ({})",
-                verb,
-                total_lines,
-                files_touched,
-                logging::format_size(total_bytes),
+    // Ambiguous-pattern hint — catches `event: foo` (colon instead of `=`)
+    // and other `event`-prefixed strings that fall through to substring.
+    if pattern_kind == "substring"
+        && pattern.starts_with("event")
+        && !pattern.starts_with("event=")
+    {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "logs.strip.pattern_ambiguous",
+                hint = "did you mean event=<name>?",
+                "pattern starts with `event` but is not `event=<name>` — treating as substring",
             );
-            0
         }
+        eprintln!(
+            "jarvy logs clean: pattern `{}` treated as substring (did you mean `event=<name>`?)",
+            pattern
+        );
+    }
+
+    let start = std::time::Instant::now();
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "logs.strip.started",
+            pattern_kind = pattern_kind,
+            all = all,
+            dry_run = dry_run,
+        );
+    }
+
+    let report = match logging::strip_log_lines(
+        pattern,
+        DEFAULT_MAX_AGE_DAYS,
+        all,
+        dry_run,
+        allow_forensic_strip,
+    ) {
+        Ok(r) => r,
         Err(e) => {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::error!(
+                    event = "logs.strip.failed",
+                    error_kind = "io",
+                    error = %e,
+                );
+            }
             if output_format == "json" {
                 println!(
                     "{}",
@@ -350,9 +369,130 @@ fn handle_logs_clean_filter(pattern: &str, all: bool, dry_run: bool, output_form
             } else {
                 eprintln!("Error stripping logs: {}", e);
             }
-            1
+            return 1;
         }
+    };
+
+    // Forensic refusal — surface loudly and exit non-zero so scripts
+    // don't silently believe they cleaned something they didn't.
+    if !report.forensic_refused.is_empty() {
+        for name in &report.forensic_refused {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "logs.strip.forensic_refused",
+                    event_name = %name,
+                    "refused to strip security audit event; pass --allow-forensic-strip to override",
+                );
+            }
+        }
+        if output_format == "json" {
+            let json = serde_json::json!({
+                "status": "refused",
+                "reason": "forensic_event",
+                "events": report.forensic_refused,
+                "hint": "pass --allow-forensic-strip to override",
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json).unwrap_or_else(|_| json.to_string())
+            );
+        } else {
+            eprintln!(
+                "jarvy logs clean: refused — `{}` is a security-audit event.\n\
+                 Pass --allow-forensic-strip if you really want to strip it.",
+                report.forensic_refused.join(", ")
+            );
+        }
+        return 3;
     }
+
+    let files_touched = report.results.len();
+    let total_lines: usize = report.results.iter().map(|r| r.lines_removed).sum();
+    let total_bytes: u64 = report.results.iter().map(|r| r.bytes_saved).sum();
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "logs.strip.completed",
+            pattern_kind = pattern_kind,
+            event_name = event_name.as_deref().unwrap_or(""),
+            all = all,
+            dry_run = dry_run,
+            files_touched = files_touched,
+            lines_removed = total_lines,
+            bytes_saved = total_bytes,
+            files_skipped_symlink = report.skipped_symlink,
+            files_skipped_read_failed = report.skipped_read_failed,
+            files_skipped_too_large = report.skipped_too_large,
+            duration_ms = duration_ms,
+        );
+    }
+
+    if output_format == "json" {
+        #[derive(serde::Serialize)]
+        struct Envelope<'a> {
+            dry_run: bool,
+            pattern_kind: &'a str,
+            files_touched: usize,
+            lines_removed: usize,
+            bytes_saved: u64,
+            files_skipped_symlink: usize,
+            files_skipped_read_failed: usize,
+            files_skipped_too_large: usize,
+            per_file: &'a [logging::StripResult],
+        }
+        let envelope = Envelope {
+            dry_run,
+            pattern_kind,
+            files_touched,
+            lines_removed: total_lines,
+            bytes_saved: total_bytes,
+            files_skipped_symlink: report.skipped_symlink,
+            files_skipped_read_failed: report.skipped_read_failed,
+            files_skipped_too_large: report.skipped_too_large,
+            per_file: &report.results,
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&envelope)
+                .unwrap_or_else(|_| "{\"error\":\"serialize\"}".into())
+        );
+        return 0;
+    }
+
+    if report.results.is_empty() {
+        println!("No lines matched.");
+        return 0;
+    }
+
+    let verb = if dry_run { "Would strip" } else { "Stripped" };
+    for r in &report.results {
+        println!(
+            "{} {} line{} from {} ({})",
+            verb,
+            r.lines_removed,
+            if r.lines_removed == 1 { "" } else { "s" },
+            r.path.display(),
+            logging::format_size(r.bytes_saved),
+        );
+    }
+    println!(
+        "\n{} {} lines across {} files ({})",
+        verb,
+        total_lines,
+        files_touched,
+        logging::format_size(total_bytes),
+    );
+    if report.skipped_symlink > 0
+        || report.skipped_read_failed > 0
+        || report.skipped_too_large > 0
+    {
+        println!(
+            "Skipped: {} symlink, {} unreadable, {} too large",
+            report.skipped_symlink, report.skipped_read_failed, report.skipped_too_large
+        );
+    }
+    0
 }
 
 /// Show logging configuration

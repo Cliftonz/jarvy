@@ -308,104 +308,16 @@ fn json_format_keeps_stdout_pure_for_logs_config() {
         .expect("stdout must be a single JSON document with no human text mixed in");
 }
 
-/// Startup one-shots (`shell-init` / `ensure` / `completions`) must
-/// leave stderr empty on the common path. These run from shell rc on
-/// every new terminal — INFO tracing or the seamless-mode banner
-/// leaking to stderr was the user complaint that motivated defaulting
-/// the console layer to ERROR for this class of command.
-///
-/// Regression guard: the file appender still writes at INFO, so
-/// debugging is unaffected. This test only pins the console silence.
-#[test]
-fn shell_init_stderr_is_silent() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_TELEMETRY", "0");
-    // Force a sandbox provider so the banner code path is exercised
-    // (if it wasn't muted, stderr would carry the banner line).
-    c.env("CLAUDECODE", "1");
-    c.env("JARVY_HOME", tmp.path());
-    c.args(["shell-init", "--shell", "zsh"]);
-    let output = c.assert().success().get_output().clone();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.is_empty(),
-        "shell-init leaked to stderr: {stderr:?}"
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("jarvy ensure"),
-        "shell-init snippet missing from stdout: {stdout:?}"
-    );
-}
-
-#[test]
-fn ensure_stderr_is_silent_in_seamless_mode() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_TELEMETRY", "0");
-    c.env("CLAUDECODE", "1");
-    c.env("JARVY_HOME", tmp.path());
-    // Matches the rc snippet emitted by `shell-init`.
-    c.args(["ensure", "--quiet"]);
-    let output = c.assert().success().get_output().clone();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.is_empty(), "ensure leaked to stderr: {stderr:?}");
-}
-
-/// The rc snippet emitted by `shell-init` must include the `|| echo`
-/// failure surface for POSIX shells. Without it, a broken `ensure`
-/// loops silently on every new shell (the whole reason for the
-/// WarnOnly console default is to keep startup quiet — but we still
-/// need one line telling the user where to look when it does break).
-#[test]
-fn shell_init_snippet_carries_failure_surface() {
-    for shell in ["bash", "zsh", "sh", "fish", "powershell", "nushell"] {
-        let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-        c.env("JARVY_TEST_MODE", "1");
-        c.env("JARVY_TELEMETRY", "0");
-        c.args(["shell-init", "--shell", shell]);
-        let output = c.assert().success().get_output().clone();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains("~/.jarvy/logs/jarvy.log"),
-            "{shell} snippet missing log-file lead: {stdout:?}"
-        );
-    }
-}
-
-/// `-v` on a startup one-shot restores INFO on the console — the
-/// escape hatch for users who run `ensure` / `shell-init` manually
-/// to debug the WarnOnly default. Without this, the file appender
-/// at `~/.jarvy/logs/jarvy.log` is the only debug source and
-/// discovery is poor.
-#[test]
-fn shell_init_verbose_reopens_info_on_console() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
-    c.env("JARVY_TEST_MODE", "1");
-    c.env("JARVY_TELEMETRY", "0");
-    c.env("JARVY_HOME", tmp.path());
-    c.args(["shell-init", "--shell", "zsh", "-v"]);
-    let output = c.assert().success().get_output().clone();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("plugins.registered"),
-        "-v must restore INFO tracing on stderr: {stderr:?}"
-    );
-}
-
 /// `jarvy logs clean --filter event=<name> --all` end-to-end.
 ///
 /// Seeds a rotated log file with mixed lines under a tempdir-scoped
 /// JARVY_HOME, invokes the CLI, and verifies:
-/// - the JSON envelope reports the expected `lines_removed`
+/// - the JSON envelope reports the expected `lines_removed` + `pattern_kind`
 /// - the rotated file on disk has only the non-matching line left
 /// - the active `jarvy.log` is untouched even if it contains a match
 ///   (regression guard against a future filter path that forgets the
 ///   skip-active rule)
+/// - the pattern text is NEVER echoed in the JSON envelope (PII/cardinality)
 #[test]
 fn logs_clean_filter_strips_only_matching_lines() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -446,10 +358,13 @@ fn logs_clean_filter_strips_only_matching_lines() {
         serde_json::from_str(stdout.trim()).expect("logs clean --filter --format json must parse");
 
     assert_eq!(value["dry_run"], serde_json::json!(false));
-    assert_eq!(value["filter"], serde_json::json!("event=noise"));
-    // At least one file touched with 2 lines removed. jarvy's own startup
-    // may add extra rotated-day files under JARVY_HOME, but our seeded
-    // file MUST contribute exactly 2 stripped lines.
+    assert_eq!(value["pattern_kind"], serde_json::json!("event"));
+    // PII guard: the raw pattern text MUST NOT appear in the envelope.
+    assert!(
+        value.get("filter").is_none() && value.get("pattern").is_none(),
+        "raw pattern text must NOT be echoed in envelope: {value:?}"
+    );
+
     let per_file = value["per_file"].as_array().expect("per_file array");
     let seeded = per_file
         .iter()
@@ -457,11 +372,8 @@ fn logs_clean_filter_strips_only_matching_lines() {
         .expect("seeded rotated file must appear in per_file");
     assert_eq!(seeded["lines_removed"], serde_json::json!(2));
 
-    // On-disk contents: only the keep_me line remains.
     let after = std::fs::read_to_string(&rotated).unwrap();
     assert_eq!(after, "{\"fields\":{\"event\":\"keep_me\"}}\n");
-
-    // Active file untouched — the CLI must skip it even with --all.
     assert_eq!(std::fs::read_to_string(&active).unwrap(), active_body);
 }
 
@@ -497,8 +409,60 @@ fn logs_clean_filter_no_matches_is_noop() {
     assert_eq!(value["lines_removed"], serde_json::json!(0));
     assert_eq!(value["files_touched"], serde_json::json!(0));
 
-    // File unchanged.
     assert_eq!(std::fs::read_to_string(&rotated).unwrap(), body);
+}
+
+/// `--filter event=git_config.exec_key_refused` on a rotated log that
+/// carries such an event MUST be refused with exit 3 unless
+/// `--allow-forensic-strip` is passed. Erasing security-refusal
+/// events destroys audit trail (Security F4).
+#[test]
+fn logs_clean_filter_refuses_forensic_events_without_override() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let logs = tmp.path().join("logs");
+    std::fs::create_dir_all(&logs).unwrap();
+    let rotated = logs.join("jarvy.log.2026-01-forensic");
+    std::fs::write(
+        &rotated,
+        "{\"fields\":{\"event\":\"git_config.exec_key_refused\",\"key\":\"core.pager\"}}\n",
+    )
+    .unwrap();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.env("JARVY_SANDBOX", "0");
+    c.env("JARVY_HOME", tmp.path());
+    c.args([
+        "logs",
+        "clean",
+        "--filter",
+        "event=git_config.exec_key_refused",
+        "--all",
+        "--format",
+        "json",
+    ]);
+    let output = c.assert().code(3).get_output().clone();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("refusal JSON must parse");
+    assert_eq!(value["status"], serde_json::json!("refused"));
+    // File untouched.
+    assert!(std::fs::read_to_string(&rotated).unwrap().contains("git_config.exec_key_refused"));
+}
+
+/// `ensure -v --quiet` must be rejected by clap — the two flags are
+/// mutually exclusive (verbose reopens INFO, quiet suppresses eprintlns
+/// but the console cap is already default). If clap ever silently
+/// accepts both, users get confusing state.
+#[test]
+fn ensure_verbose_conflicts_with_quiet() {
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.args(["ensure", "-v", "--quiet"]);
+    // clap exits with code 2 on argument conflicts.
+    c.assert().failure().code(2);
 }
 
 /// PRD-044 phase 2 — `--rules <path>` appends a custom detection rule
