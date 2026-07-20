@@ -29,13 +29,22 @@ impl DockerComposeBackend {
         command_exists("docker-compose")
     }
 
-    /// Get the compose command prefix (either "docker compose" or "docker-compose")
+    /// Get the compose command prefix (either "docker compose" or "docker-compose").
+    /// Memoized in a process-lifetime `OnceLock` — see the podman
+    /// counterpart for the perf-F3 rationale. Cache miss cost: single
+    /// `docker compose version` probe at process startup.
     fn compose_command() -> (&'static str, Vec<&'static str>) {
-        if Self::has_docker_compose_v2() {
-            ("docker", vec!["compose"])
-        } else {
-            ("docker-compose", vec![])
-        }
+        static CACHED: std::sync::OnceLock<(&'static str, Vec<&'static str>)> =
+            std::sync::OnceLock::new();
+        CACHED
+            .get_or_init(|| {
+                if Self::has_docker_compose_v2() {
+                    ("docker", vec!["compose"])
+                } else {
+                    ("docker-compose", vec![])
+                }
+            })
+            .clone()
     }
 }
 

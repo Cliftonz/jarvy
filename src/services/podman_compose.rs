@@ -62,13 +62,24 @@ impl PodmanComposeBackend {
     }
 
     /// Return `(cmd, prefix_args)` for the best available compose entry point.
-    /// Prefer the built-in subcommand; fall back to standalone.
+    /// Memoized in a process-lifetime `OnceLock` — earlier code re-probed
+    /// `podman compose version` on every `start` / `stop` / `status`
+    /// invocation (3-4 subprocesses per compose op on Windows Podman;
+    /// perf F3). Cache miss cost is a single `podman compose version` +
+    /// `which podman-compose` at process startup; every subsequent call
+    /// is a single load from the atomic.
     fn compose_command() -> (&'static str, Vec<&'static str>) {
-        compose_command_from(
-            Self::has_podman_compose_subcommand(),
-            Self::has_standalone_podman_compose(),
-        )
-        .unwrap_or(("podman-compose", vec![]))
+        static CACHED: std::sync::OnceLock<(&'static str, Vec<&'static str>)> =
+            std::sync::OnceLock::new();
+        CACHED
+            .get_or_init(|| {
+                compose_command_from(
+                    Self::has_podman_compose_subcommand(),
+                    Self::has_standalone_podman_compose(),
+                )
+                .unwrap_or(("podman-compose", vec![]))
+            })
+            .clone()
     }
 
     /// Bounded label for `services.backend_selected.podman_variant`.
