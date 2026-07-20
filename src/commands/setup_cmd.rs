@@ -886,6 +886,10 @@ pub fn run_setup(
     profiler.start_phase("services");
     run_services_phase(&config, file, ci_env.is_some(), dry_run);
 
+    // Dotfiles phase — clone/apply personal dotfile repo via chezmoi/yadm.
+    profiler.start_phase("dotfiles");
+    run_dotfiles_phase(&config, dry_run);
+
     if config.has_hooks() && !no_hooks {
         println!("\nHooks execution summary:");
         if hooks_config.pre_setup.is_some() {
@@ -1808,6 +1812,55 @@ fn run_services_phase(config: &Config, file: &str, is_ci: bool, dry_run: bool) {
                 // Services auto-start is advisory — don't fail the setup.
                 eprintln!("Warning: Failed to auto-start services: {e}");
             }
+        }
+    }
+}
+
+/// Apply the `[dotfiles]` phase (PRD follow-up for cross-machine
+/// dotfile sync). Advisory — never fails `jarvy setup`; on trust-gate
+/// refusal or manager failure the setup lead prints a warning and
+/// keeps going. Skipped silently when the block is absent.
+fn run_dotfiles_phase(config: &Config, dry_run: bool) {
+    let Some(cfg) = config.dotfiles.as_ref() else {
+        return;
+    };
+    if dry_run {
+        println!("\n[DRY-RUN] Would apply [dotfiles] via {}", cfg.manager.cli());
+    } else {
+        println!("\nApplying [dotfiles] via {}...", cfg.manager.cli());
+    }
+    match crate::dotfiles::run_phase(cfg, dry_run) {
+        crate::dotfiles::PhaseOutcome::Applied => {
+            println!("Dotfiles applied.");
+        }
+        crate::dotfiles::PhaseOutcome::NoOp => {
+            println!("Dotfiles up to date.");
+        }
+        crate::dotfiles::PhaseOutcome::Skipped { reason } => {
+            println!("Dotfiles skipped: {reason}");
+            if reason == "stow_manual" {
+                println!(
+                    "  stow requires per-package invocation — jarvy installs it \
+                     but does not auto-apply. Run `stow <package>` from your \
+                     dotfiles repo."
+                );
+            } else if reason == "manager_not_installed" {
+                println!(
+                    "  Add `{} = \"latest\"` under [provisioner] so jarvy \
+                     installs it before this phase runs.",
+                    cfg.manager.cli()
+                );
+            }
+        }
+        crate::dotfiles::PhaseOutcome::Refused { reason } => {
+            eprintln!(
+                "Warning: [dotfiles] refused for remote config ({reason}). \
+                 Add `allow_remote = true` in the SOURCE config if this is \
+                 intentional."
+            );
+        }
+        crate::dotfiles::PhaseOutcome::Failed { error } => {
+            eprintln!("Warning: [dotfiles] failed: {error}");
         }
     }
 }

@@ -316,6 +316,12 @@ pub struct Config {
     /// Drift detection configuration
     #[serde(default)]
     pub drift: Option<crate::drift::DriftConfig>,
+    /// `[dotfiles]` block — cross-machine dotfile sync via chezmoi /
+    /// yadm. See `src/dotfiles.rs` for schema. Applied in a dedicated
+    /// `dotfiles` phase during `jarvy setup`, after tools install.
+    /// Remote-config trust gate via `allow_remote`.
+    #[serde(default)]
+    pub dotfiles: Option<crate::dotfiles::DotfilesConfig>,
     /// Telemetry/OTEL configuration (project-level override for security audit)
     #[serde(default)]
     pub telemetry: Option<crate::telemetry::TelemetryConfig>,
@@ -419,6 +425,7 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "ai_hooks",
     "mcp_register",
     "discover",
+    "dotfiles",
     // Parsed by src/observability/logging.rs, not Config — kept here so
     // jarvy validate accepts it without warning.
     "logging",
@@ -637,6 +644,15 @@ impl Config {
         // `GitHooksConfig` to compare against. Field added in the
         // companion git_hooks/config.rs edit; this propagates it.
         if let Some(ref mut cfg) = self.git_hooks {
+            cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
+        }
+        // `[dotfiles]` follows the same trust boundary as `[git_hooks]`
+        // and `[packages]` — a remote config can declare it, but the
+        // phase runner refuses to clone/apply without `allow_remote`
+        // opt-in in the source config. Propagate the origin so
+        // `dotfiles::run_phase` can enforce that gate without re-reading
+        // the parent Config.
+        if let Some(ref mut cfg) = self.dotfiles {
             cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
         }
     }
@@ -1238,6 +1254,7 @@ mod tests {
                 ai_hooks: _,
                 mcp_register: _,
                 discover: _,
+                dotfiles: _,
                 packages: _,
                 origin: _,
             } = c;
@@ -1273,6 +1290,7 @@ mod tests {
             "workspace",
             "ai_hooks",
             "mcp_register",
+            "dotfiles",
         ];
         for s in config_sections {
             assert!(

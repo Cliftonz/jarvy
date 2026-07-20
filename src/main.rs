@@ -16,6 +16,7 @@ pub mod cli;
 mod commands;
 mod config;
 mod discover;
+mod dotfiles;
 mod drift;
 mod env;
 mod error_codes;
