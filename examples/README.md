@@ -53,6 +53,12 @@ cp examples/<template>/jarvy.toml /path/to/your/project/
 | [`fullstack/`](fullstack/) | Full-stack (frontend + backend + db) |
 | [`k8s-platform/`](k8s-platform/) | Platform engineering (kubectl, helm, terraform, ...) |
 
+### Personal Use
+
+| Template | Stack |
+|----------|-------|
+| [`personal-workstation/`](personal-workstation/jarvy.toml) | Solo-dev laptop bootstrap: shell, editor, CLI upgrades, git identity, runtimes. Live in your dotfiles repo. See [cookbook recipe](../docs/cookbook/personal-workstation.md). |
+
 ## Each Template Includes
 
 - `[provisioner]` — language runtime + universal CLI tools

@@ -11,6 +11,14 @@ Recipes for the situations that show up in real teams. Each page is a self-conta
 
 <div class="grid cards" markdown>
 
+-   :material-laptop:{ .lg .middle } **Personal workstation**
+
+    ---
+
+    Use Jarvy as a dotfiles bootstrap: one command to bring a fresh laptop back to your shell, editor, CLI tools, and git identity.
+
+    [:octicons-arrow-right-24: Personal workstation](personal-workstation.md)
+
 -   :material-shield-lock-outline:{ .lg .middle } **Corporate proxy & TLS**
 
     ---

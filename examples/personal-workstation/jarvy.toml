@@ -1,0 +1,78 @@
+# Personal workstation — one command to provision a fresh laptop.
+#
+# Not a project template. This is a repo you keep for yourself (e.g.
+# `~/dotfiles/jarvy.toml`) so a new machine gets your shell, editor,
+# CLI tools, and git identity in one shot:
+#
+#     git clone <your-dotfiles> ~/dotfiles && cd ~/dotfiles && jarvy setup
+#
+# Everything below is opinionated — trim to taste. `jarvy setup` is
+# idempotent, so re-run any time you want to reconcile your machine
+# with this file.
+
+[privileges]
+use_sudo = false                       # personal box; native pkg mgrs handle privilege
+
+[provisioner]
+# Shell + terminal
+zsh        = "latest"
+starship   = "latest"                  # prompt
+tmux       = "latest"                  # multiplexer (installs TPM via default_hook)
+fzf        = "latest"
+zoxide     = "latest"
+atuin      = "latest"                  # searchable shell history
+
+# Editor
+nvim       = "latest"                  # writes a starter ~/.config/nvim/init.lua if none exists
+
+# Core CLI upgrades
+git        = "latest"
+gh         = "latest"
+ripgrep    = "latest"
+fd         = "latest"
+bat        = "latest"
+eza        = "latest"                  # ls replacement
+delta      = "latest"                  # git diff pager
+jq         = "latest"
+yq         = "latest"
+htop       = "latest"
+btop       = "latest"
+
+# Dev runtimes — pin whatever you actually use
+rust       = { version = "stable", version_manager = true }
+nvm        = "latest"                  # required by node = version_manager
+node       = { version = "22", version_manager = true }
+pyenv      = "latest"                  # required to install a specific python
+python     = "3.12"
+go         = "latest"
+
+# Containers / cloud (drop what you don't use)
+docker     = "latest"
+kubectl    = "latest"
+k9s        = "latest"
+
+[git]
+# Personal identity — pulled from env so this file can live in a public dotfiles repo.
+user_name  = { env = "GIT_USER_NAME",  default = "Your Name" }
+user_email = { env = "GIT_USER_EMAIL", default = "you@example.com" }
+default_branch = "main"
+pull_rebase = true
+init_default_branch = "main"
+
+[git.aliases]
+st = "status -sb"
+lg = "log --graph --oneline --decorate --all"
+co = "checkout"
+amend = "commit --amend --no-edit"
+
+[git_hooks]
+# If your dotfiles repo has a .pre-commit-config.yaml, jarvy installs it.
+# Safe to leave enabled even without one — it no-ops.
+enabled = true
+auto_install = true
+
+[commands]
+# `jarvy run reload` re-syncs after edits
+reload = "jarvy setup"
+drift  = "jarvy drift check"
+update = "jarvy update"

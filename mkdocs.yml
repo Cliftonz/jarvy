@@ -170,6 +170,7 @@ nav:
 
   - Cookbook:
     - Overview: cookbook/index.md
+    - Personal workstation (dotfiles bootstrap): cookbook/personal-workstation.md
     - Behind a corporate proxy: cookbook/corporate-proxy.md
     - Multi-project Postgres: cookbook/multi-project-postgres.md
     - Monorepo roles: cookbook/monorepo-roles.md
