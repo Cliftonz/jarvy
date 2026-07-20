@@ -1021,12 +1021,27 @@ pub struct Tool {
 /// overlay active.
 const PERSONAL_OVERLAY_ENV: &str = "JARVY_NO_PERSONAL_CONFIG";
 
+/// Cap on `~/.jarvy/jarvy.toml` size. 1 MiB is comfortably larger than
+/// any legitimate personal config (in practice they're a few KB); the
+/// cap defends against a user-owned but accidentally-huge overlay
+/// (`dd`-truncated, log file symlinked in) OOM'ing every subsequent
+/// jarvy invocation. Refused overlays fall through to the raw project.
+const OVERLAY_MAX_BYTES: u64 = 1_048_576;
+
 /// Merge the personal overlay (`~/.jarvy/jarvy.toml`) into a project
 /// TOML value tree. Returns `project` unchanged if:
 ///
 /// - `JARVY_NO_PERSONAL_CONFIG=1` is set (opt-out for CI/tests),
 /// - the overlay file doesn't exist,
 /// - the overlay path can't be resolved (`dirs::home_dir()` failed),
+/// - the overlay path is a symlink (defense-in-depth: refuses the
+///   info-leak vector where a symlink → `/etc/shadow` would leak
+///   file contents via toml parse-error line context),
+/// - the overlay owner differs from the current uid (Unix; refuses
+///   shared-host injection where another local user planted the
+///   file),
+/// - the overlay is group- or world-writable (Unix; mode & 0o022),
+/// - the overlay exceeds [`OVERLAY_MAX_BYTES`] (DoS defense),
 /// - the overlay parses as invalid TOML (warn + fall through — a
 ///   broken personal file shouldn't brick every project).
 ///
@@ -1038,31 +1053,81 @@ const PERSONAL_OVERLAY_ENV: &str = "JARVY_NO_PERSONAL_CONFIG";
 ///
 /// Trust: the overlay lives in `~/.jarvy/`, which is inherently local
 /// origin — no remote-config gates apply. Personal `library_sources`
-/// / `allow_custom_*` flags are honored as-is.
+/// / `allow_custom_*` flags are honored as-is. Because trust is
+/// implicit-by-location, ownership + mode + symlink checks above are
+/// load-bearing: they're what make "your machine, your file" a safe
+/// invariant to build the trust on.
 pub(crate) fn apply_personal_overlay(project: toml::Value) -> toml::Value {
     if std::env::var(PERSONAL_OVERLAY_ENV)
         .map(|v| v == "1")
         .unwrap_or(false)
     {
+        emit_overlay_gated(|| {
+            tracing::debug!(
+                event = "config.personal_overlay_disabled",
+                reason = "env_opt_out",
+                "personal overlay skipped via JARVY_NO_PERSONAL_CONFIG=1"
+            );
+        });
         return project;
     }
     let overlay_path = match crate::paths::personal_config_toml() {
         Ok(p) => p,
         Err(_) => return project,
     };
+
+    // Ownership / symlink / mode gate BEFORE opening the file — a
+    // symlink that resolves to /etc/shadow must not be read, both to
+    // avoid the parse-error info-leak vector and because it clearly
+    // wasn't put there by the intended user.
+    let meta = match fs::symlink_metadata(&overlay_path) {
+        Ok(m) => m,
+        Err(_) => return project, // ENOENT is the common case; silent
+    };
+    if meta.file_type().is_symlink() {
+        overlay_refused("symlink");
+        return project;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // SAFETY-adjacent: on shared hosts a foreign-owned overlay
+        // is not "the user's own machine" — refuse.
+        if meta.uid() != current_uid() {
+            overlay_refused("foreign_owner");
+            return project;
+        }
+        // World- or group-writable → another local user can inject.
+        if meta.mode() & 0o022 != 0 {
+            overlay_refused("world_writable");
+            return project;
+        }
+    }
+    if meta.len() > OVERLAY_MAX_BYTES {
+        overlay_refused("too_large");
+        return project;
+    }
+
     let overlay_text = match fs::read_to_string(&overlay_path) {
         Ok(s) => s,
-        Err(_) => return project, // ENOENT is the common case, don't log
+        Err(_) => return project,
     };
     let overlay_value = match toml::from_str::<toml::Value>(&overlay_text) {
         Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(
-                event = "config.personal_overlay_parse_failed",
-                path = %overlay_path.display(),
-                error = %e,
-                "personal overlay is invalid TOML, ignoring"
-            );
+        Err(_) => {
+            // Bounded error_kind — do NOT interpolate the raw
+            // toml::de::Error into the log line. Its Display carries
+            // the offending source-file line; combined with a
+            // symlink at the overlay path (defense-in-depth above
+            // catches this, but keep the belt) this would leak file
+            // contents to logs / OTLP.
+            emit_overlay_gated(|| {
+                tracing::warn!(
+                    event = "config.personal_overlay_parse_failed",
+                    error_kind = "toml_syntax",
+                    "personal overlay is invalid TOML, ignoring"
+                );
+            });
             return project;
         }
     };
@@ -1074,14 +1139,65 @@ pub(crate) fn apply_personal_overlay(project: toml::Value) -> toml::Value {
     if inherit_keys.is_empty() {
         return project;
     }
+
+    // Bounded, sorted, comma-joined vocabulary — cardinality safe
+    // because TOP_LEVEL_SECTIONS is a compile-time known set.
+    let mut section_names: Vec<&str> = inherit_keys
+        .iter()
+        .map(String::as_str)
+        .filter(|k| TOP_LEVEL_SECTIONS.contains(k))
+        .collect();
+    section_names.sort_unstable();
+    let sections = section_names.join(",");
+
     let merged = crate::workspace::merge_configs(&overlay_value, &project, &inherit_keys);
-    tracing::info!(
-        event = "config.personal_overlay_applied",
-        path = %overlay_path.display(),
-        section_count = inherit_keys.len(),
-        "personal overlay merged into project config"
-    );
+    emit_overlay_gated(|| {
+        // DEBUG (was INFO) — fires on every jarvy invocation, would
+        // otherwise flood log budgets. `path` field REMOVED — carried
+        // the user's HOME which on macOS/Windows is the account name.
+        tracing::debug!(
+            event = "config.personal_overlay_applied",
+            section_count = inherit_keys.len(),
+            sections = %sections,
+            "personal overlay merged into project config"
+        );
+    });
     merged
+}
+
+/// Warn-level event for overlay refusals. Gated. `reason` is a bounded
+/// enum (`"symlink" | "foreign_owner" | "world_writable" | "too_large"`).
+/// Path is NOT emitted — the overlay location is fixed by convention,
+/// and the user's HOME is PII-adjacent for enterprise deployments.
+fn overlay_refused(reason: &'static str) {
+    emit_overlay_gated(|| {
+        tracing::warn!(
+            event = "config.personal_overlay_refused",
+            reason = reason,
+            "personal overlay was ignored for safety"
+        );
+    });
+}
+
+/// Wrap tracing calls in the observability gate. The `config.*`
+/// subsystem predated the gate — this diff brings the overlay events
+/// into compliance with the opt-in contract (users with
+/// `telemetry.enabled = false` never ship these breadcrumbs).
+fn emit_overlay_gated<F: FnOnce()>(f: F) {
+    if crate::observability::telemetry_gate::is_enabled() {
+        f();
+    }
+}
+
+#[cfg(unix)]
+fn current_uid() -> u32 {
+    #[allow(unsafe_code)]
+    unsafe {
+        unsafe extern "C" {
+            fn getuid() -> u32;
+        }
+        getuid()
+    }
 }
 
 pub fn create_default_config() {
@@ -1986,6 +2102,120 @@ start_in_ci = false
             let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
             let merged = apply_personal_overlay(project.clone());
             assert_eq!(merged, project, "invalid overlay is ignored, not fatal");
+        }
+
+        /// Symlinked overlay is refused — defense against the info-leak
+        /// vector where `~/.jarvy/jarvy.toml → /etc/shadow` would let
+        /// a toml parse error snippet ship the target file's contents
+        /// to logs. Also refuses on principle: an overlay the user
+        /// installed via `ln -s` at their own path is fine, but the
+        /// paranoid default is safer.
+        #[cfg(unix)]
+        #[test]
+        fn symlinked_overlay_is_refused() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            let target = tmp.path().join("real.toml");
+            std::fs::write(&target, "[skills]\n").unwrap();
+            let link = tmp.path().join("jarvy.toml");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project.clone());
+            assert_eq!(merged, project, "symlinked overlay is refused, not read");
+        }
+
+        /// World-writable overlay is refused — on a shared host, another
+        /// local user could inject config through it.
+        #[cfg(unix)]
+        #[test]
+        fn world_writable_overlay_is_refused() {
+            use std::os::unix::fs::PermissionsExt;
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            write_overlay(tmp.path(), "[skills]\n");
+            let path = tmp.path().join("jarvy.toml");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666)).unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project.clone());
+            assert_eq!(merged, project, "world-writable overlay is refused");
+        }
+
+        /// Overlays larger than the DoS-cap threshold are ignored — a
+        /// user-owned but accidentally-huge file (log rotated onto the
+        /// path, `dd`-produced garbage) mustn't OOM every jarvy invocation.
+        #[test]
+        fn overlay_over_size_cap_is_refused() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            // Cap is 1 MiB — write 2 MiB of comments.
+            let huge = "# ".repeat(1_100_000);
+            write_overlay(tmp.path(), &huge);
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project.clone());
+            assert_eq!(merged, project, "oversize overlay is refused");
+        }
+
+        /// Overlays right at the cap boundary are still accepted — cap
+        /// is inclusive-below, exclusive-above.
+        #[test]
+        fn overlay_at_size_cap_is_accepted() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            // 512 KB of valid whitespace + a real section — well below cap.
+            let payload = format!("{}\n[skills]\n", "\n".repeat(524_288));
+            write_overlay(tmp.path(), &payload);
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project);
+            assert!(
+                merged.get("skills").is_some(),
+                "below-cap overlay should still merge"
+            );
+        }
+
+        /// End-to-end: `Config::new` wires the overlay through. Previous
+        /// tests exercised only `apply_personal_overlay` on toml::Value
+        /// trees — this pins the actual `Config::new` code path so a
+        /// future refactor that reorders parse steps can't silently
+        /// disable the overlay for real users.
+        #[test]
+        fn config_new_end_to_end_applies_overlay() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp_home = tempfile::TempDir::new().unwrap();
+            let tmp_proj = tempfile::TempDir::new().unwrap();
+            write_overlay(
+                tmp_home.path(),
+                "[provisioner]\nrustup = \"latest\"\ndocker = \"latest\"\n",
+            );
+            let project_path = tmp_proj.path().join("jarvy.toml");
+            std::fs::write(
+                &project_path,
+                "[provisioner]\ngit = \"latest\"\ndocker = \"27.0\"\n",
+            )
+            .unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp_home.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+
+            let cfg = super::super::Config::new(project_path.to_str().unwrap());
+            let tools = cfg.get_tool_configs();
+            assert!(tools.contains_key("git"), "project's git tool present");
+            assert!(tools.contains_key("rustup"), "overlay's rustup merged");
+            assert_eq!(
+                tools.get("docker").unwrap().version,
+                "27.0",
+                "project's docker version wins over overlay"
+            );
         }
     }
 }
