@@ -651,9 +651,23 @@ impl Config {
             }
         };
 
-        match toml::from_str::<Config>(&config_content) {
+        // Parse project TOML as a raw Value so we can merge the personal
+        // overlay (~/.jarvy/jarvy.toml) at the toml::Value layer. This
+        // matches the same-shape workspace merge in `new_with_workspace`
+        // and avoids re-implementing per-field union logic. Deserialize
+        // once, at the end.
+        let project_value = match toml::from_str::<toml::Value>(&config_content) {
+            Ok(v) => v,
+            Err(e) => {
+                telemetry::config_parse_error(config_path, &e.to_string());
+                println!("Failed to parse config file: {}", e);
+                process::exit(crate::error_codes::CONFIG_ERROR);
+            }
+        };
+        let merged = apply_personal_overlay(project_value);
+
+        match merged.try_into::<Config>() {
             Ok(config) => {
-                // Emit telemetry on successful load
                 telemetry::config_loaded(
                     config_path,
                     config.tools.len(),
@@ -740,6 +754,10 @@ impl Config {
         let effective_inherit = ctx.workspace.effective_inherit();
         let merged =
             crate::workspace::merge_configs(&root_value, &member_value, &effective_inherit);
+        // Personal overlay is the outermost base — project (member+root
+        // workspace merge) still wins on any field conflict. Same
+        // semantics as the non-workspace `Config::new` path.
+        let merged = apply_personal_overlay(merged);
 
         match merged.try_into::<Config>() {
             Ok(config) => {
@@ -979,6 +997,75 @@ pub struct Tool {
     pub version: String,
     pub version_manager: bool,
     pub use_sudo: Option<bool>, // carry per-tool override
+}
+
+/// Env var that suppresses the `~/.jarvy/jarvy.toml` personal overlay.
+/// CI runners, integration tests, and users who want strict-per-project
+/// isolation set this to `1`. Setting to any other value keeps the
+/// overlay active.
+const PERSONAL_OVERLAY_ENV: &str = "JARVY_NO_PERSONAL_CONFIG";
+
+/// Merge the personal overlay (`~/.jarvy/jarvy.toml`) into a project
+/// TOML value tree. Returns `project` unchanged if:
+///
+/// - `JARVY_NO_PERSONAL_CONFIG=1` is set (opt-out for CI/tests),
+/// - the overlay file doesn't exist,
+/// - the overlay path can't be resolved (`dirs::home_dir()` failed),
+/// - the overlay parses as invalid TOML (warn + fall through — a
+///   broken personal file shouldn't brick every project).
+///
+/// Merge semantics mirror the workspace root/member merge: every top-
+/// level section present in the overlay is treated as `inherit`,
+/// project wins on any collision, and `[provisioner]` is merged
+/// tool-by-tool so a personal `docker = "latest"` sits alongside a
+/// project's `redis = "8.0"` without either clobbering the other.
+///
+/// Trust: the overlay lives in `~/.jarvy/`, which is inherently local
+/// origin — no remote-config gates apply. Personal `library_sources`
+/// / `allow_custom_*` flags are honored as-is.
+pub(crate) fn apply_personal_overlay(project: toml::Value) -> toml::Value {
+    if std::env::var(PERSONAL_OVERLAY_ENV)
+        .map(|v| v == "1")
+        .unwrap_or(false)
+    {
+        return project;
+    }
+    let overlay_path = match crate::paths::personal_config_toml() {
+        Ok(p) => p,
+        Err(_) => return project,
+    };
+    let overlay_text = match fs::read_to_string(&overlay_path) {
+        Ok(s) => s,
+        Err(_) => return project, // ENOENT is the common case, don't log
+    };
+    let overlay_value = match toml::from_str::<toml::Value>(&overlay_text) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                event = "config.personal_overlay_parse_failed",
+                path = %overlay_path.display(),
+                error = %e,
+                "personal overlay is invalid TOML, ignoring"
+            );
+            return project;
+        }
+    };
+
+    let inherit_keys: Vec<String> = overlay_value
+        .as_table()
+        .map(|t| t.keys().cloned().collect())
+        .unwrap_or_default();
+    if inherit_keys.is_empty() {
+        return project;
+    }
+    let merged = crate::workspace::merge_configs(&overlay_value, &project, &inherit_keys);
+    tracing::info!(
+        event = "config.personal_overlay_applied",
+        path = %overlay_path.display(),
+        section_count = inherit_keys.len(),
+        "personal overlay merged into project config"
+    );
+    merged
 }
 
 pub fn create_default_config() {
@@ -1707,5 +1794,168 @@ start_in_ci = false
         // Per build_tool_entry: Detailed form's version_manager
         // unwraps_or(true).
         assert!(tool.version_manager);
+    }
+
+    /// Personal overlay tests: exercise `apply_personal_overlay` in
+    /// isolation from `Config::new` by driving it against toml::Value
+    /// trees. The overlay path is redirected via `JARVY_HOME` so we
+    /// don't touch the real `~/.jarvy/jarvy.toml`. Serialized on the
+    /// `jarvy_home_env` group with the paths::tests suite for the same
+    /// reason those are serialized.
+    mod personal_overlay {
+        use super::super::apply_personal_overlay;
+        use std::sync::Mutex;
+
+        // Local serialization mutex — the paths.rs tests use
+        // #[serial_test::serial(jarvy_home_env)] but that crate isn't
+        // used elsewhere in config.rs; a module-local mutex is enough
+        // to prevent our own overlay tests from racing each other on
+        // JARVY_HOME + JARVY_NO_PERSONAL_CONFIG.
+        static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+        struct EnvOverride {
+            key: &'static str,
+            prev: Option<String>,
+        }
+        impl EnvOverride {
+            fn set(key: &'static str, value: &str) -> Self {
+                let prev = std::env::var(key).ok();
+                #[allow(unsafe_code)]
+                unsafe {
+                    std::env::set_var(key, value);
+                }
+                Self { key, prev }
+            }
+            fn unset(key: &'static str) -> Self {
+                let prev = std::env::var(key).ok();
+                #[allow(unsafe_code)]
+                unsafe {
+                    std::env::remove_var(key);
+                }
+                Self { key, prev }
+            }
+        }
+        impl Drop for EnvOverride {
+            fn drop(&mut self) {
+                #[allow(unsafe_code)]
+                unsafe {
+                    match &self.prev {
+                        Some(v) => std::env::set_var(self.key, v),
+                        None => std::env::remove_var(self.key),
+                    }
+                }
+            }
+        }
+
+        fn write_overlay(home: &std::path::Path, contents: &str) {
+            std::fs::create_dir_all(home).unwrap();
+            std::fs::write(home.join("jarvy.toml"), contents).unwrap();
+        }
+
+        #[test]
+        fn no_overlay_file_returns_project_unchanged() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project.clone());
+            assert_eq!(merged, project);
+        }
+
+        #[test]
+        fn env_opt_out_skips_overlay_even_when_file_exists() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::set("JARVY_NO_PERSONAL_CONFIG", "1");
+            write_overlay(tmp.path(), "[provisioner]\nrust = \"1.80\"\n");
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project.clone());
+            assert_eq!(merged, project);
+        }
+
+        #[test]
+        fn overlay_section_missing_in_project_is_merged_in() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+            write_overlay(
+                tmp.path(),
+                "[skills]\n[[skills.install]]\nname = \"my-skill\"\nversion = \"latest\"\n",
+            );
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project);
+            let t = merged.as_table().unwrap();
+            assert!(t.contains_key("provisioner"), "project section preserved");
+            assert!(t.contains_key("skills"), "overlay section merged in");
+        }
+
+        #[test]
+        fn project_wins_on_scalar_conflict() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+            write_overlay(tmp.path(), "[services]\nenabled = false\n");
+
+            let project: toml::Value =
+                toml::from_str("[services]\nenabled = true\n").unwrap();
+            let merged = apply_personal_overlay(project);
+            let enabled = merged
+                .get("services")
+                .and_then(|s| s.get("enabled"))
+                .and_then(|v| v.as_bool());
+            assert_eq!(enabled, Some(true), "project's enabled=true beats overlay");
+        }
+
+        #[test]
+        fn provisioner_merges_tool_by_tool() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+            write_overlay(
+                tmp.path(),
+                "[provisioner]\ndocker = \"latest\"\nrustup = \"latest\"\n",
+            );
+
+            let project: toml::Value =
+                toml::from_str("[provisioner]\ngit = \"latest\"\ndocker = \"27.0\"\n").unwrap();
+            let merged = apply_personal_overlay(project);
+            let tools = merged.get("provisioner").unwrap().as_table().unwrap();
+            assert_eq!(
+                tools.get("git").and_then(|v| v.as_str()),
+                Some("latest"),
+                "project-only tool preserved"
+            );
+            assert_eq!(
+                tools.get("docker").and_then(|v| v.as_str()),
+                Some("27.0"),
+                "project's docker version wins over overlay"
+            );
+            assert_eq!(
+                tools.get("rustup").and_then(|v| v.as_str()),
+                Some("latest"),
+                "overlay-only tool merged in"
+            );
+        }
+
+        #[test]
+        fn invalid_overlay_toml_falls_through_to_project() {
+            let _guard = ENV_LOCK.lock().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap();
+            let _home = EnvOverride::set("JARVY_HOME", tmp.path().to_str().unwrap());
+            let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
+            write_overlay(tmp.path(), "this is [ not { valid toml");
+
+            let project: toml::Value = toml::from_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+            let merged = apply_personal_overlay(project.clone());
+            assert_eq!(merged, project, "invalid overlay is ignored, not fatal");
+        }
     }
 }

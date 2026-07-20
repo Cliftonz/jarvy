@@ -158,7 +158,8 @@ Package-name validation (`validate_package_name` / `validate_package_version`) r
 ### Config Files
 
 - `jarvy.toml` (project) — tools, packages, roles, hooks, etc.
-- `~/.jarvy/config.toml` (global) — telemetry, update, machine fingerprint
+- `~/.jarvy/jarvy.toml` (personal overlay, optional) — SAME schema as a project `jarvy.toml`, auto-merged into every project on load so personal tools/skills/hooks/MCP servers/git identity follow you across machines. Merge semantics mirror workspace inheritance: every top-level section is inherited, project wins on collision, `[provisioner]` merges tool-by-tool. Tagged `ConfigOrigin::Local` — remote-config trust gates do NOT apply, so personal `library_sources` and `allow_custom_*` are honored. Opt out with `JARVY_NO_PERSONAL_CONFIG=1` (CI runners, integration tests). Invalid TOML in the overlay logs `config.personal_overlay_parse_failed` and falls through — never bricks a project load. Applied inside `config::apply_personal_overlay` and wired into both `Config::new` and `Config::new_with_workspace`.
+- `~/.jarvy/config.toml` (global runtime) — telemetry, update, machine fingerprint. DIFFERENT file from the overlay above; different schema.
 - `.jarvy/state.json` (project) — drift baseline
 
 ### Bootstrap script
@@ -288,6 +289,8 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | `discover.rules_loaded` | one-shot per process at first `discover` invocation — count of loaded detection rules | `default_rule_count`, `custom_rule_count`, `total_rule_count`. Info level. Guards against `#[cfg]` regressions silently dropping rules. |
 | `discover.jarvy_toml_perms_unsafe` | chmod on discover-written `jarvy.toml` failed or was silently ignored (NFS/drvfs/exFAT) | `target`, `error` OR `mode`, `fs_hint = "chmod_failed" \| "chmod_ignored"`. Warn level. |
 | `discover.sensitive_key_refused` | discover refused to write a config carrying a top-level `[secrets]` / `[credentials]` / `[tokens]` / `[api_keys]` / `[auth]` section — case-insensitive | `key` (original case), `key_lower`. Error level — invariant breach on the 0644 chmod policy. |
+| `config.personal_overlay_applied` | `~/.jarvy/jarvy.toml` overlay merged into a project's config on load | `path`, `section_count`. Info level. Fires per `Config::new` / `Config::new_with_workspace` invocation when the overlay exists and is valid. Not gated on telemetry_gate — the config subsystem predates the gate; if strict opt-out becomes a requirement, add it here alongside the other gated domains. |
+| `config.personal_overlay_parse_failed` | overlay file exists but is invalid TOML — falls through to project as-is | `path`, `error`. Warn level. A broken personal overlay must not brick every project load; this is the forensic breadcrumb. |
 | `services.daemon_check` | container-runtime backend preflight (Docker Compose + Podman Compose) — probes `docker info` / `podman info` before `compose up` | `backend = "docker" \| "podman"`, `state = Running \| Down \| Missing`, `duration_ms`. Debug level. Gated. |
 | `services.daemon_down` | preflight returned Down/Missing — daemon binary present but socket not reachable (Docker Desktop stopped, colima not started, podman machine down, systemd unit inactive) | `backend`, `duration_ms`. Warn level. Gated. User sees actionable hint via `ServiceError::DaemonNotRunning`; the event is the OTLP breadcrumb. |
 | `workspace.validate_completed` | `jarvy workspace validate` finished (PRD-047) | `status = "ok" \| "warnings" \| "invalid"`, `members`, `errors`, `warnings`, `duration_ms`. `warn!` level when `errors > 0`, else `info!` |

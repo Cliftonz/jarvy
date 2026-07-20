@@ -102,6 +102,21 @@ pub fn config_toml() -> Result<PathBuf, NoHomeDir> {
     Ok(jarvy_home()?.join("config.toml"))
 }
 
+/// `~/.jarvy/jarvy.toml` — personal overlay applied to every project's
+/// `jarvy.toml` on load. Distinct from `config.toml` (which is runtime
+/// settings like telemetry endpoint and update channel); this file is
+/// the same schema as a project `jarvy.toml`, but scoped to personal
+/// tools/skills/hooks/MCP servers/git identity that should follow the
+/// user across every project on every machine.
+///
+/// Loaded as `ConfigOrigin::Local` (personal machine == you), so it can
+/// declare `library_sources` and set `allow_custom_*` freely — the
+/// remote-config trust gates only apply to `jarvy setup --from <url>`.
+/// Project config wins on any field conflict.
+pub fn personal_config_toml() -> Result<PathBuf, NoHomeDir> {
+    Ok(jarvy_home()?.join("jarvy.toml"))
+}
+
 /// `~/.jarvy/logs/`.
 pub fn logs_dir() -> Result<PathBuf, NoHomeDir> {
     Ok(jarvy_home()?.join("logs"))
