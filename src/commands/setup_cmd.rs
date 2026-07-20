@@ -1853,13 +1853,22 @@ fn run_dotfiles_phase(config: &Config, dry_run: bool) {
             }
         }
         crate::dotfiles::PhaseOutcome::Refused { reason } => {
+            let hint = match reason {
+                "invalid_repo" => {
+                    "The `repo` value starts with `-` or contains a NUL byte, \
+                     which would be interpreted as an option by git/chezmoi \
+                     (CVE-2017-1000117 class). Set a plain repo URL/shorthand."
+                }
+                _ => {
+                    "Add `allow_remote = true` in the SOURCE config if this is \
+                     intentional."
+                }
+            };
             eprintln!(
-                "Warning: [dotfiles] refused for remote config ({reason}). \
-                 Add `allow_remote = true` in the SOURCE config if this is \
-                 intentional."
+                "Warning: [dotfiles] refused ({reason}). {hint}"
             );
         }
-        crate::dotfiles::PhaseOutcome::Failed { error } => {
+        crate::dotfiles::PhaseOutcome::Failed { error, .. } => {
             eprintln!("Warning: [dotfiles] failed: {error}");
         }
     }
