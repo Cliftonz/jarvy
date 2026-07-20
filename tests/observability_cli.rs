@@ -217,10 +217,7 @@ fn shell_init_stderr_is_silent() {
     c.args(["shell-init", "--shell", "zsh"]);
     let output = c.assert().success().get_output().clone();
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.is_empty(),
-        "shell-init leaked to stderr: {stderr:?}"
-    );
+    assert!(stderr.is_empty(), "shell-init leaked to stderr: {stderr:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("jarvy ensure"),

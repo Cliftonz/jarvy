@@ -318,9 +318,7 @@ fn handle_logs_clean_filter(
 
     // Ambiguous-pattern hint — catches `event: foo` (colon instead of `=`)
     // and other `event`-prefixed strings that fall through to substring.
-    if pattern_kind == "substring"
-        && pattern.starts_with("event")
-        && !pattern.starts_with("event=")
+    if pattern_kind == "substring" && pattern.starts_with("event") && !pattern.starts_with("event=")
     {
         if crate::observability::telemetry_gate::is_enabled() {
             tracing::warn!(
@@ -483,9 +481,7 @@ fn handle_logs_clean_filter(
         files_touched,
         logging::format_size(total_bytes),
     );
-    if report.skipped_symlink > 0
-        || report.skipped_read_failed > 0
-        || report.skipped_too_large > 0
+    if report.skipped_symlink > 0 || report.skipped_read_failed > 0 || report.skipped_too_large > 0
     {
         println!(
             "Skipped: {} symlink, {} unreadable, {} too large",

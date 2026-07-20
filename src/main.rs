@@ -250,12 +250,8 @@ fn main() {
         // recognised alongside `--format=json` (equals form).
         // Startup one-shots mute the banner unconditionally — pure noise
         // on every new terminal (see `Commands::is_startup_oneshot`).
-        let is_startup_oneshot = cli
-            .command
-            .as_ref()
-            .is_some_and(|c| c.is_startup_oneshot());
-        let mut muted =
-            is_startup_oneshot || std::env::var("JARVY_QUIET").as_deref() == Ok("1");
+        let is_startup_oneshot = cli.command.as_ref().is_some_and(|c| c.is_startup_oneshot());
+        let mut muted = is_startup_oneshot || std::env::var("JARVY_QUIET").as_deref() == Ok("1");
         if !muted {
             let mut prev_was_format_flag = false;
             for a in std::env::args() {

@@ -13,10 +13,10 @@
 //! `services::detect_backend` is which CLI is on PATH, not which file
 //! is present.
 
-use super::preflight::{podman_daemon_hint, probe_container_daemon, DaemonState};
+use super::preflight::{DaemonState, podman_daemon_hint, probe_container_daemon};
 use super::{
-    command_exists, run_command, ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult,
-    ServiceStatus,
+    ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult, ServiceStatus, command_exists,
+    run_command,
 };
 use crate::observability::telemetry_gate;
 use crate::telemetry;

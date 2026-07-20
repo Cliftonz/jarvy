@@ -20,8 +20,7 @@ pub const DEFAULT_CONFIG_FILE: &str = "./jarvy.toml";
 /// Shared clap help text for the `-v` flag on startup one-shot commands
 /// (`shell-init`, `ensure`, `completions`). One const, one wording —
 /// all three variants reference it so drift is impossible.
-pub const STARTUP_VERBOSE_HELP: &str =
-    "Restore INFO on the console (startup one-shots default to WARN — actionable warnings surface but INFO is suppressed on shell open)";
+pub const STARTUP_VERBOSE_HELP: &str = "Restore INFO on the console (startup one-shots default to WARN — actionable warnings surface but INFO is suppressed on shell open)";
 
 #[cfg(test)]
 mod default_value_test {
@@ -711,9 +710,7 @@ impl Commands {
     pub fn is_startup_oneshot(&self) -> bool {
         matches!(
             self,
-            Commands::Ensure { .. }
-                | Commands::ShellInit { .. }
-                | Commands::Completions { .. }
+            Commands::Ensure { .. } | Commands::ShellInit { .. } | Commands::Completions { .. }
         )
     }
 

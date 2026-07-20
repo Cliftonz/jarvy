@@ -536,10 +536,7 @@ pub fn sweep_stale_strip_tmp() {
         let Ok(meta) = entry.metadata() else {
             continue;
         };
-        let stale = meta
-            .modified()
-            .ok()
-            .is_some_and(|mt| mt < cutoff);
+        let stale = meta.modified().ok().is_some_and(|mt| mt < cutoff);
         if stale {
             let _ = std::fs::remove_file(entry.path());
         }
@@ -677,7 +674,11 @@ mod tests {
         // Plant a symlink pointing OUTSIDE the log dir at a target the
         // strip would otherwise clobber if it followed.
         let target = tmp.path().join("SECRET.txt");
-        std::fs::write(&target, "{\"fields\":{\"event\":\"noise\"}}\ndo not delete\n").unwrap();
+        std::fs::write(
+            &target,
+            "{\"fields\":{\"event\":\"noise\"}}\ndo not delete\n",
+        )
+        .unwrap();
         let link = logs.join("jarvy.log.2026-symlink");
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
@@ -784,7 +785,8 @@ mod tests {
         let old = logs.join("jarvy.log.2026-old");
         std::fs::write(&fresh, "{\"fields\":{\"event\":\"drop\"}}\n").unwrap();
         std::fs::write(&old, "{\"fields\":{\"event\":\"drop\"}}\n").unwrap();
-        let old_mtime = std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 24 * 3600);
+        let old_mtime =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 24 * 3600);
         filetime::set_file_mtime(&old, filetime::FileTime::from_system_time(old_mtime)).unwrap();
 
         // all=false, max_age_days=30 → only `old` eligible.
@@ -813,18 +815,20 @@ mod tests {
         .unwrap();
 
         // Without --allow-forensic-strip: refused, no rewrite.
-        let report =
-            strip_log_lines("event=git_config.exec_key_refused", 30, true, false, false)
-                .expect("strip");
+        let report = strip_log_lines("event=git_config.exec_key_refused", 30, true, false, false)
+            .expect("strip");
         assert_eq!(report.results.len(), 0);
         assert_eq!(report.forensic_refused, vec!["git_config.exec_key_refused"]);
         // File untouched.
-        assert!(std::fs::read_to_string(&rotated).unwrap().contains("git_config.exec_key_refused"));
+        assert!(
+            std::fs::read_to_string(&rotated)
+                .unwrap()
+                .contains("git_config.exec_key_refused")
+        );
 
         // With allow_forensic_strip=true: proceeds.
-        let report =
-            strip_log_lines("event=git_config.exec_key_refused", 30, true, false, true)
-                .expect("strip");
+        let report = strip_log_lines("event=git_config.exec_key_refused", 30, true, false, true)
+            .expect("strip");
         assert_eq!(report.results.len(), 1);
 
         clear_jarvy_home();

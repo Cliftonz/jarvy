@@ -123,10 +123,7 @@ pub type HintKind = &'static str;
 /// 4. Linux → systemd (`sudo systemctl start docker`).
 pub fn docker_daemon_hint() -> (String, HintKind) {
     if cfg!(target_os = "macos") && command_on_path("colima") {
-        return (
-            "Start Colima with: colima start".to_string(),
-            "colima",
-        );
+        return ("Start Colima with: colima start".to_string(), "colima");
     }
     if cfg!(target_os = "macos") {
         return (
@@ -232,7 +229,11 @@ mod tests {
         // kill it and report Timeout.
         let state = probe_with_args("sleep", &["10"], short);
         let elapsed = started.elapsed();
-        assert_eq!(state, DaemonState::Timeout, "state should be Timeout, got {state:?}");
+        assert_eq!(
+            state,
+            DaemonState::Timeout,
+            "state should be Timeout, got {state:?}"
+        );
         assert!(
             elapsed < Duration::from_secs(2),
             "probe exceeded budget: took {elapsed:?}"

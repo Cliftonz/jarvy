@@ -1830,7 +1830,10 @@ fn run_dotfiles_phase(config: &Config, dry_run: bool) {
         return;
     };
     if dry_run {
-        println!("\n[DRY-RUN] Would apply [dotfiles] via {}", cfg.manager.cli());
+        println!(
+            "\n[DRY-RUN] Would apply [dotfiles] via {}",
+            cfg.manager.cli()
+        );
     } else {
         println!("\nApplying [dotfiles] via {}...", cfg.manager.cli());
     }
@@ -1874,9 +1877,7 @@ fn run_dotfiles_phase(config: &Config, dry_run: bool) {
                      intentional."
                 }
             };
-            eprintln!(
-                "Warning: [dotfiles] refused ({reason}). {hint}"
-            );
+            eprintln!("Warning: [dotfiles] refused ({reason}). {hint}");
         }
         crate::dotfiles::PhaseOutcome::Failed { error, .. } => {
             eprintln!("Warning: [dotfiles] failed: {error}");

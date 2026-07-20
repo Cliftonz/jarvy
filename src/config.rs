@@ -2037,8 +2037,7 @@ start_in_ci = false
             let _skip = EnvOverride::unset("JARVY_NO_PERSONAL_CONFIG");
             write_overlay(tmp.path(), "[services]\nenabled = false\n");
 
-            let project: toml::Value =
-                toml::from_str("[services]\nenabled = true\n").unwrap();
+            let project: toml::Value = toml::from_str("[services]\nenabled = true\n").unwrap();
             let merged = apply_personal_overlay(project);
             let enabled = merged
                 .get("services")

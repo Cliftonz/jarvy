@@ -282,7 +282,11 @@ fn diagnose_tool(tool_name: &str, spec: &ToolSpec) -> DiagnosticReport {
             description: format!("Install {} using Jarvy", tool_name),
             command: Some((
                 "jarvy".to_string(),
-                vec!["setup".to_string(), "--only".to_string(), tool_name.to_string()],
+                vec![
+                    "setup".to_string(),
+                    "--only".to_string(),
+                    tool_name.to_string(),
+                ],
             )),
             command_display: Some(format!("jarvy setup --only {tool_name}")),
             auto_applicable: false,
@@ -721,7 +725,11 @@ fn parse_minikube_status(res: &crate::tools::common::ProbeResult) -> (bool, Stri
             false,
             format!(
                 "minikube status failed ({})",
-                String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("").trim()
+                String::from_utf8_lossy(&o.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
             ),
         ),
         ProbeResult::Missing => (false, "minikube binary missing".to_string()),
@@ -734,11 +742,8 @@ fn parse_minikube_status(res: &crate::tools::common::ProbeResult) -> (bool, Stri
 /// `kind get clusters` — is there at least one kind cluster provisioned?
 fn kind_clusters_dep() -> DependencyStatus {
     let started = std::time::Instant::now();
-    let res = crate::tools::common::probe_with_timeout(
-        "kind",
-        &["get", "clusters"],
-        K8S_PROBE_TIMEOUT,
-    );
+    let res =
+        crate::tools::common::probe_with_timeout("kind", &["get", "clusters"], K8S_PROBE_TIMEOUT);
     let probe_ms = started.elapsed().as_millis() as u64;
     let (ok, detail, count) = parse_kind_clusters(&res);
     emit_tool_probed("kind", probe_state_label(ok, &res), Some(count), probe_ms);
@@ -1236,11 +1241,13 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::process::ExitStatusExt;
-            let mk = |stdout: &str| ProbeResult::Completed(std::process::Output {
-                status: std::process::ExitStatus::from_raw(0),
-                stdout: stdout.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            });
+            let mk = |stdout: &str| {
+                ProbeResult::Completed(std::process::Output {
+                    status: std::process::ExitStatus::from_raw(0),
+                    stdout: stdout.as_bytes().to_vec(),
+                    stderr: Vec::new(),
+                })
+            };
             let (ok, _, count) = parse_kind_clusters(&mk("kind\nkind-2\n"));
             assert!(ok);
             assert_eq!(count, 2);
@@ -1259,11 +1266,13 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::process::ExitStatusExt;
-            let mk = |stdout: &str| ProbeResult::Completed(std::process::Output {
-                status: std::process::ExitStatus::from_raw(0),
-                stdout: stdout.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            });
+            let mk = |stdout: &str| {
+                ProbeResult::Completed(std::process::Output {
+                    status: std::process::ExitStatus::from_raw(0),
+                    stdout: stdout.as_bytes().to_vec(),
+                    stderr: Vec::new(),
+                })
+            };
             let (ok, _, count) = parse_k3d_clusters(&mk("dev  1/1  1/1\nprod 1/1  1/1\n"));
             assert!(ok);
             assert_eq!(count, 2);

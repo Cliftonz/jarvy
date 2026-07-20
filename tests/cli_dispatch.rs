@@ -368,7 +368,12 @@ fn logs_clean_filter_strips_only_matching_lines() {
     let per_file = value["per_file"].as_array().expect("per_file array");
     let seeded = per_file
         .iter()
-        .find(|f| f["path"].as_str().unwrap_or("").ends_with("jarvy.log.2026-01-01"))
+        .find(|f| {
+            f["path"]
+                .as_str()
+                .unwrap_or("")
+                .ends_with("jarvy.log.2026-01-01")
+        })
         .expect("seeded rotated file must appear in per_file");
     assert_eq!(seeded["lines_removed"], serde_json::json!(2));
 
@@ -404,8 +409,7 @@ fn logs_clean_filter_no_matches_is_noop() {
     ]);
     let output = c.assert().success().get_output().clone();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let value: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("must parse");
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).expect("must parse");
     assert_eq!(value["lines_removed"], serde_json::json!(0));
     assert_eq!(value["files_touched"], serde_json::json!(0));
 
@@ -448,7 +452,11 @@ fn logs_clean_filter_refuses_forensic_events_without_override() {
         serde_json::from_str(stdout.trim()).expect("refusal JSON must parse");
     assert_eq!(value["status"], serde_json::json!("refused"));
     // File untouched.
-    assert!(std::fs::read_to_string(&rotated).unwrap().contains("git_config.exec_key_refused"));
+    assert!(
+        std::fs::read_to_string(&rotated)
+            .unwrap()
+            .contains("git_config.exec_key_refused")
+    );
 }
 
 /// `ensure -v --quiet` must be rejected by clap — the two flags are

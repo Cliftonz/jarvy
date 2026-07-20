@@ -358,11 +358,7 @@ pub enum ProbeResult {
 ///   `DaemonState`).
 ///
 /// stdout / stderr are captured (piped). stdin is `null`.
-pub fn probe_with_timeout(
-    cmd: &str,
-    args: &[&str],
-    timeout: std::time::Duration,
-) -> ProbeResult {
+pub fn probe_with_timeout(cmd: &str, args: &[&str], timeout: std::time::Duration) -> ProbeResult {
     use std::time::Instant;
     let started = Instant::now();
     let spawn = Command::new(cmd)
@@ -378,7 +374,7 @@ pub fn probe_with_timeout(
                 std::io::ErrorKind::NotFound => ProbeResult::Missing,
                 std::io::ErrorKind::PermissionDenied => ProbeResult::PermissionDenied,
                 _ => ProbeResult::IoError(e),
-            }
+            };
         }
     };
     loop {

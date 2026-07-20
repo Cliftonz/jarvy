@@ -176,18 +176,14 @@ pub enum PhaseOutcome {
     /// Manager applied the repo. `kind` distinguishes clone vs
     /// update so retention analytics can separate adoption from
     /// re-use.
-    Applied {
-        kind: ApplyKind,
-    },
+    Applied { kind: ApplyKind },
     /// Nothing to do — repo already present and `apply = false`.
     NoOp,
     /// Block existed but was disabled for a legitimate reason.
     Skipped(SkipReason),
     /// Trust gate refused (remote config without `allow_remote`)
     /// OR input-safety refused (leading-`-` repo, NUL byte).
-    Refused {
-        reason: &'static str,
-    },
+    Refused { reason: &'static str },
     /// Manager subprocess returned non-zero. `error_kind` is a
     /// bounded taxonomy safe for telemetry (never contains user-
     /// authored URL fragments or subprocess stderr). `error` is the
@@ -259,7 +255,11 @@ pub fn run_phase(cfg: &DotfilesConfig, dry_run: bool) -> PhaseOutcome {
     };
 
     let duration_ms = started.elapsed().as_millis() as u64;
-    let apply_mode = if cfg.apply { "auto_apply" } else { "clone_only" };
+    let apply_mode = if cfg.apply {
+        "auto_apply"
+    } else {
+        "clone_only"
+    };
     if telemetry_gate::is_enabled() {
         match &outcome {
             PhaseOutcome::Applied { kind } => tracing::info!(
@@ -700,11 +700,18 @@ repo = "github:zac/dotfiles"
                 "fatal: repository 'https://github.com/acme/missing.git/' not found",
                 "not_found",
             ),
-            ("error: Your local changes would be overwritten by merge", "conflict"),
+            (
+                "error: Your local changes would be overwritten by merge",
+                "conflict",
+            ),
             ("chezmoi: some unknown message", "other"),
         ];
         for (stderr, expected_kind) in cases {
-            assert_eq!(classify_dotfiles_error(stderr), *expected_kind, "stderr={stderr}");
+            assert_eq!(
+                classify_dotfiles_error(stderr),
+                *expected_kind,
+                "stderr={stderr}"
+            );
         }
     }
 
