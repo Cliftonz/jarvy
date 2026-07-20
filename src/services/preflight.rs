@@ -106,25 +106,44 @@ pub(crate) fn probe_with_args(cli: &str, args: &[&str], timeout: Duration) -> Da
     }
 }
 
-/// Build a platform-aware, actionable hint for a stopped Docker daemon.
+/// Bounded taxonomy of hint branches surfaced on `services.daemon_down`.
+/// Product analytics uses this to answer "colima vs Docker Desktop —
+/// which suggestion do users see most, and where should we invest?"
+/// Cardinality: 6.
+pub type HintKind = &'static str;
+
+/// Build a platform-aware, actionable hint for a stopped Docker daemon,
+/// along with a bounded `hint_kind` label suitable for telemetry.
 ///
 /// Detection precedence:
-/// 1. `colima` on PATH → macOS user is likely on colima; suggest `colima start`.
+/// 1. macOS + `colima` on PATH → suggest `colima start` (colima wraps
+///    Docker; probing it on non-macOS is wasted subprocess).
 /// 2. macOS → Docker Desktop.
 /// 3. Windows → Docker Desktop.
 /// 4. Linux → systemd (`sudo systemctl start docker`).
-pub fn docker_daemon_hint() -> String {
-    if command_on_path("colima") {
-        return "Start Colima with: colima start".to_string();
+pub fn docker_daemon_hint() -> (String, HintKind) {
+    if cfg!(target_os = "macos") && command_on_path("colima") {
+        return (
+            "Start Colima with: colima start".to_string(),
+            "colima",
+        );
     }
     if cfg!(target_os = "macos") {
-        return "Start Docker Desktop from Applications, then retry.".to_string();
+        return (
+            "Start Docker Desktop from Applications, then retry.".to_string(),
+            "docker_desktop_macos",
+        );
     }
     if cfg!(target_os = "windows") {
-        return "Start Docker Desktop from the Start menu, then retry.".to_string();
+        return (
+            "Start Docker Desktop from the Start menu, then retry.".to_string(),
+            "docker_desktop_windows",
+        );
     }
-    // Assume linux or bsd.
-    "Start the Docker daemon: sudo systemctl start docker".to_string()
+    (
+        "Start the Docker daemon: sudo systemctl start docker".to_string(),
+        "systemd",
+    )
 }
 
 /// Build a platform-aware, actionable hint for a stopped Podman daemon.
@@ -133,11 +152,17 @@ pub fn docker_daemon_hint() -> String {
 /// On Linux, rootful podman needs `podman.socket` active; rootless doesn't
 /// need a daemon start but `podman info` failing there usually means the
 /// user socket isn't wired — suggest checking.
-pub fn podman_daemon_hint() -> String {
+pub fn podman_daemon_hint() -> (String, HintKind) {
     if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
-        return "Start the Podman VM: podman machine start".to_string();
+        return (
+            "Start the Podman VM: podman machine start".to_string(),
+            "podman_machine",
+        );
     }
-    "Start the Podman socket: systemctl --user start podman.socket".to_string()
+    (
+        "Start the Podman socket: systemctl --user start podman.socket".to_string(),
+        "podman_socket",
+    )
 }
 
 /// Cheap PATH lookup — delegates to the shared, memoized,
@@ -156,12 +181,31 @@ mod tests {
     #[test]
     fn hints_are_nonempty_and_actionable() {
         // Cheap sanity — every hint mentions a verb the user can act on.
-        for hint in [docker_daemon_hint(), podman_daemon_hint()] {
-            assert!(!hint.is_empty());
+        for (hint, kind) in [docker_daemon_hint(), podman_daemon_hint()] {
+            assert!(!hint.is_empty(), "empty hint for kind {kind}");
+            assert!(!kind.is_empty(), "empty kind for hint {hint}");
             assert!(
                 hint.to_lowercase().contains("start") || hint.to_lowercase().contains("retry"),
-                "hint should be actionable: {hint}"
+                "hint should be actionable: {hint} (kind={kind})"
             );
+        }
+    }
+
+    /// hint_kind is a bounded taxonomy — every branch must map to a
+    /// known label. Regression guard against a future branch that
+    /// forgets the label (would return `""` and pollute analytics).
+    #[test]
+    fn hint_kind_is_bounded_vocabulary() {
+        let known: &[&str] = &[
+            "colima",
+            "docker_desktop_macos",
+            "docker_desktop_windows",
+            "systemd",
+            "podman_machine",
+            "podman_socket",
+        ];
+        for (_, kind) in [docker_daemon_hint(), podman_daemon_hint()] {
+            assert!(known.contains(&kind), "unknown hint_kind emitted: {kind}");
         }
     }
 

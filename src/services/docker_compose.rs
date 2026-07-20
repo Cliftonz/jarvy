@@ -59,7 +59,12 @@ impl ServiceBackendOps for DockerComposeBackend {
         let state = probe_container_daemon("docker");
         let duration_ms = started.elapsed().as_millis() as u64;
         if telemetry_gate::is_enabled() {
-            tracing::debug!(
+            // Info-level (was debug) — this is the per-invocation
+            // adoption signal for the Docker vs Podman product
+            // question ("of users with both installed, which do
+            // they actually run against?"). At debug it was silently
+            // dropped by default prod log filters.
+            tracing::info!(
                 event = "services.daemon_check",
                 backend = "docker",
                 state = ?state,
@@ -70,6 +75,7 @@ impl ServiceBackendOps for DockerComposeBackend {
         match state {
             DaemonState::Running => Ok(()),
             DaemonState::Down | DaemonState::Missing | DaemonState::Timeout => {
+                let (hint, hint_kind) = docker_daemon_hint();
                 if telemetry_gate::is_enabled() {
                     // Distinct event for timeout so on-call can graph
                     // "hung daemon" separately from "daemon exited fast."
@@ -86,13 +92,14 @@ impl ServiceBackendOps for DockerComposeBackend {
                         event = "services.daemon_down",
                         backend = "docker",
                         state = ?state,
+                        hint_kind,
                         duration_ms,
                         "docker daemon is not reachable"
                     );
                 }
                 Err(ServiceError::DaemonNotRunning {
                     backend: ServiceBackend::DockerCompose,
-                    hint: docker_daemon_hint(),
+                    hint,
                 })
             }
         }
@@ -185,13 +192,37 @@ impl ServiceBackendOps for DockerComposeBackend {
                 details: "Docker Compose is not installed".to_string(),
             });
         }
-        if let Err(ServiceError::DaemonNotRunning { hint, .. }) = self.check_daemon() {
-            return Ok(ServiceStatus {
-                backend: ServiceBackend::DockerCompose,
-                installed: true,
-                running: false,
-                details: format!("Docker daemon is not running. {hint}"),
-            });
+        match self.check_daemon() {
+            Ok(()) => {}
+            Err(ServiceError::DaemonNotRunning { hint, .. }) => {
+                return Ok(ServiceStatus {
+                    backend: ServiceBackend::DockerCompose,
+                    installed: true,
+                    running: false,
+                    details: format!("Docker daemon is not running. {hint}"),
+                });
+            }
+            Err(other) => {
+                // Silent-fallback avoidance: any check_daemon error
+                // variant other than DaemonNotRunning is unexpected
+                // and would otherwise be swallowed, letting
+                // `compose ps` run against an unknown daemon state
+                // and reporting whatever it prints. Emit a distinct
+                // event AND return an honest "unknown" ServiceStatus.
+                if telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "services.status_daemon_check_swallowed",
+                        backend = "docker",
+                        "unexpected error from check_daemon; reporting unknown state"
+                    );
+                }
+                return Ok(ServiceStatus {
+                    backend: ServiceBackend::DockerCompose,
+                    installed: true,
+                    running: false,
+                    details: format!("Docker daemon state unknown: {other}"),
+                });
+            }
         }
 
         let working_dir = config_path.parent().unwrap_or(Path::new("."));

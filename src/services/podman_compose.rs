@@ -51,6 +51,23 @@ impl PodmanComposeBackend {
             ("podman-compose", vec![])
         }
     }
+
+    /// Bounded label for `services.backend_selected.podman_variant`.
+    /// Answers the product question "should we drop standalone
+    /// podman-compose support in v0.7?" — needs actual usage split
+    /// between the built-in subcommand (podman v4+) and the standalone
+    /// PyPI package.
+    pub(super) fn compose_variant_label(&self) -> &'static str {
+        if !crate::tools::common::command_on_path("podman") {
+            "n/a"
+        } else if Self::has_podman_compose_subcommand() {
+            "podman_compose_builtin"
+        } else if Self::has_standalone_podman_compose() {
+            "podman_compose_standalone"
+        } else {
+            "podman_compose_missing"
+        }
+    }
 }
 
 impl ServiceBackendOps for PodmanComposeBackend {
@@ -74,7 +91,10 @@ impl ServiceBackendOps for PodmanComposeBackend {
         let state = probe_container_daemon("podman");
         let duration_ms = started.elapsed().as_millis() as u64;
         if telemetry_gate::is_enabled() {
-            tracing::debug!(
+            // Info-level (was debug) — see docker_compose::check_daemon
+            // for the reasoning: this is the per-invocation adoption
+            // signal, and default prod log filters drop debug.
+            tracing::info!(
                 event = "services.daemon_check",
                 backend = "podman",
                 state = ?state,
@@ -85,6 +105,7 @@ impl ServiceBackendOps for PodmanComposeBackend {
         match state {
             DaemonState::Running => Ok(()),
             DaemonState::Down | DaemonState::Missing | DaemonState::Timeout => {
+                let (hint, hint_kind) = podman_daemon_hint();
                 if telemetry_gate::is_enabled() {
                     if state == DaemonState::Timeout {
                         tracing::warn!(
@@ -99,13 +120,14 @@ impl ServiceBackendOps for PodmanComposeBackend {
                         event = "services.daemon_down",
                         backend = "podman",
                         state = ?state,
+                        hint_kind,
                         duration_ms,
                         "podman daemon is not reachable"
                     );
                 }
                 Err(ServiceError::DaemonNotRunning {
                     backend: ServiceBackend::PodmanCompose,
-                    hint: podman_daemon_hint(),
+                    hint,
                 })
             }
         }
@@ -198,13 +220,31 @@ impl ServiceBackendOps for PodmanComposeBackend {
                 details: "Podman Compose is not installed".to_string(),
             });
         }
-        if let Err(ServiceError::DaemonNotRunning { hint, .. }) = self.check_daemon() {
-            return Ok(ServiceStatus {
-                backend: ServiceBackend::PodmanCompose,
-                installed: true,
-                running: false,
-                details: format!("Podman daemon is not running. {hint}"),
-            });
+        match self.check_daemon() {
+            Ok(()) => {}
+            Err(ServiceError::DaemonNotRunning { hint, .. }) => {
+                return Ok(ServiceStatus {
+                    backend: ServiceBackend::PodmanCompose,
+                    installed: true,
+                    running: false,
+                    details: format!("Podman daemon is not running. {hint}"),
+                });
+            }
+            Err(other) => {
+                if telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "services.status_daemon_check_swallowed",
+                        backend = "podman",
+                        "unexpected error from check_daemon; reporting unknown state"
+                    );
+                }
+                return Ok(ServiceStatus {
+                    backend: ServiceBackend::PodmanCompose,
+                    installed: true,
+                    running: false,
+                    details: format!("Podman daemon state unknown: {other}"),
+                });
+            }
         }
 
         let working_dir = config_path.parent().unwrap_or(Path::new("."));

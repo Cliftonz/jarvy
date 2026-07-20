@@ -220,22 +220,64 @@ pub trait ServiceBackendOps {
 pub fn detect_backend(dir: &Path) -> Option<(ServiceBackend, PathBuf)> {
     let docker = DockerComposeBackend;
     if let Some(path) = docker.find_config(dir) {
-        if docker.is_installed() {
-            return Some((ServiceBackend::DockerCompose, path));
-        }
         let podman = PodmanComposeBackend;
-        if podman.is_installed() {
-            return Some((ServiceBackend::PodmanCompose, path));
-        }
-        return Some((ServiceBackend::DockerCompose, path));
+        let docker_installed = docker.is_installed();
+        let podman_installed = podman.is_installed();
+        let picked = if docker_installed {
+            ServiceBackend::DockerCompose
+        } else if podman_installed {
+            ServiceBackend::PodmanCompose
+        } else {
+            ServiceBackend::DockerCompose
+        };
+        emit_backend_selected(
+            picked,
+            docker_installed,
+            podman_installed,
+            podman.compose_variant_label(),
+            "detect",
+        );
+        return Some((picked, path));
     }
 
     let tilt = TiltBackend;
     if let Some(path) = tilt.find_config(dir) {
+        emit_backend_selected(ServiceBackend::Tilt, false, false, "n/a", "detect");
         return Some((ServiceBackend::Tilt, path));
     }
 
     None
+}
+
+/// Emit `services.backend_selected` — the per-invocation attribution
+/// event for "which backend does this project actually run against?"
+/// Enables the Podman-vs-Docker adoption funnel (`podman_selected /
+/// total_selected`) that `services.daemon_check` alone couldn't
+/// answer (the probe fires per CLI, not per compose op).
+fn emit_backend_selected(
+    picked: ServiceBackend,
+    docker_installed: bool,
+    podman_installed: bool,
+    podman_variant: &'static str,
+    source: &'static str,
+) {
+    if !crate::observability::telemetry_gate::is_enabled() {
+        return;
+    }
+    let backend_label = match picked {
+        ServiceBackend::DockerCompose => "docker",
+        ServiceBackend::PodmanCompose => "podman",
+        ServiceBackend::Tilt => "tilt",
+    };
+    tracing::info!(
+        event = "services.backend_selected",
+        backend = backend_label,
+        docker_installed,
+        podman_installed,
+        podman_variant,
+        source,
+        "backend picked for services phase"
+    );
 }
 
 /// Resolve a `[services.compose_file] | [services.tiltfile]` config path
@@ -276,13 +318,25 @@ pub fn detect_backend_with_config(
     if let Some(compose) = compose_file {
         if let Some(path) = resolve_within_project(dir, compose, "compose_file") {
             if path.exists() {
-                if DockerComposeBackend.is_installed() {
-                    return Some((ServiceBackend::DockerCompose, path));
-                }
-                if PodmanComposeBackend.is_installed() {
-                    return Some((ServiceBackend::PodmanCompose, path));
-                }
-                return Some((ServiceBackend::DockerCompose, path));
+                let docker = DockerComposeBackend;
+                let podman = PodmanComposeBackend;
+                let docker_installed = docker.is_installed();
+                let podman_installed = podman.is_installed();
+                let picked = if docker_installed {
+                    ServiceBackend::DockerCompose
+                } else if podman_installed {
+                    ServiceBackend::PodmanCompose
+                } else {
+                    ServiceBackend::DockerCompose
+                };
+                emit_backend_selected(
+                    picked,
+                    docker_installed,
+                    podman_installed,
+                    podman.compose_variant_label(),
+                    "compose_file_override",
+                );
+                return Some((picked, path));
             }
         }
     }
