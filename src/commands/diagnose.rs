@@ -127,15 +127,29 @@ pub enum IssueSeverity {
     Info,
 }
 
-/// Suggested fix
+/// Suggested fix. The `command` field is (program, args) — deliberately
+/// NOT a shell-parsed string. Auto-applicable fixes are executed via
+/// `Command::new(program).args(args)`, so no metacharacter can inject a
+/// second command. The `command_display` field is the human-readable
+/// form for `--format json` consumers and for the "Would run: …" print
+/// line — it's advisory-only and never passed to `Command`.
 #[derive(Debug, Serialize)]
 pub struct Fix {
     /// Fix identifier
     pub id: String,
     /// Description of the fix
     pub description: String,
-    /// Command to run
-    pub command: Option<String>,
+    /// Program + args to run. Split form is load-bearing: previously
+    /// stored as `Option<String>` and executed via `sh -c`, which meant
+    /// a future auto-applicable fix that interpolated any untrusted
+    /// value (path, tool name, version) would silently create a
+    /// shell-injection vector. Split-argv makes injection impossible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<(String, Vec<String>)>,
+    /// Human-readable rendering of `command` for CLI output + JSON.
+    /// Advisory only — NOT executed. Present when `command` is Some.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_display: Option<String>,
     /// Whether it can be auto-applied
     pub auto_applicable: bool,
 }
@@ -196,9 +210,13 @@ pub fn run_diagnose(tool: &str, fix: bool, export: bool, _scope: &str, output_fo
         let mut had_failure = false;
         for fix_item in &report.fixes {
             if fix_item.auto_applicable {
-                if let Some(ref cmd) = fix_item.command {
-                    println!("  Running: {}", cmd);
-                    match execute_fix_command(cmd) {
+                if let Some((ref program, ref args)) = fix_item.command {
+                    let display = fix_item
+                        .command_display
+                        .as_deref()
+                        .unwrap_or(program.as_str());
+                    println!("  Running: {display}");
+                    match execute_fix_command(program, args) {
                         Ok(()) => {
                             println!("    ok");
                         }
@@ -220,16 +238,17 @@ pub fn run_diagnose(tool: &str, fix: bool, export: bool, _scope: &str, output_fo
     0
 }
 
-/// Execute a suggested-fix shell command via `sh -c` and surface the
-/// exit status. Commands come from `Fix::command` which is built from
-/// the tool's own `ToolSpec` — Jarvy's first-party data — NOT from
-/// any remote / user-supplied source. That trust posture is what
-/// makes this safe to execute without an additional gate; the same
-/// commands would be printed verbatim today for the user to copy.
-fn execute_fix_command(cmd: &str) -> Result<(), String> {
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
+/// Execute a suggested fix via `Command::new(program).args(args)` —
+/// deliberately NOT through `sh -c`. Previously this shell-parsed a
+/// single joined string, which meant every future auto-applicable
+/// fix that interpolated any untrusted value (tool name, path,
+/// version) would create a shell-injection surface. Split-argv
+/// invocation makes injection impossible: an embedded `;` / `$()` /
+/// `` ` `` becomes a literal argument character to the program
+/// instead of shell syntax.
+fn execute_fix_command(program: &str, args: &[String]) -> Result<(), String> {
+    let status = std::process::Command::new(program)
+        .args(args)
         .status()
         .map_err(|e| e.to_string())?;
     if !status.success() {
@@ -261,7 +280,11 @@ fn diagnose_tool(tool_name: &str, spec: &ToolSpec) -> DiagnosticReport {
         fixes.push(Fix {
             id: "install".to_string(),
             description: format!("Install {} using Jarvy", tool_name),
-            command: Some(format!("jarvy setup --only {}", tool_name)),
+            command: Some((
+                "jarvy".to_string(),
+                vec!["setup".to_string(), "--only".to_string(), tool_name.to_string()],
+            )),
+            command_display: Some(format!("jarvy setup --only {tool_name}")),
             auto_applicable: false,
         });
         None
@@ -1036,8 +1059,10 @@ fn print_diagnostic_report(report: &DiagnosticReport) {
         println!("{}", "-".repeat(40));
         for (i, fix) in report.fixes.iter().enumerate() {
             println!("{}. {}", i + 1, fix.description);
-            if let Some(ref cmd) = fix.command {
-                println!("   Command: {}", cmd);
+            if let Some(display) = fix.command_display.as_deref() {
+                println!("   Command: {display}");
+            } else if let Some((ref program, ref args)) = fix.command {
+                println!("   Command: {program} {}", args.join(" "));
             }
         }
         println!();
