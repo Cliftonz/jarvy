@@ -34,7 +34,7 @@ pub mod platform;
 pub mod runner;
 
 #[allow(unused_imports)]
-pub use config::{AgentTarget, AiHooksConfig, ConfigOrigin, HookEntry, HookScope};
+pub use config::{AgentTarget, AiHooksConfig, ConfigOrigin, HasOrigin, HookEntry, HookScope};
 #[allow(unused_imports)]
 pub use error::AiHookError;
 #[allow(unused_imports)]

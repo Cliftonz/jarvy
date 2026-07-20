@@ -37,6 +37,26 @@ pub enum ConfigOrigin {
     Remote,
 }
 
+/// Every top-level `Config` sub-block that carries a `ConfigOrigin`
+/// implements this so `Config::mark_remote` can iterate uniformly. Was
+/// six copy-paste `if let Some(ref mut cfg) = self.X { cfg.origin =
+/// ConfigOrigin::Remote; }` blocks that silently drifted twice pre-
+/// review (skills and git_hooks were both missed).
+///
+/// Adding a new origin-bearing sub-config now requires one impl block
+/// (2 lines) and one `tag(&mut self.X, o)` line in `mark_remote`. The
+/// regression test `mark_remote_propagates_to_all_origin_bearing_subconfigs`
+/// remains load-bearing — missing the tag call still compiles.
+pub trait HasOrigin {
+    fn set_origin(&mut self, origin: ConfigOrigin);
+}
+
+impl HasOrigin for AiHooksConfig {
+    fn set_origin(&mut self, origin: ConfigOrigin) {
+        self.origin = origin;
+    }
+}
+
 /// Top-level `[ai_hooks]` block.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]

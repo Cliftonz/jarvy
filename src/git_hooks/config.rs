@@ -86,6 +86,12 @@ impl Default for GitHooksConfig {
     }
 }
 
+impl crate::ai_hooks::HasOrigin for GitHooksConfig {
+    fn set_origin(&mut self, origin: crate::ai_hooks::ConfigOrigin) {
+        self.origin = origin;
+    }
+}
+
 /// `[git_hooks.native]` block — write hook scripts directly into
 /// `.git/hooks/<name>` with no framework process in the loop. Each
 /// entry is a hook stage name → inline shell body. Jarvy stamps a

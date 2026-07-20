@@ -1841,20 +1841,25 @@ fn run_dotfiles_phase(config: &Config, dry_run: bool) {
         crate::dotfiles::PhaseOutcome::NoOp => {
             println!("Dotfiles up to date.");
         }
-        crate::dotfiles::PhaseOutcome::Skipped { reason } => {
-            println!("Dotfiles skipped: {reason}");
-            if reason == "stow_manual" {
-                println!(
-                    "  stow requires per-package invocation — jarvy installs it \
-                     but does not auto-apply. Run `stow <package>` from your \
-                     dotfiles repo."
-                );
-            } else if reason == "manager_not_installed" {
-                println!(
-                    "  Add `{} = \"latest\"` under [provisioner] so jarvy \
-                     installs it before this phase runs.",
-                    cfg.manager.cli()
-                );
+        crate::dotfiles::PhaseOutcome::Skipped(reason) => {
+            use crate::dotfiles::SkipReason;
+            println!("Dotfiles skipped: {}", reason.telemetry());
+            match reason {
+                SkipReason::StowManual => {
+                    println!(
+                        "  stow requires per-package invocation — jarvy installs it \
+                         but does not auto-apply. Run `stow <package>` from your \
+                         dotfiles repo."
+                    );
+                }
+                SkipReason::ManagerNotInstalled => {
+                    println!(
+                        "  Add `{} = \"latest\"` under [provisioner] so jarvy \
+                         installs it before this phase runs.",
+                        cfg.manager.cli()
+                    );
+                }
+                SkipReason::DryRun | SkipReason::EmptyRepo => {}
             }
         }
         crate::dotfiles::PhaseOutcome::Refused { reason } => {

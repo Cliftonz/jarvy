@@ -69,6 +69,12 @@ impl McpRegisterConfig {
     }
 }
 
+impl crate::ai_hooks::HasOrigin for McpRegisterConfig {
+    fn set_origin(&mut self, origin: ConfigOrigin) {
+        self.origin = origin;
+    }
+}
+
 /// Override for the built-in `jarvy` MCP server entry. Local-only;
 /// remote configs are refused as a trust-boundary violation.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

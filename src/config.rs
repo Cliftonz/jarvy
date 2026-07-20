@@ -624,37 +624,25 @@ impl Config {
     /// BROADEN it — `allow_remote` is the only opt-in switch and it
     /// must be set explicitly.
     pub fn mark_remote(&mut self) {
-        self.origin = crate::ai_hooks::ConfigOrigin::Remote;
-        if let Some(ref mut cfg) = self.ai_hooks {
-            cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
+        use crate::ai_hooks::{ConfigOrigin, HasOrigin};
+        // Local helper: apply `Remote` to an Option<T: HasOrigin>.
+        // Collapses six copy-paste `if let Some(ref mut cfg) = self.X`
+        // blocks that had silently drifted twice pre-review (skills
+        // and git_hooks were both missed). Missing a `tag()` call
+        // still compiles — that's why
+        // `mark_remote_propagates_to_all_origin_bearing_subconfigs`
+        // remains load-bearing.
+        fn tag<T: HasOrigin>(field: &mut Option<T>, origin: ConfigOrigin) {
+            if let Some(cfg) = field {
+                cfg.set_origin(origin);
+            }
         }
-        if let Some(ref mut cfg) = self.mcp_register {
-            cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
-        }
-        // Review item 4 (P0) — PRD-054 trust gate for `[skills]
-        // library_sources` was wired in skills_cmd.rs but its origin
-        // tag was never propagated. A remote `jarvy setup --from <url>`
-        // config could ship `[[skills.library_sources]]` and bypass
-        // the gate entirely. Same fix shape as ai_hooks / mcp_register.
-        if let Some(ref mut cfg) = self.skills {
-            cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
-        }
-        // Review item 5 (P0) — `[git_hooks]` declared `allow_remote`
-        // as a documented trust gate but no `origin` field existed on
-        // `GitHooksConfig` to compare against. Field added in the
-        // companion git_hooks/config.rs edit; this propagates it.
-        if let Some(ref mut cfg) = self.git_hooks {
-            cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
-        }
-        // `[dotfiles]` follows the same trust boundary as `[git_hooks]`
-        // and `[packages]` — a remote config can declare it, but the
-        // phase runner refuses to clone/apply without `allow_remote`
-        // opt-in in the source config. Propagate the origin so
-        // `dotfiles::run_phase` can enforce that gate without re-reading
-        // the parent Config.
-        if let Some(ref mut cfg) = self.dotfiles {
-            cfg.origin = crate::ai_hooks::ConfigOrigin::Remote;
-        }
+        self.origin = ConfigOrigin::Remote;
+        tag(&mut self.ai_hooks, ConfigOrigin::Remote);
+        tag(&mut self.mcp_register, ConfigOrigin::Remote);
+        tag(&mut self.skills, ConfigOrigin::Remote);
+        tag(&mut self.git_hooks, ConfigOrigin::Remote);
+        tag(&mut self.dotfiles, ConfigOrigin::Remote);
     }
 
     pub fn new(config_path: &str) -> Self {

@@ -75,6 +75,12 @@ impl Default for DotfilesConfig {
     }
 }
 
+impl crate::ai_hooks::HasOrigin for DotfilesConfig {
+    fn set_origin(&mut self, origin: crate::ai_hooks::ConfigOrigin) {
+        self.origin = origin;
+    }
+}
+
 /// Supported dotfile managers. Case-insensitive on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -131,6 +137,38 @@ impl ApplyKind {
     }
 }
 
+/// Bounded reasons the dotfiles phase can be `Skipped`. Replaces an
+/// earlier `&'static str` field that was matched on at the setup_cmd
+/// boundary — same rule declared in two files, silently regressed on
+/// rename. Compiler now catches drift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipReason {
+    /// `dry_run = true` in setup — never touch the manager.
+    DryRun,
+    /// `[dotfiles] repo = ""` (whitespace-only).
+    EmptyRepo,
+    /// `manager = "stow"` — no auto-apply path, user must invoke stow
+    /// per-package by hand.
+    StowManual,
+    /// Manager binary not on PATH — user should add it under
+    /// `[provisioner]` so jarvy installs it before this phase runs.
+    ManagerNotInstalled,
+}
+
+impl SkipReason {
+    /// Telemetry label — bounded &'static str for
+    /// `dotfiles.phase_skipped.reason`. Kept stable so downstream
+    /// dashboards don't break when we rename the enum variants.
+    pub fn telemetry(self) -> &'static str {
+        match self {
+            Self::DryRun => "dry_run",
+            Self::EmptyRepo => "empty_repo",
+            Self::StowManual => "stow_manual",
+            Self::ManagerNotInstalled => "manager_not_installed",
+        }
+    }
+}
+
 /// Outcome of the dotfiles phase — reported via telemetry and
 /// (for the setup lead) printed to stdout.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,12 +181,8 @@ pub enum PhaseOutcome {
     },
     /// Nothing to do — repo already present and `apply = false`.
     NoOp,
-    /// Block existed but was disabled for a legitimate reason
-    /// (unsupported manager for auto-apply, missing manager binary,
-    /// dry-run preview).
-    Skipped {
-        reason: &'static str,
-    },
+    /// Block existed but was disabled for a legitimate reason.
+    Skipped(SkipReason),
     /// Trust gate refused (remote config without `allow_remote`)
     /// OR input-safety refused (leading-`-` repo, NUL byte).
     Refused {
@@ -179,10 +213,7 @@ pub fn run_phase(cfg: &DotfilesConfig, dry_run: bool) -> PhaseOutcome {
     }
 
     if cfg.repo.trim().is_empty() {
-        emit_skipped(cfg.manager.cli(), "empty_repo");
-        return PhaseOutcome::Skipped {
-            reason: "empty_repo",
-        };
+        return skip(cfg.manager.cli(), SkipReason::EmptyRepo);
     }
 
     // Argv-safety gate: refuse repos with a leading `-` or NUL byte.
@@ -199,23 +230,16 @@ pub fn run_phase(cfg: &DotfilesConfig, dry_run: bool) -> PhaseOutcome {
     }
 
     if dry_run {
-        emit_skipped(cfg.manager.cli(), "dry_run");
-        return PhaseOutcome::Skipped { reason: "dry_run" };
+        return skip(cfg.manager.cli(), SkipReason::DryRun);
     }
 
     // Stow doesn't fit a single "apply" verb — skip with hint.
     if cfg.manager == DotfilesManager::Stow {
-        emit_skipped(cfg.manager.cli(), "stow_manual");
-        return PhaseOutcome::Skipped {
-            reason: "stow_manual",
-        };
+        return skip(cfg.manager.cli(), SkipReason::StowManual);
     }
 
     if !command_on_path(cfg.manager.cli()) {
-        emit_skipped(cfg.manager.cli(), "manager_not_installed");
-        return PhaseOutcome::Skipped {
-            reason: "manager_not_installed",
-        };
+        return skip(cfg.manager.cli(), SkipReason::ManagerNotInstalled);
     }
 
     if telemetry_gate::is_enabled() {
@@ -465,15 +489,20 @@ fn command_on_path(cmd: &str) -> bool {
     crate::tools::common::command_on_path(cmd)
 }
 
-fn emit_skipped(manager: &'static str, reason: &'static str) {
+/// Convenience: emit `dotfiles.phase_skipped` and return the matching
+/// `PhaseOutcome::Skipped(SkipReason)` in one call. Callers get compile-
+/// time-checked SkipReason arms; the telemetry label is derived from the
+/// enum so it can't drift.
+fn skip(manager: &'static str, reason: SkipReason) -> PhaseOutcome {
     if telemetry_gate::is_enabled() {
         tracing::info!(
             event = "dotfiles.phase_skipped",
             manager,
-            reason,
+            reason = reason.telemetry(),
             "dotfiles phase skipped"
         );
     }
+    PhaseOutcome::Skipped(reason)
 }
 
 fn emit_refused(manager: &'static str, reason: &'static str) {
@@ -569,9 +598,7 @@ repo = "github:zac/dotfiles"
         };
         assert!(matches!(
             run_phase(&cfg, false),
-            PhaseOutcome::Skipped {
-                reason: "empty_repo"
-            }
+            PhaseOutcome::Skipped(SkipReason::EmptyRepo)
         ));
     }
 
@@ -584,7 +611,7 @@ repo = "github:zac/dotfiles"
         };
         assert!(matches!(
             run_phase(&cfg, true),
-            PhaseOutcome::Skipped { reason: "dry_run" }
+            PhaseOutcome::Skipped(SkipReason::DryRun)
         ));
     }
 
@@ -597,9 +624,7 @@ repo = "github:zac/dotfiles"
         };
         assert!(matches!(
             run_phase(&cfg, false),
-            PhaseOutcome::Skipped {
-                reason: "stow_manual"
-            }
+            PhaseOutcome::Skipped(SkipReason::StowManual)
         ));
     }
 

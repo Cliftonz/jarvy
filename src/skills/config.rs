@@ -44,6 +44,12 @@ impl SkillsConfig {
     }
 }
 
+impl crate::ai_hooks::HasOrigin for SkillsConfig {
+    fn set_origin(&mut self, origin: ConfigOrigin) {
+        self.origin = origin;
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum SkillEntry {
