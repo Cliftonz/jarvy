@@ -82,6 +82,15 @@ fix reported after rc.3.
 
 **Fixes:**
 
+- **`jarvy setup --dry-run` prints the plan even under non-TTY.** The
+  new chatter gate above silences the setup narration by default when
+  `stderr` isn't a terminal — but a dry-run's whole point is to
+  *preview* what would happen, so the `[DRY-RUN] Would install …`
+  plan lines must always print. Dry-run now folds into the `verbose`
+  axis of the chatter gate; `JARVY_CHATTER=0` still wins if you
+  really want silence. Caught by `e2e_dry_run_mode` on the first
+  v0.6.6 tag attempt (blocked pre-publish by the release-gate test
+  workflow).
 - **Dotfiles argv-injection guard.** The `[dotfiles] repo` field is
   now validated against leading-`-` values (CVE-2017-1000117-class
   option-injection into `git clone`) and NUL bytes; `chezmoi` and
