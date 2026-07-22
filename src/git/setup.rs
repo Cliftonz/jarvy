@@ -631,16 +631,16 @@ impl GitSetup {
 
     /// Configure user identity (name and email)
     fn configure_identity(&self) -> Result<(), GitError> {
-        if let Some(ref name) = self.config.user_name {
-            if let Some(value) = name.resolve() {
-                self.set_config("user.name", &value)?;
-            }
+        if let Some(ref name) = self.config.user_name
+            && let Some(value) = name.resolve()
+        {
+            self.set_config("user.name", &value)?;
         }
 
-        if let Some(ref email) = self.config.user_email {
-            if let Some(value) = email.resolve() {
-                self.set_config("user.email", &value)?;
-            }
+        if let Some(ref email) = self.config.user_email
+            && let Some(value) = email.resolve()
+        {
+            self.set_config("user.email", &value)?;
         }
 
         Ok(())

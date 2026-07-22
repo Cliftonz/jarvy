@@ -165,10 +165,10 @@ impl TelemetryConfig {
         }
 
         // Endpoint
-        if let Ok(v) = env::var("JARVY_OTLP_ENDPOINT") {
-            if !v.trim().is_empty() {
-                config.endpoint = v;
-            }
+        if let Ok(v) = env::var("JARVY_OTLP_ENDPOINT")
+            && !v.trim().is_empty()
+        {
+            config.endpoint = v;
         }
 
         // Protocol
@@ -188,10 +188,10 @@ impl TelemetryConfig {
         }
 
         // Sample rate
-        if let Ok(v) = env::var("JARVY_OTLP_SAMPLE_RATE") {
-            if let Ok(rate) = v.parse::<f64>() {
-                config.sample_rate = rate.clamp(0.0, 1.0);
-            }
+        if let Ok(v) = env::var("JARVY_OTLP_SAMPLE_RATE")
+            && let Ok(rate) = v.parse::<f64>()
+        {
+            config.sample_rate = rate.clamp(0.0, 1.0);
         }
 
         // Unattended-mode auto-disable: covers CI runners AND modern
@@ -476,10 +476,10 @@ fn build_meter_provider(config: &TelemetryConfig) -> Result<SdkMeterProvider, St
 
 /// Shutdown telemetry, flushing any pending data
 pub fn shutdown() {
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref provider) = state.meter_provider {
-            let _ = provider.shutdown();
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref provider) = state.meter_provider
+    {
+        let _ = provider.shutdown();
     }
 }
 
@@ -514,17 +514,17 @@ pub fn tool_requested(tool: &str, version: &str, source: Source) {
         platform = %env::consts::OS,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.tool_requests.add(
-                1,
-                &[
-                    KeyValue::new("tool", tool.to_string()),
-                    KeyValue::new("source", source.to_string()),
-                    KeyValue::new("platform", env::consts::OS.to_string()),
-                ],
-            );
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.tool_requests.add(
+            1,
+            &[
+                KeyValue::new("tool", tool.to_string()),
+                KeyValue::new("source", source.to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
     }
 }
 
@@ -546,23 +546,23 @@ pub fn tool_installed(tool: &str, version: &str, package_manager: &str, duration
         platform = %env::consts::OS,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            let attrs = [
-                KeyValue::new("tool", tool.to_string()),
-                KeyValue::new("pm", package_manager.to_string()),
-                KeyValue::new("platform", env::consts::OS.to_string()),
-                KeyValue::new("status", "success"),
-                KeyValue::new("category", category.to_string()),
-            ];
-            metrics.tool_installs.add(1, &attrs);
-            // Histogram label set excludes `status` and `category` to
-            // keep cardinality bounded; duration distribution by
-            // tool+pm+platform is what dashboards want.
-            metrics
-                .install_duration
-                .record(duration.as_secs_f64(), &attrs[..3]);
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        let attrs = [
+            KeyValue::new("tool", tool.to_string()),
+            KeyValue::new("pm", package_manager.to_string()),
+            KeyValue::new("platform", env::consts::OS.to_string()),
+            KeyValue::new("status", "success"),
+            KeyValue::new("category", category.to_string()),
+        ];
+        metrics.tool_installs.add(1, &attrs);
+        // Histogram label set excludes `status` and `category` to
+        // keep cardinality bounded; duration distribution by
+        // tool+pm+platform is what dashboards want.
+        metrics
+            .install_duration
+            .record(duration.as_secs_f64(), &attrs[..3]);
     }
 }
 
@@ -612,20 +612,20 @@ pub fn tool_already_installed(
         platform = %env::consts::OS,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.tool_installs.add(
-                1,
-                &[
-                    KeyValue::new("tool", tool.to_string()),
-                    KeyValue::new("platform", env::consts::OS.to_string()),
-                    KeyValue::new("status", "already_installed"),
-                    KeyValue::new("detection_method", detection_method.to_string()),
-                    KeyValue::new("source", source.to_string()),
-                    KeyValue::new("prompted_user", prompted_user),
-                ],
-            );
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.tool_installs.add(
+            1,
+            &[
+                KeyValue::new("tool", tool.to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+                KeyValue::new("status", "already_installed"),
+                KeyValue::new("detection_method", detection_method.to_string()),
+                KeyValue::new("source", source.to_string()),
+                KeyValue::new("prompted_user", prompted_user),
+            ],
+        );
     }
 }
 
@@ -657,22 +657,22 @@ pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error:
         platform = %env::consts::OS,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.tool_installs.add(
-                1,
-                &[
-                    KeyValue::new("tool", tool.to_string()),
-                    KeyValue::new("platform", env::consts::OS.to_string()),
-                    KeyValue::new("status", "failed"),
-                    KeyValue::new("error_kind", error_kind.to_string()),
-                    KeyValue::new("category", category.to_string()),
-                ],
-            );
-            metrics
-                .errors
-                .add(1, &[KeyValue::new("error_type", "tool_install")]);
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.tool_installs.add(
+            1,
+            &[
+                KeyValue::new("tool", tool.to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+                KeyValue::new("status", "failed"),
+                KeyValue::new("error_kind", error_kind.to_string()),
+                KeyValue::new("category", category.to_string()),
+            ],
+        );
+        metrics
+            .errors
+            .add(1, &[KeyValue::new("error_type", "tool_install")]);
     }
 }
 
@@ -689,17 +689,17 @@ pub fn tool_not_supported(tool: &str, _version: Option<&str>, source: Source) {
         return;
     }
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.tool_not_supported.add(
-                1,
-                &[
-                    KeyValue::new("tool", tool.to_string()),
-                    KeyValue::new("source", source.to_string()),
-                    KeyValue::new("platform", env::consts::OS.to_string()),
-                ],
-            );
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.tool_not_supported.add(
+            1,
+            &[
+                KeyValue::new("tool", tool.to_string()),
+                KeyValue::new("source", source.to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
     }
 }
 
@@ -718,18 +718,18 @@ pub fn tool_not_supported(tool: &str, _version: Option<&str>, source: Source) {
 /// fallback — though the structured event always lands in the local
 /// log file.
 pub fn tool_request_explicit(tool: &str, _suggestions: &[String]) -> bool {
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.tool_not_supported.add(
-                1,
-                &[
-                    KeyValue::new("tool", tool.to_string()),
-                    KeyValue::new("source", Source::Request.to_string()),
-                    KeyValue::new("platform", env::consts::OS.to_string()),
-                ],
-            );
-            return true;
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.tool_not_supported.add(
+            1,
+            &[
+                KeyValue::new("tool", tool.to_string()),
+                KeyValue::new("source", Source::Request.to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
+        return true;
     }
     false
 }
@@ -779,13 +779,13 @@ pub fn setup_completed(summary: &SetupSummary) {
         duration_ms = %duration_ms,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.setup_duration.record(
-                summary.duration.as_secs_f64(),
-                &[KeyValue::new("tools_count", summary.tools_requested as i64)],
-            );
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.setup_duration.record(
+            summary.duration.as_secs_f64(),
+            &[KeyValue::new("tools_count", summary.tools_requested as i64)],
+        );
     }
 }
 
@@ -826,16 +826,16 @@ pub fn setup_inventory(
         platform = %env::consts::OS,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.setup_inventory_size.record(
-                tools.len() as u64,
-                &[
-                    KeyValue::new("machine_id", machine_id.unwrap_or("unknown").to_string()),
-                    KeyValue::new("platform", env::consts::OS.to_string()),
-                ],
-            );
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.setup_inventory_size.record(
+            tools.len() as u64,
+            &[
+                KeyValue::new("machine_id", machine_id.unwrap_or("unknown").to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
     }
 }
 
@@ -872,17 +872,17 @@ pub fn hook_completed(hook_name: &str, hook_type: &str, duration: Duration, exit
         exit_code = %exit_code,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            let attrs = [
-                KeyValue::new("hook_type", hook_type.to_string()),
-                KeyValue::new("status", "success"),
-            ];
-            metrics.hooks_executions.add(1, &attrs);
-            metrics
-                .hooks_duration
-                .record(duration.as_secs_f64(), &[attrs[0].clone()]);
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        let attrs = [
+            KeyValue::new("hook_type", hook_type.to_string()),
+            KeyValue::new("status", "success"),
+        ];
+        metrics.hooks_executions.add(1, &attrs);
+        metrics
+            .hooks_duration
+            .record(duration.as_secs_f64(), &[attrs[0].clone()]);
     }
 }
 
@@ -901,19 +901,19 @@ pub fn hook_failed(hook_name: &str, hook_type: &str, error: &str, error_type: &s
         error_type = %error_type,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.hooks_executions.add(
-                1,
-                &[
-                    KeyValue::new("hook_type", hook_type.to_string()),
-                    KeyValue::new("status", "failed"),
-                ],
-            );
-            metrics
-                .errors
-                .add(1, &[KeyValue::new("error_type", "hook")]);
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.hooks_executions.add(
+            1,
+            &[
+                KeyValue::new("hook_type", hook_type.to_string()),
+                KeyValue::new("status", "failed"),
+            ],
+        );
+        metrics
+            .errors
+            .add(1, &[KeyValue::new("error_type", "hook")]);
     }
 }
 
@@ -930,16 +930,16 @@ pub fn hook_timeout(hook_name: &str, hook_type: &str, timeout_secs: u64) {
         timeout_seconds = %timeout_secs,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics.hooks_executions.add(
-                1,
-                &[
-                    KeyValue::new("hook_type", hook_type.to_string()),
-                    KeyValue::new("status", "timeout"),
-                ],
-            );
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.hooks_executions.add(
+            1,
+            &[
+                KeyValue::new("hook_type", hook_type.to_string()),
+                KeyValue::new("status", "timeout"),
+            ],
+        );
     }
 }
 
@@ -963,17 +963,17 @@ pub fn command_executed(command: &str, duration: Duration, success: bool) {
         status = %status,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            let attrs = [
-                KeyValue::new("command", command.to_string()),
-                KeyValue::new("status", status),
-            ];
-            metrics.commands.add(1, &attrs);
-            metrics
-                .commands_duration
-                .record(duration.as_secs_f64(), &[attrs[0].clone()]);
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        let attrs = [
+            KeyValue::new("command", command.to_string()),
+            KeyValue::new("status", status),
+        ];
+        metrics.commands.add(1, &attrs);
+        metrics
+            .commands_duration
+            .record(duration.as_secs_f64(), &[attrs[0].clone()]);
     }
 }
 
@@ -1131,12 +1131,12 @@ pub fn config_parse_error(file: &str, error: &str) {
         error = %redacted_error,
     );
 
-    if let Some(state) = TELEMETRY.get() {
-        if let Some(ref metrics) = state.metrics {
-            metrics
-                .errors
-                .add(1, &[KeyValue::new("error_type", "config_parse")]);
-        }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics
+            .errors
+            .add(1, &[KeyValue::new("error_type", "config_parse")]);
     }
 }
 
@@ -1329,10 +1329,11 @@ fn redact_sensitive(s: &str) -> std::borrow::Cow<'_, str> {
 
 /// Redact file paths to remove user-identifying information.
 pub fn redact_path(path: &str) -> String {
-    if let Some(home) = HOME_DIR_STRING.as_deref() {
-        if !home.is_empty() && path.starts_with(home) {
-            return path.replacen(home, "~", 1);
-        }
+    if let Some(home) = HOME_DIR_STRING.as_deref()
+        && !home.is_empty()
+        && path.starts_with(home)
+    {
+        return path.replacen(home, "~", 1);
     }
     path.to_string()
 }

@@ -279,10 +279,10 @@ pub fn detect_project_type<P: AsRef<Path>>(dir: P) -> DetectedProject {
 fn has_file_with_extension(dir: &Path, extension: &str) -> bool {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if let Some(ext) = entry.path().extension() {
-                if ext == extension {
-                    return true;
-                }
+            if let Some(ext) = entry.path().extension()
+                && ext == extension
+            {
+                return true;
             }
         }
     }

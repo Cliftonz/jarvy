@@ -88,10 +88,10 @@ pub(crate) fn invalidate_global_config_cache() {
 }
 
 pub(crate) fn initialize() -> CliConfig {
-    if let Ok(guard) = config_cache().read() {
-        if let Some(cfg) = guard.as_ref() {
-            return cfg.clone();
-        }
+    if let Ok(guard) = config_cache().read()
+        && let Some(cfg) = guard.as_ref()
+    {
+        return cfg.clone();
     }
     let fresh = initialize_from_disk();
     if let Ok(mut guard) = config_cache().write() {
@@ -124,11 +124,9 @@ fn initialize_from_disk() -> CliConfig {
     // Create the .jarvy directory if it doesn't exist. Notice →
     // stderr (stdout stays clean for `--format json` consumers).
     let is_first_run = !jarvy_dir.exists();
-    if is_first_run {
-        if let Err(e) = fs::create_dir(&jarvy_dir) {
-            eprintln!("Unable to create jarvy config directory: {e}");
-            return CliConfig::default();
-        }
+    if is_first_run && let Err(e) = fs::create_dir(&jarvy_dir) {
+        eprintln!("Unable to create jarvy config directory: {e}");
+        return CliConfig::default();
     }
 
     // Load the current on-disk config content (empty if missing).

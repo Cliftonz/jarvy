@@ -436,10 +436,10 @@ pub fn resolve_hook(name: &str) -> Option<LibraryHookItem> {
     let snapshot = snapshot_manifests();
     for manifest in &snapshot {
         for item in &manifest.items {
-            if let LibraryItem::AiHook(h) = item {
-                if h.name == name {
-                    return Some(h.clone());
-                }
+            if let LibraryItem::AiHook(h) = item
+                && h.name == name
+            {
+                return Some(h.clone());
             }
         }
     }
@@ -451,10 +451,10 @@ pub fn resolve_mcp_server(name: &str) -> Option<LibraryMcpItem> {
     let snapshot = snapshot_manifests();
     for manifest in &snapshot {
         for item in &manifest.items {
-            if let LibraryItem::McpServer(s) = item {
-                if s.name == name {
-                    return Some(s.clone());
-                }
+            if let LibraryItem::McpServer(s) = item
+                && s.name == name
+            {
+                return Some(s.clone());
             }
         }
     }
@@ -466,10 +466,10 @@ pub fn resolve_skill(name: &str) -> Option<LibrarySkillItem> {
     let snapshot = snapshot_manifests();
     for manifest in &snapshot {
         for item in &manifest.items {
-            if let LibraryItem::Skill(s) = item {
-                if s.name == name {
-                    return Some(s.clone());
-                }
+            if let LibraryItem::Skill(s) = item
+                && s.name == name
+            {
+                return Some(s.clone());
             }
         }
     }

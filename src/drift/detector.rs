@@ -193,15 +193,15 @@ impl<'a> DriftDetector<'a> {
                     actual_hash: "missing".to_string(),
                     auto_fixable: false,
                 });
-            } else if let Ok(actual_hash) = hash_file(&file_path) {
-                if actual_hash != *expected_hash {
-                    report.changed_files.push(ChangedFile {
-                        path: path.clone(),
-                        expected_hash: expected_hash.clone(),
-                        actual_hash,
-                        auto_fixable: false,
-                    });
-                }
+            } else if let Ok(actual_hash) = hash_file(&file_path)
+                && actual_hash != *expected_hash
+            {
+                report.changed_files.push(ChangedFile {
+                    path: path.clone(),
+                    expected_hash: expected_hash.clone(),
+                    actual_hash,
+                    auto_fixable: false,
+                });
             }
         }
 

@@ -100,11 +100,11 @@ fn apply_rc_line(shell: ShellType) -> i32 {
         return 0;
     }
 
-    if let Some(parent) = rc.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("Error: cannot create {}: {}", parent.display(), e);
-            return 1;
-        }
+    if let Some(parent) = rc.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("Error: cannot create {}: {}", parent.display(), e);
+        return 1;
     }
     let block = format!(
         "\n# Added by `jarvy shell-init --apply` — defines `jr` (jarvy run) and runs `jarvy ensure`\n{}\n",

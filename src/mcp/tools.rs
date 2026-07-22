@@ -326,10 +326,10 @@ pub fn handle_list_tools(arguments: Option<serde_json::Value>) -> McpResult<serd
         .into_iter()
         .filter(|t| {
             // Filter by search term
-            if let Some(ref search) = params.search {
-                if !t.name.to_lowercase().contains(&search.to_lowercase()) {
-                    return false;
-                }
+            if let Some(ref search) = params.search
+                && !t.name.to_lowercase().contains(&search.to_lowercase())
+            {
+                return false;
             }
 
             // Filter by platform
@@ -702,16 +702,16 @@ fn get_supported_platforms(tool: &ToolIndexEntry) -> Vec<String> {
 fn get_installed_version(command: &str) -> Option<String> {
     // Try common version flags
     for flag in &["--version", "-v", "-V", "version"] {
-        if let Ok(output) = std::process::Command::new(command).arg(flag).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}{}", stdout, stderr);
+        if let Ok(output) = std::process::Command::new(command).arg(flag).output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = format!("{}{}", stdout, stderr);
 
-                // Extract version number (simple regex-free approach)
-                if let Some(version) = extract_version(&combined) {
-                    return Some(version);
-                }
+            // Extract version number (simple regex-free approach)
+            if let Some(version) = extract_version(&combined) {
+                return Some(version);
             }
         }
     }
@@ -801,14 +801,14 @@ fn get_install_info(tool_name: &str) -> InstallInfo {
                 }
             }
             "windows" => {
-                if let Some(ref windows) = tool.windows {
-                    if let Some(ref winget) = windows.winget {
-                        return InstallInfo {
-                            command: format!("winget install {}", winget),
-                            package_manager: "winget".to_string(),
-                            requires_sudo: false,
-                        };
-                    }
+                if let Some(ref windows) = tool.windows
+                    && let Some(ref winget) = windows.winget
+                {
+                    return InstallInfo {
+                        command: format!("winget install {}", winget),
+                        package_manager: "winget".to_string(),
+                        requires_sudo: false,
+                    };
                 }
             }
             _ => {}

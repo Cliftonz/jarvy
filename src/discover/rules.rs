@@ -202,21 +202,20 @@ fn rule_match_source(
                 }
             }
             DetectionPattern::Dir { dir } => {
-                if project_dir.join(dir).is_dir() {
-                    if let Some(safe) = sanitize_source(dir) {
-                        return Some(safe);
-                    }
+                if project_dir.join(dir).is_dir()
+                    && let Some(safe) = sanitize_source(dir)
+                {
+                    return Some(safe);
                 }
             }
             DetectionPattern::FileContaining { file, containing } => {
-                if let Some(p) = index.find_first_match(file) {
-                    if let Ok(content) = read_bounded(p, MAX_CONTAINING_BYTES) {
-                        if content.contains(containing) {
-                            let name = p.file_name()?.to_string_lossy().into_owned();
-                            if let Some(safe) = sanitize_source(&name) {
-                                return Some(safe);
-                            }
-                        }
+                if let Some(p) = index.find_first_match(file)
+                    && let Ok(content) = read_bounded(p, MAX_CONTAINING_BYTES)
+                    && content.contains(containing)
+                {
+                    let name = p.file_name()?.to_string_lossy().into_owned();
+                    if let Some(safe) = sanitize_source(&name) {
+                        return Some(safe);
                     }
                 }
             }

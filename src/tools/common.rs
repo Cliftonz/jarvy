@@ -412,10 +412,10 @@ pub fn probe_with_timeout(cmd: &str, args: &[&str], timeout: std::time::Duration
 /// `dotfiles`).
 pub fn command_on_path(cmd: &str) -> bool {
     let key = format!("__path::{cmd}");
-    if let Ok(read) = has_cache().read() {
-        if let Some(&hit) = read.get(&key) {
-            return hit;
-        }
+    if let Ok(read) = has_cache().read()
+        && let Some(&hit) = read.get(&key)
+    {
+        return hit;
     }
     let result = command_on_path_uncached(cmd);
     if let Ok(mut write) = has_cache().write() {
@@ -486,10 +486,10 @@ pub fn cargo_install_argv(crate_name: &'static str) -> [&'static str; 3] {
 }
 
 pub fn has(cmd: &str) -> bool {
-    if let Ok(read) = has_cache().read() {
-        if let Some(&hit) = read.get(cmd) {
-            return hit;
-        }
+    if let Ok(read) = has_cache().read()
+        && let Some(&hit) = read.get(cmd)
+    {
+        return hit;
     }
     let result = has_uncached(cmd);
     if let Ok(mut write) = has_cache().write() {
@@ -535,10 +535,10 @@ fn version_cache() -> &'static std::sync::RwLock<std::collections::HashMap<Strin
 }
 
 fn cmd_version_output(cmd: &str) -> Option<String> {
-    if let Ok(read) = version_cache().read() {
-        if let Some(hit) = read.get(cmd) {
-            return hit.clone();
-        }
+    if let Ok(read) = version_cache().read()
+        && let Some(hit) = read.get(cmd)
+    {
+        return hit.clone();
     }
     let probed = Command::new(cmd)
         .arg("--version")

@@ -164,11 +164,12 @@ pub fn list_tickets() -> Result<Vec<(String, PathBuf, u64)>, TicketError> {
 
     for entry in (std::fs::read_dir(&tickets_dir)?).flatten() {
         let path = entry.path();
-        if path.is_file() && path.extension().map(|e| e == "zip").unwrap_or(false) {
-            if let Some(name) = path.file_stem() {
-                let size = path.metadata().map(|m| m.len()).unwrap_or(0);
-                tickets.push((name.to_string_lossy().to_string(), path, size));
-            }
+        if path.is_file()
+            && path.extension().map(|e| e == "zip").unwrap_or(false)
+            && let Some(name) = path.file_stem()
+        {
+            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+            tickets.push((name.to_string_lossy().to_string(), path, size));
         }
     }
 
@@ -193,18 +194,16 @@ pub fn clean_tickets(max_age_days: u32) -> Result<(usize, u64), TicketError> {
 
     for entry in (std::fs::read_dir(&tickets_dir)?).flatten() {
         let path = entry.path();
-        if path.is_file() && path.extension().map(|e| e == "zip").unwrap_or(false) {
-            if let Ok(metadata) = path.metadata() {
-                if let Ok(modified) = metadata.modified() {
-                    if let Ok(age) = now.duration_since(modified) {
-                        if age.as_secs() > max_age_secs {
-                            removed_bytes += metadata.len();
-                            if std::fs::remove_file(&path).is_ok() {
-                                removed_count += 1;
-                            }
-                        }
-                    }
-                }
+        if path.is_file()
+            && path.extension().map(|e| e == "zip").unwrap_or(false)
+            && let Ok(metadata) = path.metadata()
+            && let Ok(modified) = metadata.modified()
+            && let Ok(age) = now.duration_since(modified)
+            && age.as_secs() > max_age_secs
+        {
+            removed_bytes += metadata.len();
+            if std::fs::remove_file(&path).is_ok() {
+                removed_count += 1;
             }
         }
     }

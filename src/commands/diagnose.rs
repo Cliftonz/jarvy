@@ -304,11 +304,11 @@ fn diagnose_tool(tool_name: &str, spec: &ToolSpec) -> DiagnosticReport {
     let health_checks = run_health_checks(tool_name, spec, &installation);
 
     // Check for PATH issues
-    if installation.installed {
-        if let Some(ref loc) = installation.location {
-            let path_issues = check_path_issues(loc);
-            issues.extend(path_issues);
-        }
+    if installation.installed
+        && let Some(ref loc) = installation.location
+    {
+        let path_issues = check_path_issues(loc);
+        issues.extend(path_issues);
     }
 
     // Add fixes for health check failures
@@ -934,14 +934,14 @@ fn check_path_issues(binary_location: &str) -> Vec<Issue> {
 
     if let Some(dir) = binary_dir {
         // Check if directory is in PATH
-        if let Ok(path) = std::env::var("PATH") {
-            if !path.split(':').any(|p| p == dir) {
-                issues.push(Issue {
-                    severity: IssueSeverity::Warning,
-                    description: format!("Binary directory '{}' may not be in PATH", dir),
-                    fix_id: Some("add-to-path".to_string()),
-                });
-            }
+        if let Ok(path) = std::env::var("PATH")
+            && !path.split(':').any(|p| p == dir)
+        {
+            issues.push(Issue {
+                severity: IssueSeverity::Warning,
+                description: format!("Binary directory '{}' may not be in PATH", dir),
+                fix_id: Some("add-to-path".to_string()),
+            });
         }
     }
 

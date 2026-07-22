@@ -21,10 +21,10 @@ pub fn detect_signing_format(key: &str) -> SigningFormat {
 
     if path.exists() && path.is_file() {
         // Read first line to detect format
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if content.starts_with("ssh-") || content.starts_with("ecdsa-") {
-                return SigningFormat::Ssh;
-            }
+        if let Ok(content) = std::fs::read_to_string(path)
+            && (content.starts_with("ssh-") || content.starts_with("ecdsa-"))
+        {
+            return SigningFormat::Ssh;
         }
     }
 

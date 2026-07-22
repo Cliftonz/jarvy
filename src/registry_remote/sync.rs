@@ -592,12 +592,11 @@ fn list_cached_tool_files() -> Result<Vec<String>, CacheError> {
     let mut out = Vec::with_capacity(64);
     for entry in std::fs::read_dir(&dir)? {
         let entry = entry?;
-        if entry.file_type()?.is_file() {
-            if let Some(name) = entry.file_name().to_str() {
-                if name.ends_with(".toml") {
-                    out.push(name.to_string());
-                }
-            }
+        if entry.file_type()?.is_file()
+            && let Some(name) = entry.file_name().to_str()
+            && name.ends_with(".toml")
+        {
+            out.push(name.to_string());
         }
     }
     Ok(out)

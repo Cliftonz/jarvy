@@ -267,10 +267,10 @@ fn run_git(args: &[&str], cwd: Option<&Path>) -> Result<(), LibraryError> {
 }
 
 fn ensure_parent(p: &Path) -> std::io::Result<()> {
-    if let Some(parent) = p.parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = p.parent()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     Ok(())
 }
@@ -334,10 +334,10 @@ fn walk_dir(
         let entry = entry.map_err(LibraryError::Io)?;
         let path = entry.path();
         // Skip hidden + git internals.
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.') {
-                continue;
-            }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && name.starts_with('.')
+        {
+            continue;
         }
         // Skip symlinks entirely — both for dir traversal and SKILL.md
         // file targets. A symlinked SKILL.md could point at an

@@ -177,29 +177,25 @@ pub fn find_workspace_root(start: &Path) -> Option<WorkspaceContext> {
 
     loop {
         let config_path = current.join("jarvy.toml");
-        if config_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&config_path) {
-                if let Ok(parsed) = toml::from_str::<toml::Value>(&content) {
-                    if let Some(ws) = parsed.get("workspace") {
-                        if let Ok(workspace) = toml::Value::try_into::<WorkspaceConfig>(ws.clone())
-                        {
-                            // Found a workspace root. Determine if `start` is a member.
-                            let current_member = determine_member(start, &current, &workspace);
-                            let member_config = current_member
-                                .as_ref()
-                                .map(|m| current.join(m).join("jarvy.toml"))
-                                .filter(|p| p.exists());
+        if config_path.exists()
+            && let Ok(content) = std::fs::read_to_string(&config_path)
+            && let Ok(parsed) = toml::from_str::<toml::Value>(&content)
+            && let Some(ws) = parsed.get("workspace")
+            && let Ok(workspace) = toml::Value::try_into::<WorkspaceConfig>(ws.clone())
+        {
+            // Found a workspace root. Determine if `start` is a member.
+            let current_member = determine_member(start, &current, &workspace);
+            let member_config = current_member
+                .as_ref()
+                .map(|m| current.join(m).join("jarvy.toml"))
+                .filter(|p| p.exists());
 
-                            return Some(WorkspaceContext {
-                                root_config: config_path,
-                                member_config,
-                                workspace,
-                                current_member,
-                            });
-                        }
-                    }
-                }
-            }
+            return Some(WorkspaceContext {
+                root_config: config_path,
+                member_config,
+                workspace,
+                current_member,
+            });
         }
 
         if !current.pop() {

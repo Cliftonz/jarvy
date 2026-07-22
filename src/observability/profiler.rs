@@ -122,12 +122,11 @@ impl Profiler {
         if !self.enabled {
             return;
         }
-        if let Some(name) = self.current_phase.take() {
-            if let Some(phase) = self.phases.get_mut(&name) {
-                if let Some(start) = phase.start.take() {
-                    phase.duration = start.elapsed();
-                }
-            }
+        if let Some(name) = self.current_phase.take()
+            && let Some(phase) = self.phases.get_mut(&name)
+            && let Some(start) = phase.start.take()
+        {
+            phase.duration = start.elapsed();
         }
     }
 

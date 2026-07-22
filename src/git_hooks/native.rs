@@ -45,13 +45,13 @@ impl NativeHandler {
                 )));
             }
             let target = hooks_dir.join(stage);
-            if let Ok(existing) = std::fs::read_to_string(&target) {
-                if !existing.contains(JARVY_MARKER) {
-                    return Err(HookError::InstallFailed(format!(
-                        "{} exists and was not written by jarvy; refusing to overwrite a hand-rolled hook (move it aside, or add the `{JARVY_MARKER}` marker manually)",
-                        target.display()
-                    )));
-                }
+            if let Ok(existing) = std::fs::read_to_string(&target)
+                && !existing.contains(JARVY_MARKER)
+            {
+                return Err(HookError::InstallFailed(format!(
+                    "{} exists and was not written by jarvy; refusing to overwrite a hand-rolled hook (move it aside, or add the `{JARVY_MARKER}` marker manually)",
+                    target.display()
+                )));
             }
 
             // git requires `#!` on line 1. Either honor the user's

@@ -172,31 +172,31 @@ pub fn validate_config(path: &str, strict: bool) -> ValidationResult {
     validate_structure(&parsed, &content, &mut issues);
 
     // Validate tools
-    if let Some(provisioner) = parsed.get("provisioner") {
-        if let Some(tools_table) = provisioner.as_table() {
-            validate_tools(tools_table, &mut issues);
-        }
+    if let Some(provisioner) = parsed.get("provisioner")
+        && let Some(tools_table) = provisioner.as_table()
+    {
+        validate_tools(tools_table, &mut issues);
     }
 
     // Validate hooks
-    if let Some(hooks) = parsed.get("hooks") {
-        if let Some(hooks_table) = hooks.as_table() {
-            validate_hooks(hooks_table, &parsed, &mut issues);
-        }
+    if let Some(hooks) = parsed.get("hooks")
+        && let Some(hooks_table) = hooks.as_table()
+    {
+        validate_hooks(hooks_table, &parsed, &mut issues);
     }
 
     // Validate env
-    if let Some(env) = parsed.get("env") {
-        if let Some(env_table) = env.as_table() {
-            validate_env(env_table, &mut issues);
-        }
+    if let Some(env) = parsed.get("env")
+        && let Some(env_table) = env.as_table()
+    {
+        validate_env(env_table, &mut issues);
     }
 
     // Validate services
-    if let Some(services) = parsed.get("services") {
-        if let Some(services_table) = services.as_table() {
-            validate_services(services_table, &mut issues);
-        }
+    if let Some(services) = parsed.get("services")
+        && let Some(services_table) = services.as_table()
+    {
+        validate_services(services_table, &mut issues);
     }
 
     // Validate package sections — runs the same name/version guards that
@@ -460,74 +460,71 @@ fn validate_hooks(
     }
 
     // Validate hook config
-    if let Some(config) = hooks.get("config") {
-        if let Some(config_table) = config.as_table() {
-            // Validate shell
-            if let Some(shell) = config_table.get("shell") {
-                if let Some(shell_str) = shell.as_str() {
-                    let valid_shells = ["bash", "zsh", "sh", "fish", "powershell", "pwsh", "cmd"];
-                    if !valid_shells.contains(&shell_str.to_lowercase().as_str()) {
-                        issues.push(ValidationIssue {
-                            severity: Severity::Warning,
-                            message: format!("Unknown shell '{}' in hooks.config", shell_str),
-                            line: None,
-                            suggestion: Some(format!("Valid shells: {}", valid_shells.join(", "))),
-                        });
-                    }
-                }
+    if let Some(config) = hooks.get("config")
+        && let Some(config_table) = config.as_table()
+    {
+        // Validate shell
+        if let Some(shell) = config_table.get("shell")
+            && let Some(shell_str) = shell.as_str()
+        {
+            let valid_shells = ["bash", "zsh", "sh", "fish", "powershell", "pwsh", "cmd"];
+            if !valid_shells.contains(&shell_str.to_lowercase().as_str()) {
+                issues.push(ValidationIssue {
+                    severity: Severity::Warning,
+                    message: format!("Unknown shell '{}' in hooks.config", shell_str),
+                    line: None,
+                    suggestion: Some(format!("Valid shells: {}", valid_shells.join(", "))),
+                });
             }
+        }
 
-            // Validate timeout
-            if let Some(timeout) = config_table.get("timeout") {
-                if let Some(t) = timeout.as_integer() {
-                    if t <= 0 {
-                        issues.push(ValidationIssue {
-                            severity: Severity::Error,
-                            message: "Hook timeout must be positive".to_string(),
-                            line: None,
-                            suggestion: Some(
-                                "Use a positive number of seconds (e.g., 300)".to_string(),
-                            ),
-                        });
-                    }
-                }
-            }
+        // Validate timeout
+        if let Some(timeout) = config_table.get("timeout")
+            && let Some(t) = timeout.as_integer()
+            && t <= 0
+        {
+            issues.push(ValidationIssue {
+                severity: Severity::Error,
+                message: "Hook timeout must be positive".to_string(),
+                line: None,
+                suggestion: Some("Use a positive number of seconds (e.g., 300)".to_string()),
+            });
         }
     }
 }
 
 fn validate_env(env: &toml::map::Map<String, toml::Value>, issues: &mut Vec<ValidationIssue>) {
     // Validate env var names
-    if let Some(vars) = env.get("vars") {
-        if let Some(vars_table) = vars.as_table() {
-            for (name, _value) in vars_table {
-                if !is_valid_env_name(name) {
-                    issues.push(ValidationIssue {
-                        severity: Severity::Warning,
-                        message: format!(
-                            "Environment variable name '{}' contains invalid characters",
-                            name
-                        ),
-                        line: None,
-                        suggestion: Some("Use only letters, numbers, and underscores".to_string()),
-                    });
-                }
+    if let Some(vars) = env.get("vars")
+        && let Some(vars_table) = vars.as_table()
+    {
+        for (name, _value) in vars_table {
+            if !is_valid_env_name(name) {
+                issues.push(ValidationIssue {
+                    severity: Severity::Warning,
+                    message: format!(
+                        "Environment variable name '{}' contains invalid characters",
+                        name
+                    ),
+                    line: None,
+                    suggestion: Some("Use only letters, numbers, and underscores".to_string()),
+                });
             }
         }
     }
 
     // Validate secrets config
-    if let Some(secrets) = env.get("secrets") {
-        if let Some(secrets_table) = secrets.as_table() {
-            for (name, _value) in secrets_table {
-                if !is_valid_env_name(name) {
-                    issues.push(ValidationIssue {
-                        severity: Severity::Warning,
-                        message: format!("Secret name '{}' contains invalid characters", name),
-                        line: None,
-                        suggestion: Some("Use only letters, numbers, and underscores".to_string()),
-                    });
-                }
+    if let Some(secrets) = env.get("secrets")
+        && let Some(secrets_table) = secrets.as_table()
+    {
+        for (name, _value) in secrets_table {
+            if !is_valid_env_name(name) {
+                issues.push(ValidationIssue {
+                    severity: Severity::Warning,
+                    message: format!("Secret name '{}' contains invalid characters", name),
+                    line: None,
+                    suggestion: Some("Use only letters, numbers, and underscores".to_string()),
+                });
             }
         }
     }
@@ -538,30 +535,28 @@ fn validate_services(
     issues: &mut Vec<ValidationIssue>,
 ) {
     // Check for file paths that may not exist
-    if let Some(compose_file) = services.get("compose_file") {
-        if let Some(path) = compose_file.as_str() {
-            if !Path::new(path).exists() {
-                issues.push(ValidationIssue {
-                    severity: Severity::Info,
-                    message: format!("Compose file '{}' does not exist yet", path),
-                    line: None,
-                    suggestion: None,
-                });
-            }
-        }
+    if let Some(compose_file) = services.get("compose_file")
+        && let Some(path) = compose_file.as_str()
+        && !Path::new(path).exists()
+    {
+        issues.push(ValidationIssue {
+            severity: Severity::Info,
+            message: format!("Compose file '{}' does not exist yet", path),
+            line: None,
+            suggestion: None,
+        });
     }
 
-    if let Some(tilt_file) = services.get("tilt_file") {
-        if let Some(path) = tilt_file.as_str() {
-            if !Path::new(path).exists() {
-                issues.push(ValidationIssue {
-                    severity: Severity::Info,
-                    message: format!("Tiltfile '{}' does not exist yet", path),
-                    line: None,
-                    suggestion: None,
-                });
-            }
-        }
+    if let Some(tilt_file) = services.get("tilt_file")
+        && let Some(path) = tilt_file.as_str()
+        && !Path::new(path).exists()
+    {
+        issues.push(ValidationIssue {
+            severity: Severity::Info,
+            message: format!("Tiltfile '{}' does not exist yet", path),
+            line: None,
+            suggestion: None,
+        });
     }
 }
 

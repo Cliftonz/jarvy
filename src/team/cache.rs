@@ -70,16 +70,16 @@ impl ConfigCache {
         }
 
         // Check if cache entry is still valid
-        if let Ok(metadata) = fs::metadata(&path) {
-            if let Ok(modified) = metadata.modified() {
-                let age = SystemTime::now()
-                    .duration_since(modified)
-                    .unwrap_or(Duration::MAX);
+        if let Ok(metadata) = fs::metadata(&path)
+            && let Ok(modified) = metadata.modified()
+        {
+            let age = SystemTime::now()
+                .duration_since(modified)
+                .unwrap_or(Duration::MAX);
 
-                if age > self.ttl {
-                    // Cache expired
-                    return None;
-                }
+            if age > self.ttl {
+                // Cache expired
+                return None;
             }
         }
 

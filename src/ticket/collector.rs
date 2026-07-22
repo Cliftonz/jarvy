@@ -132,10 +132,10 @@ impl TicketCollector {
 
         for name in tool_names {
             // Filter by tool if specified
-            if let Some(ref filter) = self.scope.tool_filter {
-                if !name.eq_ignore_ascii_case(filter) {
-                    continue;
-                }
+            if let Some(ref filter) = self.scope.tool_filter
+                && !name.eq_ignore_ascii_case(filter)
+            {
+                continue;
             }
 
             let mut tool_info = ToolInfo {
@@ -152,16 +152,16 @@ impl TicketCollector {
                 tool_info.path = Some(self.sanitize_path(&path));
 
                 // Try to get version
-                if let Ok(output) = std::process::Command::new(&name).arg("--version").output() {
-                    if output.status.success() {
-                        let version_output = String::from_utf8_lossy(&output.stdout);
-                        // Take first line and sanitize
-                        if let Some(first_line) = version_output.lines().next() {
-                            // sanitize() already returns String — drop
-                            // the redundant to_string() that doubled
-                            // the alloc (round-2 perf F10).
-                            tool_info.version = Some(self.sanitizer.sanitize(first_line));
-                        }
+                if let Ok(output) = std::process::Command::new(&name).arg("--version").output()
+                    && output.status.success()
+                {
+                    let version_output = String::from_utf8_lossy(&output.stdout);
+                    // Take first line and sanitize
+                    if let Some(first_line) = version_output.lines().next() {
+                        // sanitize() already returns String — drop
+                        // the redundant to_string() that doubled
+                        // the alloc (round-2 perf F10).
+                        tool_info.version = Some(self.sanitizer.sanitize(first_line));
                     }
                 }
             }

@@ -99,15 +99,15 @@ fn parse_git(https_url: &str, original_url: &str) -> Result<SourceScheme, Librar
     // hostile URL escape the cache root when walked. Absolute paths
     // would bypass the clone-root anchor entirely. Empty string is
     // tolerated (parsed as None at this depth).
-    if let Some(ref sp) = subpath {
-        if sp.starts_with('/') || sp.split('/').any(|seg| seg == "..") {
-            return Err(LibraryError::Parse {
-                url: original_url.to_string(),
-                source: serde::de::Error::custom(
-                    "git source subpath must be relative and contain no `..` segments",
-                ),
-            });
-        }
+    if let Some(ref sp) = subpath
+        && (sp.starts_with('/') || sp.split('/').any(|seg| seg == ".."))
+    {
+        return Err(LibraryError::Parse {
+            url: original_url.to_string(),
+            source: serde::de::Error::custom(
+                "git source subpath must be relative and contain no `..` segments",
+            ),
+        });
     }
 
     // Split repo and ref on the LAST '@'. URLs can legitimately contain

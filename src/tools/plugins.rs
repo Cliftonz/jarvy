@@ -101,10 +101,10 @@ fn is_path_safe_to_load(p: &Path) -> bool {
     }
     // Best-effort owner check: if uid is reachable, ensure it matches.
     let current_uid = libc_getuid();
-    if let Some(uid) = current_uid {
-        if meta.uid() != uid {
-            return false;
-        }
+    if let Some(uid) = current_uid
+        && meta.uid() != uid
+    {
+        return false;
     }
     true
 }
@@ -566,25 +566,25 @@ fn install_linux(tool: &PluginTool) -> Result<(), InstallError> {
             return run("pacman", &["-S", "--noconfirm", uniform]).map(|_| ());
         }
     }
-    if let Some(apt) = platform.apt.as_deref() {
-        if has("apt-get") {
-            return run("apt-get", &["install", "-y", apt]).map(|_| ());
-        }
+    if let Some(apt) = platform.apt.as_deref()
+        && has("apt-get")
+    {
+        return run("apt-get", &["install", "-y", apt]).map(|_| ());
     }
-    if let Some(dnf) = platform.dnf.as_deref() {
-        if has("dnf") {
-            return run("dnf", &["install", "-y", dnf]).map(|_| ());
-        }
+    if let Some(dnf) = platform.dnf.as_deref()
+        && has("dnf")
+    {
+        return run("dnf", &["install", "-y", dnf]).map(|_| ());
     }
-    if let Some(pacman) = platform.pacman.as_deref() {
-        if has("pacman") {
-            return run("pacman", &["-S", "--noconfirm", pacman]).map(|_| ());
-        }
+    if let Some(pacman) = platform.pacman.as_deref()
+        && has("pacman")
+    {
+        return run("pacman", &["-S", "--noconfirm", pacman]).map(|_| ());
     }
-    if let Some(brew) = platform.brew.as_deref() {
-        if has("brew") {
-            return run("brew", &["install", brew]).map(|_| ());
-        }
+    if let Some(brew) = platform.brew.as_deref()
+        && has("brew")
+    {
+        return run("brew", &["install", brew]).map(|_| ());
     }
     Err(InstallError::Unsupported)
 }

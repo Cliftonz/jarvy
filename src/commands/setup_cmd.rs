@@ -149,13 +149,11 @@ pub fn run_setup(
     // Hook::run_with_policy helper so the four-line "fail-or-continue"
     // refrain isn't repeated 4× in this function (maintainability
     // review #11).
-    if !no_hooks {
-        if let Some(ref script) = hooks_config.pre_setup {
-            let hook = Hook::with_config(script, "pre_setup", hook_settings.clone())
-                .with_env(HookEnv::global());
-            if hook.run_with_policy(dry_run).is_err() {
-                return error_codes::HOOK_FAILED;
-            }
+    if !no_hooks && let Some(ref script) = hooks_config.pre_setup {
+        let hook = Hook::with_config(script, "pre_setup", hook_settings.clone())
+            .with_env(HookEnv::global());
+        if hook.run_with_policy(dry_run).is_err() {
+            return error_codes::HOOK_FAILED;
         }
     }
 
@@ -873,13 +871,11 @@ pub fn run_setup(
     }
 
     // Execute post_setup hook if configured
-    if !no_hooks {
-        if let Some(ref script) = hooks_config.post_setup {
-            let hook = Hook::with_config(script, "post_setup", hook_settings.clone())
-                .with_env(HookEnv::global());
-            if hook.run_with_policy(dry_run).is_err() {
-                return error_codes::HOOK_FAILED;
-            }
+    if !no_hooks && let Some(ref script) = hooks_config.post_setup {
+        let hook = Hook::with_config(script, "post_setup", hook_settings.clone())
+            .with_env(HookEnv::global());
+        if hook.run_with_policy(dry_run).is_err() {
+            return error_codes::HOOK_FAILED;
         }
     }
 
@@ -1310,15 +1306,15 @@ fn run_git_phase(config: &Config, dry_run: bool) {
 
     if dry_run {
         println!("\n=== Git Configuration (dry-run) ===");
-        if let Some(ref name) = git_config.user_name {
-            if let Some(resolved) = name.resolve() {
-                println!("[DRY-RUN] Would set git config user.name: {resolved}");
-            }
+        if let Some(ref name) = git_config.user_name
+            && let Some(resolved) = name.resolve()
+        {
+            println!("[DRY-RUN] Would set git config user.name: {resolved}");
         }
-        if let Some(ref email) = git_config.user_email {
-            if let Some(resolved) = email.resolve() {
-                println!("[DRY-RUN] Would set git config user.email: {resolved}");
-            }
+        if let Some(ref email) = git_config.user_email
+            && let Some(resolved) = email.resolve()
+        {
+            println!("[DRY-RUN] Would set git config user.email: {resolved}");
         }
         if git_config.signing {
             println!("[DRY-RUN] Would enable commit signing");
@@ -1464,15 +1460,15 @@ fn run_git_hooks_phase(config: &Config, file: &str, dry_run: bool) {
     match crate::git_hooks::install_hooks(gh_cfg, &project_dir) {
         Ok(true) => {
             chatter!("  Git hooks installed");
-            if gh_cfg.auto_update {
-                if let Err(e) = crate::git_hooks::update_hooks(gh_cfg, &project_dir) {
-                    eprintln!("  Warning: hook autoupdate failed: {e}");
-                }
+            if gh_cfg.auto_update
+                && let Err(e) = crate::git_hooks::update_hooks(gh_cfg, &project_dir)
+            {
+                eprintln!("  Warning: hook autoupdate failed: {e}");
             }
-            if gh_cfg.run_after_install {
-                if let Err(e) = crate::git_hooks::run_hooks(gh_cfg, &project_dir, true, None) {
-                    eprintln!("  Warning: initial hook run reported failures: {e}");
-                }
+            if gh_cfg.run_after_install
+                && let Err(e) = crate::git_hooks::run_hooks(gh_cfg, &project_dir, true, None)
+            {
+                eprintln!("  Warning: initial hook run reported failures: {e}");
             }
             if telemetry_on {
                 tracing::info!(

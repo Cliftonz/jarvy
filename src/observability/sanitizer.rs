@@ -194,10 +194,11 @@ impl Sanitizer {
         // Home directory normalization first so paths in token positions
         // don't end up as `[HOME]/.ssh/id_rsa` (we want the SSH-path
         // pattern to fire on the redacted form too).
-        if let Some(ref home) = self.home_dir {
-            if !home.is_empty() && result.contains(home) {
-                result = Cow::Owned(result.replace(home, "~"));
-            }
+        if let Some(ref home) = self.home_dir
+            && !home.is_empty()
+            && result.contains(home)
+        {
+            result = Cow::Owned(result.replace(home, "~"));
         }
 
         // SSH private key path redaction with `.pub` preservation. The Rust

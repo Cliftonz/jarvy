@@ -60,10 +60,10 @@ fn handle_logs_view(
                         }
                     }
                     // Grep filter
-                    if let Some(ref pattern) = grep_filter {
-                        if !line.to_lowercase().contains(&pattern.to_lowercase()) {
-                            return false;
-                        }
+                    if let Some(ref pattern) = grep_filter
+                        && !line.to_lowercase().contains(&pattern.to_lowercase())
+                    {
+                        return false;
                     }
                     true
                 })

@@ -57,15 +57,15 @@ impl PipHandler {
         }
 
         // Show activation hint
-        if self.config.activate_hint {
-            if let Some(ref venv) = venv_path {
-                println!();
-                println!("    Virtual environment created at: {}", venv.display());
-                #[cfg(windows)]
-                println!("    Activate with: {}\\Scripts\\activate", venv.display());
-                #[cfg(not(windows))]
-                println!("    Activate with: source {}/bin/activate", venv.display());
-            }
+        if self.config.activate_hint
+            && let Some(ref venv) = venv_path
+        {
+            println!();
+            println!("    Virtual environment created at: {}", venv.display());
+            #[cfg(windows)]
+            println!("    Activate with: {}\\Scripts\\activate", venv.display());
+            #[cfg(not(windows))]
+            println!("    Activate with: source {}/bin/activate", venv.display());
         }
 
         Ok(())

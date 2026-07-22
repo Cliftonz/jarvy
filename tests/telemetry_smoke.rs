@@ -76,10 +76,10 @@ fn handle_client(mut stream: TcpStream, logs_seen: &Arc<AtomicBool>) {
             if let Ok(v) = rest.trim().parse::<usize>() {
                 content_len = v;
             }
-        } else if let Some(rest) = line.strip_prefix("content-length:") {
-            if let Ok(v) = rest.trim().parse::<usize>() {
-                content_len = v;
-            }
+        } else if let Some(rest) = line.strip_prefix("content-length:")
+            && let Ok(v) = rest.trim().parse::<usize>()
+        {
+            content_len = v;
         }
     }
 

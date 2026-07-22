@@ -315,39 +315,37 @@ pub fn detect_backend_with_config(
 ) -> Option<(ServiceBackend, PathBuf)> {
     // If compose_file is explicitly set, use it (containment-checked).
     // Docker wins when both are installed; podman only if docker is absent.
-    if let Some(compose) = compose_file {
-        if let Some(path) = resolve_within_project(dir, compose, "compose_file") {
-            if path.exists() {
-                let docker = DockerComposeBackend;
-                let podman = PodmanComposeBackend;
-                let docker_installed = docker.is_installed();
-                let podman_installed = podman.is_installed();
-                let picked = if docker_installed {
-                    ServiceBackend::DockerCompose
-                } else if podman_installed {
-                    ServiceBackend::PodmanCompose
-                } else {
-                    ServiceBackend::DockerCompose
-                };
-                emit_backend_selected(
-                    picked,
-                    docker_installed,
-                    podman_installed,
-                    podman.compose_variant_label(),
-                    "compose_file_override",
-                );
-                return Some((picked, path));
-            }
-        }
+    if let Some(compose) = compose_file
+        && let Some(path) = resolve_within_project(dir, compose, "compose_file")
+        && path.exists()
+    {
+        let docker = DockerComposeBackend;
+        let podman = PodmanComposeBackend;
+        let docker_installed = docker.is_installed();
+        let podman_installed = podman.is_installed();
+        let picked = if docker_installed {
+            ServiceBackend::DockerCompose
+        } else if podman_installed {
+            ServiceBackend::PodmanCompose
+        } else {
+            ServiceBackend::DockerCompose
+        };
+        emit_backend_selected(
+            picked,
+            docker_installed,
+            podman_installed,
+            podman.compose_variant_label(),
+            "compose_file_override",
+        );
+        return Some((picked, path));
     }
 
     // If tilt_file is explicitly set, use it (containment-checked).
-    if let Some(tilt) = tilt_file {
-        if let Some(path) = resolve_within_project(dir, tilt, "tiltfile") {
-            if path.exists() {
-                return Some((ServiceBackend::Tilt, path));
-            }
-        }
+    if let Some(tilt) = tilt_file
+        && let Some(path) = resolve_within_project(dir, tilt, "tiltfile")
+        && path.exists()
+    {
+        return Some((ServiceBackend::Tilt, path));
     }
 
     // Fall back to auto-detection

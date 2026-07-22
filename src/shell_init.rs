@@ -268,13 +268,12 @@ pub fn run_ensure(config: &ShellInitConfig, force: bool, quiet: bool) -> Result<
     let start = std::time::Instant::now();
 
     // Fast path: check stamp
-    if !force {
-        if let Some(stamp) = EnsureStamp::load() {
-            if stamp.is_fresh(&config_hash, config.check_interval) {
-                tracing::debug!(event = "ensure.fast_path", reason = "stamp_fresh");
-                return Ok(());
-            }
-        }
+    if !force
+        && let Some(stamp) = EnsureStamp::load()
+        && stamp.is_fresh(&config_hash, config.check_interval)
+    {
+        tracing::debug!(event = "ensure.fast_path", reason = "stamp_fresh");
+        return Ok(());
     }
 
     // Slow path: register tools and install missing ones

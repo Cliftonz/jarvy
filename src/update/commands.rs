@@ -353,10 +353,10 @@ impl From<crate::update::checker::CheckError> for UpdateError {
 pub fn show_update_notification_if_available() {
     let mut checker = UpdateChecker::new();
 
-    if checker.should_notify() {
-        if let Some(msg) = checker.notification_message() {
-            eprintln!("\n{}", msg);
-            checker.mark_notified();
-        }
+    if checker.should_notify()
+        && let Some(msg) = checker.notification_message()
+    {
+        eprintln!("\n{}", msg);
+        checker.mark_notified();
     }
 }

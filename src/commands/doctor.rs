@@ -792,16 +792,16 @@ fn check_tool_dependency_status(
 fn get_installed_version(command: &str) -> Option<String> {
     // Try common version flags
     for flag in ["--version", "-v", "-V", "version"] {
-        if let Ok(output) = std::process::Command::new(command).arg(flag).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}{}", stdout, stderr);
+        if let Ok(output) = std::process::Command::new(command).arg(flag).output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = format!("{}{}", stdout, stderr);
 
-                // Extract version number
-                if let Some(version) = extract_version(&combined) {
-                    return Some(version);
-                }
+            // Extract version number
+            if let Some(version) = extract_version(&combined) {
+                return Some(version);
             }
         }
     }
@@ -919,34 +919,34 @@ fn generate_recommendations(
         }
 
         // Recommendations for dependency issues (unless ignored)
-        if let Some(ref deps) = tool.dependencies {
-            if !should_ignore_missing_deps() {
-                if !deps.missing_required.is_empty() {
-                    recommendations.push(Recommendation {
-                        severity: RecommendationSeverity::Error,
-                        message: format!(
-                            "{} requires: {}",
-                            tool.name,
-                            deps.missing_required.join(", ")
-                        ),
-                        fix: Some(format!(
-                            "jarvy setup --only {}",
-                            deps.missing_required.join(" ")
-                        )),
-                    });
-                }
+        if let Some(ref deps) = tool.dependencies
+            && !should_ignore_missing_deps()
+        {
+            if !deps.missing_required.is_empty() {
+                recommendations.push(Recommendation {
+                    severity: RecommendationSeverity::Error,
+                    message: format!(
+                        "{} requires: {}",
+                        tool.name,
+                        deps.missing_required.join(", ")
+                    ),
+                    fix: Some(format!(
+                        "jarvy setup --only {}",
+                        deps.missing_required.join(" ")
+                    )),
+                });
+            }
 
-                if let Some(ref flex) = deps.missing_flexible {
-                    let suggestion = flex
-                        .suggestion
-                        .as_deref()
-                        .unwrap_or(flex.options.first().map(|s| s.as_str()).unwrap_or(""));
-                    recommendations.push(Recommendation {
-                        severity: RecommendationSeverity::Warning,
-                        message: format!("{} needs one of: {}", tool.name, flex.options.join(", ")),
-                        fix: Some(format!("jarvy setup --only {}", suggestion)),
-                    });
-                }
+            if let Some(ref flex) = deps.missing_flexible {
+                let suggestion = flex
+                    .suggestion
+                    .as_deref()
+                    .unwrap_or(flex.options.first().map(|s| s.as_str()).unwrap_or(""));
+                recommendations.push(Recommendation {
+                    severity: RecommendationSeverity::Warning,
+                    message: format!("{} needs one of: {}", tool.name, flex.options.join(", ")),
+                    fix: Some(format!("jarvy setup --only {}", suggestion)),
+                });
             }
         }
     }
@@ -967,18 +967,18 @@ fn generate_recommendations(
 
     // Recommendations for inactive hooks
     for hook in hooks {
-        if !hook.active {
-            if let Some(ref issue) = hook.issue {
-                let default_hook = get_tool_default_hook(&hook.name);
-                let fix = default_hook
-                    .map(|h| format!("Run the default hook or add manually: {}", h.description));
+        if !hook.active
+            && let Some(ref issue) = hook.issue
+        {
+            let default_hook = get_tool_default_hook(&hook.name);
+            let fix = default_hook
+                .map(|h| format!("Run the default hook or add manually: {}", h.description));
 
-                recommendations.push(Recommendation {
-                    severity: RecommendationSeverity::Info,
-                    message: issue.clone(),
-                    fix,
-                });
-            }
+            recommendations.push(Recommendation {
+                severity: RecommendationSeverity::Info,
+                message: issue.clone(),
+                fix,
+            });
         }
     }
 
@@ -1306,20 +1306,18 @@ fn collect_extended_metrics() -> ExtendedMetrics {
         if let Ok(output) = std::process::Command::new("sysctl")
             .args(["-n", "kern.boottime"])
             .output()
+            && let Ok(text) = String::from_utf8(output.stdout)
         {
-            if let Ok(text) = String::from_utf8(output.stdout) {
-                // Parse: { sec = 1234567890, usec = 0 }
-                if let Some(sec_str) = text.split("sec = ").nth(1) {
-                    if let Some(sec) = sec_str.split(',').next() {
-                        if let Ok(boot_time) = sec.trim().parse::<u64>() {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .map(|d| d.as_secs())
-                                .unwrap_or(0);
-                            metrics.uptime_secs = Some(now.saturating_sub(boot_time));
-                        }
-                    }
-                }
+            // Parse: { sec = 1234567890, usec = 0 }
+            if let Some(sec_str) = text.split("sec = ").nth(1)
+                && let Some(sec) = sec_str.split(',').next()
+                && let Ok(boot_time) = sec.trim().parse::<u64>()
+            {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                metrics.uptime_secs = Some(now.saturating_sub(boot_time));
             }
         }
 
@@ -1327,19 +1325,18 @@ fn collect_extended_metrics() -> ExtendedMetrics {
         if let Ok(output) = std::process::Command::new("sysctl")
             .args(["-n", "vm.loadavg"])
             .output()
+            && let Ok(text) = String::from_utf8(output.stdout)
         {
-            if let Ok(text) = String::from_utf8(output.stdout) {
-                // Parse: { 1.23 2.34 3.45 }
-                let parts: Vec<f64> = text
-                    .trim()
-                    .trim_start_matches('{')
-                    .trim_end_matches('}')
-                    .split_whitespace()
-                    .filter_map(|s| s.parse().ok())
-                    .collect();
-                if parts.len() >= 3 {
-                    metrics.load_avg = Some((parts[0], parts[1], parts[2]));
-                }
+            // Parse: { 1.23 2.34 3.45 }
+            let parts: Vec<f64> = text
+                .trim()
+                .trim_start_matches('{')
+                .trim_end_matches('}')
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
+            if parts.len() >= 3 {
+                metrics.load_avg = Some((parts[0], parts[1], parts[2]));
             }
         }
 
@@ -1347,52 +1344,39 @@ fn collect_extended_metrics() -> ExtendedMetrics {
         if let Ok(output) = std::process::Command::new("sysctl")
             .args(["-n", "hw.memsize"])
             .output()
+            && let Ok(text) = String::from_utf8(output.stdout)
+            && let Ok(total) = text.trim().parse::<u64>()
         {
-            if let Ok(text) = String::from_utf8(output.stdout) {
-                if let Ok(total) = text.trim().parse::<u64>() {
-                    metrics.memory_total = Some(total);
+            metrics.memory_total = Some(total);
 
-                    // Get page size and memory stats
-                    if let (Ok(ps_output), Ok(vm_output)) = (
-                        std::process::Command::new("sysctl")
-                            .args(["-n", "hw.pagesize"])
-                            .output(),
-                        std::process::Command::new("vm_stat").output(),
-                    ) {
-                        if let (Ok(ps_text), Ok(vm_text)) = (
-                            String::from_utf8(ps_output.stdout),
-                            String::from_utf8(vm_output.stdout),
-                        ) {
-                            if let Ok(page_size) = ps_text.trim().parse::<u64>() {
-                                let mut free_pages = 0u64;
-                                let mut inactive_pages = 0u64;
+            // Get page size and memory stats
+            if let (Ok(ps_output), Ok(vm_output)) = (
+                std::process::Command::new("sysctl")
+                    .args(["-n", "hw.pagesize"])
+                    .output(),
+                std::process::Command::new("vm_stat").output(),
+            ) && let (Ok(ps_text), Ok(vm_text)) = (
+                String::from_utf8(ps_output.stdout),
+                String::from_utf8(vm_output.stdout),
+            ) && let Ok(page_size) = ps_text.trim().parse::<u64>()
+            {
+                let mut free_pages = 0u64;
+                let mut inactive_pages = 0u64;
 
-                                for line in vm_text.lines() {
-                                    if line.contains("Pages free") {
-                                        if let Some(num) = line.split(':').nth(1) {
-                                            free_pages = num
-                                                .trim()
-                                                .trim_end_matches('.')
-                                                .parse()
-                                                .unwrap_or(0);
-                                        }
-                                    } else if line.contains("Pages inactive") {
-                                        if let Some(num) = line.split(':').nth(1) {
-                                            inactive_pages = num
-                                                .trim()
-                                                .trim_end_matches('.')
-                                                .parse()
-                                                .unwrap_or(0);
-                                        }
-                                    }
-                                }
-
-                                let available = (free_pages + inactive_pages) * page_size;
-                                metrics.memory_used = Some(total.saturating_sub(available));
-                            }
+                for line in vm_text.lines() {
+                    if line.contains("Pages free") {
+                        if let Some(num) = line.split(':').nth(1) {
+                            free_pages = num.trim().trim_end_matches('.').parse().unwrap_or(0);
                         }
+                    } else if line.contains("Pages inactive")
+                        && let Some(num) = line.split(':').nth(1)
+                    {
+                        inactive_pages = num.trim().trim_end_matches('.').parse().unwrap_or(0);
                     }
                 }
+
+                let available = (free_pages + inactive_pages) * page_size;
+                metrics.memory_used = Some(total.saturating_sub(available));
             }
         }
     }
@@ -1445,34 +1429,29 @@ fn collect_extended_metrics() -> ExtendedMetrics {
     }
 
     // Get disk info (cross-platform)
-    if let Ok(output) = std::process::Command::new("df").args(["-k", "/"]).output() {
-        if let Ok(text) = String::from_utf8(output.stdout) {
-            if let Some(line) = text.lines().nth(1) {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 4 {
-                    if let (Ok(total), Ok(avail)) =
-                        (parts[1].parse::<u64>(), parts[3].parse::<u64>())
-                    {
-                        metrics.disk_total = Some(total * 1024);
-                        metrics.disk_available = Some(avail * 1024);
-                    }
-                }
-            }
+    if let Ok(output) = std::process::Command::new("df").args(["-k", "/"]).output()
+        && let Ok(text) = String::from_utf8(output.stdout)
+        && let Some(line) = text.lines().nth(1)
+    {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 4
+            && let (Ok(total), Ok(avail)) = (parts[1].parse::<u64>(), parts[3].parse::<u64>())
+        {
+            metrics.disk_total = Some(total * 1024);
+            metrics.disk_available = Some(avail * 1024);
         }
     }
 
     // Get package count
     #[cfg(target_os = "macos")]
     {
-        if has("brew") {
-            if let Ok(output) = std::process::Command::new("brew")
+        if has("brew")
+            && let Ok(output) = std::process::Command::new("brew")
                 .args(["list", "--formula"])
                 .output()
-            {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    metrics.package_count = Some(text.lines().count());
-                }
-            }
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
+            metrics.package_count = Some(text.lines().count());
         }
     }
 

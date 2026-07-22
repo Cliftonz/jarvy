@@ -24,12 +24,11 @@ pub fn detect_framework(project_dir: &Path) -> Option<HookFramework> {
     // prepare script. String-match is fine here — we don't need to
     // parse JSON to make a coarse detection decision.
     let package_json = project_dir.join("package.json");
-    if package_json.exists() {
-        if let Ok(content) = std::fs::read_to_string(&package_json) {
-            if content.contains("\"husky\"") {
-                return Some(HookFramework::Husky);
-            }
-        }
+    if package_json.exists()
+        && let Ok(content) = std::fs::read_to_string(&package_json)
+        && content.contains("\"husky\"")
+    {
+        return Some(HookFramework::Husky);
     }
 
     if project_dir.join("lefthook.yml").exists() || project_dir.join("lefthook.yaml").exists() {

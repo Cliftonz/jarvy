@@ -104,21 +104,21 @@ fn detect_install_source(name: &str) -> InstallSource {
 /// Detect install source on macOS
 fn detect_macos_source(name: &str) -> InstallSource {
     // Check if installed via Homebrew
-    if let Some(path) = get_binary_path(name) {
-        if path.contains("/opt/homebrew/") || path.contains("/usr/local/Cellar/") {
-            // Check if it's a cask
-            if is_brew_cask(name) {
-                return InstallSource::BrewCask;
-            }
-            return InstallSource::Brew;
+    if let Some(path) = get_binary_path(name)
+        && (path.contains("/opt/homebrew/") || path.contains("/usr/local/Cellar/"))
+    {
+        // Check if it's a cask
+        if is_brew_cask(name) {
+            return InstallSource::BrewCask;
         }
+        return InstallSource::Brew;
     }
 
     // Check for custom installers
-    if let Some(spec) = get_tool_spec(name) {
-        if spec.custom_install.is_some() {
-            return InstallSource::Custom(name.to_string());
-        }
+    if let Some(spec) = get_tool_spec(name)
+        && spec.custom_install.is_some()
+    {
+        return InstallSource::Custom(name.to_string());
     }
 
     InstallSource::Unknown
@@ -126,10 +126,10 @@ fn detect_macos_source(name: &str) -> InstallSource {
 
 /// Check if a tool is a Homebrew cask
 fn is_brew_cask(name: &str) -> bool {
-    if let Some(spec) = get_tool_spec(name) {
-        if let Some(macos) = &spec.macos {
-            return macos.cask.is_some();
-        }
+    if let Some(spec) = get_tool_spec(name)
+        && let Some(macos) = &spec.macos
+    {
+        return macos.cask.is_some();
     }
     false
 }
@@ -157,10 +157,10 @@ fn detect_linux_source(name: &str) -> InstallSource {
     }
 
     // Check for custom installers
-    if let Some(spec) = get_tool_spec(name) {
-        if spec.custom_install.is_some() {
-            return InstallSource::Custom(name.to_string());
-        }
+    if let Some(spec) = get_tool_spec(name)
+        && spec.custom_install.is_some()
+    {
+        return InstallSource::Custom(name.to_string());
     }
 
     InstallSource::Unknown
@@ -179,10 +179,10 @@ fn detect_windows_source(name: &str) -> InstallSource {
     }
 
     // Check for custom installers
-    if let Some(spec) = get_tool_spec(name) {
-        if spec.custom_install.is_some() {
-            return InstallSource::Custom(name.to_string());
-        }
+    if let Some(spec) = get_tool_spec(name)
+        && spec.custom_install.is_some()
+    {
+        return InstallSource::Custom(name.to_string());
     }
 
     InstallSource::Unknown
@@ -196,10 +196,10 @@ fn detect_bsd_source(name: &str) -> InstallSource {
     }
 
     // Check for custom installers
-    if let Some(spec) = get_tool_spec(name) {
-        if spec.custom_install.is_some() {
-            return InstallSource::Custom(name.to_string());
-        }
+    if let Some(spec) = get_tool_spec(name)
+        && spec.custom_install.is_some()
+    {
+        return InstallSource::Custom(name.to_string());
     }
 
     InstallSource::Unknown

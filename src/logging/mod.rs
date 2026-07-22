@@ -79,13 +79,13 @@ pub fn get_log_stats() -> Result<LogStats, LogError> {
     if log_dir.exists() {
         for entry in (std::fs::read_dir(&log_dir)?).flatten() {
             let path = entry.path();
-            if path.is_file() {
-                if let Ok(metadata) = path.metadata() {
-                    total_files += 1;
-                    total_size += metadata.len();
-                    if path.file_name().map(|n| n == "jarvy.log").unwrap_or(false) {
-                        current_file_size = metadata.len();
-                    }
+            if path.is_file()
+                && let Ok(metadata) = path.metadata()
+            {
+                total_files += 1;
+                total_size += metadata.len();
+                if path.file_name().map(|n| n == "jarvy.log").unwrap_or(false) {
+                    current_file_size = metadata.len();
                 }
             }
         }
@@ -97,41 +97,41 @@ pub fn get_log_stats() -> Result<LogStats, LogError> {
     let mut newest_entry = None;
 
     let log_file = current_log_file();
-    if log_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&log_file) {
-            let mut newest_line: Option<&str> = None;
+    if log_file.exists()
+        && let Ok(content) = std::fs::read_to_string(&log_file)
+    {
+        let mut newest_line: Option<&str> = None;
 
-            for line in content.lines() {
-                if oldest_entry.is_none() {
-                    oldest_entry = Some(line.to_string());
-                }
-                newest_line = Some(line);
+        for line in content.lines() {
+            if oldest_entry.is_none() {
+                oldest_entry = Some(line.to_string());
+            }
+            newest_line = Some(line);
 
-                // Try to parse log level from line (works with both JSON and text formats)
-                let level = if line.contains("\"level\":\"ERROR\"") || line.contains(" ERROR ") {
-                    Some("ERROR")
-                } else if line.contains("\"level\":\"WARN\"") || line.contains(" WARN ") {
-                    Some("WARN")
-                } else if line.contains("\"level\":\"INFO\"") || line.contains(" INFO ") {
-                    Some("INFO")
-                } else if line.contains("\"level\":\"DEBUG\"") || line.contains(" DEBUG ") {
-                    Some("DEBUG")
-                } else if line.contains("\"level\":\"TRACE\"") || line.contains(" TRACE ") {
-                    Some("TRACE")
+            // Try to parse log level from line (works with both JSON and text formats)
+            let level = if line.contains("\"level\":\"ERROR\"") || line.contains(" ERROR ") {
+                Some("ERROR")
+            } else if line.contains("\"level\":\"WARN\"") || line.contains(" WARN ") {
+                Some("WARN")
+            } else if line.contains("\"level\":\"INFO\"") || line.contains(" INFO ") {
+                Some("INFO")
+            } else if line.contains("\"level\":\"DEBUG\"") || line.contains(" DEBUG ") {
+                Some("DEBUG")
+            } else if line.contains("\"level\":\"TRACE\"") || line.contains(" TRACE ") {
+                Some("TRACE")
+            } else {
+                None
+            };
+            if let Some(level) = level {
+                if let Some(count) = entries_by_level.get_mut(level) {
+                    *count += 1;
                 } else {
-                    None
-                };
-                if let Some(level) = level {
-                    if let Some(count) = entries_by_level.get_mut(level) {
-                        *count += 1;
-                    } else {
-                        entries_by_level.insert(level.to_string(), 1);
-                    }
+                    entries_by_level.insert(level.to_string(), 1);
                 }
             }
-
-            newest_entry = newest_line.map(|s| s.to_string());
         }
+
+        newest_entry = newest_line.map(|s| s.to_string());
     }
 
     Ok(LogStats {

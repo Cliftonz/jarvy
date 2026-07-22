@@ -50,20 +50,20 @@ impl<'a> ProxyResolver<'a> {
         }
 
         // Check tool-specific override
-        if let Some(config) = self.config {
-            if let Some(override_config) = config.overrides.get(tool_name) {
-                if override_config.no_proxy_all {
-                    // Tool explicitly disables proxy
-                    return ResolvedProxy {
-                        source: ProxySource::ToolOverride(tool_name.to_string()),
-                        ..Default::default()
-                    };
-                }
+        if let Some(config) = self.config
+            && let Some(override_config) = config.overrides.get(tool_name)
+        {
+            if override_config.no_proxy_all {
+                // Tool explicitly disables proxy
+                return ResolvedProxy {
+                    source: ProxySource::ToolOverride(tool_name.to_string()),
+                    ..Default::default()
+                };
+            }
 
-                let resolved = self.override_proxy(override_config, tool_name);
-                if resolved.http_proxy.is_some() || resolved.https_proxy.is_some() {
-                    return resolved;
-                }
+            let resolved = self.override_proxy(override_config, tool_name);
+            if resolved.http_proxy.is_some() || resolved.https_proxy.is_some() {
+                return resolved;
             }
         }
 

@@ -68,10 +68,10 @@ fn get_or_compile_regex(pattern: &str) -> Option<std::borrow::Cow<'static, regex
     }
     // Try read lock first — steady-state a custom pattern hits after
     // its first compile.
-    if let Ok(guard) = REGEX_CACHE.read() {
-        if let Some(re) = guard.get(pattern) {
-            return Some(std::borrow::Cow::Owned(re.clone()));
-        }
+    if let Ok(guard) = REGEX_CACHE.read()
+        && let Some(re) = guard.get(pattern)
+    {
+        return Some(std::borrow::Cow::Owned(re.clone()));
     }
     // Miss: compile once, upgrade to write lock, insert.
     let compiled = regex::Regex::new(pattern).ok()?;

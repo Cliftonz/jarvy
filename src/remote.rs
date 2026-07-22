@@ -256,19 +256,17 @@ pub fn fetch_remote_config(url: &str, headers: &[String]) -> Result<String, Stri
     }
 
     // Check content-length header if available
-    if let Some(content_length) = response.headers().get("content-length") {
-        if let Some(length) = content_length
+    if let Some(content_length) = response.headers().get("content-length")
+        && let Some(length) = content_length
             .to_str()
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
-        {
-            if length > MAX_REMOTE_CONFIG_SIZE {
-                return Err(format!(
-                    "Remote config too large: {} bytes (max {} bytes)",
-                    length, MAX_REMOTE_CONFIG_SIZE
-                ));
-            }
-        }
+        && length > MAX_REMOTE_CONFIG_SIZE
+    {
+        return Err(format!(
+            "Remote config too large: {} bytes (max {} bytes)",
+            length, MAX_REMOTE_CONFIG_SIZE
+        ));
     }
 
     // Read with size limit (even if Content-Length was not present or was incorrect)
@@ -367,19 +365,17 @@ pub fn validated_get(url: &str) -> Result<String, String> {
         return Err(format!("HTTP error {}", response.status()));
     }
 
-    if let Some(content_length) = response.headers().get("content-length") {
-        if let Some(length) = content_length
+    if let Some(content_length) = response.headers().get("content-length")
+        && let Some(length) = content_length
             .to_str()
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
-        {
-            if length > MAX_REMOTE_CONFIG_SIZE {
-                return Err(format!(
-                    "Remote response too large: {} bytes (max {} bytes)",
-                    length, MAX_REMOTE_CONFIG_SIZE
-                ));
-            }
-        }
+        && length > MAX_REMOTE_CONFIG_SIZE
+    {
+        return Err(format!(
+            "Remote response too large: {} bytes (max {} bytes)",
+            length, MAX_REMOTE_CONFIG_SIZE
+        ));
     }
 
     let mut content = String::new();

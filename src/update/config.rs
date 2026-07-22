@@ -204,20 +204,20 @@ impl UpdateConfig {
         }
 
         // JARVY_UPDATE_CHANNEL=beta|nightly
-        if let Ok(val) = env::var("JARVY_UPDATE_CHANNEL") {
-            if let Some(channel) = Channel::from_str(&val) {
-                self.channel = channel;
-            }
+        if let Ok(val) = env::var("JARVY_UPDATE_CHANNEL")
+            && let Some(channel) = Channel::from_str(&val)
+        {
+            self.channel = channel;
         }
 
         // JARVY_UPDATE_CHECK=1 forces immediate check (handled in checker)
         // This env var is checked dynamically in should_check()
 
         // JARVY_PINNED_VERSION=1.2.3 pins to specific version
-        if let Ok(val) = env::var("JARVY_PINNED_VERSION") {
-            if !val.is_empty() {
-                self.pinned_version = Some(val);
-            }
+        if let Ok(val) = env::var("JARVY_PINNED_VERSION")
+            && !val.is_empty()
+        {
+            self.pinned_version = Some(val);
         }
 
         // Unattended-mode auto-disable: covers CI runners AND sandbox
@@ -291,11 +291,11 @@ mod humantime_serde {
         S: Serializer,
     {
         let secs = duration.as_secs();
-        if secs % (24 * 60 * 60) == 0 {
+        if secs.is_multiple_of(24 * 60 * 60) {
             serializer.serialize_str(&format!("{}d", secs / (24 * 60 * 60)))
-        } else if secs % (60 * 60) == 0 {
+        } else if secs.is_multiple_of(60 * 60) {
             serializer.serialize_str(&format!("{}h", secs / (60 * 60)))
-        } else if secs % 60 == 0 {
+        } else if secs.is_multiple_of(60) {
             serializer.serialize_str(&format!("{}m", secs / 60))
         } else {
             serializer.serialize_str(&format!("{}s", secs))

@@ -144,27 +144,27 @@ impl DriftReporter {
 /// Format a Unix timestamp for display
 fn format_timestamp(timestamp: &str) -> String {
     // The timestamp is in format "1234567890Z" (Unix seconds)
-    if let Some(secs_str) = timestamp.strip_suffix('Z') {
-        if let Ok(secs) = secs_str.parse::<u64>() {
-            // Simple relative time formatting
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+    if let Some(secs_str) = timestamp.strip_suffix('Z')
+        && let Ok(secs) = secs_str.parse::<u64>()
+    {
+        // Simple relative time formatting
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-            let diff = now.saturating_sub(secs);
-            if diff < 60 {
-                return "just now".to_string();
-            } else if diff < 3600 {
-                let mins = diff / 60;
-                return format!("{} minute{} ago", mins, if mins == 1 { "" } else { "s" });
-            } else if diff < 86400 {
-                let hours = diff / 3600;
-                return format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" });
-            } else {
-                let days = diff / 86400;
-                return format!("{} day{} ago", days, if days == 1 { "" } else { "s" });
-            }
+        let diff = now.saturating_sub(secs);
+        if diff < 60 {
+            return "just now".to_string();
+        } else if diff < 3600 {
+            let mins = diff / 60;
+            return format!("{} minute{} ago", mins, if mins == 1 { "" } else { "s" });
+        } else if diff < 86400 {
+            let hours = diff / 3600;
+            return format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" });
+        } else {
+            let days = diff / 86400;
+            return format!("{} day{} ago", days, if days == 1 { "" } else { "s" });
         }
     }
     timestamp.to_string()

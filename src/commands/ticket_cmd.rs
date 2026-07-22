@@ -237,18 +237,18 @@ fn handle_ticket_show(ticket_arg: &str, output_format: &str) -> i32 {
     if let Ok(mut manifest_file) = archive.by_name("manifest.json") {
         use std::io::Read;
         let mut contents = String::new();
-        if manifest_file.read_to_string(&mut contents).is_ok() {
-            if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&contents) {
-                println!("\nManifest:");
-                if let Some(ticket_id) = manifest.get("ticket_id") {
-                    println!("  Ticket ID: {}", ticket_id);
-                }
-                if let Some(created) = manifest.get("created_at") {
-                    println!("  Created: {}", created);
-                }
-                if let Some(version) = manifest.get("jarvy_version") {
-                    println!("  Jarvy Version: {}", version);
-                }
+        if manifest_file.read_to_string(&mut contents).is_ok()
+            && let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&contents)
+        {
+            println!("\nManifest:");
+            if let Some(ticket_id) = manifest.get("ticket_id") {
+                println!("  Ticket ID: {}", ticket_id);
+            }
+            if let Some(created) = manifest.get("created_at") {
+                println!("  Created: {}", created);
+            }
+            if let Some(version) = manifest.get("jarvy_version") {
+                println!("  Jarvy Version: {}", version);
             }
         }
     }

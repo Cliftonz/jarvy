@@ -51,10 +51,10 @@ impl RollbackInfo {
 
     /// Clear rollback info from disk
     pub fn clear() -> std::io::Result<()> {
-        if let Some(path) = Self::path() {
-            if path.exists() {
-                fs::remove_file(path)?;
-            }
+        if let Some(path) = Self::path()
+            && path.exists()
+        {
+            fs::remove_file(path)?;
         }
         Ok(())
     }

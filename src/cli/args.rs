@@ -35,15 +35,15 @@ mod default_value_test {
     fn clap_file_defaults_match_const() {
         fn walk(cmd: &clap::Command) {
             for arg in cmd.get_arguments() {
-                if arg.get_id() == "file" {
-                    if let Some(d) = arg.get_default_values().first() {
-                        assert_eq!(
-                            d.to_str(),
-                            Some(DEFAULT_CONFIG_FILE),
-                            "clap --file default in `{}` must match DEFAULT_CONFIG_FILE",
-                            cmd.get_name(),
-                        );
-                    }
+                if arg.get_id() == "file"
+                    && let Some(d) = arg.get_default_values().first()
+                {
+                    assert_eq!(
+                        d.to_str(),
+                        Some(DEFAULT_CONFIG_FILE),
+                        "clap --file default in `{}` must match DEFAULT_CONFIG_FILE",
+                        cmd.get_name(),
+                    );
                 }
             }
             for sub in cmd.get_subcommands() {

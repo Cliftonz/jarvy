@@ -43,10 +43,10 @@ impl Outputable for ExportResult {
         output.push_str("[provisioner]\n");
 
         for tool in &self.tools {
-            if self.verbose {
-                if let Some(ref path) = tool.path {
-                    output.push_str(&format!("{}# {}\n", "", path));
-                }
+            if self.verbose
+                && let Some(ref path) = tool.path
+            {
+                output.push_str(&format!("{}# {}\n", "", path));
             }
             output.push_str(&format!("{} = \"{}\"\n", tool.name, tool.version));
         }
@@ -123,10 +123,10 @@ pub fn export_tools(
 
     for (name, command) in manual_tools {
         // Skip if we're filtering and this tool isn't in the filter
-        if let Some(ref filter) = filter_tools {
-            if !filter.iter().any(|f| f.to_lowercase() == name) {
-                continue;
-            }
+        if let Some(ref filter) = filter_tools
+            && !filter.iter().any(|f| f.to_lowercase() == name)
+        {
+            continue;
         }
 
         if has(command) {
@@ -166,15 +166,15 @@ pub fn export_tools(
 fn get_installed_version(command: &str) -> Option<String> {
     // Try common version flags
     for flag in ["--version", "-v", "-V", "version"] {
-        if let Ok(output) = std::process::Command::new(command).arg(flag).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}{}", stdout, stderr);
+        if let Ok(output) = std::process::Command::new(command).arg(flag).output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = format!("{}{}", stdout, stderr);
 
-                if let Some(version) = extract_version(&combined) {
-                    return Some(version);
-                }
+            if let Some(version) = extract_version(&combined) {
+                return Some(version);
             }
         }
     }

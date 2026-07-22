@@ -36,12 +36,11 @@ pub fn run_ensure(force: bool, quiet: bool, foreground: bool) -> i32 {
     // Background mode: if not foreground and stamp is stale, spawn detached and exit
     if !foreground && shell_init.background {
         let config_hash = shell_init.config_hash();
-        if !force {
-            if let Some(stamp) = EnsureStamp::load() {
-                if stamp.is_fresh(&config_hash, shell_init.check_interval) {
-                    return 0;
-                }
-            }
+        if !force
+            && let Some(stamp) = EnsureStamp::load()
+            && stamp.is_fresh(&config_hash, shell_init.check_interval)
+        {
+            return 0;
         }
 
         // Spawn background process

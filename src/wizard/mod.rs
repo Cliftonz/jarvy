@@ -79,25 +79,25 @@ pub fn pick_mode(
     cli_on_path: impl Fn(Agent) -> bool,
 ) -> WizardMode {
     // 1. Explicit override wins.
-    if let Some(slug) = opts.agent_override.as_deref() {
-        if let Some(agent) = Agent::from_slug(slug) {
-            // Override implies the user knows what they're doing —
-            // honor `--skill-only` if set, otherwise prefer headless
-            // when the override agent has a CLI command + it's on PATH.
-            if !opts.skill_only
-                && let Some(cmd) = agent_cli_command(agent)
-                && cli_on_path(agent)
-            {
-                return WizardMode::Headless {
-                    agent,
-                    cli_command: cmd.into(),
-                };
-            }
-            return WizardMode::SkillDrop { agent };
+    if let Some(slug) = opts.agent_override.as_deref()
+        && let Some(agent) = Agent::from_slug(slug)
+    {
+        // Override implies the user knows what they're doing —
+        // honor `--skill-only` if set, otherwise prefer headless
+        // when the override agent has a CLI command + it's on PATH.
+        if !opts.skill_only
+            && let Some(cmd) = agent_cli_command(agent)
+            && cli_on_path(agent)
+        {
+            return WizardMode::Headless {
+                agent,
+                cli_command: cmd.into(),
+            };
         }
-        // Unknown slug — fall through to auto-detection rather than
-        // refusing. The caller emits a warning.
+        return WizardMode::SkillDrop { agent };
     }
+    // Unknown slug — fall through to auto-detection rather than
+    // refusing. The caller emits a warning.
 
     // 2. Headless CLI preferred unless --skill-only.
     if !opts.skill_only {

@@ -78,10 +78,10 @@ impl LockFile {
     /// Get locked version for a tool, considering platform overrides
     pub fn get_tool(&self, name: &str, platform: &str) -> Option<&LockedTool> {
         // Check platform-specific first
-        if let Some(platform_tools) = self.platforms.get(platform) {
-            if let Some(tool) = platform_tools.get(name) {
-                return Some(tool);
-            }
+        if let Some(platform_tools) = self.platforms.get(platform)
+            && let Some(tool) = platform_tools.get(name)
+        {
+            return Some(tool);
         }
         // Fall back to common
         self.tools.get(name)

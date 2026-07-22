@@ -263,36 +263,35 @@ pub fn run_explain(tool_name: &str, config_path: Option<&str>) -> ExplainResult 
     let mut provided_by_roles = Vec::new();
     let mut configured_version = None;
 
-    if let Some(path) = config_path {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(config) = toml::from_str::<toml::Value>(&content) {
-                // Check roles
-                if let Some(roles) = config.get("roles").and_then(|r| r.as_table()) {
-                    for (role_name, role_def) in roles {
-                        if let Some(tools) = role_def.get("tools").and_then(|t| t.as_array()) {
-                            for t in tools {
-                                if t.as_str() == Some(tool_name) {
-                                    provided_by_roles.push(role_name.clone());
-                                }
-                            }
+    if let Some(path) = config_path
+        && let Ok(content) = std::fs::read_to_string(path)
+        && let Ok(config) = toml::from_str::<toml::Value>(&content)
+    {
+        // Check roles
+        if let Some(roles) = config.get("roles").and_then(|r| r.as_table()) {
+            for (role_name, role_def) in roles {
+                if let Some(tools) = role_def.get("tools").and_then(|t| t.as_array()) {
+                    for t in tools {
+                        if t.as_str() == Some(tool_name) {
+                            provided_by_roles.push(role_name.clone());
                         }
                     }
                 }
-
-                // Check configured version
-                if let Some(provisioner) = config.get("provisioner").and_then(|p| p.as_table()) {
-                    if let Some(tool_config) = provisioner.get(tool_name) {
-                        configured_version = match tool_config {
-                            toml::Value::String(s) => Some(s.clone()),
-                            toml::Value::Table(t) => t
-                                .get("version")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            _ => None,
-                        };
-                    }
-                }
             }
+        }
+
+        // Check configured version
+        if let Some(provisioner) = config.get("provisioner").and_then(|p| p.as_table())
+            && let Some(tool_config) = provisioner.get(tool_name)
+        {
+            configured_version = match tool_config {
+                toml::Value::String(s) => Some(s.clone()),
+                toml::Value::Table(t) => t
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                _ => None,
+            };
         }
     }
 

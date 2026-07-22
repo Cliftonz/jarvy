@@ -258,19 +258,19 @@ fn run_drift_accept(
     // Update tracked file hashes
     for file_path in &drift_config.track_files {
         let full_path = project_dir.join(file_path);
-        if full_path.exists() {
-            if let Ok(hash) = crate::drift::state::hash_file(&full_path) {
-                state.set_file_hash(file_path, &hash);
-            }
+        if full_path.exists()
+            && let Ok(hash) = crate::drift::state::hash_file(&full_path)
+        {
+            state.set_file_hash(file_path, &hash);
         }
     }
 
     // Update config hash
     let config_path = project_dir.join("jarvy.toml");
-    if config_path.exists() {
-        if let Ok(hash) = crate::drift::state::hash_file(&config_path) {
-            state.set_config_hash(&hash);
-        }
+    if config_path.exists()
+        && let Ok(hash) = crate::drift::state::hash_file(&config_path)
+    {
+        state.set_config_hash(&hash);
     }
 
     // Save state

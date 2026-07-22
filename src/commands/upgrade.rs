@@ -187,18 +187,18 @@ fn upgrade_tool(name: &str, target_version: &str, dry_run: bool, force: bool) ->
     let current_version = get_installed_version(command);
 
     // Check if already at target version (unless force)
-    if !force && target_version != "latest" {
-        if let Some(ref current) = current_version {
-            if version_satisfies(current, target_version) {
-                return ToolUpgrade {
-                    name: name.to_string(),
-                    from_version: current_version,
-                    to_version: Some(target_version.to_string()),
-                    status: UpgradeStatus::AlreadyLatest,
-                    message: Some("Already at required version".to_string()),
-                };
-            }
-        }
+    if !force
+        && target_version != "latest"
+        && let Some(ref current) = current_version
+        && version_satisfies(current, target_version)
+    {
+        return ToolUpgrade {
+            name: name.to_string(),
+            from_version: current_version,
+            to_version: Some(target_version.to_string()),
+            status: UpgradeStatus::AlreadyLatest,
+            message: Some("Already at required version".to_string()),
+        };
     }
 
     if dry_run {
@@ -294,15 +294,15 @@ fn perform_upgrade(name: &str, _target_version: &str) -> Result<String, String> 
 
 fn get_installed_version(command: &str) -> Option<String> {
     for flag in ["--version", "-v", "-V", "version"] {
-        if let Ok(output) = std::process::Command::new(command).arg(flag).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}{}", stdout, stderr);
+        if let Ok(output) = std::process::Command::new(command).arg(flag).output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = format!("{}{}", stdout, stderr);
 
-                if let Some(version) = extract_version(&combined) {
-                    return Some(version);
-                }
+            if let Some(version) = extract_version(&combined) {
+                return Some(version);
             }
         }
     }

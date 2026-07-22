@@ -146,17 +146,15 @@ fn main() {
     // toml override without re-parsing the file.
     let project_config_path = extract_config_path(&cli);
     let mut project_chatter: Option<bool> = None;
-    if let Some(ref path) = project_config_path {
-        if let Ok(contents) = fs::read_to_string(path) {
-            if let Ok(project_config) = toml::from_str::<Config>(&contents) {
-                project_chatter = project_config.logging.chatter;
-                if let Some(project_telemetry) = project_config.telemetry {
-                    if let Some(warning) = telemetry_config.narrow_with_project(&project_telemetry)
-                    {
-                        eprintln!("{}", warning);
-                    }
-                }
-            }
+    if let Some(ref path) = project_config_path
+        && let Ok(contents) = fs::read_to_string(path)
+        && let Ok(project_config) = toml::from_str::<Config>(&contents)
+    {
+        project_chatter = project_config.logging.chatter;
+        if let Some(project_telemetry) = project_config.telemetry
+            && let Some(warning) = telemetry_config.narrow_with_project(&project_telemetry)
+        {
+            eprintln!("{}", warning);
         }
     }
 

@@ -347,14 +347,14 @@ pub fn run_diff(config: &Config, changes_only: bool) -> DiffResult {
             }
 
             // Check for user hook
-            if let Some(hook) = config.get_tool_hooks(&tool.name) {
-                if hook.post_install.is_some() {
-                    hooks_to_run.push(HookInfo {
-                        name: format!("{} (user)", tool.name),
-                        description: "Custom post-install hook".to_string(),
-                        script_preview: None,
-                    });
-                }
+            if let Some(hook) = config.get_tool_hooks(&tool.name)
+                && hook.post_install.is_some()
+            {
+                hooks_to_run.push(HookInfo {
+                    name: format!("{} (user)", tool.name),
+                    description: "Custom post-install hook".to_string(),
+                    script_preview: None,
+                });
             }
         } else if !is_satisfied {
             to_update.push(ToolChange {
@@ -494,15 +494,15 @@ fn get_dependency_resolution(
 
 fn get_installed_version(command: &str) -> Option<String> {
     for flag in ["--version", "-v", "-V", "version"] {
-        if let Ok(output) = std::process::Command::new(command).arg(flag).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}{}", stdout, stderr);
+        if let Ok(output) = std::process::Command::new(command).arg(flag).output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = format!("{}{}", stdout, stderr);
 
-                if let Some(version) = extract_version(&combined) {
-                    return Some(version);
-                }
+            if let Some(version) = extract_version(&combined) {
+                return Some(version);
             }
         }
     }

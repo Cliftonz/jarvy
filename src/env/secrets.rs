@@ -212,19 +212,18 @@ fn resolve_secret(
             description,
         } => {
             // First check environment variable if specified
-            if let Some(env_var) = env {
-                if let Ok(value) = std::env::var(env_var) {
-                    if !value.is_empty() {
-                        return Ok(Some(value));
-                    }
-                }
+            if let Some(env_var) = env
+                && let Ok(value) = std::env::var(env_var)
+                && !value.is_empty()
+            {
+                return Ok(Some(value));
             }
 
             // Check if the secret itself is in environment
-            if let Ok(value) = std::env::var(name) {
-                if !value.is_empty() {
-                    return Ok(Some(value));
-                }
+            if let Ok(value) = std::env::var(name)
+                && !value.is_empty()
+            {
+                return Ok(Some(value));
             }
 
             // In CI mode, don't prompt
@@ -240,19 +239,18 @@ fn resolve_secret(
         }
         SecretValue::Simple(marker) => {
             // Simple marker - check environment first
-            if let Ok(value) = std::env::var(name) {
-                if !value.is_empty() {
-                    return Ok(Some(value));
-                }
+            if let Ok(value) = std::env::var(name)
+                && !value.is_empty()
+            {
+                return Ok(Some(value));
             }
 
             // Check the marker value as an env var too
-            if marker != name {
-                if let Ok(value) = std::env::var(marker) {
-                    if !value.is_empty() {
-                        return Ok(Some(value));
-                    }
-                }
+            if marker != name
+                && let Ok(value) = std::env::var(marker)
+                && !value.is_empty()
+            {
+                return Ok(Some(value));
             }
 
             // In CI mode, skip prompting
