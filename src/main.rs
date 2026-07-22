@@ -190,8 +190,19 @@ fn main() {
     // Init the chatter gate FIRST so `console::is_enabled()` is a valid
     // read for every downstream call site (setup narration, os_setup,
     // provisioner). Precedence lives in `console::resolve`.
+    //
+    // `--dry-run` folds into the `verbose` axis: the whole point of a
+    // dry-run is to *preview* what would happen, so the plan lines must
+    // print even under a non-TTY invocation. `JARVY_CHATTER=0` still
+    // wins (kill switch), which matches the documented env-first
+    // precedence.
     let (setup_quiet, setup_verbose) = match &cli.command {
-        Some(Commands::Setup { quiet, verbose, .. }) => (*quiet, *verbose > 0),
+        Some(Commands::Setup {
+            quiet,
+            verbose,
+            dry_run,
+            ..
+        }) => (*quiet, *verbose > 0 || *dry_run),
         _ => (false, false),
     };
     console::init(console::ChatterCfg {

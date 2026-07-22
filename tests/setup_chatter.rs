@@ -70,9 +70,13 @@ fn run_setup(
     cfg_path: &std::path::Path,
     extra_args: &[&str],
 ) -> (String, String) {
-    cmd.args(["setup", "--dry-run", "--file"])
-        .arg(cfg_path)
-        .args(extra_args);
+    // Deliberately NOT `--dry-run` — dry-run folds into the `verbose`
+    // axis in `console::init` (the whole point of dry-run is to *show*
+    // the plan), so a chatter test that used `--dry-run` for speed
+    // would tautologically pass. `JARVY_FAST_TEST=1` short-circuits
+    // external command execution instead, keeping the run fast without
+    // biasing the chatter gate.
+    cmd.args(["setup", "--file"]).arg(cfg_path).args(extra_args);
     let output = cmd.output().expect("failed to spawn jarvy");
     (
         String::from_utf8_lossy(&output.stdout).into_owned(),
