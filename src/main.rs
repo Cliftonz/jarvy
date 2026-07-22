@@ -15,6 +15,7 @@ mod ci;
 pub mod cli;
 mod commands;
 mod config;
+mod console;
 mod discover;
 mod dotfiles;
 mod drift;
@@ -141,10 +142,14 @@ fn main() {
     // Apply project-level telemetry config from jarvy.toml (if present).
     // Trust-boundary policy lives in `TelemetryConfig::narrow_with_project`
     // — kept there so it's table-testable without spinning up `main`.
+    // Also snag `[logging] chatter` here so `console::init` sees the
+    // toml override without re-parsing the file.
     let project_config_path = extract_config_path(&cli);
+    let mut project_chatter: Option<bool> = None;
     if let Some(ref path) = project_config_path {
         if let Ok(contents) = fs::read_to_string(path) {
             if let Ok(project_config) = toml::from_str::<Config>(&contents) {
+                project_chatter = project_config.logging.chatter;
                 if let Some(project_telemetry) = project_config.telemetry {
                     if let Some(warning) = telemetry_config.narrow_with_project(&project_telemetry)
                     {
@@ -182,12 +187,32 @@ fn main() {
         telemetry_config.enabled = false;
     }
 
+    // Init the chatter gate FIRST so `console::is_enabled()` is a valid
+    // read for every downstream call site (setup narration, os_setup,
+    // provisioner). Precedence lives in `console::resolve`.
+    let (setup_quiet, setup_verbose) = match &cli.command {
+        Some(Commands::Setup { quiet, verbose, .. }) => (*quiet, *verbose > 0),
+        _ => (false, false),
+    };
+    console::init(console::ChatterCfg {
+        explicit_toml: project_chatter,
+        verbose: setup_verbose,
+        quiet: setup_quiet,
+    });
+
     // Two obs-config sources:
     //   1. `jarvy setup` reads its own `-q/-v/--log-format/--log-file
     //      /--debug-filter` flags into `ObservabilityConfig::from_flags`.
     //   2. Startup one-shots (see `Commands::is_startup_oneshot`) default
     //      to `startup_quiet()` (see `LogLevel::WarnOnly` for the full
     //      rationale). `-v` on those commands reopens INFO.
+    //
+    // Auto-quiet cap: when the chatter gate resolved to `false` and the
+    // user asked for neither `-v` nor `--quiet`, cap the console
+    // tracing layer at WARN (same mechanism as `--quiet`). File + OTLP
+    // sinks keep INFO — the debug artifact stays whole. This is what
+    // silences the `INFO ... event="..."` lines under an npm predev /
+    // CI / piped invocation without the user touching a flag.
     let obs_config = if let Some(Commands::Setup {
         quiet,
         verbose,
@@ -197,13 +222,17 @@ fn main() {
         ..
     }) = &cli.command
     {
-        Some(observability::ObservabilityConfig::from_flags(
+        let mut cfg = observability::ObservabilityConfig::from_flags(
             *quiet,
             *verbose,
             log_format.as_deref(),
             debug_filter.as_deref(),
             log_file.as_deref(),
-        ))
+        );
+        if !*quiet && *verbose == 0 && !console::is_enabled() {
+            cfg.log.level = observability::LogLevel::WarnOnly;
+        }
+        Some(cfg)
     } else if let Some(cmd) = cli.command.as_ref()
         && cmd.is_startup_oneshot()
     {

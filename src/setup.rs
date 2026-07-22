@@ -4,6 +4,7 @@ use std::{env, str};
 
 use inquire::Select;
 
+use crate::chatter;
 use crate::os_setup::set_up_os;
 use crate::outputs::{error_message, installing_dependency, success_message};
 use crate::provisioner::{
@@ -16,12 +17,12 @@ pub fn setup() {
     const PLATFORM: &str = env::consts::OS;
     let start = telemetry::now();
 
-    println!("Detecting Platform is: {}\n", PLATFORM);
+    chatter!("Detecting Platform is: {}\n", PLATFORM);
 
-    println!("Setting up defaults\n");
+    chatter!("Setting up defaults\n");
     set_up_os(PLATFORM);
 
-    println!("\nInstalling Required Tools for {}\n", PLATFORM);
+    chatter!("\nInstalling Required Tools for {}\n", PLATFORM);
 
     check_hard_dependencies(PLATFORM);
     check_and_install_git(PLATFORM);
@@ -158,7 +159,7 @@ fn check_zsh() {
             // home is Some(_) because AlreadyInstalled requires it; safe.
             let ohmyzsh_dir = home.unwrap().join(".oh-my-zsh");
             let display = ohmyzsh_dir.to_string_lossy();
-            println!("Oh My Zsh! is already installed.");
+            chatter!("Oh My Zsh! is already installed.");
             telemetry::tool_already_installed(
                 "oh-my-zsh",
                 &display,

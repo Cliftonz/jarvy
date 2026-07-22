@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
 
+use crate::chatter;
 use crate::ci;
 use crate::config::Config;
 use crate::env::{
@@ -166,7 +167,7 @@ pub fn run_setup(
 
     // Get tool configs with role override if --role flag was used
     if let Some(role_name) = role {
-        println!("Using role override: {}", role_name);
+        chatter!("Using role override: {}", role_name);
     }
     let tool_configs = config.get_tool_configs_with_role_override(role);
 
@@ -183,7 +184,7 @@ pub fn run_setup(
 
     // Phase 2: Parallel version checking - determine which tools need installation
     profiler.start_phase("version_check");
-    println!("Checking tool versions...");
+    chatter!("Checking tool versions...");
     let version_check = tools::spec::check_tools_parallel(
         tool_configs
             .values()
@@ -191,7 +192,7 @@ pub fn run_setup(
     );
 
     // Report version check results
-    println!("{}", version_check.summary_string());
+    chatter!("{}", version_check.summary_string());
 
     // Verify-only fallback (PRD-053). If we're in a sandbox that
     // can't install (read-only rootfs, sudoless + no user-scope
@@ -264,7 +265,7 @@ pub fn run_setup(
 
     // Log already-satisfied tools (verbose mode)
     if !version_check.satisfied.is_empty() {
-        println!(
+        chatter!(
             "Already installed: {}",
             version_check
                 .satisfied
@@ -891,9 +892,9 @@ pub fn run_setup(
     run_dotfiles_phase(&config, dry_run);
 
     if config.has_hooks() && !no_hooks {
-        println!("\nHooks execution summary:");
+        chatter!("\nHooks execution summary:");
         if hooks_config.pre_setup.is_some() {
-            println!("  - pre_setup: executed");
+            chatter!("  - pre_setup: executed");
         }
         let tool_hooks_count = hooks_config
             .tool_hooks
@@ -901,10 +902,10 @@ pub fn run_setup(
             .filter(|h| h.post_install.is_some())
             .count();
         if tool_hooks_count > 0 {
-            println!("  - tool post_install hooks: {} executed", tool_hooks_count);
+            chatter!("  - tool post_install hooks: {} executed", tool_hooks_count);
         }
         if hooks_config.post_setup.is_some() {
-            println!("  - post_setup: executed");
+            chatter!("  - post_setup: executed");
         }
     }
 
@@ -951,7 +952,7 @@ pub fn run_setup(
     // post-install hooks never ran. Plain hint instead.
     if !dry_run && !successfully_installed.is_empty() {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "$SHELL".to_string());
-        println!("\nTip: open a new terminal or run `exec {shell}` to pick up new PATH entries.");
+        chatter!("\nTip: open a new terminal or run `exec {shell}` to pick up new PATH entries.");
     }
 
     // Second chance to surface the telemetry opt-out. The first-run
@@ -1361,7 +1362,7 @@ fn run_git_phase(config: &Config, dry_run: bool) {
             );
         }
     } else {
-        println!("\n=== Git Configuration ===");
+        chatter!("\n=== Git Configuration ===");
         let started = std::time::Instant::now();
         if crate::observability::telemetry_gate::is_enabled() {
             tracing::info!(
@@ -1375,7 +1376,7 @@ fn run_git_phase(config: &Config, dry_run: bool) {
         let ok = result.is_ok();
         let error_kind = result.as_ref().err().map_or("none", |e| e.kind());
         match result {
-            Ok(()) => println!("Git configuration applied successfully"),
+            Ok(()) => chatter!("Git configuration applied successfully"),
             Err(ref e) => eprintln!("Warning: Git configuration failed: {e}"),
         }
         if crate::observability::telemetry_gate::is_enabled() {
@@ -1458,11 +1459,11 @@ fn run_git_hooks_phase(config: &Config, file: &str, dry_run: bool) {
         return;
     }
 
-    println!("\n=== Git Hooks ===");
+    chatter!("\n=== Git Hooks ===");
     let started = std::time::Instant::now();
     match crate::git_hooks::install_hooks(gh_cfg, &project_dir) {
         Ok(true) => {
-            println!("  Git hooks installed");
+            chatter!("  Git hooks installed");
             if gh_cfg.auto_update {
                 if let Err(e) = crate::git_hooks::update_hooks(gh_cfg, &project_dir) {
                     eprintln!("  Warning: hook autoupdate failed: {e}");
@@ -1482,7 +1483,7 @@ fn run_git_hooks_phase(config: &Config, file: &str, dry_run: bool) {
             }
         }
         Ok(false) => {
-            println!("  No hook framework detected — skipping");
+            chatter!("  No hook framework detected — skipping");
             if telemetry_on {
                 tracing::info!(
                     event = "git_hooks.phase_skipped",
@@ -1546,21 +1547,21 @@ fn run_ai_hooks_phase(config: &Config, dry_run: bool) {
         return;
     }
 
-    println!("\n=== AI Hooks ===");
+    chatter!("\n=== AI Hooks ===");
     let started = std::time::Instant::now();
     crate::telemetry::ai_hook_phase_started(agent_count, hooks_count, scope_label, false);
 
     match crate::ai_hooks::apply(ai_cfg) {
         Ok(report) => {
-            println!(
+            chatter!(
                 "  Applied {} hook(s) across {} agent(s)",
                 report.total_applied(),
                 report.successes.len()
             );
             for outcome in &report.successes {
-                println!("    {:<13} {}", outcome.agent, outcome.path.display());
+                chatter!("    {:<13} {}", outcome.agent, outcome.path.display());
                 for w in &outcome.warnings {
-                    println!("      warning: {w}");
+                    chatter!("      warning: {w}");
                 }
                 crate::telemetry::ai_hook_agent_applied(
                     outcome.agent,
@@ -1579,13 +1580,13 @@ fn run_ai_hooks_phase(config: &Config, dry_run: bool) {
                 crate::telemetry::ai_hook_agent_failed(target.slug(), e.kind());
             }
             if !report.refused_custom.is_empty() {
-                println!(
+                chatter!(
                     "  Refused {} custom hook(s) (set allow_custom_commands = true to apply)",
                     report.refused_custom.len()
                 );
             }
             if !report.remote_refused_custom.is_empty() {
-                println!(
+                chatter!(
                     "  Refused {} custom hook(s) from remote-fetched config (trust boundary)",
                     report.remote_refused_custom.len()
                 );
@@ -1641,9 +1642,11 @@ fn run_mcp_register_phase(config: &Config, dry_run: bool) {
                 .map(|a| a.slug())
                 .collect::<Vec<_>>()
                 .join(", ");
-            eprintln!(
-                "\nNote: registering Jarvy MCP server with detected AI agents: {agents_label}.\n      Disable: set JARVY_MCP_REGISTER=0, or add `[mcp_register] agents = []` to jarvy.toml.\n      Details: https://jarvy.dev/mcp-registration/"
-            );
+            if crate::console::is_enabled() {
+                eprintln!(
+                    "\nNote: registering Jarvy MCP server with detected AI agents: {agents_label}.\n      Disable: set JARVY_MCP_REGISTER=0, or add `[mcp_register] agents = []` to jarvy.toml.\n      Details: https://jarvy.dev/mcp-registration/"
+                );
+            }
             crate::telemetry::mcp_register_auto_detected(&detected);
             Some(crate::mcp_register::synthesize_auto_register(detected))
         }
@@ -1684,21 +1687,21 @@ fn run_mcp_register_phase(config: &Config, dry_run: bool) {
         return;
     }
 
-    println!("\n=== MCP Registration ===");
+    chatter!("\n=== MCP Registration ===");
     let started = std::time::Instant::now();
     crate::telemetry::mcp_register_phase_started(agent_count, servers_count, scope_label);
 
     match crate::mcp_register::apply(mcp_cfg) {
         Ok(report) => {
-            println!(
+            chatter!(
                 "  Registered {} server(s) across {} agent(s)",
                 report.total_applied(),
                 report.successes.len()
             );
             for o in &report.successes {
-                println!("    {:<13} {}", o.agent, o.path.display());
+                chatter!("    {:<13} {}", o.agent, o.path.display());
                 for w in &o.warnings {
-                    println!("      warning: {w}");
+                    chatter!("      warning: {w}");
                 }
                 crate::telemetry::mcp_register_agent_applied(o.agent, o.applied, &o.path);
             }
@@ -1712,13 +1715,13 @@ fn run_mcp_register_phase(config: &Config, dry_run: bool) {
                 crate::telemetry::mcp_register_agent_failed(target.slug(), e.kind());
             }
             if !report.refused_custom.is_empty() {
-                println!(
+                chatter!(
                     "  Refused {} custom server(s) (set allow_custom_servers = true to apply)",
                     report.refused_custom.len()
                 );
             }
             if !report.remote_refused.is_empty() {
-                println!(
+                chatter!(
                     "  Refused {} custom server(s) from remote-fetched config (trust boundary)",
                     report.remote_refused.len()
                 );
@@ -1805,9 +1808,9 @@ fn run_services_phase(config: &Config, file: &str, is_ci: bool, dry_run: bool) {
     if dry_run {
         println!("\n[DRY-RUN] Would auto-start {backend} services");
     } else {
-        println!("\nAuto-starting {backend} services...");
+        chatter!("\nAuto-starting {backend} services...");
         match backend_impl.start(&config_path, true) {
-            Ok(result) => println!("{}", result.message),
+            Ok(result) => chatter!("{}", result.message),
             Err(e) => {
                 // Services auto-start is advisory — don't fail the setup.
                 eprintln!("Warning: Failed to auto-start services: {e}");
@@ -1967,7 +1970,7 @@ fn capture_drift_baseline_borrowed(
                 tool_count = state.tool_count(),
                 "drift detection baseline captured"
             );
-            println!(
+            chatter!(
                 "\nDrift detection baseline captured ({} tools)",
                 state.tool_count()
             );
@@ -2261,15 +2264,15 @@ fn run_continuous_discover_phase(file: &str) {
         );
     }
 
-    println!();
-    println!(
+    chatter!("");
+    chatter!(
         "Tip: `jarvy discover` found {new_count} additional tool(s) implied by your project files \
          that aren't yet in [provisioner]:"
     );
     for tool in &report.required {
-        println!("  - {} ({})", tool.name, tool.reason);
+        chatter!("  - {} ({})", tool.name, tool.reason);
     }
-    println!("Run `jarvy discover --apply` to pin them.");
+    chatter!("Run `jarvy discover --apply` to pin them.");
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use std::env;
 use std::str;
 
+use crate::chatter;
 use crate::telemetry;
 use crate::tools::common::run_capture;
 
@@ -29,7 +30,7 @@ pub fn install_homebrew() {
             return;
         }
 
-        println!("Installing Homebrew (pinned to commit {HOMEBREW_INSTALLER_COMMIT})");
+        chatter!("Installing Homebrew (pinned to commit {HOMEBREW_INSTALLER_COMMIT})");
         let start = telemetry::now();
 
         let verify_then_exec = pinned_homebrew_installer_command();
@@ -82,11 +83,11 @@ pub fn install_homebrew() {
             eprintln!("Error: Homebrew");
             telemetry::tool_failed("homebrew", "latest", "installation failed");
         } else {
-            println!("Successfully installed Homebrew");
+            chatter!("Successfully installed Homebrew");
             telemetry::tool_installed("homebrew", "latest", "shell", start.elapsed());
         }
     } else {
-        println!("Homebrew is already installed");
+        chatter!("Homebrew is already installed");
     }
 }
 
@@ -113,7 +114,7 @@ pub fn install_docker() {
 
         // If docker not found or any other problem occurred
         if !test_docker_output.status.success() {
-            println!("Installing Docker");
+            chatter!("Installing Docker");
             let start = telemetry::now();
             let Some(brew_install_output) = run_capture(
                 "brew",
@@ -138,20 +139,20 @@ pub fn install_docker() {
 
                 // If Docker now runs properly
                 if after_install_test_output.status.success() {
-                    println!("Successfully installed Docker");
+                    chatter!("Successfully installed Docker");
                     telemetry::tool_installed("docker", "latest", "brew", start.elapsed());
                 } else {
-                    println!("Error: Docker");
+                    eprintln!("Error: Docker");
                     telemetry::tool_failed("docker", "latest", "post-install test failed");
                 }
             } else {
                 telemetry::tool_failed("docker", "latest", "brew install failed");
             }
         } else {
-            println!("Docker is already installed");
+            chatter!("Docker is already installed");
         }
     } else {
-        println!("Skipping Docker installation as Homebrew is not found");
+        chatter!("Skipping Docker installation as Homebrew is not found");
     }
 }
 
@@ -183,7 +184,7 @@ pub fn start_docker_infra_with_config(compose_file: Option<&str>) {
     };
 
     if docker_compose_output.status.success() {
-        println!("Successfully started Docker Infrastructure");
+        chatter!("Successfully started Docker Infrastructure");
         telemetry::service_operation("docker-compose", "up", true);
     } else {
         let err = String::from_utf8_lossy(&docker_compose_output.stderr).to_string();

@@ -3,6 +3,8 @@ use std::process::{Command, Output};
 use std::str;
 use tracing::debug;
 
+use crate::chatter;
+
 pub(crate) fn handle_output(output: &Output) {
     if !output.status.success() {
         eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
@@ -59,7 +61,7 @@ fn ensure_finder_shows_hidden() {
         debug!("Finder AppleShowAllFiles already YES; skipping");
         return;
     }
-    println!("Configuring Finder to show hidden files");
+    chatter!("Configuring Finder to show hidden files");
     match Command::new("defaults")
         .args(["write", "com.apple.finder", "AppleShowAllFiles", "YES"])
         .output()
@@ -78,7 +80,7 @@ fn ensure_rosetta_installed() {
         // Apple Silicon, no Rosetta yet — install non-interactively.
         // `--agree-to-license` skips the licence prompt that otherwise
         // blocks unattended setups.
-        println!("Installing Rosetta 2 for x86_64 emulation");
+        chatter!("Installing Rosetta 2 for x86_64 emulation");
         match Command::new("softwareupdate")
             .args(["--install-rosetta", "--agree-to-license"])
             .output()
@@ -105,7 +107,7 @@ fn ensure_xcode_clt_installed() {
         return;
     }
 
-    println!("Installing Command Line Tools for Xcode...");
+    chatter!("Installing Command Line Tools for Xcode...");
     match Command::new("xcode-select").args(["--install"]).spawn() {
         Ok(mut child) => {
             if let Err(e) = child.wait() {
@@ -127,7 +129,7 @@ pub fn set_up_os(platform: &str) {
             debug!("No OS-level configuration required on Linux");
         }
         "windows" => {
-            println!("Set Windows system configurations");
+            chatter!("Set Windows system configurations");
 
             let output = match std::process::Command::new("powershell")
                 .arg("/c")
@@ -145,6 +147,6 @@ pub fn set_up_os(platform: &str) {
                 eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
             }
         }
-        _ => println!("Unsupported platform"),
+        _ => chatter!("Unsupported platform"),
     }
 }

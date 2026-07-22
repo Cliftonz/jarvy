@@ -345,6 +345,12 @@ pub struct Config {
     /// without manual setup. Same trust boundary as `[ai_hooks]`.
     #[serde(default, rename = "mcp_register")]
     pub mcp_register: Option<crate::mcp_register::McpRegisterConfig>,
+    /// `[logging]` block — chatter gate + future log-shape knobs.
+    /// Parsed here (not `observability::logging`) because main.rs needs
+    /// to read `chatter` before `init_logging` fires. `observability`
+    /// still owns the `LogConfig` types that shape the tracing pipeline.
+    #[serde(default)]
+    pub logging: LoggingConfig,
     /// `[discover]` block — custom detection rules and ignore_dirs for
     /// `jarvy discover` (PRD-044 phase 2). Built-in rules always run;
     /// the custom rules file is APPENDED so a user tree can't silence
@@ -369,6 +375,25 @@ pub struct Config {
     /// `mark_ai_hooks_remote`. Not serialized; `#[serde(skip)]`.
     #[serde(skip)]
     pub origin: crate::ai_hooks::ConfigOrigin,
+}
+
+/// `[logging]` block — user-facing toggles for console noise.
+///
+/// Today it only carries the `chatter` gate; other log-shape knobs
+/// (level / format / file) stay on the CLI (`-q`, `-v`, `--log-format`,
+/// `--log-file`) because they're per-invocation, not per-project.
+///
+/// `chatter = true` re-enables the narration lines even under a piped /
+/// non-TTY invocation (npm predev, CI runs) where the auto-detect would
+/// have gone silent. `chatter = false` silences them even at an
+/// interactive terminal.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct LoggingConfig {
+    /// Explicit chatter override. See `crate::console::resolve` for
+    /// precedence — env `JARVY_CHATTER` beats this, `-v` and TTY
+    /// detection are consulted only if this is `None`.
+    #[serde(default)]
+    pub chatter: Option<bool>,
 }
 
 /// Top-level `[packages]` block. Currently only carries the
@@ -426,8 +451,6 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "mcp_register",
     "discover",
     "dotfiles",
-    // Parsed by src/observability/logging.rs, not Config — kept here so
-    // jarvy validate accepts it without warning.
     "logging",
 ];
 
@@ -1249,6 +1272,46 @@ docker = "latest"
 mod tests {
     use super::*;
 
+    /// `[logging] chatter` round-trips: absent means `None` (auto),
+    /// explicit `true` / `false` land unchanged. `main.rs` reads this
+    /// exact field to seed `console::init` — a rename here would
+    /// silently disconnect the toml override from the runtime gate.
+    #[test]
+    fn logging_config_chatter_parses() {
+        let cfg: Config = toml::from_str(
+            r#"
+[provisioner]
+git = "latest"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.logging.chatter, None);
+
+        let cfg: Config = toml::from_str(
+            r#"
+[provisioner]
+git = "latest"
+
+[logging]
+chatter = true
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.logging.chatter, Some(true));
+
+        let cfg: Config = toml::from_str(
+            r#"
+[provisioner]
+git = "latest"
+
+[logging]
+chatter = false
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.logging.chatter, Some(false));
+    }
+
     /// The sanitizer's own documented threat model: bidi overrides,
     /// zero-width chars, ANSI escapes, control bytes, empty keys — all
     /// dropped; plain command-script names survive. This is the gauntlet
@@ -1359,6 +1422,7 @@ mod tests {
                 mcp_register: _,
                 discover: _,
                 dotfiles: _,
+                logging: _,
                 packages: _,
                 origin: _,
             } = c;
@@ -1395,6 +1459,7 @@ mod tests {
             "ai_hooks",
             "mcp_register",
             "dotfiles",
+            "logging",
         ];
         for s in config_sections {
             assert!(
