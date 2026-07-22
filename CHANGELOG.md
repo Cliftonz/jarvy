@@ -27,6 +27,98 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.6.6] — quiet by default under non-TTY, dotfiles, personal overlay, service preflight (2026-07-22)
+
+Bundles the material soaked as `v0.6.5-rc.1..rc.3` plus a new chatter
+gate that lands the "why is jarvy shouting at me from my npm predev?"
+fix reported after rc.3.
+
+**Features:**
+
+- **Silent by default when invoked non-interactively.** New `chatter`
+  gate suppresses the setup narration (`Detecting Platform is: macos`,
+  `Checking tool versions...`, `=== AI Hooks ===`, …) AND caps console
+  tracing at WARN when `stderr` isn't a TTY — so `jarvy setup` from
+  an npm `predev` script, `bun install` postscript, or CI runner no
+  longer buries the caller's terminal in INFO-level output. File
+  appender (`~/.jarvy/logs/jarvy.log`) and OTLP sinks still get the
+  full INFO stream — the debug artifact and support tickets stay
+  whole. Precedence for reopening the narration: env
+  `JARVY_CHATTER=1|0` > `[logging] chatter = true|false` in
+  `jarvy.toml` > `-v` on setup > `--quiet` > TTY auto-detect.
+  Interactive terminals are unchanged.
+- **`[dotfiles]` block** — cross-machine dotfile sync via `chezmoi`,
+  `yadm`, or `stow`. `manager`, `repo` (URL or `github:owner/repo`
+  shorthand), `apply` (auto-apply after clone, default true), and
+  `allow_remote` (trust gate for remote-fetched configs, mirrors
+  `[git_hooks]`). Setup runs `chezmoi init --apply <repo>` on first
+  invocation and `chezmoi update` afterward (equivalent flow for
+  `yadm`); `stow` is installed but not auto-applied — the per-package
+  model doesn't fit a single verb. Advisory: setup never fails on
+  dotfiles errors. See `docs/dotfiles.md`.
+- **`~/.jarvy/jarvy.toml` personal overlay.** A user-scope overlay with
+  the SAME schema as a project `jarvy.toml`, auto-merged into every
+  project on load so personal tools, skills, hooks, MCP servers, and
+  git identity follow you across machines. Merge semantics mirror
+  workspace inheritance (project wins on collision, `[provisioner]`
+  merges tool-by-tool). Overlay is tagged `Local` origin so personal
+  `library_sources` and `allow_custom_*` are honored. Opt out with
+  `JARVY_NO_PERSONAL_CONFIG=1`. Safety gates refuse symlinks,
+  foreign-owner files, world-writable perms, and files over 1 MiB.
+- **Container-runtime preflight for `services` commands** — Docker
+  Compose and Podman Compose now probe `docker info` / `podman info`
+  with a wall-clock cap before `compose up`, and surface targeted
+  hints (Colima, Docker Desktop, `systemctl --user start docker`,
+  `podman machine start`) when the daemon binary is present but the
+  socket isn't answering. Podman Compose is auto-selected when Podman
+  is installed and Docker isn't; docker-compose files with explicit
+  `podman:` blocks override detection.
+- **`jarvy diagnose <k8s-tool>` cluster liveness.** `kubectl`,
+  `minikube`, `kind`, and `k3d` now route through a hard 2-second
+  probe budget (`--request-timeout=2s` for kubectl; equivalent
+  wall-clock caps for the others via `probe_with_timeout`) so a hung
+  apiserver no longer stalls diagnose for 30 seconds. Advisory —
+  diagnose remains read-only.
+
+**Fixes:**
+
+- **Dotfiles argv-injection guard.** The `[dotfiles] repo` field is
+  now validated against leading-`-` values (CVE-2017-1000117-class
+  option-injection into `git clone`) and NUL bytes; `chezmoi` and
+  `yadm` invocations scrub `GIT_*` and `CHEZMOI_*` code-execution
+  env vars before spawning.
+- **Dotfiles telemetry never emits raw subprocess stderr.** `git` and
+  `chezmoi` echo the repo URL (with any embedded token) on auth
+  failure — the phase now emits a bounded `error_kind` label
+  (`auth` / `network` / `not_found` / `conflict` / `binary_missing`
+  / `permission_denied` / `spawn_failed` / `other`) and keeps the
+  human message caller-only.
+- **`jarvy diagnose <cmd>` no longer shells the fix command through
+  `sh -c`.** The Tier 2 fix runner now argv-splits with a shared
+  helper so command-substitution / redirection / metachars in a fix
+  string can't reach a shell interpreter.
+- **Personal overlay path field removed from telemetry.** The path
+  contained `$HOME`, which on macOS and Windows is the account name
+  — PII-adjacent. The overlay-applied event is also now debug-level
+  (was info), because it fires on every jarvy invocation and would
+  otherwise dominate log budgets.
+- **Windows command-detection.** `command_on_path` now consults
+  `PATHEXT` correctly — a Windows-only regression where `docker.exe`
+  and friends registered as "missing" when only the base name was
+  probed.
+
+**Internal:**
+
+- New `SkipReason` enum + `HasOrigin` trait consolidate the copy-paste
+  trust-gate matching that had grown across `config.rs`,
+  `dotfiles.rs`, `git.rs`, `git_hooks.rs`, and `packages/mod.rs`.
+- `services::compose_command` memoized so parallel `compose up` /
+  `compose down` invocations don't each re-probe `podman-compose` vs
+  `podman compose`.
+- Cookbook: `docs/cookbook/personal-workstation.md` walks through
+  wiring the personal overlay + `[dotfiles]` + `[git]` into a
+  one-command laptop setup.
+
 ## [v0.6.4] — task-runner lifecycle hooks + jr one-command setup (2026-07-17)
 
 **Features:**
