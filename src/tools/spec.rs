@@ -155,6 +155,12 @@ pub struct WindowsInstall {
     pub winget: Option<&'static str>,
     /// Chocolatey package name
     pub choco: Option<&'static str>,
+    /// Scoop package name (bucket name, not winget id). Scoop's
+    /// bucket names diverge from winget in many cases (`gh` vs
+    /// `GitHub.cli`), so we can't safely reuse the winget id.
+    /// Optional — the maintenance router falls back to the winget
+    /// id when this is absent so existing specs keep working.
+    pub scoop: Option<&'static str>,
 }
 
 impl WindowsInstall {
@@ -163,6 +169,7 @@ impl WindowsInstall {
         Self {
             winget: Some(id),
             choco: None,
+            scoop: None,
         }
     }
 
@@ -171,6 +178,7 @@ impl WindowsInstall {
         Self {
             winget: None,
             choco: Some(name),
+            scoop: None,
         }
     }
 }
@@ -660,8 +668,33 @@ macro_rules! define_tool {
     (@windows choco: $val:expr) => {
         Some($crate::tools::spec::WindowsInstall::choco($val))
     };
+    (@windows scoop: $val:expr) => {
+        Some($crate::tools::spec::WindowsInstall {
+            winget: None,
+            choco: None,
+            scoop: Some($val),
+        })
+    };
     (@windows winget: $winget:expr, choco: $choco:expr) => {
-        Some($crate::tools::spec::WindowsInstall { winget: Some($winget), choco: Some($choco) })
+        Some($crate::tools::spec::WindowsInstall {
+            winget: Some($winget),
+            choco: Some($choco),
+            scoop: None,
+        })
+    };
+    (@windows winget: $winget:expr, scoop: $scoop:expr) => {
+        Some($crate::tools::spec::WindowsInstall {
+            winget: Some($winget),
+            choco: None,
+            scoop: Some($scoop),
+        })
+    };
+    (@windows winget: $winget:expr, choco: $choco:expr, scoop: $scoop:expr) => {
+        Some($crate::tools::spec::WindowsInstall {
+            winget: Some($winget),
+            choco: Some($choco),
+            scoop: Some($scoop),
+        })
     };
 
     // BSD helpers
@@ -1816,6 +1849,7 @@ mod tests {
         windows: Some(WindowsInstall {
             winget: Some("Test.Test"),
             choco: Some("test"),
+            scoop: None,
         }),
         bsd: None,
         custom_install: None,

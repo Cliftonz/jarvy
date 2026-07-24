@@ -10,6 +10,7 @@ pub mod git;
 pub mod git_hooks;
 pub mod library_registry;
 pub mod logging;
+pub mod maintenance;
 pub mod mcp_register;
 // Internal — `REPO_SLUG` / `REPO_URL` are crate-private. If a future
 // workspace consumer (cargo-jarvy, sub-crates) needs them, promote to

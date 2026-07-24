@@ -963,6 +963,13 @@ pub fn run_setup(
         emit_telemetry_hint_if_undecided();
     }
 
+    // Freshness advisory — read cache (never network) and spawn
+    // detached background refresher. Deliberately last real work
+    // before the profiler report so setup latency is unaffected.
+    if !dry_run {
+        run_maintenance_phase(&config, file);
+    }
+
     // `--profile` report goes to stderr so stdout stays clean for
     // command-output piping (same rule as the tracing console layers).
     if profiler.is_enabled() {
@@ -2269,6 +2276,261 @@ fn run_continuous_discover_phase(file: &str) {
         chatter!("  - {} ({})", tool.name, tool.reason);
     }
     chatter!("Run `jarvy discover --apply` to pin them.");
+}
+
+/// Freshness advisory phase (PRD-057). Reads the on-disk cache
+/// (never network) to print a one-line summary of tools with newer
+/// upstream versions, then spawns a detached background process to
+/// refresh the cache for the *next* invocation. Never blocks setup
+/// completion — cache-hit reads are sub-millisecond and the spawn
+/// returns as soon as the child is fork/exec'd.
+///
+/// Skip conditions (in order):
+/// - `[maintenance] check_updates = false` or the
+///   `JARVY_CHECK_UPDATES=0` kill-switch.
+/// - `[maintenance] notify_on = "never"` — silences the summary
+///   but still spawns the refresher (adoption signal stays honest).
+/// - Sandbox / CI / non-TTY invocations skip the *spawn* only;
+///   cache reads still fire so a scheduled CI job can populate
+///   them via `jarvy check-updates`.
+fn run_maintenance_phase(config: &Config, file: &str) {
+    let maintenance = config.maintenance.clone().unwrap_or_default();
+
+    if let Err(reason) = crate::maintenance::should_run(&maintenance) {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "maintenance.phase_skipped",
+                reason = reason.as_str(),
+            );
+        }
+        return;
+    }
+
+    if maintenance.remote_refused() {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "maintenance.remote_refused",
+                reason = "allow_remote_not_set",
+            );
+        }
+        return;
+    }
+
+    // 1. Cache-read summary line.
+    let cache = crate::maintenance::cache::load().unwrap_or_default();
+    let (report, ready_for_summary) = build_summary_from_cache(&cache, config, &maintenance);
+    if ready_for_summary
+        && matches!(
+            maintenance.notify_on,
+            crate::maintenance::config::NotifyOn::Setup
+        )
+        && let Some(line) = crate::maintenance::reporter::setup_summary_line(&report)
+    {
+        println!("\n{}", line);
+    }
+    if crate::observability::telemetry_gate::is_enabled() {
+        for check in &report.updates {
+            tracing::info!(
+                event = "maintenance.stale_tool",
+                tool = %check.tool,
+                backend = %check.backend,
+                installed = %check.installed.as_deref().unwrap_or(""),
+                latest = %check.latest.as_deref().unwrap_or(""),
+                direction = ?check.direction,
+            );
+        }
+        tracing::info!(
+            event = "maintenance.phase_completed",
+            mode = "setup_read",
+            tools_checked = report.summary.tools_checked,
+            updates_available = report.summary.updates_available,
+            unchecked = report.summary.unchecked,
+            errors = report.summary.errors,
+            duration_ms = 0u64,
+        );
+    }
+    crate::telemetry::maintenance_stale_tools(report.summary.updates_available as u64, None);
+
+    // 2. Background refresher — TTY-only. Non-TTY setups (piped
+    // CI, npm predev) don't need the summary next run and the
+    // detached spawn is friction under those runners.
+    let is_tty = atty_stderr();
+    if !is_tty || crate::sandbox::is_sandbox() || crate::ci::is_ci() {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::debug!(
+                event = "maintenance.phase_skipped",
+                reason = if !is_tty { "non_tty" } else { "sandbox_or_ci" },
+                stage = "background_spawn",
+            );
+        }
+        return;
+    }
+
+    match spawn_background_refresher(file) {
+        Ok(pid) => {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::info!(event = "maintenance.background_spawned", pid = pid,);
+            }
+        }
+        Err(kind) => {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "maintenance.background_spawn_failed",
+                    error_kind = kind,
+                );
+            }
+        }
+    }
+}
+
+/// Assemble a `Report` from cache entries only — no backend
+/// probes. Returns the report + a flag indicating whether the
+/// cache actually had data (used to skip the summary line on
+/// first-ever setup runs).
+fn build_summary_from_cache(
+    cache: &crate::maintenance::cache::CacheStore,
+    config: &Config,
+    maintenance: &crate::maintenance::MaintenanceConfig,
+) -> (crate::maintenance::checker::Report, bool) {
+    use crate::maintenance::cache::CacheStore;
+    use crate::maintenance::checker::{
+        Direction, Report, ToolCheck, UncheckedTool, compare_versions,
+    };
+    use crate::maintenance::resolver::{ResolveInput, resolve_targets};
+
+    // Setup path deliberately skips `cargo install --list`
+    // detection — the fallback `<name> --version` is fine for
+    // summary-line rendering, and the background refresher fills
+    // in accurate entries via the CLI path.
+    let input = ResolveInput {
+        provisioner_tools: config.get_tool_configs().into_keys().collect(),
+        cargo_packages: config
+            .cargo
+            .as_ref()
+            .map(|c| c.packages.keys().cloned().collect())
+            .unwrap_or_default(),
+        npm_packages: config
+            .npm
+            .as_ref()
+            .map(|c| c.packages.keys().cloned().collect())
+            .unwrap_or_default(),
+        pip_packages: config
+            .pip
+            .as_ref()
+            .map(|c| c.packages.keys().cloned().collect())
+            .unwrap_or_default(),
+        gem_packages: config
+            .gem
+            .as_ref()
+            .map(|c| c.packages.keys().cloned().collect())
+            .unwrap_or_default(),
+        go_packages: config
+            .go
+            .as_ref()
+            .map(|c| c.packages.keys().cloned().collect())
+            .unwrap_or_default(),
+        nuget_packages: config
+            .nuget
+            .as_ref()
+            .map(|c| c.packages.keys().cloned().collect())
+            .unwrap_or_default(),
+        cargo_installed: Default::default(),
+    };
+    let (targets, unchecked) = resolve_targets(&input, maintenance);
+    let mut report = Report::empty();
+    report.unchecked = unchecked;
+
+    let mut had_any_entry = false;
+    for target in targets {
+        let key = CacheStore::key(target.backend.name(), &target.pkg_id);
+        let Some(entry) = cache.entries.get(&key) else {
+            report.unchecked.push(UncheckedTool {
+                tool: target.tool.clone(),
+                reason: "cache_miss".to_string(),
+                manager: None,
+            });
+            continue;
+        };
+        had_any_entry = true;
+        let (installed, latest) = (target.installed.clone(), entry.latest.clone());
+        let direction = match (&installed, &latest) {
+            (Some(i), Some(l)) => compare_versions(i, l),
+            _ => Direction::Unknown,
+        };
+        let check = ToolCheck {
+            tool: target.tool,
+            backend: target.backend.name().to_string(),
+            installed,
+            latest,
+            error_kind: entry.backend_error.clone(),
+            from_cache: true,
+            direction,
+        };
+        if check.error_kind.is_some() {
+            report.errors.push(check);
+        } else {
+            match direction {
+                Direction::Upgrade | Direction::Downgrade => report.updates.push(check),
+                Direction::UpToDate => report.up_to_date.push(check),
+                Direction::Unknown => report.up_to_date.push(check),
+            }
+        }
+    }
+
+    report.summary.tools_checked = report.updates.len() + report.up_to_date.len();
+    report.summary.updates_available = report.updates.len();
+    report.summary.unchecked = report.unchecked.len();
+    report.summary.errors = report.errors.len();
+    (report, had_any_entry)
+}
+
+fn atty_stderr() -> bool {
+    std::io::IsTerminal::is_terminal(&std::io::stderr())
+}
+
+/// Spawn a detached `jarvy check-updates --refresh --background`
+/// child. Returns the child PID on success, a bounded telemetry
+/// label on failure. Never blocks — the child inherits an
+/// empty stdio and its own process group (Unix) / detached
+/// console (Windows) so terminal exit doesn't SIGHUP it.
+fn spawn_background_refresher(file: &str) -> Result<u32, &'static str> {
+    let exe = std::env::current_exe().map_err(|_| "current_exe")?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("check-updates")
+        .arg("--refresh")
+        .arg("--background")
+        .arg("--file")
+        .arg(file)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Own process group — parent can exit without waiting and
+        // the child survives terminal hang-up.
+        cmd.process_group(0);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // DETACHED_PROCESS | CREATE_NO_WINDOW — no inherited console,
+        // no popup, no wait.
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW);
+    }
+
+    match cmd.spawn() {
+        Ok(child) => Ok(child.id()),
+        Err(e) => Err(match e.kind() {
+            std::io::ErrorKind::NotFound => "exec",
+            std::io::ErrorKind::PermissionDenied => "permission_denied",
+            _ => "io",
+        }),
+    }
 }
 
 #[cfg(test)]

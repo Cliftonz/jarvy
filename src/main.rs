@@ -29,6 +29,7 @@ pub mod interactive;
 mod library_registry;
 mod lock;
 pub mod logging;
+mod maintenance;
 mod mcp;
 mod mcp_register;
 mod meta;

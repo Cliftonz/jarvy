@@ -502,6 +502,34 @@ pub enum Commands {
         #[clap(long)]
         allow_unsigned: bool,
     },
+    /// Check installed tools against upstream latest versions (PRD-057)
+    #[clap(name = "check-updates")]
+    CheckUpdates {
+        /// Path to the configuration file
+        #[clap(short, long, default_value = "./jarvy.toml")]
+        file: String,
+        /// Bypass the cache and fetch fresh data from every backend
+        #[clap(long)]
+        refresh: bool,
+        /// Background refresh — write cache, exit silently. Used by
+        /// setup to keep the check off the hot path. Implies
+        /// --refresh.
+        #[clap(long)]
+        background: bool,
+        /// Restrict the check to these tools (comma-separated)
+        #[clap(long)]
+        only: Option<String>,
+        /// Skip these tools even if they're in the config
+        #[clap(long)]
+        ignore: Option<String>,
+        /// Include version-manager / custom-install tools in the
+        /// per-tool listing (default: rolled into a summary line)
+        #[clap(long)]
+        include_unchecked: bool,
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
     /// Detect configuration drift in the environment
     Drift {
         /// Path to the configuration file

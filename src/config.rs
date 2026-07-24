@@ -316,6 +316,15 @@ pub struct Config {
     /// Drift detection configuration
     #[serde(default)]
     pub drift: Option<crate::drift::DriftConfig>,
+    /// Tool freshness advisory (`[maintenance]` — PRD-057).
+    /// Checks each `[provisioner]` tool against its package
+    /// manager's reported latest version, cached at
+    /// `~/.jarvy/update-cache.json`. Advisory only — never blocks
+    /// setup, never auto-upgrades. Defaults on; opt out with
+    /// `check_updates = false` or `JARVY_CHECK_UPDATES=0`. Remote
+    /// configs need `allow_remote = true` to broaden trust.
+    #[serde(default)]
+    pub maintenance: Option<crate::maintenance::MaintenanceConfig>,
     /// `[dotfiles]` block — cross-machine dotfile sync via chezmoi /
     /// yadm. See `src/dotfiles.rs` for schema. Applied in a dedicated
     /// `dotfiles` phase during `jarvy setup`, after tools install.
@@ -444,6 +453,7 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "git_hooks",
     "skills",
     "drift",
+    "maintenance",
     "telemetry",
     "commands",
     "workspace",
@@ -666,6 +676,7 @@ impl Config {
         tag(&mut self.skills, ConfigOrigin::Remote);
         tag(&mut self.git_hooks, ConfigOrigin::Remote);
         tag(&mut self.dotfiles, ConfigOrigin::Remote);
+        tag(&mut self.maintenance, ConfigOrigin::Remote);
     }
 
     pub fn new(config_path: &str) -> Self {
@@ -1415,6 +1426,7 @@ chatter = false
                 git_hooks: _,
                 skills: _,
                 drift: _,
+                maintenance: _,
                 telemetry: _,
                 commands: _,
                 workspace: _,
@@ -1453,6 +1465,7 @@ chatter = false
             "git_hooks",
             "skills",
             "drift",
+            "maintenance",
             "telemetry",
             "commands",
             "workspace",
@@ -1497,6 +1510,9 @@ enabled = true
 [dotfiles]
 manager = "chezmoi"
 repo = "github:zac/dotfiles"
+
+[maintenance]
+check_updates = true
 "#;
         let mut cfg: Config = toml::from_str(toml_str).unwrap();
         // Baseline: every sub-config defaults to Local.
@@ -1519,6 +1535,10 @@ repo = "github:zac/dotfiles"
         );
         assert_eq!(
             cfg.dotfiles.as_ref().unwrap().origin,
+            crate::ai_hooks::ConfigOrigin::Local
+        );
+        assert_eq!(
+            cfg.maintenance.as_ref().unwrap().origin,
             crate::ai_hooks::ConfigOrigin::Local
         );
 
@@ -1547,6 +1567,10 @@ repo = "github:zac/dotfiles"
         );
         assert_eq!(
             cfg.dotfiles.as_ref().unwrap().origin,
+            crate::ai_hooks::ConfigOrigin::Remote
+        );
+        assert_eq!(
+            cfg.maintenance.as_ref().unwrap().origin,
             crate::ai_hooks::ConfigOrigin::Remote
         );
     }

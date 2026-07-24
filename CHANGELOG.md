@@ -27,6 +27,50 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [Unreleased] — tool freshness advisory (PRD-057)
+
+**Features:**
+
+- **`jarvy check-updates`** and a companion `[maintenance]` block —
+  compares installed provisioner / `[cargo]` / `[npm]` / `[pip]` /
+  `[gem]` / `[go]` / `[nuget]` tools against upstream latest via
+  package-manager-native shell-outs. Fourteen backends ship in v1:
+  brew, apt, dnf, pacman, apk, winget, choco, scoop, cargo, npm,
+  pip, gem, go, nuget. Advisory only — never blocks setup, never
+  auto-upgrades. Results land in `~/.jarvy/update-cache.json` and
+  `jarvy setup` reads that cache (sub-millisecond, no network) to
+  print a one-line summary, then spawns a detached background
+  refresher via `process_group(0)` (Unix) / `DETACHED_PROCESS`
+  (Windows) so the cache warms for the NEXT invocation. First
+  setup on a fresh box shows no summary (empty cache); run #2
+  onward shows the previous run's data. See `docs/maintenance.md`.
+- **Parallel backend probes** — rayon fan-out with
+  `max(2, num_cpus/2)` workers over the cache-miss set. Cache
+  hits skip the pool entirely so a fully warm run is O(N)
+  file-reads rather than O(N) network waits. Report ordering is
+  deterministic (sorted by tool name) so JSON output stays
+  diff-stable across runs.
+- **Lockfile guard** at `~/.jarvy/update-cache.lock` prevents
+  concurrent refreshers from stomping on each other's cache
+  writes. RAII drop cleans up on exit; stale locks (>1h) get
+  reclaimed automatically for the crashed-refresher case.
+- **`WindowsInstall.scoop` field** on `ToolSpec` — scoop bucket
+  names diverge from winget IDs in enough cases (`gh` vs
+  `GitHub.cli`) that reusing the winget id was misclassifying.
+  Tool defs can now declare a real scoop bucket via
+  `windows: { scoop: "..." }`; existing winget-only defs are
+  unaffected.
+- **Trust boundaries** mirror the rest of Jarvy's `allow_remote`
+  pattern: `[maintenance] check_updates = false` opts out,
+  `JARVY_CHECK_UPDATES=0` is the env kill-switch,
+  sandbox/CI/non-TTY skip the *spawn* (cache reads still fire),
+  and remote-fetched configs cannot enable `check_updates`
+  without `allow_remote = true`.
+- **Telemetry** — new `maintenance.*` event family (all gated on
+  `[telemetry] enabled`) with per-tool `stale_tool` events plus
+  a `jarvy.maintenance.stale_tools` gauge metric tagged
+  `machine_id + platform` for fleet dashboards.
+
 ## [v0.6.6] — quiet by default under non-TTY, dotfiles, personal overlay, service preflight (2026-07-22)
 
 Bundles the material soaked as `v0.6.5-rc.1..rc.3` plus a new chatter

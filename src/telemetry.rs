@@ -312,6 +312,7 @@ struct Metrics {
     hooks_duration: Histogram<f64>,
     commands_duration: Histogram<f64>,
     setup_inventory_size: Gauge<u64>,
+    maintenance_stale_tools: Gauge<u64>,
 }
 
 // ============================================================================
@@ -425,6 +426,12 @@ fn build_telemetry_state(config: TelemetryConfig) -> TelemetryState {
                         .u64_gauge("jarvy.setup.inventory_size")
                         .with_description(
                             "Number of tools in the provisioning inventory (security audit)",
+                        )
+                        .build(),
+                    maintenance_stale_tools: meter
+                        .u64_gauge("jarvy.maintenance.stale_tools")
+                        .with_description(
+                            "Number of provisioner-tracked tools with newer upstream versions available (PRD-057)",
                         )
                         .build(),
                 };
@@ -831,6 +838,31 @@ pub fn setup_inventory(
     {
         metrics.setup_inventory_size.record(
             tools.len() as u64,
+            &[
+                KeyValue::new("machine_id", machine_id.unwrap_or("unknown").to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
+    }
+}
+
+// ============================================================================
+// Event Functions - Maintenance (PRD-057)
+// ============================================================================
+
+/// Record the freshness advisory's stale-tool gauge on
+/// `maintenance.phase_completed`. Attributed by machine + platform
+/// so a fleet dashboard can chart "how far behind is my
+/// organization?" without needing per-project cardinality.
+pub fn maintenance_stale_tools(count: u64, machine_id: Option<&str>) {
+    if !is_enabled() {
+        return;
+    }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.maintenance_stale_tools.record(
+            count,
             &[
                 KeyValue::new("machine_id", machine_id.unwrap_or("unknown").to_string()),
                 KeyValue::new("platform", env::consts::OS.to_string()),

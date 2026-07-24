@@ -45,6 +45,7 @@ pub mod validate;
 // New command modules extracted from main.rs (PRD-037)
 pub mod ai_hooks_cmd;
 pub mod bootstrap_cmd;
+pub mod check_updates_cmd;
 pub mod ci_cmd;
 pub mod config_cmd;
 pub mod configure_cmd;

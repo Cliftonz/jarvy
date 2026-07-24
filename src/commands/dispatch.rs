@@ -258,6 +258,23 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             rollback,
             allow_unsigned,
         }) => handle_update(action, version, channel, method, *rollback, *allow_unsigned),
+        Some(Commands::CheckUpdates {
+            file,
+            refresh,
+            background,
+            only,
+            ignore,
+            include_unchecked,
+            output_format,
+        }) => commands::check_updates_cmd::run(
+            file,
+            *refresh,
+            *background,
+            only.as_deref(),
+            ignore.as_deref(),
+            *include_unchecked,
+            output_format,
+        ),
         Some(Commands::Drift { file, action }) => commands::run_drift(file, action),
         Some(Commands::ShellInit {
             shell,
