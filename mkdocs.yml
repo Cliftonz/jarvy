@@ -198,6 +198,7 @@ nav:
     - Git configuration: git-config.md
     - Network & proxy: network.md
     - Drift detection: drift.md
+    - Tool freshness advisory: maintenance.md
     - Logging & tickets: logging.md
     - Telemetry: telemetry.md
     - Self-updating: self-update.md

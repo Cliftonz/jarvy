@@ -176,6 +176,10 @@ mod tests {
     /// Sets `JARVY_TEST_HOME` under the mutex, returning both the
     /// temp dir handle (dropped at end of scope) and the mutex
     /// guard (holds the env-var stable across `acquire()` calls).
+    #[allow(unsafe_code)] // SAFETY: env mutation is serialized by
+    // `ENV_GUARD`, so no other thread reads/writes the same var
+    // while this function holds the lock (Rust 2024's
+    // `set_var` guarantee).
     fn scoped_home() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
         let guard = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
         let dir = tempfile::tempdir().unwrap();

@@ -1,6 +1,6 @@
 ---
 title: "Configuration Reference - Jarvy"
-description: "Complete reference for jarvy.toml — tools, versions, hooks, environment variables, roles, drift detection, and more."
+description: "Complete reference for jarvy.toml — tools, versions, hooks, environment variables, roles, drift detection, freshness advisory, and more."
 tags:
   - reference
 
@@ -438,6 +438,27 @@ version_policy = "minor"       # major, minor, patch, exact
 ignore_tools = ["vim", "neovim"]
 allow_upgrades = true          # Only flag downgrades
 ```
+
+---
+
+## Tool Freshness Advisory (`[maintenance]`)
+
+Get a lightweight nudge when the tools you pin have newer upstream versions available. Advisory only — never blocks `jarvy setup`, never auto-upgrades. On by default; see [docs/maintenance.md](maintenance.md) for the full model.
+
+```toml
+[maintenance]
+check_updates = true                    # default; false = disabled
+cache_ttl_hours = 24                    # success entries; errors always cap at 1h
+ignore = ["docker", "kubectl"]          # per-tool opt-out
+notify_on = "setup"                     # "setup" | "manual" | "never"
+allow_remote = false                    # remote-config trust gate
+```
+
+`jarvy setup` reads the on-disk cache at `~/.jarvy/update-cache.json` (no network) to print a one-line summary, then spawns a detached background refresher so the *next* invocation's cache is warm. First-ever setup on a fresh box shows no summary; run #2 onward shows it.
+
+Backends per package manager: brew, apt, dnf, pacman, apk, winget, choco, scoop, cargo, npm, pip, gem, go, nuget. All shell out to CLIs that are already trusted — no new HTTPS surface.
+
+Opt out globally with `JARVY_CHECK_UPDATES=0` in the environment.
 
 ---
 

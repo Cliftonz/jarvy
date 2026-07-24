@@ -63,6 +63,7 @@ Commands:
   config        Manage configuration inheritance and remote configs
   quickstart    Guided quickstart experience for new users
   update        Check for and install Jarvy updates
+  check-updates Check installed tools against upstream latest versions (PRD-057). Advisory only — never blocks setup. See docs/maintenance.md
   drift         Detect configuration drift in the environment
   logs          View and manage log files
   ticket        Generate debug tickets for support
@@ -620,6 +621,46 @@ Options:
       --allow-unsigned     Skip Sigstore signature verification (DANGEROUS — only when cosign is unavailable and you accept supply-chain risk)
   -h, --help               Print help
 ```
+
+### `jarvy check-updates`
+
+```text
+Check installed tools against upstream latest versions (PRD-057).
+
+Usage: jarvy check-updates [OPTIONS]
+
+Options:
+  -f, --file <FILE>          Path to the configuration file [default: ./jarvy.toml]
+      --refresh              Bypass the cache and fetch fresh data from every backend
+      --background           Background refresh — write cache, exit silently. Used by
+                             setup to keep the check off the hot path. Implies --refresh
+      --only <ONLY>          Restrict the check to these tools (comma-separated)
+      --ignore <IGNORE>      Skip these tools even if they're in the config
+      --include-unchecked    Include version-manager / custom-install tools in the
+                             per-tool listing (default: rolled into a summary line)
+  -F, --format <FORMAT>      Output format: json, pretty [default: pretty]
+  -h, --help                 Print help
+```
+
+Exit codes:
+
+| Code | Meaning |
+|------|---------|
+| `0` | No updates available (or trust-gate skipped) |
+| `1` | Updates available |
+| `2` | Config error |
+| `3` | Every configured tool's backend is unavailable |
+
+Never blocks setup, never auto-upgrades. `jarvy setup` reads the
+freshness cache (`~/.jarvy/update-cache.json`) with zero network
+work and spawns a detached background refresher so the *next*
+invocation's cache is warm. First-ever setup on a machine shows
+no summary because the cache is empty; run #2 onward shows it.
+
+Opt out with `[maintenance] check_updates = false` in `jarvy.toml`
+or `JARVY_CHECK_UPDATES=0` in the environment. See
+[docs/maintenance.md](maintenance.md) for the full model —
+backends, trust boundaries, and cache semantics.
 
 ### `jarvy drift`
 

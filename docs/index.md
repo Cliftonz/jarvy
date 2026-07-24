@@ -192,6 +192,7 @@ That's the entire onboarding flow. Add it to `README.md`, push to `main`, every 
 | **Roles** | Inheritable tool sets with per-role version overrides, max 5 levels deep |
 | **Templates** | 14 ready-to-use `jarvy.toml` files for Node, Python, Go, Rust, Ruby, Java, fullstack, K8s |
 | **Drift detection** | SHA-256 file hashes + version policy (major/minor/patch/exact) |
+| **Freshness advisory** | `jarvy check-updates` — compares pinned tools against upstream latest across 14 package managers; cached locally, never blocks setup — see [maintenance](maintenance.md) |
 | **CI/CD** | 11 providers auto-detected: GitHub Actions, GitLab, CircleCI, Buildkite, Jenkins, … |
 | **Telemetry** | OpenTelemetry (logs/metrics/traces), opt-out, OTLP HTTP or gRPC |
 | **MCP server** | JSON-RPC over stdio for AI agents, with read/write tool support |
