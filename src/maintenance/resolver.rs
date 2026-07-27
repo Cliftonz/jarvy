@@ -18,6 +18,7 @@
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
+use crate::packages::common::validate_package_name;
 use crate::tools::spec::{ToolSpec, iter_tools};
 
 // Backend imports — several are per-OS via `#[cfg(...)]` branches
@@ -64,6 +65,25 @@ pub struct ResolveInput {
     pub cargo_installed: HashMap<String, String>,
 }
 
+/// How aggressively the resolver should probe the local
+/// filesystem while building `CheckTarget`s.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolveMode {
+    /// Full resolution — spawn `<cmd> --version` (up to 3 fallbacks)
+    /// for every configured package so `CheckTarget.installed`
+    /// carries the currently-installed version. Used by `jarvy
+    /// check-updates` where the direction (up_to_date / upgrade /
+    /// downgrade) matters.
+    Full,
+    /// Cache-only — skip the installed-version probe and set
+    /// `installed: None` on every target. Used by `jarvy setup`
+    /// which only needs the *count* of stale tools from cache
+    /// entries. Closes the perf F1 hot-path finding: setup no
+    /// longer pays 3 × N subprocess spawns on a config with N
+    /// tools.
+    Cheap,
+}
+
 /// Resolve every checkable target in `config`, plus the buckets of
 /// tools we're deliberately skipping.
 ///
@@ -75,6 +95,26 @@ pub struct ResolveInput {
 pub fn resolve_targets(
     input: &ResolveInput,
     maintenance: &MaintenanceConfig,
+) -> (Vec<CheckTarget>, Vec<UncheckedTool>) {
+    resolve_targets_with_mode(input, maintenance, ResolveMode::Full)
+}
+
+/// Cache-only variant of [`resolve_targets`]. Every returned
+/// `CheckTarget` has `installed: None`; the setup summary path
+/// only needs the aggregate stale count from cache entries, and
+/// spawning `<cmd> --version` × N on every `jarvy setup` was the
+/// P0 latency regression the PRD-057 review flagged.
+pub fn resolve_targets_cheap(
+    input: &ResolveInput,
+    maintenance: &MaintenanceConfig,
+) -> (Vec<CheckTarget>, Vec<UncheckedTool>) {
+    resolve_targets_with_mode(input, maintenance, ResolveMode::Cheap)
+}
+
+fn resolve_targets_with_mode(
+    input: &ResolveInput,
+    maintenance: &MaintenanceConfig,
+    mode: ResolveMode,
 ) -> (Vec<CheckTarget>, Vec<UncheckedTool>) {
     let mut targets: Vec<CheckTarget> = Vec::new();
     let mut unchecked: Vec<UncheckedTool> = Vec::new();
@@ -117,7 +157,11 @@ pub fn resolve_targets(
             }),
             Some(spec) => match provisioner_backend(spec) {
                 Some((backend, pkg_id)) => {
-                    let installed = detect_installed_version(spec.command);
+                    let installed = if mode == ResolveMode::Full {
+                        detect_installed_version(spec.command)
+                    } else {
+                        None
+                    };
                     targets.push(CheckTarget {
                         tool: name.clone(),
                         backend,
@@ -149,11 +193,18 @@ pub fn resolve_targets(
             });
             continue;
         }
-        let installed = input
-            .cargo_installed
-            .get(name)
-            .cloned()
-            .or_else(|| detect_installed_version(name));
+        if !push_if_safe(name, "[maintenance-cargo]", &mut unchecked) {
+            continue;
+        }
+        let installed = if mode == ResolveMode::Full {
+            input
+                .cargo_installed
+                .get(name)
+                .cloned()
+                .or_else(|| detect_installed_version(name))
+        } else {
+            None
+        };
         targets.push(CheckTarget {
             tool: name.clone(),
             backend: Box::new(CargoBackend),
@@ -165,8 +216,9 @@ pub fn resolve_targets(
     // 3. [npm] packages. Detect installed globals in one shot so
     // we don't fan out N slow `npm view` invocations for the
     // `installed` side — `npm ls -g --json --depth=0` returns the
-    // full map in a single subprocess.
-    let npm_globals = if input.npm_packages.is_empty() {
+    // full map in a single subprocess. Cheap mode skips this too
+    // (perf F1: no subprocess on the setup summary path).
+    let npm_globals = if mode != ResolveMode::Full || input.npm_packages.is_empty() {
         HashMap::new()
     } else {
         detect_npm_globals()
@@ -181,6 +233,9 @@ pub fn resolve_targets(
                 reason: "ignored_by_config".to_string(),
                 manager: None,
             });
+            continue;
+        }
+        if !push_if_safe(name, "[maintenance-npm]", &mut unchecked) {
             continue;
         }
         targets.push(CheckTarget {
@@ -204,7 +259,14 @@ pub fn resolve_targets(
             });
             continue;
         }
-        let installed = detect_installed_version(name);
+        if !push_if_safe(name, "[maintenance-pip]", &mut unchecked) {
+            continue;
+        }
+        let installed = if mode == ResolveMode::Full {
+            detect_installed_version(name)
+        } else {
+            None
+        };
         targets.push(CheckTarget {
             tool: name.clone(),
             backend: Box::new(PipBackend),
@@ -226,7 +288,14 @@ pub fn resolve_targets(
             });
             continue;
         }
-        let installed = detect_installed_version(name);
+        if !push_if_safe(name, "[maintenance-gem]", &mut unchecked) {
+            continue;
+        }
+        let installed = if mode == ResolveMode::Full {
+            detect_installed_version(name)
+        } else {
+            None
+        };
         targets.push(CheckTarget {
             tool: name.clone(),
             backend: Box::new(GemBackend),
@@ -251,8 +320,33 @@ pub fn resolve_targets(
             });
             continue;
         }
-        let bin_name = go_binary_name(path);
-        let installed = detect_installed_version(bin_name);
+        // Go module keys additionally cannot contain `..` segments —
+        // `validate_package_name` accepts `.` in the safe set (needed
+        // for legitimate `github.com/foo/bar.v1` style paths), but a
+        // `..` segment lets `go_binary_name`'s last-segment probe
+        // resolve outside the intended package tree.
+        if !push_if_safe(path, "[maintenance-go]", &mut unchecked) {
+            continue;
+        }
+        if !is_safe_go_module_path(path) {
+            unchecked.push(UncheckedTool {
+                tool: path.clone(),
+                reason: "refused_unsafe_name".to_string(),
+                manager: None,
+            });
+            tracing::warn!(
+                event = "maintenance.refused_unsafe_name",
+                purpose = "[maintenance-go]",
+                reason = "traversal_segment",
+            );
+            continue;
+        }
+        let installed = if mode == ResolveMode::Full {
+            let bin_name = go_binary_name(path);
+            detect_installed_version(bin_name)
+        } else {
+            None
+        };
         targets.push(CheckTarget {
             tool: path.clone(),
             backend: Box::new(GoBackend),
@@ -274,10 +368,17 @@ pub fn resolve_targets(
             });
             continue;
         }
+        if !push_if_safe(name, "[maintenance-nuget]", &mut unchecked) {
+            continue;
+        }
         // dotnet global tools install into `~/.dotnet/tools/`
         // and expose `<tool> --version`. Trust the command probe
         // as it's the same convention every dotnet tool follows.
-        let installed = detect_installed_version(name);
+        let installed = if mode == ResolveMode::Full {
+            detect_installed_version(name)
+        } else {
+            None
+        };
         targets.push(CheckTarget {
             tool: name.clone(),
             backend: Box::new(NugetBackend),
@@ -287,6 +388,55 @@ pub fn resolve_targets(
     }
 
     (targets, unchecked)
+}
+
+/// Gate an ecosystem-key against [`validate_package_name`] and, on
+/// refusal, bucket it as `unchecked` with the bounded telemetry
+/// label `refused_unsafe_name`. Returns `true` when the caller
+/// should proceed with target construction.
+///
+/// This is the single load-bearing security gate for the checker's
+/// language-scoped sections ([cargo] / [npm] / [pip] / [gem] / [go]
+/// / [nuget]) — TOML keys flow from an attacker-controllable file
+/// directly into `Command::new` (via `detect_installed_version`) and
+/// as argv elements to package managers (via each backend). Without
+/// this gate a hostile local `jarvy.toml` executes arbitrary
+/// binaries and injects registry-redirect flags. The provisioner
+/// path routes through the registered tool spec instead, so it does
+/// not need this check.
+///
+/// On top of [`validate_package_name`] this helper also refuses
+/// names starting with `/` or `\` — legal per the safe charset
+/// (which permits `/` for npm scoped names like `@scope/pkg`) but
+/// path-shaped inputs are never a legitimate package identifier
+/// and blocking them at the resolver keeps `detect_installed_version`
+/// and every backend's argv one layer away from a filesystem lookup.
+fn push_if_safe(name: &str, purpose: &'static str, unchecked: &mut Vec<UncheckedTool>) -> bool {
+    let path_shaped = name.starts_with('/') || name.starts_with('\\');
+    if !path_shaped && validate_package_name(name, purpose).is_ok() {
+        return true;
+    }
+    if path_shaped {
+        tracing::warn!(
+            event = "maintenance.refused_unsafe_name",
+            purpose = %purpose,
+            reason = "path_shaped_key",
+        );
+    }
+    unchecked.push(UncheckedTool {
+        tool: name.to_string(),
+        reason: "refused_unsafe_name".to_string(),
+        manager: None,
+    });
+    false
+}
+
+/// Refuse any Go module path segment that resolves outside the
+/// declared tree. `validate_package_name` accepts `.` in the safe
+/// charset (needed for `github.com/x/y.v1`-style names); it does
+/// not reject a `..` segment. This helper closes that gap.
+fn is_safe_go_module_path(path: &str) -> bool {
+    !path.split('/').any(|seg| seg == ".." || seg == ".")
 }
 
 /// Extract the plausible binary name for a Go module path.
@@ -506,7 +656,27 @@ fn version_manager_match(name: &str) -> Option<&'static str> {
 /// binary isn't on PATH or the output can't be parsed — the
 /// checker treats `None` as "installed version unknown" and the
 /// backend result becomes advisory rather than a comparison.
+///
+/// Defense-in-depth on top of the resolver's `push_if_safe` gate:
+/// refuse any `cmd` that isn't a bare binary name. `Command::new`
+/// resolves absolute paths and relative paths against cwd, so
+/// `./payload` or `../../etc/reboot` would exec arbitrary code if
+/// a bug in the caller ever bypassed the resolver's validator.
+/// Every legitimate call site passes either a `ToolSpec.command`
+/// static string (safe) or a `push_if_safe`-validated ecosystem
+/// key (safe); this final guard closes the case where a future
+/// refactor forgets one.
 fn detect_installed_version(cmd: &str) -> Option<String> {
+    if cmd.is_empty()
+        || cmd.starts_with('-')
+        || cmd.contains('/')
+        || cmd.contains('\\')
+        || cmd
+            .chars()
+            .any(|c| c.is_control() || c == '\x1b' || c == '\x7f')
+    {
+        return None;
+    }
     let out = Command::new(cmd)
         .arg("--version")
         .output()
@@ -581,5 +751,109 @@ mod tests {
         let maintenance = MaintenanceConfig::default();
         let (_targets, unchecked) = resolve_targets(&input, &maintenance);
         assert!(unchecked.iter().any(|u| u.tool == "rustup"));
+    }
+
+    // Security regression pins — every ecosystem loop must refuse
+    // adversarial TOML keys before they reach `Command::new` (via
+    // `detect_installed_version`) or the backend argv (via
+    // `pkg_id`).
+    #[test]
+    fn cargo_leading_dash_key_is_refused_as_unsafe_name() {
+        let input = ResolveInput {
+            cargo_packages: vec!["--registry=http://evil.example/".to_string()],
+            ..Default::default()
+        };
+        let (targets, unchecked) = resolve_targets(&input, &MaintenanceConfig::default());
+        assert!(targets.is_empty(), "no target should be built");
+        assert_eq!(unchecked.len(), 1);
+        assert_eq!(unchecked[0].reason, "refused_unsafe_name");
+    }
+
+    #[test]
+    fn npm_absolute_path_key_is_refused() {
+        let input = ResolveInput {
+            npm_packages: vec!["/usr/bin/reboot".to_string()],
+            ..Default::default()
+        };
+        let (targets, unchecked) = resolve_targets(&input, &MaintenanceConfig::default());
+        assert!(targets.is_empty());
+        assert_eq!(unchecked[0].reason, "refused_unsafe_name");
+    }
+
+    #[test]
+    fn pip_url_scheme_key_is_refused() {
+        let input = ResolveInput {
+            pip_packages: vec!["https://evil.example/pypi".to_string()],
+            ..Default::default()
+        };
+        let (_, unchecked) = resolve_targets(&input, &MaintenanceConfig::default());
+        assert_eq!(unchecked[0].reason, "refused_unsafe_name");
+    }
+
+    #[test]
+    fn gem_control_byte_key_is_refused() {
+        let input = ResolveInput {
+            gem_packages: vec!["evil\x1b[2Jgem".to_string()],
+            ..Default::default()
+        };
+        let (targets, unchecked) = resolve_targets(&input, &MaintenanceConfig::default());
+        assert!(targets.is_empty());
+        assert_eq!(unchecked[0].reason, "refused_unsafe_name");
+    }
+
+    #[test]
+    fn nuget_flag_injection_key_is_refused() {
+        let input = ResolveInput {
+            nuget_packages: vec!["--tool-path=/tmp/pwn".to_string()],
+            ..Default::default()
+        };
+        let (_, unchecked) = resolve_targets(&input, &MaintenanceConfig::default());
+        assert_eq!(unchecked[0].reason, "refused_unsafe_name");
+    }
+
+    #[test]
+    fn go_traversal_segment_is_refused() {
+        let input = ResolveInput {
+            go_packages: vec!["github.com/x/../../etc/passwd".to_string()],
+            ..Default::default()
+        };
+        let (targets, unchecked) = resolve_targets(&input, &MaintenanceConfig::default());
+        assert!(targets.is_empty());
+        assert_eq!(unchecked[0].reason, "refused_unsafe_name");
+    }
+
+    #[test]
+    fn go_current_directory_segment_is_refused() {
+        // A `.` segment resolves to cwd; go_binary_name would then
+        // pick up "./" as the binary name. Refuse for the same
+        // reason as `..`.
+        let input = ResolveInput {
+            go_packages: vec!["github.com/x/./evil".to_string()],
+            ..Default::default()
+        };
+        let (targets, unchecked) = resolve_targets(&input, &MaintenanceConfig::default());
+        assert!(targets.is_empty());
+        assert_eq!(unchecked[0].reason, "refused_unsafe_name");
+    }
+
+    #[test]
+    fn detect_installed_version_refuses_path_shaped_cmd() {
+        // Defense-in-depth: even if a future caller forgets the
+        // resolver gate, the probe itself refuses to exec anything
+        // that isn't a bare binary name.
+        assert_eq!(detect_installed_version("../../bin/reboot"), None);
+        assert_eq!(detect_installed_version("/usr/bin/reboot"), None);
+        assert_eq!(detect_installed_version("--version"), None);
+        assert_eq!(detect_installed_version(""), None);
+        assert_eq!(detect_installed_version("evil\x1bcmd"), None);
+    }
+
+    #[test]
+    fn safe_go_module_path_accepts_legitimate_names() {
+        assert!(is_safe_go_module_path("github.com/foo/bar"));
+        assert!(is_safe_go_module_path("github.com/foo/bar/v2"));
+        assert!(is_safe_go_module_path("gopkg.in/yaml.v3"));
+        assert!(!is_safe_go_module_path("github.com/x/.."));
+        assert!(!is_safe_go_module_path("../../../evil"));
     }
 }

@@ -967,7 +967,17 @@ pub fn run_setup(
     // detached background refresher. Deliberately last real work
     // before the profiler report so setup latency is unaffected.
     if !dry_run {
-        run_maintenance_phase(&config, file);
+        let maintenance_state = run_maintenance_phase(&config, file);
+        // `setup_cmd` doesn't emit `setup.completed` today (only the
+        // legacy `src/setup.rs` does), so bridge the adoption
+        // denominator PMs need (analytics F2) via a focused event.
+        // Bounded label; single emission per setup invocation.
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::info!(
+                event = "setup.maintenance_evaluated",
+                maintenance_state = maintenance_state.as_str(),
+            );
+        }
     }
 
     // `--profile` report goes to stderr so stdout stays clean for
@@ -2278,6 +2288,49 @@ fn run_continuous_discover_phase(file: &str) {
     chatter!("Run `jarvy discover --apply` to pin them.");
 }
 
+/// State the setup path exposes back to the outer `run_setup`
+/// caller so the `setup.completed` event can attribute what
+/// happened on the maintenance phase without every skip site
+/// needing its own emission. Bounded label — see analytics F2 in
+/// the PRD-057 review.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MaintenanceState {
+    /// Cache read + summary evaluated (whether or not the cache
+    /// had entries).
+    Ran,
+    /// `[maintenance] check_updates = false`.
+    SkippedConfig,
+    /// `JARVY_CHECK_UPDATES=0` env kill-switch.
+    SkippedEnv,
+    /// Sandbox detected via `crate::sandbox`.
+    SkippedSandbox,
+    /// CI detected via `crate::ci`.
+    SkippedCi,
+    /// Non-TTY (piped setup, npm predev) — cache-read still ran,
+    /// but the background refresher spawn is suppressed.
+    SkippedNonTty,
+    /// Remote-fetched config attempted to enable check_updates
+    /// without `[maintenance] allow_remote = true`.
+    RemoteRefused,
+    /// Ran, but the cache had no entries yet (first-ever setup).
+    EmptyCache,
+}
+
+impl MaintenanceState {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Ran => "ran",
+            Self::SkippedConfig => "skipped_config",
+            Self::SkippedEnv => "skipped_env",
+            Self::SkippedSandbox => "skipped_sandbox",
+            Self::SkippedCi => "skipped_ci",
+            Self::SkippedNonTty => "skipped_non_tty",
+            Self::RemoteRefused => "remote_refused",
+            Self::EmptyCache => "empty_cache",
+        }
+    }
+}
+
 /// Freshness advisory phase (PRD-057). Reads the on-disk cache
 /// (never network) to print a one-line summary of tools with newer
 /// upstream versions, then spawns a detached background process to
@@ -2293,8 +2346,9 @@ fn run_continuous_discover_phase(file: &str) {
 /// - Sandbox / CI / non-TTY invocations skip the *spawn* only;
 ///   cache reads still fire so a scheduled CI job can populate
 ///   them via `jarvy check-updates`.
-fn run_maintenance_phase(config: &Config, file: &str) {
+fn run_maintenance_phase(config: &Config, file: &str) -> MaintenanceState {
     let maintenance = config.maintenance.clone().unwrap_or_default();
+    let maintenance_started = std::time::Instant::now();
 
     if let Err(reason) = crate::maintenance::should_run(&maintenance) {
         if crate::observability::telemetry_gate::is_enabled() {
@@ -2303,7 +2357,18 @@ fn run_maintenance_phase(config: &Config, file: &str) {
                 reason = reason.as_str(),
             );
         }
-        return;
+        return match reason {
+            crate::maintenance::SkipReason::DisabledByConfig => MaintenanceState::SkippedConfig,
+            crate::maintenance::SkipReason::DisabledByEnv => MaintenanceState::SkippedEnv,
+            crate::maintenance::SkipReason::Sandbox => MaintenanceState::SkippedSandbox,
+            crate::maintenance::SkipReason::Ci => MaintenanceState::SkippedCi,
+            // The other SkipReason variants aren't returned by
+            // `should_run` today; keep them mapped for forward
+            // compatibility.
+            crate::maintenance::SkipReason::NonTty => MaintenanceState::SkippedNonTty,
+            crate::maintenance::SkipReason::RemoteRefused => MaintenanceState::RemoteRefused,
+            _ => MaintenanceState::SkippedConfig,
+        };
     }
 
     if maintenance.remote_refused() {
@@ -2313,7 +2378,7 @@ fn run_maintenance_phase(config: &Config, file: &str) {
                 reason = "allow_remote_not_set",
             );
         }
-        return;
+        return MaintenanceState::RemoteRefused;
     }
 
     // 1. Cache-read summary line.
@@ -2330,13 +2395,24 @@ fn run_maintenance_phase(config: &Config, file: &str) {
     }
     if crate::observability::telemetry_gate::is_enabled() {
         for check in &report.updates {
-            tracing::info!(
+            // Reshaped stale_tool event — see check_updates_cmd.rs
+            // for the review-item rationale. `mode = "setup_read"`
+            // distinguishes cache-read emissions from the refresher's
+            // `cli_foreground` / `cli_background` runs.
+            let lag = crate::maintenance::checker::LagBucket::classify(
+                check.installed.as_deref(),
+                check.latest.as_deref(),
+                check.direction,
+            );
+            tracing::debug!(
                 event = "maintenance.stale_tool",
                 tool = %check.tool,
+                tool_kind = crate::maintenance::checker::tool_kind_for_backend(&check.backend),
                 backend = %check.backend,
-                installed = %check.installed.as_deref().unwrap_or(""),
-                latest = %check.latest.as_deref().unwrap_or(""),
-                direction = ?check.direction,
+                direction = check.direction.as_str(),
+                lag_bucket = lag.as_str(),
+                from_cache = check.from_cache,
+                mode = "setup_read",
             );
         }
         tracing::info!(
@@ -2346,24 +2422,62 @@ fn run_maintenance_phase(config: &Config, file: &str) {
             updates_available = report.summary.updates_available,
             unchecked = report.summary.unchecked,
             errors = report.summary.errors,
-            duration_ms = 0u64,
+            duration_ms = maintenance_started.elapsed().as_millis() as u64,
         );
     }
     crate::telemetry::maintenance_stale_tools(report.summary.updates_available as u64, None);
+
+    // Preserve the "did the cache actually have entries?" answer
+    // for the return value so the outer `setup.completed` event
+    // can distinguish first-ever setup (empty cache) from
+    // steady-state adoption.
+    let ran_state = if ready_for_summary {
+        MaintenanceState::Ran
+    } else {
+        MaintenanceState::EmptyCache
+    };
 
     // 2. Background refresher — TTY-only. Non-TTY setups (piped
     // CI, npm predev) don't need the summary next run and the
     // detached spawn is friction under those runners.
     let is_tty = atty_stderr();
-    if !is_tty || crate::sandbox::is_sandbox() || crate::ci::is_ci() {
+    let is_sandbox = crate::sandbox::is_sandbox();
+    let is_ci = crate::ci::is_ci();
+    if !is_tty || is_sandbox || is_ci {
+        // Split what used to be a compound `sandbox_or_ci` label
+        // into distinct bounded reasons — see the PRD-057
+        // observability F7 + analytics F8 review items.
+        let (reason, phase_state) = if !is_tty {
+            ("non_tty", MaintenanceState::SkippedNonTty)
+        } else if is_sandbox {
+            ("sandbox", MaintenanceState::SkippedSandbox)
+        } else {
+            ("ci", MaintenanceState::SkippedCi)
+        };
         if crate::observability::telemetry_gate::is_enabled() {
-            tracing::debug!(
+            // Promoted from debug! to info! so the "why isn't my
+            // cache warming?" signal survives default log filters
+            // (obs F7). Volume is bounded — once per setup call.
+            tracing::info!(
                 event = "maintenance.phase_skipped",
-                reason = if !is_tty { "non_tty" } else { "sandbox_or_ci" },
+                reason = reason,
                 stage = "background_spawn",
+                duration_ms = maintenance_started.elapsed().as_millis() as u64,
             );
         }
-        return;
+        // The cache-read completed successfully; only the
+        // background spawn was suppressed. Return `Ran` /
+        // `EmptyCache` when the summary path itself succeeded so
+        // the outer telemetry doesn't confuse "we couldn't warm
+        // for next time" with "we never ran at all". But when
+        // the trigger for the skip is a signal the outer caller
+        // needs to attribute (non_tty on a headless CI runner),
+        // surface it explicitly.
+        return if !is_tty {
+            MaintenanceState::SkippedNonTty
+        } else {
+            phase_state
+        };
     }
 
     match spawn_background_refresher(file) {
@@ -2381,22 +2495,30 @@ fn run_maintenance_phase(config: &Config, file: &str) {
             }
         }
     }
+
+    ran_state
 }
 
 /// Assemble a `Report` from cache entries only — no backend
 /// probes. Returns the report + a flag indicating whether the
 /// cache actually had data (used to skip the summary line on
 /// first-ever setup runs).
+///
+/// PRD-057 review items:
+/// - perf F1: routes through `resolver::resolve_targets_cheap` so
+///   the setup summary path no longer spawns `<cmd> --version` × N
+///   subprocesses.
+/// - maint F2: reuses `checker::run_check_cache_only` for the
+///   classify/sort/summary logic that used to be re-implemented
+///   inline here.
 fn build_summary_from_cache(
     cache: &crate::maintenance::cache::CacheStore,
     config: &Config,
     maintenance: &crate::maintenance::MaintenanceConfig,
 ) -> (crate::maintenance::checker::Report, bool) {
     use crate::maintenance::cache::CacheStore;
-    use crate::maintenance::checker::{
-        Direction, Report, ToolCheck, UncheckedTool, compare_versions,
-    };
-    use crate::maintenance::resolver::{ResolveInput, resolve_targets};
+    use crate::maintenance::checker::run_check_cache_only;
+    use crate::maintenance::resolver::{ResolveInput, resolve_targets_cheap};
 
     // Setup path deliberately skips `cargo install --list`
     // detection — the fallback `<name> --version` is fine for
@@ -2436,51 +2558,20 @@ fn build_summary_from_cache(
             .unwrap_or_default(),
         cargo_installed: Default::default(),
     };
-    let (targets, unchecked) = resolve_targets(&input, maintenance);
-    let mut report = Report::empty();
-    report.unchecked = unchecked;
+    let (targets, unchecked) = resolve_targets_cheap(&input, maintenance);
 
-    let mut had_any_entry = false;
-    for target in targets {
-        let key = CacheStore::key(target.backend.name(), &target.pkg_id);
-        let Some(entry) = cache.entries.get(&key) else {
-            report.unchecked.push(UncheckedTool {
-                tool: target.tool.clone(),
-                reason: "cache_miss".to_string(),
-                manager: None,
-            });
-            continue;
-        };
-        had_any_entry = true;
-        let (installed, latest) = (target.installed.clone(), entry.latest.clone());
-        let direction = match (&installed, &latest) {
-            (Some(i), Some(l)) => compare_versions(i, l),
-            _ => Direction::Unknown,
-        };
-        let check = ToolCheck {
-            tool: target.tool,
-            backend: target.backend.name().to_string(),
-            installed,
-            latest,
-            error_kind: entry.backend_error.clone(),
-            from_cache: true,
-            direction,
-        };
-        if check.error_kind.is_some() {
-            report.errors.push(check);
-        } else {
-            match direction {
-                Direction::Upgrade | Direction::Downgrade => report.updates.push(check),
-                Direction::UpToDate => report.up_to_date.push(check),
-                Direction::Unknown => report.up_to_date.push(check),
-            }
-        }
-    }
+    // Compute `had_any_entry` before handing targets off to the
+    // shared checker — once we own the report the answer is a
+    // simple `tools_checked > 0`, but we want the exact
+    // "any cache entry present at all?" semantic including
+    // error entries.
+    let had_any_entry = targets.iter().any(|t| {
+        cache
+            .entries
+            .contains_key(&CacheStore::key(t.backend.name(), &t.pkg_id))
+    });
 
-    report.summary.tools_checked = report.updates.len() + report.up_to_date.len();
-    report.summary.updates_available = report.updates.len();
-    report.summary.unchecked = report.unchecked.len();
-    report.summary.errors = report.errors.len();
+    let report = run_check_cache_only(targets, cache, unchecked);
     (report, had_any_entry)
 }
 
@@ -2488,14 +2579,21 @@ fn atty_stderr() -> bool {
     std::io::IsTerminal::is_terminal(&std::io::stderr())
 }
 
-/// Spawn a detached `jarvy check-updates --refresh --background`
-/// child. Returns the child PID on success, a bounded telemetry
-/// label on failure. Never blocks — the child inherits an
-/// empty stdio and its own process group (Unix) / detached
-/// console (Windows) so terminal exit doesn't SIGHUP it.
-fn spawn_background_refresher(file: &str) -> Result<u32, &'static str> {
-    let exe = std::env::current_exe().map_err(|_| "current_exe")?;
-    let mut cmd = std::process::Command::new(exe);
+/// Windows creation-flag constants — inspected by the QA test
+/// suite (see PRD-057 review item qa F2) so a typo in the
+/// spawn-side code path is caught even on CI runners that only
+/// exercise the Unix branch.
+#[cfg(windows)]
+pub(crate) const REFRESHER_DETACHED_PROCESS: u32 = 0x0000_0008;
+#[cfg(windows)]
+pub(crate) const REFRESHER_CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Configure a `Command` for the detached background refresher.
+/// Extracted from [`spawn_background_refresher`] so tests can
+/// exercise the argv / stdio / OS-specific flag wiring without
+/// actually forking a child (which is racy under `cargo test` and
+/// impossible under `#[cfg(windows)]` on macOS/Linux CI).
+pub(crate) fn configure_child(cmd: &mut std::process::Command, file: &str) {
     cmd.arg("check-updates")
         .arg("--refresh")
         .arg("--background")
@@ -2518,11 +2616,19 @@ fn spawn_background_refresher(file: &str) -> Result<u32, &'static str> {
         use std::os::windows::process::CommandExt;
         // DETACHED_PROCESS | CREATE_NO_WINDOW — no inherited console,
         // no popup, no wait.
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW);
+        cmd.creation_flags(REFRESHER_DETACHED_PROCESS | REFRESHER_CREATE_NO_WINDOW);
     }
+}
 
+/// Spawn a detached `jarvy check-updates --refresh --background`
+/// child. Returns the child PID on success, a bounded telemetry
+/// label on failure. Never blocks — the child inherits an
+/// empty stdio and its own process group (Unix) / detached
+/// console (Windows) so terminal exit doesn't SIGHUP it.
+fn spawn_background_refresher(file: &str) -> Result<u32, &'static str> {
+    let exe = std::env::current_exe().map_err(|_| "current_exe")?;
+    let mut cmd = std::process::Command::new(exe);
+    configure_child(&mut cmd, file);
     match cmd.spawn() {
         Ok(child) => Ok(child.id()),
         Err(e) => Err(match e.kind() {

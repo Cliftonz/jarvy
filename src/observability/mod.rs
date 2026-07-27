@@ -16,6 +16,7 @@
 
 pub mod error;
 pub mod logging;
+pub mod maintenance_metrics;
 pub mod profiler;
 pub mod sanitizer;
 pub mod telemetry_gate;

@@ -8,14 +8,15 @@
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::backends::FreshnessBackend;
+use super::backends::{BackendError, FreshnessBackend};
 use super::cache::{CacheEntry, CacheStore, err_entry, ok_entry};
 use super::config::MaintenanceConfig;
+use crate::observability::telemetry_gate;
 
 /// Progress-reporter callback. Called once per backend probe on the
 /// foreground refresh path. Signature `(tool, backend)`. Set to
@@ -49,6 +50,95 @@ pub enum Direction {
     Upgrade,
     Downgrade,
     Unknown,
+}
+
+impl Direction {
+    /// Bounded telemetry label. Use in preference to `?direction`
+    /// (`Debug`) so OTLP labels don't inherit the compiler's
+    /// idiosyncratic `Debug` formatting (which round-tripped through
+    /// `serde` produces `"upgrade"` today but is not a stability
+    /// guarantee).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UpToDate => "up_to_date",
+            Self::Upgrade => "upgrade",
+            Self::Downgrade => "downgrade",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Coarse severity bucket for a stale-tool report — how far the
+/// installed version is behind `latest`. Emitted on
+/// `maintenance.stale_tool` in place of the raw version strings so
+/// dashboards can graph "how many tools are at least a minor
+/// behind?" without leaking private/internal pin identifiers
+/// (`foo-cli@0.4.7-acmeco`) or blowing OTLP label cardinality.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LagBucket {
+    Patch,
+    Minor,
+    Major,
+    Downgrade,
+    Unknown,
+}
+
+impl LagBucket {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Patch => "patch",
+            Self::Minor => "minor",
+            Self::Major => "major",
+            Self::Downgrade => "downgrade",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Bucket the gap between `installed` and `latest` semver
+    /// strings. Non-semver or absent inputs fall through to
+    /// [`LagBucket::Unknown`].
+    pub fn classify(installed: Option<&str>, latest: Option<&str>, direction: Direction) -> Self {
+        if direction == Direction::Downgrade {
+            return Self::Downgrade;
+        }
+        let (Some(installed), Some(latest)) = (installed, latest) else {
+            return Self::Unknown;
+        };
+        let (Ok(i), Ok(l)) = (
+            semver::Version::parse(installed),
+            semver::Version::parse(latest),
+        ) else {
+            return Self::Unknown;
+        };
+        if l.major > i.major {
+            Self::Major
+        } else if l.minor > i.minor {
+            Self::Minor
+        } else if l.patch > i.patch {
+            Self::Patch
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+/// Map a backend name to the top-level TOML section a tool was
+/// declared under. Bounded to 7 labels for stable OTLP faceting.
+/// This is the observable-side counterpart of the resolver's
+/// per-section routing.
+pub fn tool_kind_for_backend(backend: &str) -> &'static str {
+    match backend {
+        "cargo" => "cargo",
+        "npm" => "npm",
+        "pip" => "pip",
+        "gem" => "gem",
+        "go" => "go",
+        "nuget" => "nuget",
+        // Every native package manager (brew / apt / dnf / pacman
+        // / apk / winget / choco / scoop) is reached via the
+        // `[provisioner]` section — see `resolver::provisioner_backend`.
+        _ => "provisioner",
+    }
 }
 
 /// Tool that was intentionally not checked (version manager,
@@ -236,6 +326,49 @@ pub fn run_check_with_progress(
     report
 }
 
+/// Cache-only run: classify every `target` against the on-disk
+/// cache without ever spawning a backend probe. Absent entries land
+/// in `report.unchecked` as `cache_miss` so the setup summary can
+/// tell first-ever runs (no cache) from steady-state runs (cache
+/// present, some targets not yet warmed).
+///
+/// This is the seam that fixes PRD-057 review items maint F2
+/// (setup re-implements checker classification) and perf F1 (setup
+/// summary spawns N subprocesses). Callers hand the same
+/// `CheckTarget`s the full path uses — with `installed: None`
+/// courtesy of [`super::resolver::resolve_targets_cheap`] — and
+/// share the same classify/sort/summary code as the CLI's
+/// foreground refresh.
+pub fn run_check_cache_only(
+    targets: Vec<CheckTarget>,
+    cache: &CacheStore,
+    mut unchecked: Vec<UncheckedTool>,
+) -> Report {
+    let mut report = Report::empty();
+
+    for target in targets {
+        let key = CacheStore::key(target.backend.name(), &target.pkg_id);
+        let Some(entry) = cache.entries.get(&key) else {
+            unchecked.push(UncheckedTool {
+                tool: target.tool.clone(),
+                reason: "cache_miss".to_string(),
+                manager: None,
+            });
+            continue;
+        };
+        let check = build_check(&target, target.backend.name(), entry, true);
+        classify(&mut report, check);
+    }
+
+    report.unchecked = unchecked;
+    report.updates.sort_by(|a, b| a.tool.cmp(&b.tool));
+    report.up_to_date.sort_by(|a, b| a.tool.cmp(&b.tool));
+    report.errors.sort_by(|a, b| a.tool.cmp(&b.tool));
+    report.unchecked.sort_by(|a, b| a.tool.cmp(&b.tool));
+    report.recompute_summary();
+    report
+}
+
 fn probe_misses(
     misses: Vec<CheckTarget>,
     now: SystemTime,
@@ -252,11 +385,7 @@ fn probe_misses(
                 let _g = stderr_lock.lock().ok();
                 cb(&target.tool, target.backend.name());
             }
-            let entry = match target.backend.latest(&target.pkg_id) {
-                Ok(latest) => ok_entry(latest, now),
-                Err(err) => err_entry(err.kind(), now),
-            };
-            (target, entry)
+            probe_one(target, now)
         })
         .collect()
 }
@@ -272,13 +401,70 @@ fn probe_misses_serial(
             if let Some(cb) = reporter {
                 cb(&target.tool, target.backend.name());
             }
-            let entry = match target.backend.latest(&target.pkg_id) {
-                Ok(latest) => ok_entry(latest, now),
-                Err(err) => err_entry(err.kind(), now),
-            };
-            (target, entry)
+            probe_one(target, now)
         })
         .collect()
+}
+
+/// Single-target probe with observability wiring (PRD-057 obs F1 +
+/// F2). Records per-backend probe duration and emits a bounded
+/// `maintenance.backend_failed` tracing event on `Err(_)` so
+/// on-call can graph "brew is flaking" without pivoting on report
+/// stdout.
+fn probe_one(target: CheckTarget, now: SystemTime) -> (CheckTarget, CacheEntry) {
+    let backend_name = target.backend.name();
+    let started = Instant::now();
+    let outcome = target.backend.latest(&target.pkg_id);
+    let elapsed = started.elapsed();
+    let entry = match &outcome {
+        Ok(latest) => {
+            crate::observability::maintenance_metrics::backend_ok(backend_name, elapsed);
+            ok_entry(latest.clone(), now)
+        }
+        Err(err) => {
+            let error_kind = err.kind();
+            // `error_kind` is a &'static str by BackendError contract;
+            // safe as a bounded tracing/OTLP label.
+            telemetry_gate::emit(|| {
+                emit_backend_failed(backend_name, &target.tool, err, elapsed);
+            });
+            crate::observability::maintenance_metrics::backend_failed(
+                backend_name,
+                error_kind,
+                elapsed,
+            );
+            err_entry(error_kind, now)
+        }
+    };
+    (target, entry)
+}
+
+fn emit_backend_failed(backend: &'static str, tool: &str, err: &BackendError, elapsed: Duration) {
+    let duration_ms = elapsed.as_millis() as u64;
+    // Level discipline: `ManagerMissing` and `NotFound` are expected
+    // conditions on multi-OS fleets — dropping them to `debug!` keeps
+    // the warn stream signal-strong. Everything else is a genuine
+    // backend anomaly (timeout, parse drift, permission denial).
+    match err {
+        BackendError::ManagerMissing | BackendError::NotFound => {
+            tracing::debug!(
+                event = "maintenance.backend_failed",
+                backend = %backend,
+                tool = %tool,
+                error_kind = err.kind(),
+                duration_ms = duration_ms,
+            );
+        }
+        _ => {
+            tracing::warn!(
+                event = "maintenance.backend_failed",
+                backend = %backend,
+                tool = %tool,
+                error_kind = err.kind(),
+                duration_ms = duration_ms,
+            );
+        }
+    }
 }
 
 fn build_check(
@@ -407,5 +593,73 @@ mod tests {
         assert_eq!(version_manager_reason("rustup"), Some("version_manager"));
         assert_eq!(version_manager_reason("nvm"), Some("version_manager"));
         assert_eq!(version_manager_reason("git"), None);
+    }
+
+    #[test]
+    fn direction_as_str_covers_every_variant() {
+        assert_eq!(Direction::UpToDate.as_str(), "up_to_date");
+        assert_eq!(Direction::Upgrade.as_str(), "upgrade");
+        assert_eq!(Direction::Downgrade.as_str(), "downgrade");
+        assert_eq!(Direction::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn lag_bucket_classify_patch_minor_major() {
+        assert_eq!(
+            LagBucket::classify(Some("1.0.0"), Some("1.0.1"), Direction::Upgrade),
+            LagBucket::Patch
+        );
+        assert_eq!(
+            LagBucket::classify(Some("1.0.0"), Some("1.1.0"), Direction::Upgrade),
+            LagBucket::Minor
+        );
+        assert_eq!(
+            LagBucket::classify(Some("1.0.0"), Some("2.0.0"), Direction::Upgrade),
+            LagBucket::Major
+        );
+    }
+
+    #[test]
+    fn lag_bucket_downgrade_takes_precedence() {
+        // Downgrade direction wins even if the numeric gap looks
+        // like a patch.
+        assert_eq!(
+            LagBucket::classify(Some("1.0.1"), Some("1.0.0"), Direction::Downgrade),
+            LagBucket::Downgrade
+        );
+    }
+
+    #[test]
+    fn lag_bucket_non_semver_falls_back_to_unknown() {
+        assert_eq!(
+            LagBucket::classify(Some("latest"), Some("1.0.0"), Direction::Upgrade),
+            LagBucket::Unknown
+        );
+        assert_eq!(
+            LagBucket::classify(None, Some("1.0.0"), Direction::Upgrade),
+            LagBucket::Unknown
+        );
+        assert_eq!(
+            LagBucket::classify(Some("1.0.0"), None, Direction::Upgrade),
+            LagBucket::Unknown
+        );
+    }
+
+    #[test]
+    fn tool_kind_covers_every_backend() {
+        assert_eq!(tool_kind_for_backend("cargo"), "cargo");
+        assert_eq!(tool_kind_for_backend("npm"), "npm");
+        assert_eq!(tool_kind_for_backend("pip"), "pip");
+        assert_eq!(tool_kind_for_backend("gem"), "gem");
+        assert_eq!(tool_kind_for_backend("go"), "go");
+        assert_eq!(tool_kind_for_backend("nuget"), "nuget");
+        assert_eq!(tool_kind_for_backend("brew"), "provisioner");
+        assert_eq!(tool_kind_for_backend("apt"), "provisioner");
+        assert_eq!(tool_kind_for_backend("dnf"), "provisioner");
+        assert_eq!(tool_kind_for_backend("winget"), "provisioner");
+        assert_eq!(tool_kind_for_backend("choco"), "provisioner");
+        assert_eq!(tool_kind_for_backend("scoop"), "provisioner");
+        assert_eq!(tool_kind_for_backend("apk"), "provisioner");
+        assert_eq!(tool_kind_for_backend("pacman"), "provisioner");
     }
 }

@@ -313,6 +313,17 @@ struct Metrics {
     commands_duration: Histogram<f64>,
     setup_inventory_size: Gauge<u64>,
     maintenance_stale_tools: Gauge<u64>,
+    /// Per-backend failure counter (PRD-057 observability F1). Labels:
+    /// `backend` ∈ 14 known backends, `error_kind` from the bounded
+    /// [`BackendError::kind`] set. Enables "which backend is
+    /// breaking?" on-call graphs without pivoting on report stdout.
+    maintenance_backend_failures: Counter<u64>,
+    /// Per-probe duration histogram (PRD-057 observability F2). Labels:
+    /// `backend`, `outcome` ∈ {ok, not_found, manager_missing,
+    /// timeout, parse_failed, permission_denied, other}. Gives on-call
+    /// the p99 latency contribution of each backend when setup summary
+    /// or refresh takes longer than expected.
+    maintenance_probe_duration: Histogram<f64>,
 }
 
 // ============================================================================
@@ -329,6 +340,13 @@ pub fn init(config: TelemetryConfig) {
     let enabled = config.is_enabled();
     let _ = TELEMETRY.set(build_telemetry_state(config));
     crate::observability::telemetry_gate::set_enabled(enabled);
+    // Install the lib-visible emitters that route to the bin-side
+    // OTel handles (PRD-057 obs F1 / F2). See
+    // `observability::maintenance_metrics` for the seam.
+    crate::observability::maintenance_metrics::set_backend_failed_emitter(
+        maintenance_backend_failed,
+    );
+    crate::observability::maintenance_metrics::set_backend_ok_emitter(maintenance_backend_probed);
 }
 
 /// Initialize telemetry from environment variables
@@ -433,6 +451,19 @@ fn build_telemetry_state(config: TelemetryConfig) -> TelemetryState {
                         .with_description(
                             "Number of provisioner-tracked tools with newer upstream versions available (PRD-057)",
                         )
+                        .build(),
+                    maintenance_backend_failures: meter
+                        .u64_counter("jarvy.maintenance.backend_failures")
+                        .with_description(
+                            "Backend probe failures by backend and error_kind (PRD-057 obs F1)",
+                        )
+                        .build(),
+                    maintenance_probe_duration: meter
+                        .f64_histogram("jarvy.maintenance.probe_duration")
+                        .with_description(
+                            "Backend probe duration in seconds, by backend and outcome (PRD-057 obs F2)",
+                        )
+                        .with_unit("s")
                         .build(),
                 };
                 (Some(provider), Some(metrics))
@@ -754,6 +785,12 @@ pub struct SetupSummary {
     pub tools_failed: usize,
     pub hooks_run: usize,
     pub duration: Duration,
+    /// Bounded `MaintenanceState::as_str()` label (PRD-057
+    /// analytics F2). `None` means "setup didn't evaluate the
+    /// freshness phase" (legacy `src/setup.rs` path). Emitted on
+    /// `setup.completed` when present so PMs can compute
+    /// `maintenance_ran / setup_completed` from one event stream.
+    pub maintenance_state: Option<&'static str>,
 }
 
 /// Record setup started
@@ -784,6 +821,7 @@ pub fn setup_completed(summary: &SetupSummary) {
         tools_failed = %summary.tools_failed,
         hooks_run = %summary.hooks_run,
         duration_ms = %duration_ms,
+        maintenance_state = summary.maintenance_state.unwrap_or("not_evaluated"),
     );
 
     if let Some(state) = TELEMETRY.get()
@@ -865,6 +903,61 @@ pub fn maintenance_stale_tools(count: u64, machine_id: Option<&str>) {
             count,
             &[
                 KeyValue::new("machine_id", machine_id.unwrap_or("unknown").to_string()),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
+    }
+}
+
+/// Bump the per-backend failure counter and record probe duration
+/// with `outcome = <error_kind>`. Called from the checker's fan-out
+/// on every backend `Err(_)`. `backend` and `error_kind` are both
+/// bounded &'static strs by contract — cardinality safe.
+pub fn maintenance_backend_failed(
+    backend: &'static str,
+    error_kind: &'static str,
+    duration: Duration,
+) {
+    if !is_enabled() {
+        return;
+    }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.maintenance_backend_failures.add(
+            1,
+            &[
+                KeyValue::new("backend", backend),
+                KeyValue::new("error_kind", error_kind),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
+        metrics.maintenance_probe_duration.record(
+            duration.as_secs_f64(),
+            &[
+                KeyValue::new("backend", backend),
+                KeyValue::new("outcome", error_kind),
+                KeyValue::new("platform", env::consts::OS.to_string()),
+            ],
+        );
+    }
+}
+
+/// Record a successful probe's duration with `outcome = "ok"`.
+/// Companion to [`maintenance_backend_failed`] so on-call can chart
+/// per-backend p99 across both success and failure paths.
+pub fn maintenance_backend_probed(backend: &'static str, duration: Duration) {
+    if !is_enabled() {
+        return;
+    }
+    if let Some(state) = TELEMETRY.get()
+        && let Some(ref metrics) = state.metrics
+    {
+        metrics.maintenance_probe_duration.record(
+            duration.as_secs_f64(),
+            &[
+                KeyValue::new("backend", backend),
+                KeyValue::new("outcome", "ok"),
                 KeyValue::new("platform", env::consts::OS.to_string()),
             ],
         );

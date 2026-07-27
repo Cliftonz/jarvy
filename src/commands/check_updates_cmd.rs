@@ -20,7 +20,7 @@ use crate::maintenance::{
     self, MaintenanceConfig,
     backends::BackendError,
     cache::{self, CacheStore},
-    checker::{self, CheckOptions},
+    checker::{self, CheckOptions, LagBucket, tool_kind_for_backend},
     lock::{self, LockOutcome},
     reporter,
     resolver::{self, ResolveInput},
@@ -194,13 +194,28 @@ pub fn run(
 
     if crate::observability::telemetry_gate::is_enabled() {
         for check in &report.updates {
-            tracing::info!(
+            // Reshaped per PRD-057 review items obs F3/F9 + analytics
+            // F1/F9/F15: raw `installed`/`latest` strings are private
+            // pin identifiers (leak risk) and unbounded label
+            // cardinality; downgraded to `debug!` with bounded fields
+            // (`tool_kind`, `lag_bucket`, `direction.as_str()`,
+            // `from_cache`, `mode`) so aggregates stay graphable
+            // without exploding OTLP indexes. Phase totals ship on
+            // `phase_completed` for the primary count.
+            let lag = LagBucket::classify(
+                check.installed.as_deref(),
+                check.latest.as_deref(),
+                check.direction,
+            );
+            tracing::debug!(
                 event = "maintenance.stale_tool",
                 tool = %check.tool,
+                tool_kind = tool_kind_for_backend(&check.backend),
                 backend = %check.backend,
-                installed = %check.installed.as_deref().unwrap_or(""),
-                latest = %check.latest.as_deref().unwrap_or(""),
-                direction = ?check.direction,
+                direction = check.direction.as_str(),
+                lag_bucket = lag.as_str(),
+                from_cache = check.from_cache,
+                mode = mode_label,
             );
         }
         tracing::info!(

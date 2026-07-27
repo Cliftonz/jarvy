@@ -48,6 +48,9 @@ pub fn setup() {
         tools_failed: 0,
         hooks_run: 0,
         duration: start.elapsed(),
+        // Legacy setup path never runs the freshness phase; leave
+        // as None so the event carries `"not_evaluated"`.
+        maintenance_state: None,
     };
     telemetry::setup_completed(&summary);
 }
