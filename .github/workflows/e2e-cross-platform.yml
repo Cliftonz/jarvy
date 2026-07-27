@@ -207,14 +207,22 @@ jobs:
           echo "CARGO_HOME=/root/.cargo" >> "$GITHUB_ENV"
           echo "RUSTUP_HOME=/root/.rustup" >> "$GITHUB_ENV"
 
+      # Alpine note: rustup's default cargo config for
+      # x86_64-unknown-linux-musl uses `musl-gcc` as the linker, but that
+      # wrapper isn't packaged on Alpine — Alpine's `gcc` already targets
+      # musl, so point cargo at it directly. Harmless no-op on non-musl
+      # matrix legs because the env var is target-scoped.
       - name: Build Jarvy
         shell: bash
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: gcc
         run: cargo build --release --bin jarvy
 
       - name: Run E2E Tests
         shell: bash
         run: cargo test --test e2e_base_tools -- --show-output --nocapture
         env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: gcc
           JARVY_BIN: ${{ github.workspace }}/target/release/jarvy
           JARVY_TEST_MODE: 1
           JARVY_E2E_TIER: ${{ github.event.inputs.tier || 'all' }}
