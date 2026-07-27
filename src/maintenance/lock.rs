@@ -189,7 +189,11 @@ mod tests {
         (dir, guard)
     }
 
+    // `serial(jarvy_test_home)` serializes against init.rs's tests,
+    // which mutate the same process-wide env var under their own
+    // module-local mutex — the two locks don't compose across modules.
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn acquire_returns_lock_when_absent() {
         let (_dir, _g) = scoped_home();
         let outcome = acquire();
@@ -197,6 +201,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn drop_releases_lock() {
         let (_dir, _g) = scoped_home();
         let path = lock_path().unwrap();
@@ -209,6 +214,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn already_running_when_fresh_lock_present() {
         let (_dir, _g) = scoped_home();
         let file = LockFile {
@@ -228,6 +234,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn stale_lock_is_reclaimed() {
         let (_dir, _g) = scoped_home();
         let file = LockFile {

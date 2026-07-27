@@ -331,7 +331,13 @@ mod tests {
         }
     }
 
+    // `serial(jarvy_test_home)` serializes against maintenance::lock's
+    // tests, which mutate the same process-wide env var under a
+    // different module-local mutex — the two locks don't compose, and
+    // llvm-cov's altered timing exposed the race (config written to
+    // the other module's temp home).
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn save_global_config_creates_jarvy_dir_when_missing() {
         with_isolated_home(|home| {
             let cfg = CliConfig::default();
@@ -341,6 +347,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn modify_global_config_updates_existing_field() {
         with_isolated_home(|home| {
             // Seed with a config that has telemetry disabled.
@@ -363,6 +370,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn modify_global_config_creates_when_missing() {
         with_isolated_home(|home| {
             // No config exists yet.
@@ -377,6 +385,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(jarvy_test_home)]
     fn modify_global_config_is_roundtrip_safe() {
         with_isolated_home(|_home| {
             modify_global_config(|cfg| {
