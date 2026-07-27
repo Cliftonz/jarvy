@@ -3,7 +3,7 @@
   "displayName": "Jarvy",
   "description": "Validate and manage jarvy.toml dev-environment configs directly from VS Code.",
   "version": "0.1.0",
-  "publisher": "jarvy",
+  "publisher": "cliftonz",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
