@@ -426,26 +426,25 @@ impl ToolSpec {
         let linux = self.linux.ok_or(InstallError::Unsupported)?;
 
         // Try native package manager first
-        if let Some(pm) = super::common::detect_linux_pm() {
-            if let Some(pkg_name) = linux.get(pm) {
-                let _ = PkgOps::update(pm, default_use_sudo());
-                return PkgOps::install(pm, pkg_name, default_use_sudo());
-            }
+        if let Some(pm) = super::common::detect_linux_pm()
+            && let Some(pkg_name) = linux.get(pm)
+        {
+            let _ = PkgOps::update(pm, default_use_sudo());
+            return PkgOps::install(pm, pkg_name, default_use_sudo());
         }
 
         // Fallback to Linuxbrew if available
-        if let Some(brew_pkg) = linux.brew {
-            if has("brew") {
-                // Same auto-tap behavior as the macOS path — see
-                // `install_macos` for the rationale.
-                if brew_pkg.matches('/').count() == 2 {
-                    let tap_path: String =
-                        brew_pkg.split('/').take(2).collect::<Vec<_>>().join("/");
-                    let _ = run("brew", &["tap", &tap_path]);
-                }
-                run("brew", &["install", brew_pkg])?;
-                return Ok(());
+        if let Some(brew_pkg) = linux.brew
+            && has("brew")
+        {
+            // Same auto-tap behavior as the macOS path — see
+            // `install_macos` for the rationale.
+            if brew_pkg.matches('/').count() == 2 {
+                let tap_path: String = brew_pkg.split('/').take(2).collect::<Vec<_>>().join("/");
+                let _ = run("brew", &["tap", &tap_path]);
             }
+            run("brew", &["install", brew_pkg])?;
+            return Ok(());
         }
 
         Err(InstallError::Prereq(
@@ -1277,26 +1276,26 @@ pub fn get_tool_install_info(tool_name: &str, version: &str) -> Option<ToolInsta
     {
         if let Some(linux) = spec.linux {
             // Detect the system package manager
-            if let Some(pm) = super::common::detect_linux_pm() {
-                if let Some(pkg_name) = linux.get(pm) {
-                    return Some(ToolInstallInfo {
-                        name: tool_name.to_string(),
-                        version: version.to_string(),
-                        package_manager: pm,
-                        package_name: pkg_name.to_string(),
-                    });
-                }
+            if let Some(pm) = super::common::detect_linux_pm()
+                && let Some(pkg_name) = linux.get(pm)
+            {
+                return Some(ToolInstallInfo {
+                    name: tool_name.to_string(),
+                    version: version.to_string(),
+                    package_manager: pm,
+                    package_name: pkg_name.to_string(),
+                });
             }
             // Fallback to Linuxbrew
-            if let Some(brew_name) = linux.brew {
-                if super::common::has("brew") {
-                    return Some(ToolInstallInfo {
-                        name: tool_name.to_string(),
-                        version: version.to_string(),
-                        package_manager: PackageManager::Brew,
-                        package_name: brew_name.to_string(),
-                    });
-                }
+            if let Some(brew_name) = linux.brew
+                && super::common::has("brew")
+            {
+                return Some(ToolInstallInfo {
+                    name: tool_name.to_string(),
+                    version: version.to_string(),
+                    package_manager: PackageManager::Brew,
+                    package_name: brew_name.to_string(),
+                });
             }
         }
     }
