@@ -110,7 +110,7 @@ criterion = { version = "0.8", features = ["html_reports"] }
 # widely used, no transitive deps) rather than a per-platform unsafe
 # `utimensat`/`SetFileTime` block for one test.
 filetime = "0.2"
-serial_test = "3.2"
+serial_test = "4.0"
 
 # Integration tests for src/sandbox capability probe (PRD-053).
 # Used by tests/sandbox_integration.rs to spin real containers and
