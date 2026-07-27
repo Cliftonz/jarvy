@@ -6,7 +6,7 @@ import { execFileSync } from "child_process";
 import * as path from "path";
 import * as vscode from "vscode";
 
-const EXTENSION_ID = "jarvy.jarvy-vscode";
+const EXTENSION_ID = "cliftonz.jarvy-vscode";
 
 /** True when a `jarvy` binary is resolvable on PATH. */
 function jarvyOnPath(): boolean {

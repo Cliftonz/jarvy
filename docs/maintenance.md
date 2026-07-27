@@ -177,4 +177,4 @@ The freshness advisory intentionally does **not**:
 - **Hit registries directly.** If `brew` isn't installed, brew-provisioned tools stay `unchecked` — never fall through to `api.brew.sh`.
 - **Track version managers.** rustup / nvm / pyenv / rbenv / sdkman / asdf tools land in the `unchecked` bucket.
 
-See [PRD-057](../prd/057-tool-freshness-advisory.md) for the full design rationale.
+See `prd/057-tool-freshness-advisory.md` (in the repo) for the full design rationale.
