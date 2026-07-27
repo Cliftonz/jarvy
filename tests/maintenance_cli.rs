@@ -60,7 +60,11 @@ fn jarvy(home: &Path) -> Command {
         // explicitly opt out here so the trust-gate assertions
         // actually exercise the code under test.
         .env("JARVY_SANDBOX", "0")
-        .env("JARVY_CI", "0")
+        // `JARVY_NO_CI=1` is the CI-detection opt-out (`JARVY_CI=0` is
+        // a no-op — only `=1` forces CI on). Without it, GitHub runners'
+        // `GITHUB_ACTIONS=true` trips the CI skip path and the phase
+        // under test never runs.
+        .env("JARVY_NO_CI", "1")
         .env("JARVY_TEST_HOME", home);
     c
 }
@@ -71,10 +75,7 @@ fn jarvy(home: &Path) -> Command {
 #[allow(unsafe_code)] // SAFETY: env mutation serialized by `SEED_LOCK`;
 // the returned guard must outlive any subsequent `cache::*` call
 // so a sibling test doesn't clobber the env var mid-write.
-fn seed_cache(
-    home: &Path,
-    entries: &[(&str, &str, &str)],
-) -> (PathBuf, MutexGuard<'static, ()>) {
+fn seed_cache(home: &Path, entries: &[(&str, &str, &str)]) -> (PathBuf, MutexGuard<'static, ()>) {
     let guard = seed_lock();
     unsafe {
         std::env::set_var("JARVY_TEST_HOME", home);
@@ -148,7 +149,7 @@ git = "latest"
         .env("JARVY_TEST_HOME", home.path())
         // Force the sandbox detector on regardless of environment.
         .env("JARVY_SANDBOX", "1")
-        .env("JARVY_CI", "0")
+        .env("JARVY_NO_CI", "1")
         .args(["check-updates", "--file"])
         .arg(cfg.path());
     cmd.assert()

@@ -164,7 +164,9 @@ fn jarvy(home: &Path) -> Command {
     c.env("JARVY_TEST_MODE", "1")
         .env("JARVY_NO_PERSONAL_CONFIG", "1")
         .env("JARVY_SANDBOX", "0")
-        .env("JARVY_CI", "0")
+        // CI opt-out is `JARVY_NO_CI=1`; `JARVY_CI=0` is a no-op and
+        // GitHub runners' `GITHUB_ACTIONS=true` would skip the phase.
+        .env("JARVY_NO_CI", "1")
         .env("JARVY_TEST_HOME", home);
     c
 }

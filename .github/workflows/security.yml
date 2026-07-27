@@ -118,25 +118,30 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     if: github.event_name != 'schedule' || github.repository == 'Cliftonz/jarvy'
+    container:
+      image: semgrep/semgrep
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # `semgrep-action@v1` has no `generateSarif` input, so the old
+      # setup never wrote semgrep.sarif and the upload step always
+      # failed. Run the CLI directly instead; `semgrep scan` exits 0
+      # on findings (advisory), non-zero only on scan errors.
       - name: Run Semgrep
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/rust
-            p/security-audit
-            p/secrets
-            p/command-injection
-          generateSarif: true
+        run: >-
+          semgrep scan
+          --config p/rust
+          --config p/security-audit
+          --config p/secrets
+          --config p/command-injection
+          --sarif --output semgrep.sarif
 
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
-        if: always()
+        if: always() && hashFiles('semgrep.sarif') != ''
 
   # Job 5: CodeQL - Semantic Analysis
   codeql:
