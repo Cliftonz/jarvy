@@ -16,6 +16,9 @@
 use assert_cmd::prelude::*;
 use jarvy::maintenance::cache::{self, CacheStore, ok_entry};
 use predicates::prelude::*;
+// The JSON-shape tests below are macOS-gated; on other targets this
+// import would be flagged unused by `-D warnings`.
+#[cfg(target_os = "macos")]
 use serde_json::Value;
 use std::io::Write;
 use std::path::{Path, PathBuf};

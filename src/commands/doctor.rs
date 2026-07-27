@@ -1384,12 +1384,11 @@ fn collect_extended_metrics() -> ExtendedMetrics {
     #[cfg(target_os = "linux")]
     {
         // Get uptime
-        if let Ok(content) = std::fs::read_to_string("/proc/uptime") {
-            if let Some(uptime_str) = content.split_whitespace().next() {
-                if let Ok(uptime) = uptime_str.parse::<f64>() {
-                    metrics.uptime_secs = Some(uptime as u64);
-                }
-            }
+        if let Ok(content) = std::fs::read_to_string("/proc/uptime")
+            && let Some(uptime_str) = content.split_whitespace().next()
+            && let Ok(uptime) = uptime_str.parse::<f64>()
+        {
+            metrics.uptime_secs = Some(uptime as u64);
         }
 
         // Get load averages
@@ -1410,14 +1409,14 @@ fn collect_extended_metrics() -> ExtendedMetrics {
             let mut available = 0u64;
 
             for line in content.lines() {
-                if line.starts_with("MemTotal:") {
-                    if let Some(kb) = line.split_whitespace().nth(1) {
-                        total = kb.parse::<u64>().unwrap_or(0) * 1024;
-                    }
-                } else if line.starts_with("MemAvailable:") {
-                    if let Some(kb) = line.split_whitespace().nth(1) {
-                        available = kb.parse::<u64>().unwrap_or(0) * 1024;
-                    }
+                if line.starts_with("MemTotal:")
+                    && let Some(kb) = line.split_whitespace().nth(1)
+                {
+                    total = kb.parse::<u64>().unwrap_or(0) * 1024;
+                } else if line.starts_with("MemAvailable:")
+                    && let Some(kb) = line.split_whitespace().nth(1)
+                {
+                    available = kb.parse::<u64>().unwrap_or(0) * 1024;
                 }
             }
 
@@ -1457,22 +1456,18 @@ fn collect_extended_metrics() -> ExtendedMetrics {
 
     #[cfg(target_os = "linux")]
     {
-        if has("dpkg") {
-            if let Ok(output) = std::process::Command::new("dpkg")
+        if has("dpkg")
+            && let Ok(output) = std::process::Command::new("dpkg")
                 .args(["--get-selections"])
                 .output()
-            {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    metrics.package_count =
-                        Some(text.lines().filter(|l| l.contains("install")).count());
-                }
-            }
-        } else if has("rpm") {
-            if let Ok(output) = std::process::Command::new("rpm").args(["-qa"]).output() {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    metrics.package_count = Some(text.lines().count());
-                }
-            }
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
+            metrics.package_count = Some(text.lines().filter(|l| l.contains("install")).count());
+        } else if has("rpm")
+            && let Ok(output) = std::process::Command::new("rpm").args(["-qa"]).output()
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
+            metrics.package_count = Some(text.lines().count());
         }
     }
 
