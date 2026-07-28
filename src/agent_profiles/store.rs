@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::{ProfileError, ProfileRegistry};
-use crate::agents::{Agent, ProfileMechanism};
+use crate::agents::Agent;
 
 /// Whether a snapshot copies the live config dir (env tier — the live
 /// dir stays put) or moves it into the store (symlink tier — the live
@@ -68,8 +68,20 @@ pub fn profile_dir(name: &str) -> Result<PathBuf, ProfileError> {
 /// debug breadcrumb) — snapshotting "everything installed" must not
 /// fail on agents that aren't. An existing snapshot for the agent is
 /// replaced (that's `save` semantics).
+#[cfg(test)]
 pub fn snapshot_agent(agent: Agent, profile: &str, mode: SnapshotMode) -> Result<(), ProfileError> {
     let store_root = ensure_store_dirs()?;
+    snapshot_agent_at(&store_root, agent, profile, mode)
+}
+
+/// Inner variant that takes a pre-computed `store_root` so `init_snapshot`
+/// doesn't call `ensure_store_dirs()` once per agent.
+fn snapshot_agent_at(
+    store_root: &Path,
+    agent: Agent,
+    profile: &str,
+    mode: SnapshotMode,
+) -> Result<(), ProfileError> {
     let pdir = profile_dir(profile)?;
     let src = agent.config_dir().ok_or(ProfileError::NoHome)?;
 
@@ -89,7 +101,7 @@ pub fn snapshot_agent(agent: Agent, profile: &str, mode: SnapshotMode) -> Result
     // managed; switching is `use`'s job.
     if meta.file_type().is_symlink()
         && mode == SnapshotMode::Move
-        && link_points_into(&src, &store_root)
+        && link_points_into(&src, store_root)
     {
         return Err(ProfileError::Io(std::io::Error::other(format!(
             "{} is already managed by the profile store; use `jarvy agents profile use` to switch",
@@ -97,18 +109,17 @@ pub fn snapshot_agent(agent: Agent, profile: &str, mode: SnapshotMode) -> Result
         ))));
     }
 
-    crate::paths::ensure_dir_0700(&pdir)?;
+    crate::paths::ensure_dir_0700_with_event(&pdir, Some("agent_profile.perms_unsafe"))?;
     let dest = pdir.join(agent.slug());
     remove_existing(&dest)?;
 
     match mode {
-        SnapshotMode::Copy => copy_tree(&src, &dest)?,
+        SnapshotMode::Copy => copy_tree(&src, &dest, agent.slug())?,
         SnapshotMode::Move => {
             if fs::rename(&src, &dest).is_err() {
-                // Cross-device rename (EXDEV — e.g. $HOME and ~/.jarvy on
-                // different mounts) can't move atomically; copy + remove.
-                copy_tree(&src, &dest)?;
-                fs::remove_dir_all(&src)?;
+                // Cross-device rename (EXDEV) — delegate to the extracted
+                // helper that logs and surfaces cleanup failures clearly.
+                move_dir_cross_device(&src, &dest, agent)?;
             }
         }
     }
@@ -129,12 +140,16 @@ pub fn create_profile(name: &str, from: Option<&str>) -> Result<PathBuf, Profile
             if !src.is_dir() {
                 return Err(ProfileError::ProfileNotFound(src_name.to_string()));
             }
-            copy_tree(&src, &pdir)?;
+            // `src_name` is a profile dir being copied, not an agent dir;
+            // use a placeholder slug for the symlink-safety check.
+            copy_tree(&src, &pdir, "<profile>")?;
             // copy_tree preserved the source dir's mode; force 0700
             // regardless — the store invariant beats fidelity here.
-            crate::paths::ensure_dir_0700(&pdir)?;
+            crate::paths::ensure_dir_0700_with_event(&pdir, Some("agent_profile.perms_unsafe"))?;
         }
-        None => crate::paths::ensure_dir_0700(&pdir)?,
+        None => {
+            crate::paths::ensure_dir_0700_with_event(&pdir, Some("agent_profile.perms_unsafe"))?;
+        }
     }
     Ok(pdir)
 }
@@ -143,14 +158,23 @@ pub fn create_profile(name: &str, from: Option<&str>) -> Result<PathBuf, Profile
 /// symlink-tier agent's live path still resolves into this profile —
 /// deleting under a live symlink would leave the agent's config dir
 /// dangling — or while the registry lists it active for one.
-pub fn delete_profile(name: &str) -> Result<(), ProfileError> {
+///
+/// Returns the count of agent snapshot dirs that existed in the deleted
+/// profile (zero if the profile dir had no per-agent subdirs).
+pub fn delete_profile(name: &str) -> Result<usize, ProfileError> {
     let pdir = profile_dir(name)?;
     if fs::symlink_metadata(&pdir).is_err() {
         return Err(ProfileError::ProfileNotFound(name.to_string()));
     }
     let mut registry = ProfileRegistry::load()?;
+    let mut agent_snapshot_count = 0usize;
     for &agent in Agent::ALL {
-        if !is_symlink_tier(agent) {
+        // Count existing agent snapshot dirs (cheap metadata check).
+        let snap = pdir.join(agent.slug());
+        if fs::symlink_metadata(&snap).is_ok() {
+            agent_snapshot_count += 1;
+        }
+        if !agent.is_symlink_tier() {
             continue;
         }
         if let Some(link) = agent.config_dir()
@@ -175,7 +199,7 @@ pub fn delete_profile(name: &str) -> Result<(), ProfileError> {
     if registry.active.len() != before_active || default_stale {
         registry.save()?;
     }
-    Ok(())
+    Ok(agent_snapshot_count)
 }
 
 /// `jarvy agents profile init` core: snapshot every installed agent
@@ -185,6 +209,8 @@ pub fn delete_profile(name: &str) -> Result<(), ProfileError> {
 /// an already-managed symlink-tier agent is skipped. Returns the
 /// agents that were snapshotted this run.
 pub fn init_snapshot(profile: &str) -> Result<Vec<Agent>, ProfileError> {
+    // Compute store root once; snapshot_agent_at reuses it per agent
+    // rather than re-running ensure_store_dirs() inside each call.
     let store_root = ensure_store_dirs()?;
     let pdir = profile_dir(profile)?;
     let mut snapshotted = Vec::new();
@@ -195,26 +221,52 @@ pub fn init_snapshot(profile: &str) -> Result<Vec<Agent>, ProfileError> {
         let Ok(meta) = fs::symlink_metadata(&src) else {
             continue;
         };
-        if is_symlink_tier(agent) {
+        if agent.is_symlink_tier() {
             if meta.file_type().is_symlink() && link_points_into(&src, &store_root) {
                 continue; // already managed
             }
-            snapshot_agent(agent, profile, SnapshotMode::Move)?;
+            snapshot_agent_at(&store_root, agent, profile, SnapshotMode::Move)?;
             super::switcher::apply_symlink_repoint(agent, &pdir.join(agent.slug()))?;
         } else {
-            snapshot_agent(agent, profile, SnapshotMode::Copy)?;
+            snapshot_agent_at(&store_root, agent, profile, SnapshotMode::Copy)?;
         }
         snapshotted.push(agent);
     }
     Ok(snapshotted)
 }
 
-/// Whether the agent's profile mechanism includes the symlink tier.
-pub(crate) fn is_symlink_tier(agent: Agent) -> bool {
-    agent
-        .profile_mechanisms()
-        .iter()
-        .any(|m| matches!(m, ProfileMechanism::Symlink))
+/// Which profile name the agent's live symlink currently resolves into,
+/// or `None` when the agent is not symlink-tier, is unmanaged, or the
+/// link target doesn't resolve into the store. This is the single
+/// authoritative implementation; `status.rs` calls this instead of
+/// duplicating the logic inline.
+pub(crate) fn active_profile_from_link(agent: Agent) -> Option<String> {
+    if !agent.is_symlink_tier() {
+        return None;
+    }
+    let dir = agent.config_dir()?;
+    let store_root = crate::paths::agent_profiles_dir().ok()?;
+    // Must be a jarvy-managed link (not a user's own link to somewhere else).
+    if !link_points_into(&dir, &store_root) {
+        return None;
+    }
+    let target = fs::read_link(&dir).ok()?;
+    let resolved = if target.is_absolute() {
+        target
+    } else {
+        dir.parent()?.join(&target)
+    };
+    let rel = match resolved.strip_prefix(&store_root) {
+        Ok(r) => r.to_path_buf(),
+        Err(_) => {
+            let root_canon = store_root.canonicalize().ok()?;
+            let resolved_canon = resolved.canonicalize().ok()?;
+            resolved_canon.strip_prefix(&root_canon).ok()?.to_path_buf()
+        }
+    };
+    rel.components()
+        .next()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
 }
 
 /// `true` when `link` is a symlink whose target lands under `root`.
@@ -254,35 +306,134 @@ fn remove_existing(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Fallback for a cross-device rename (EXDEV): copy then remove.
+/// `agent` is only used for telemetry — the operation is generic.
+fn move_dir_cross_device(src: &Path, dst: &Path, agent: Agent) -> std::io::Result<()> {
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::debug!(
+            event = "agent_profile.snapshot_cross_device",
+            agent = agent.slug(),
+        );
+    }
+    copy_tree(src, dst, agent.slug())?;
+    if let Err(e) = fs::remove_dir_all(src) {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "agent_profile.snapshot_cross_device",
+                agent = agent.slug(),
+                error_kind = "cleanup_failed",
+                error = %e,
+            );
+        }
+        return Err(e);
+    }
+    Ok(())
+}
+
 /// Recursive copy preserving permission bits; symlinks are recreated
-/// as links (never followed). Errors propagate — nothing is skipped
-/// silently.
-fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+/// as links (never followed) but only when the target is relative AND
+/// stays within `snapshot_root` (the original top-level source dir for
+/// this agent). Hostile absolute or escaping links are skipped and
+/// emitted as `agent_profile.symlink_skipped` events.
+///
+/// `agent_slug` is passed in for telemetry only.
+fn copy_tree(src: &Path, dst: &Path, agent_slug: &str) -> std::io::Result<()> {
+    copy_tree_inner(src, dst, src, agent_slug)
+}
+
+fn copy_tree_inner(
+    src: &Path,
+    dst: &Path,
+    snapshot_root: &Path,
+    agent_slug: &str,
+) -> std::io::Result<()> {
     fs::create_dir_all(dst)?;
-    copy_perms(src, dst);
+    // Use the metadata already available for `src` to set dst perms.
+    if let Ok(meta) = fs::metadata(src) {
+        copy_perms_from_meta(&meta, dst);
+    }
     for entry in fs::read_dir(src)? {
         let entry = entry?;
-        let ft = entry.file_type()?; // symlink_metadata semantics — never follows
+        // `file_type()` uses symlink_metadata semantics on all platforms
+        // (never follows); `metadata()` is fetched separately for perms.
+        let ft = entry.file_type()?; // never follows symlinks
         let from = entry.path();
         let to = dst.join(entry.file_name());
         if ft.is_symlink() {
-            recreate_symlink(&from, &to)?;
+            // Finding B: refuse symlinks that are absolute or that escape
+            // the snapshot source root (lexical check, no canonicalize).
+            if symlink_is_safe_to_copy(&from, snapshot_root) {
+                recreate_symlink(&from, &to)?;
+            } else if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "agent_profile.symlink_skipped",
+                    agent = agent_slug,
+                    path = %from.display(),
+                    "skipped unsafe symlink during snapshot copy",
+                );
+            }
         } else if ft.is_dir() {
-            copy_tree(&from, &to)?;
+            copy_tree_inner(&from, &to, snapshot_root, agent_slug)?;
         } else {
             fs::copy(&from, &to)?;
-            // fs::copy already carries Unix permission bits, but be
-            // explicit — credentials MUST keep 0600 in the snapshot.
-            copy_perms(&from, &to);
+            // Use symlink_metadata (via entry.metadata()) for the already-
+            // fetched DirEntry stats — avoids a second stat call (D-2).
+            if let Ok(meta) = entry.metadata() {
+                copy_perms_from_meta(&meta, &to);
+            }
         }
     }
     Ok(())
 }
 
+/// Return `true` when the symlink at `link` (inside `source_root`) has a
+/// relative target that stays within `source_root` — no absolute targets,
+/// no `..` escapes above the source root. Purely lexical; never follows.
+fn symlink_is_safe_to_copy(link: &Path, source_root: &Path) -> bool {
+    let target = match fs::read_link(link) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    // Absolute targets always point outside the snapshot source.
+    if target.is_absolute() {
+        return false;
+    }
+    // Resolve the relative target against the link's parent dir.
+    let parent = match link.parent() {
+        Some(p) => p,
+        None => return false,
+    };
+    let resolved = parent.join(&target);
+    // Walk the components and track depth; any `..` that would go above
+    // `source_root` is a traversal escape.
+    let mut depth: isize = 0;
+    // Compute the depth of the link parent relative to source_root to
+    // know how many `..` steps are allowed.
+    let Ok(base_relative) = parent.strip_prefix(source_root) else {
+        return false; // link is not under source_root at all
+    };
+    let base_depth = base_relative.components().count() as isize;
+    for comp in target.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                depth -= 1;
+                if depth < -base_depth {
+                    return false; // escaped above source_root
+                }
+            }
+            std::path::Component::Normal(_) => depth += 1,
+            _ => {}
+        }
+    }
+    // Final sanity: the resolved path must still start with source_root
+    // (handles edge cases in the depth arithmetic).
+    resolved.starts_with(source_root)
+}
+
 #[cfg_attr(not(unix), allow(unused_variables))]
-fn copy_perms(src: &Path, dst: &Path) {
+fn copy_perms_from_meta(meta: &fs::Metadata, dst: &Path) {
     #[cfg(unix)]
-    if let Ok(meta) = fs::metadata(src) {
+    {
         let _ = fs::set_permissions(dst, meta.permissions());
     }
 }
@@ -308,22 +459,7 @@ fn recreate_symlink(from: &Path, to: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn pin_jarvy_home() -> tempfile::TempDir {
-        let tmp = tempfile::tempdir().unwrap();
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::set_var("JARVY_HOME", tmp.path());
-        }
-        tmp
-    }
-
-    fn unpin_jarvy_home() {
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::remove_var("JARVY_HOME");
-        }
-    }
+    use crate::agent_profiles::test_support::JarvyHomeGuard;
 
     #[test]
     fn profile_dir_rejects_invalid_names() {
@@ -338,7 +474,7 @@ mod tests {
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn create_profile_refuses_dup_and_copies_from() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let a = create_profile("a", None).unwrap();
         assert!(a.is_dir());
         assert!(matches!(
@@ -354,7 +490,6 @@ mod tests {
             create_profile("c", Some("missing")),
             Err(ProfileError::ProfileNotFound(_))
         ));
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
@@ -362,7 +497,7 @@ mod tests {
     #[serial_test::serial(jarvy_home_env)]
     fn snapshot_copy_preserves_credential_mode() {
         use std::os::unix::fs::PermissionsExt;
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let src = Agent::ClaudeCode.config_dir().unwrap();
         fs::create_dir_all(src.join("nested")).unwrap();
         let cred = src.join(".credentials.json");
@@ -385,14 +520,13 @@ mod tests {
         assert!(snap.join("nested").join("settings.json").exists());
         // Copy leaves the live dir in place.
         assert!(cred.exists());
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn init_snapshot_moves_symlink_tier_and_links_back() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let cursor_dir = Agent::Cursor.config_dir().unwrap();
         fs::create_dir_all(&cursor_dir).unwrap();
         fs::write(cursor_dir.join("mcp.json"), "{}").unwrap();
@@ -411,14 +545,13 @@ mod tests {
         // Idempotent: a second init skips the managed agent.
         let again = init_snapshot("default").unwrap();
         assert!(!again.contains(&Agent::Cursor));
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn delete_refused_while_live_symlink_points_in() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let cursor_dir = Agent::Cursor.config_dir().unwrap();
         fs::create_dir_all(&cursor_dir).unwrap();
         init_snapshot("default").unwrap();
@@ -429,13 +562,12 @@ mod tests {
         ));
         // Still on disk after the refusal.
         assert!(profile_dir("default").unwrap().is_dir());
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn delete_refused_when_registry_lists_symlink_tier_active() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("p1", None).unwrap();
         let mut active = std::collections::BTreeMap::new();
         active.insert("cursor".to_string(), "p1".to_string());
@@ -449,13 +581,12 @@ mod tests {
             delete_profile("p1"),
             Err(ProfileError::ActiveProfileDelete(_))
         ));
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn delete_prunes_env_tier_registry_entries() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("p2", None).unwrap();
         let mut active = std::collections::BTreeMap::new();
         active.insert("claude-code".to_string(), "p2".to_string());
@@ -474,14 +605,13 @@ mod tests {
             delete_profile("p2"),
             Err(ProfileError::ProfileNotFound(_))
         ));
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn snapshot_copies_inner_symlink_as_link() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let src = Agent::ClaudeCode.config_dir().unwrap();
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join("real.txt"), "x").unwrap();
@@ -495,13 +625,12 @@ mod tests {
             fs::read_link(snap.join("alias.txt")).unwrap(),
             PathBuf::from("real.txt")
         );
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn create_profile_refuses_invalid_names() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let long = "a".repeat(65);
         for bad in ["../x", long.as_str(), "a\x07b", "a/b", ".hidden", ""] {
             assert!(
@@ -520,13 +649,12 @@ mod tests {
                 .collect();
             assert!(entries.is_empty(), "refused names must not create dirs");
         }
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn snapshot_replaces_existing_snapshot() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let src = Agent::ClaudeCode.config_dir().unwrap();
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join("old.txt"), "v1").unwrap();
@@ -541,14 +669,13 @@ mod tests {
         let snap = profile_dir("work").unwrap().join("claude-code");
         assert!(!snap.join("old.txt").exists(), "stale file must be gone");
         assert_eq!(fs::read_to_string(snap.join("new.txt")).unwrap(), "v2");
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn snapshot_move_on_already_managed_symlink_errors() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let store_root = ensure_store_dirs().unwrap();
         let snap = store_root.join("default").join("cursor");
         fs::create_dir_all(&snap).unwrap();
@@ -568,26 +695,24 @@ mod tests {
                 .is_symlink(),
             "live link must be untouched"
         );
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn snapshot_absent_config_dir_is_noop() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         // No live dir seeded for codex.
         snapshot_agent(Agent::Codex, "empty", SnapshotMode::Copy).unwrap();
         let dest = profile_dir("empty").unwrap().join("codex");
         assert!(!dest.exists(), "no-op must not create the snapshot dir");
         // Not even the profile dir is materialized by the early return.
         assert!(!profile_dir("empty").unwrap().exists());
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn snapshot_preserves_deep_nesting_and_empty_dirs() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let src = Agent::ClaudeCode.config_dir().unwrap();
         fs::create_dir_all(src.join("a/b/c")).unwrap();
         fs::write(src.join("a/b/c/deep.txt"), "deep").unwrap();
@@ -601,18 +726,18 @@ mod tests {
             "deep"
         );
         assert!(snap.join("empty").is_dir(), "empty dirs must be preserved");
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn delete_leaves_other_profiles_intact() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("keep", None).unwrap();
         create_profile("drop", None).unwrap();
         fs::write(profile_dir("keep").unwrap().join("marker.txt"), "hi").unwrap();
 
-        delete_profile("drop").unwrap();
+        let count = delete_profile("drop").unwrap();
+        assert_eq!(count, 0, "no agent snapshot dirs in an empty profile");
 
         assert!(!profile_dir("drop").unwrap().exists());
         assert!(profile_dir("keep").unwrap().is_dir());
@@ -620,13 +745,24 @@ mod tests {
             fs::read_to_string(profile_dir("keep").unwrap().join("marker.txt")).unwrap(),
             "hi"
         );
-        unpin_jarvy_home();
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn delete_returns_agent_snapshot_count() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("p", None).unwrap();
+        // Create two agent snapshot dirs manually.
+        fs::create_dir_all(profile_dir("p").unwrap().join("claude-code")).unwrap();
+        fs::create_dir_all(profile_dir("p").unwrap().join("codex")).unwrap();
+        let count = delete_profile("p").unwrap();
+        assert_eq!(count, 2);
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn init_snapshot_empty_home_is_empty_and_creates_no_agent_dirs() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let done = init_snapshot("default").unwrap();
         assert!(done.is_empty());
         // The store root exists (ensure_store_dirs), but no per-agent
@@ -636,14 +772,13 @@ mod tests {
             let live = agent.config_dir().unwrap();
             assert!(!live.exists(), "{} must not be created", agent.slug());
         }
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn init_snapshot_env_tier_leaves_live_dir_untouched() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let src = Agent::ClaudeCode.config_dir().unwrap();
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join("settings.json"), "{\"k\":1}").unwrap();
@@ -668,7 +803,6 @@ mod tests {
                 .join("settings.json")
                 .exists()
         );
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
@@ -693,5 +827,121 @@ mod tests {
         assert!(!link_points_into(&root, &root));
         // Missing path → false.
         assert!(!link_points_into(&tmp.path().join("ghost"), &root));
+    }
+
+    // ── Finding B tests ────────────────────────────────────────────────
+
+    #[test]
+    fn symlink_is_safe_absolute_link_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source_root = tmp.path().join("src");
+        fs::create_dir_all(&source_root).unwrap();
+        // Absolute symlink inside source_root → refused.
+        let link = source_root.join("abs-link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/etc/passwd", &link).unwrap();
+        #[cfg(windows)]
+        {
+            // On Windows we can't create a symlink in tests; assert false
+            // directly since absolute targets are always refused.
+            assert!(!symlink_is_safe_to_copy(&link, &source_root));
+            return;
+        }
+        #[cfg(unix)]
+        assert!(
+            !symlink_is_safe_to_copy(&link, &source_root),
+            "absolute symlink must be refused"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_is_safe_escaping_relative_link_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source_root = tmp.path().join("src");
+        fs::create_dir_all(source_root.join("sub")).unwrap();
+        // A relative link that escapes above source_root.
+        let link = source_root.join("escape-link");
+        std::os::unix::fs::symlink("../../outside", &link).unwrap();
+        assert!(
+            !symlink_is_safe_to_copy(&link, &source_root),
+            "escaping symlink must be refused"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_is_safe_in_tree_relative_link_preserved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source_root = tmp.path().join("src");
+        fs::create_dir_all(&source_root).unwrap();
+        fs::write(source_root.join("real.txt"), "x").unwrap();
+        // A relative link pointing at a sibling file — in-tree.
+        let link = source_root.join("alias.txt");
+        std::os::unix::fs::symlink("real.txt", &link).unwrap();
+        assert!(
+            symlink_is_safe_to_copy(&link, &source_root),
+            "in-tree relative symlink must be allowed"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn snapshot_skips_absolute_symlink_inside_agent_dir() {
+        // Absolute links planted in an agent dir must NOT propagate into
+        // the snapshot; relative in-tree links must be preserved.
+        let _home = JarvyHomeGuard::new();
+        let src = Agent::ClaudeCode.config_dir().unwrap();
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("safe.txt"), "ok").unwrap();
+        // In-tree relative link — safe.
+        std::os::unix::fs::symlink("safe.txt", src.join("alias.txt")).unwrap();
+        // Absolute link escaping the dir — must be skipped.
+        std::os::unix::fs::symlink("/etc/passwd", src.join("hostile.txt")).unwrap();
+
+        snapshot_agent(Agent::ClaudeCode, "test", SnapshotMode::Copy).unwrap();
+        let snap = profile_dir("test").unwrap().join("claude-code");
+        // The absolute hostile link must NOT exist in the snapshot.
+        assert!(
+            !snap.join("hostile.txt").exists(),
+            "absolute symlink must not propagate"
+        );
+        // The in-tree relative link IS preserved.
+        assert!(
+            snap.join("alias.txt").exists() || fs::symlink_metadata(snap.join("alias.txt")).is_ok(),
+            "in-tree symlink must be preserved"
+        );
+    }
+
+    // ── Finding C tests ────────────────────────────────────────────────
+
+    /// move_dir_cross_device surfaces cleanup failures: if the dst copy
+    /// succeeded but remove_dir_all fails (e.g. read-only sub-dir), the
+    /// function returns Err AND both src and dst remain on disk.
+    #[cfg(unix)]
+    #[test]
+    fn move_dir_cross_device_surfaces_cleanup_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dst = tmp.path().join("dst");
+        fs::create_dir_all(src.join("sub")).unwrap();
+        fs::write(src.join("sub").join("file.txt"), "data").unwrap();
+        // Make the subdirectory read-only so remove_dir_all fails.
+        fs::set_permissions(src.join("sub"), fs::Permissions::from_mode(0o500)).unwrap();
+
+        let result = move_dir_cross_device(&src, &dst, Agent::ClaudeCode);
+
+        // Restore so tempdir cleanup can remove the directory.
+        let _ = fs::set_permissions(src.join("sub"), fs::Permissions::from_mode(0o700));
+
+        assert!(result.is_err(), "cleanup failure must surface as Err");
+        // Both src and dst still exist (neither was silently lost).
+        assert!(src.exists(), "src must still exist after partial move");
+        assert!(
+            dst.exists(),
+            "dst must exist (copy succeeded before remove failed)"
+        );
     }
 }

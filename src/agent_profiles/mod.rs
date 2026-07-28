@@ -21,7 +21,9 @@ pub mod store;
 pub mod switcher;
 
 pub use status::{ProfileStatusReport, collect_status};
-pub use store::{create_profile, delete_profile, init_snapshot, profile_dir};
+#[cfg(test)]
+pub use store::profile_dir;
+pub use store::{create_profile, delete_profile, init_snapshot};
 pub use switcher::{SwitchPlan, apply_symlink_repoint, plan_use};
 
 use std::collections::BTreeMap;
@@ -145,65 +147,76 @@ impl ProfileRegistry {
         }
         let tmp = path.with_extension("json.tmp");
         let body = serde_json::to_string_pretty(self)?;
-        fs::write(&tmp, body)?;
-        apply_secure_mode(&tmp);
+        // Create the tmp with 0600 from the start (avoids umask 0644 window).
+        crate::paths::write_0600(&tmp, &body)?;
         fs::rename(&tmp, &path)?;
-        apply_secure_mode(&path);
+        crate::paths::apply_secure_mode_0600(&path);
         Ok(())
     }
 }
 
-/// Best-effort chmod 0600 on Unix. The registry carries only profile
-/// names, but it lives inside the 0700 store — keep the file itself
-/// tight too, mirroring `maintenance::cache`. Windows has no analog.
-#[allow(unused_variables)]
-fn apply_secure_mode(path: &std::path::Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = fs::metadata(path) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o600);
-            let _ = fs::set_permissions(path, perms);
+/// Shared test plumbing for the profile modules and the CLI handler's
+/// tests: RAII `JARVY_HOME` pinning + snapshot seeding.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::path::PathBuf;
+
+    /// Pins `JARVY_HOME` to a fresh tempdir; unsets it on drop so a
+    /// panicking test can't leak the override into the next serial test.
+    /// The tempdir is held only for its own Drop cleanup.
+    pub(crate) struct JarvyHomeGuard {
+        _tmp: tempfile::TempDir,
+    }
+
+    impl JarvyHomeGuard {
+        pub(crate) fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::set_var("JARVY_HOME", tmp.path());
+            }
+            Self { _tmp: tmp }
         }
+    }
+
+    impl Drop for JarvyHomeGuard {
+        fn drop(&mut self) {
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::remove_var("JARVY_HOME");
+            }
+        }
+    }
+
+    /// Create `<profile>/<slug>/` snapshot dirs directly in the store.
+    pub(crate) fn seed_snapshot(profile: &str, agent: crate::agents::Agent) -> PathBuf {
+        let dir = super::store::profile_dir(profile)
+            .unwrap()
+            .join(agent.slug());
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::test_support::JarvyHomeGuard;
     use super::*;
-
-    fn pin_jarvy_home() -> tempfile::TempDir {
-        let tmp = tempfile::tempdir().unwrap();
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::set_var("JARVY_HOME", tmp.path());
-        }
-        tmp
-    }
-
-    fn unpin_jarvy_home() {
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::remove_var("JARVY_HOME");
-        }
-    }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn registry_missing_file_defaults() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let reg = ProfileRegistry::load().unwrap();
         assert_eq!(reg.schema_version, REGISTRY_SCHEMA_VERSION);
         assert!(reg.default_profile.is_none());
         assert!(reg.active.is_empty());
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn registry_round_trips_and_cleans_tmp() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let mut active = BTreeMap::new();
         active.insert("claude-code".to_string(), "work".to_string());
         let reg = ProfileRegistry {
@@ -230,7 +243,6 @@ mod tests {
             let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
-        unpin_jarvy_home();
     }
 
     #[test]
@@ -245,7 +257,7 @@ mod tests {
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn registry_corrupt_json_errors_not_silent_default() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let path = registry_path().unwrap();
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "{ this is not json").unwrap();
@@ -253,7 +265,6 @@ mod tests {
             matches!(ProfileRegistry::load(), Err(ProfileError::Json(_))),
             "corrupt registry must surface, not silently reset active profiles"
         );
-        unpin_jarvy_home();
     }
 
     #[test]
@@ -284,5 +295,24 @@ mod tests {
         let json = serde_json::to_string(&reg).unwrap();
         let back: ProfileRegistry = serde_json::from_str(&json).unwrap();
         assert_eq!(back.schema_version, 7, "non-default version must survive");
+    }
+
+    /// The registry file must be 0600 after save — it lives inside the
+    /// 0700 store but the file-level mode provides defense-in-depth.
+    /// Also verifies no .tmp file survives the atomic rename.
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn registry_save_mode_is_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let _home = JarvyHomeGuard::new();
+        ProfileRegistry::default().save().unwrap();
+        let path = registry_path().unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "registry file must be 0600, got {:o}", mode);
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "tmp file must not survive the rename"
+        );
     }
 }

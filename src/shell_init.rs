@@ -207,7 +207,7 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
              if test (count $argv) -eq 0\n      \
              jarvy agents profile list\n    \
              else\n      \
-             jarvy agents profile use $argv --print-env | source\n    \
+             env JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use $argv --print-env | source\n    \
              end\n  \
              end\nend",
             hint = RC_LOG_HINT
@@ -222,11 +222,14 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
              function jr {{ jarvy run @args }}\n  \
              function jp {{\n    \
              if ($args.Count -eq 0) {{ jarvy agents profile list; return }}\n    \
+             $env:JARVY_JP_INVOCATION = 'rc_snippet'\n    \
              jarvy agents profile use @args --print-env | ForEach-Object {{\n      \
-             if ($_ -match '^export ([^=]+)=(.*)$') {{\n        \
-             Set-Item -Path \"env:$($Matches[1])\" -Value $Matches[2].Trim('\"')\n      \
+             if ($_ -match '^export ([A-Za-z_][A-Za-z0-9_]*)=\"(.*)\"$') {{\n        \
+             $val = [regex]::Replace($Matches[2], '\\\\(.)', {{ param($x) $x.Groups[1].Value }})\n        \
+             Set-Item -Path \"env:$($Matches[1])\" -Value $val\n      \
              }}\n    \
-             }}\n  \
+             }}\n    \
+             Remove-Item Env:JARVY_JP_INVOCATION -ErrorAction SilentlyContinue\n  \
              }}\n}}",
             hint = RC_LOG_HINT
         ),
@@ -242,7 +245,7 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
              if ($args | is-empty) {{\n    \
              jarvy agents profile list\n  \
              }} else {{\n    \
-             jarvy agents profile use ...$args --print-env\n      \
+             with-env {{JARVY_JP_INVOCATION: \"rc_snippet\"}} {{ jarvy agents profile use ...$args --print-env }}\n      \
              | lines\n      \
              | where {{|l| $l | str starts-with \"export \" }}\n      \
              | each {{|l|\n          \
@@ -265,7 +268,7 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
              || echo \"{hint}\" >&2\n  \
              alias jr='jarvy run'\n  \
              jp() {{ if [ $# -eq 0 ]; then jarvy agents profile list; \
-             else eval \"$(jarvy agents profile use \"$@\" --print-env)\"; fi; }}\nfi",
+             else eval \"$(JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use \"$@\" --print-env)\"; fi; }}\nfi",
             hint = RC_LOG_HINT
         ),
     }
@@ -526,7 +529,9 @@ mod tests {
         // extra flags (e.g. `jp work --agents claude-code`) pass through.
         assert!(snippet.contains("jp() {"));
         assert!(snippet.contains("jarvy agents profile list"));
-        assert!(snippet.contains("eval \"$(jarvy agents profile use \"$@\" --print-env)\""));
+        assert!(snippet.contains(
+            "eval \"$(JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use \"$@\" --print-env)\""
+        ));
     }
 
     #[test]
@@ -538,7 +543,10 @@ mod tests {
         assert!(snippet.contains("function jp"));
         assert!(snippet.contains("jarvy agents profile list"));
         // `| source`, not `eval (...)` — fish eval joins lines with spaces.
-        assert!(snippet.contains("jarvy agents profile use $argv --print-env | source"));
+        // `env` prefix sets JARVY_JP_INVOCATION for attribution.
+        assert!(snippet.contains(
+            "env JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use $argv --print-env | source"
+        ));
     }
 
     #[test]
@@ -551,6 +559,12 @@ mod tests {
         assert!(snippet.contains("function jp {"));
         assert!(snippet.contains("jarvy agents profile list"));
         assert!(snippet.contains("jarvy agents profile use @args --print-env"));
+        // Attribution env var set before the call and cleaned up after.
+        assert!(snippet.contains("$env:JARVY_JP_INVOCATION = 'rc_snippet'"));
+        assert!(snippet.contains("Remove-Item Env:JARVY_JP_INVOCATION"));
+        // Robust parser: regex match on outer quotes, then single-pass
+        // backslash unescape via scriptblock — handles `\"`, `\\`, `\$`, `\``.
+        assert!(snippet.contains("[regex]::Replace"));
         assert!(snippet.contains("Set-Item -Path \"env:$($Matches[1])\""));
     }
 
@@ -566,7 +580,9 @@ mod tests {
         // top-level — nu scopes `def` inside a block to that block.
         assert!(snippet.contains("def --env jp [...args] {"));
         assert!(snippet.contains("jarvy agents profile list"));
-        assert!(snippet.contains("jarvy agents profile use ...$args --print-env"));
+        // with-env sets JARVY_JP_INVOCATION for attribution; the piped
+        // output is then parsed into a record and load-env'd.
+        assert!(snippet.contains("with-env {JARVY_JP_INVOCATION: \"rc_snippet\"} { jarvy agents profile use ...$args --print-env }"));
         assert!(snippet.contains("load-env"));
         let def_pos = snippet.find("def --env jp").expect("jp def present");
         let if_pos = snippet.find("if (which jarvy").expect("if block present");
@@ -615,7 +631,7 @@ mod tests {
         // extra flags pass through.
         assert!(bash.contains(
             "jp() { if [ $# -eq 0 ]; then jarvy agents profile list; \
-             else eval \"$(jarvy agents profile use \"$@\" --print-env)\"; fi; }"
+             else eval \"$(JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use \"$@\" --print-env)\"; fi; }"
         ));
     }
 }

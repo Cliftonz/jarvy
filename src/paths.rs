@@ -174,8 +174,8 @@ pub fn agent_profiles_dir() -> Result<PathBuf, NoHomeDir> {
 /// component under a jarvy-owned root (skill names, agent-profile
 /// names). Generalizes the grammar of the former skills-local
 /// `validate_skill_name`: refuses empty names, leading dots, path
-/// separators, `..`, control bytes (including DEL), and names longer
-/// than 64 bytes. The `Err` carries a short human-readable reason.
+/// separators, `..`, spaces, control bytes (including DEL), and names
+/// longer than 64 bytes. The `Err` carries a short human-readable reason.
 pub fn validate_component_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("name is empty".to_string());
@@ -192,10 +192,52 @@ pub fn validate_component_name(name: &str) -> Result<(), String> {
     if name.contains("..") {
         return Err("`..` is refused".to_string());
     }
-    if name.bytes().any(|b| b < 0x20 || b == 0x7f) {
-        return Err("control bytes are refused".to_string());
+    // 0x20 (space) and all lower control bytes + DEL are refused; spaces
+    // cause ambiguity in shell completions and are unexpected in profile/
+    // skill names.
+    if name.bytes().any(|b| b <= 0x20 || b == 0x7f) {
+        return Err("spaces and control bytes are refused".to_string());
     }
     Ok(())
+}
+
+/// Best-effort chmod 0600 on Unix for a file that must not be readable by
+/// other local users (registry files, cache files). On Unix the file is
+/// created with 0600 from the start when possible; this function covers
+/// the post-rename final-destination chmod. Non-Unix is a no-op.
+#[allow(unused_variables)]
+pub(crate) fn apply_secure_mode_0600(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(path, perms);
+        }
+    }
+}
+
+/// Write `body` to `path` with 0600 permissions from creation on Unix
+/// (avoids the umask 0644 window between create and chmod). On non-Unix
+/// platforms falls back to a plain `fs::write`.
+pub(crate) fn write_0600(path: &std::path::Path, body: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        f.write_all(body.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, body)
+    }
 }
 
 /// `~/.jarvy/team-sources.toml` — team config source registry.
@@ -235,13 +277,55 @@ pub fn state_json(project: &std::path::Path) -> PathBuf {
 
 /// Create `dir` if it doesn't exist; on Unix tighten its mode to 0o700 so
 /// staging downloads / ticket bundles aren't readable by other users on a
-/// shared host (security review F-15).
+/// shared host (security review F-15). `event` is an optional telemetry
+/// event name emitted when the chmod silently fails (caller-supplied so
+/// generic callers like the updater don't hard-code agent-profile events).
 pub fn ensure_dir_0700(dir: &std::path::Path) -> std::io::Result<()> {
+    ensure_dir_0700_with_event(dir, None)
+}
+
+/// Like [`ensure_dir_0700`] but lets the caller supply a telemetry event
+/// name for the chmod-failed / chmod-ignored warning. `None` skips the
+/// event (safe for callers that don't need telemetry on chmod failures).
+pub(crate) fn ensure_dir_0700_with_event(
+    dir: &std::path::Path,
+    event: Option<&'static str>,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+        match std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)) {
+            Err(e) => {
+                if let Some(ev) = event
+                    && crate::observability::telemetry_gate::is_enabled()
+                {
+                    tracing::warn!(
+                        event = ev,
+                        error = %e,
+                        fs_hint = "chmod_failed",
+                    );
+                }
+            }
+            Ok(()) => {
+                // Verify the chmod actually took effect (NFS/drvfs/exFAT
+                // may silently ignore it — mirror the pattern from
+                // `store::ensure_store_dirs`).
+                if let Ok(meta) = std::fs::metadata(dir) {
+                    let mode = meta.permissions().mode() & 0o777;
+                    if mode != 0o700
+                        && let Some(ev) = event
+                        && crate::observability::telemetry_gate::is_enabled()
+                    {
+                        tracing::warn!(
+                            event = ev,
+                            mode = format!("{mode:o}"),
+                            fs_hint = "chmod_ignored",
+                        );
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -307,6 +391,15 @@ mod tests {
         assert!(validate_component_name("a\x1bb").is_err());
         assert!(validate_component_name("a\x7fb").is_err());
         assert!(validate_component_name(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn validate_component_name_refuses_spaces() {
+        // Spaces cause shell-completion ambiguity and are unexpected in
+        // profile / skill names (applying G: b <= 0x20 catches space).
+        assert!(validate_component_name("work projects").is_err());
+        assert!(validate_component_name(" leading").is_err());
+        assert!(validate_component_name("trailing ").is_err());
     }
 
     #[test]

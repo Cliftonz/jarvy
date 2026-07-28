@@ -128,6 +128,14 @@ fn use_print_env_stdout_carries_only_export_lines() {
     }
     assert!(stdout.contains("export CLAUDE_CONFIG_DIR=\""));
     assert!(stdout.contains(&snap.display().to_string()));
+    // Stderr purity: export lines must never appear on stderr (they
+    // would be silently discarded by the `jp` eval but signal a bug).
+    assert!(
+        !String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .any(|l| l.trim_start().starts_with("export ")),
+        "export line leaked to stderr"
+    );
 }
 
 #[test]
@@ -191,4 +199,60 @@ fn status_json_parses_and_covers_all_agents() {
             );
         }
     }
+}
+
+#[test]
+fn use_all_storage_only_agents_is_refused() {
+    let home = TempDir::new().unwrap();
+    jarvy(home.path())
+        .args(["create", "myprofile"])
+        .assert()
+        .success();
+    // windsurf is storage-only in v1 — selecting it alone yields no
+    // v1-switchable targets and must exit CONFIG_ERROR (2).
+    jarvy(home.path())
+        .args(["use", "myprofile", "--agents", "windsurf"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("no v1-switchable"));
+}
+
+#[test]
+fn use_mixed_storage_and_switchable_agents_succeeds() {
+    let home = TempDir::new().unwrap();
+    jarvy(home.path())
+        .args(["create", "myprofile"])
+        .assert()
+        .success();
+    // Seed a claude-code snapshot so `use` has a target to export.
+    seed_snapshot(home.path(), "myprofile", "claude-code");
+
+    let output = jarvy(home.path())
+        .args([
+            "use",
+            "myprofile",
+            "--agents",
+            "windsurf,claude-code",
+            "--print-env",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "use with mixed agents must succeed (exit 0); stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("CLAUDE_CONFIG_DIR"),
+        "stdout must carry the claude-code export"
+    );
+    // windsurf is not yet switchable; the advisory message goes to stderr.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not yet switchable"),
+        "stderr must mention that windsurf is not yet switchable; got: {stderr}"
+    );
 }

@@ -718,11 +718,16 @@ impl Config {
         // so the strip is unconditional; only the event is gated.
         if let Some(agents) = &mut self.agents
             && agents.profiles.take().is_some()
-            && crate::observability::telemetry_gate::is_enabled()
         {
-            tracing::warn!(
-                event = "agent_profile.remote_refused",
-                reason = "remote_origin"
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "agent_profile.remote_refused",
+                    reason = "remote_origin"
+                );
+            }
+            eprintln!(
+                "Warning: [agents.profiles] was stripped from the remote config.\n  \
+                 Project-level profile settings are not trusted from remote origins (PRD-058)."
             );
         }
     }

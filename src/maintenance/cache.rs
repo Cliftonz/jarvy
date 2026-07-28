@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -192,27 +192,11 @@ pub fn save(store: &CacheStore) -> Result<(), CacheError> {
     }
     let tmp = path.with_extension("json.tmp");
     let body = serde_json::to_string_pretty(store).map_err(CacheError::Json)?;
-    fs::write(&tmp, body).map_err(CacheError::Io)?;
-    apply_secure_mode(&tmp);
+    // Create the tmp with 0600 from the start (avoid umask 0644 window).
+    crate::paths::write_0600(&tmp, &body).map_err(CacheError::Io)?;
     fs::rename(&tmp, &path).map_err(CacheError::Io)?;
-    apply_secure_mode(&path);
+    crate::paths::apply_secure_mode_0600(&path);
     Ok(())
-}
-
-/// Best-effort chmod 0600 on Unix — the cache carries no secrets
-/// but future backends may cache tokens (npm auth, private
-/// registry credentials). Windows has no analog.
-#[allow(unused_variables)]
-fn apply_secure_mode(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = fs::metadata(path) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o600);
-            let _ = fs::set_permissions(path, perms);
-        }
-    }
 }
 
 /// Convenience: build a `CacheEntry` for a successful lookup.

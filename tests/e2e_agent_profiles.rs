@@ -143,6 +143,28 @@ fn full_profile_lifecycle_cross_platform() {
         cursor_resolves_to(home, &work_cursor),
         "cursor must resolve into the work snapshot after --global switch"
     );
+    #[cfg(windows)]
+    {
+        let ft = std::fs::symlink_metadata(home.join(".cursor"))
+            .unwrap()
+            .file_type();
+        let is_symlink = ft.is_symlink();
+        // Regardless of whether Developer Mode is on (symlink) or off
+        // (junction fallback), the path must canonicalize into the work
+        // snapshot. The `cursor_resolves_to` assertion above already
+        // covers this — we add the branch label to make it visible in
+        // CI --nocapture output.
+        let resolves = cursor_resolves_to(home, &work_cursor);
+        assert!(
+            resolves,
+            "cursor must resolve into work snapshot (junction={})",
+            !is_symlink
+        );
+        eprintln!(
+            "cursor link kind: {}",
+            if is_symlink { "symlink" } else { "junction" }
+        );
+    }
 
     // ---- status --format json: parses, cursor is managed ----
     let out = profile_cmd(home, &["status", "--format", "json"]);

@@ -146,8 +146,17 @@ pub fn apply_symlink_repoint(agent: Agent, target: &Path) -> Result<(), ProfileE
 /// covers `..` components and symlink tricks in one step — no manual
 /// component walk needed, unlike `resolve_within_workspace` which must
 /// tolerate not-yet-existing files.
+///
+/// Finding I: if `agents::home_dir()` returned a relative path, refuse
+/// it instead of letting canonicalize anchor it to CWD. Absolute paths
+/// keep working (the hermetic e2e uses an absolute JARVY_HOME tempdir).
 fn ensure_under_home(target: &Path) -> Result<(), ProfileError> {
     let home = crate::agents::home_dir().ok_or(ProfileError::NoHome)?;
+    if !home.is_absolute() {
+        // Relative JARVY_HOME would let canonicalize() anchor to CWD,
+        // undermining the boundary. Refuse outright.
+        return Err(ProfileError::EscapesHome(target.to_path_buf()));
+    }
     let home_canon = home.canonicalize()?;
     let target_canon = target.canonicalize()?;
     if target_canon.starts_with(&home_canon) {
@@ -155,6 +164,39 @@ fn ensure_under_home(target: &Path) -> Result<(), ProfileError> {
     } else {
         Err(ProfileError::EscapesHome(target.to_path_buf()))
     }
+}
+
+/// Return `true` when `e` is the kind of error that should trigger the
+/// junction fallback on Windows (PermissionDenied = no symlink privilege).
+/// Extracted for testability on all platforms (Finding F).
+// Used in #[cfg(windows)] make_dir_link and in tests on all platforms.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn should_fall_back_to_junction(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+/// Refuse a path containing cmd.exe metacharacters before passing it to
+/// the `mklink /J` fallback. Applies to both `link` and `target`.
+/// The check is a standalone function (not gated to Windows) so it can
+/// be unit-tested on all platforms. Finding E + F.
+// Used in #[cfg(windows)] make_dir_link and in tests on all platforms.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn refuse_cmd_metachars(path: &Path) -> std::io::Result<()> {
+    let s = path.to_string_lossy();
+    // Characters that cmd.exe interprets even inside quoted arguments.
+    // `(` and `)` are excluded: they appear in "Program Files (x86)" and
+    // similar and have no special meaning in `mklink /J "…" "…"` context.
+    const METACHARS: &[char] = &['&', '|', '<', '>', '^', '%'];
+    if s.chars().any(|c| METACHARS.contains(&c)) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "path contains cmd.exe metacharacter; refusing mklink /J fallback: {}",
+                s
+            ),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -166,10 +208,13 @@ fn make_dir_link(link: &Path, target: &Path) -> std::io::Result<()> {
 fn make_dir_link(link: &Path, target: &Path) -> std::io::Result<()> {
     match std::os::windows::fs::symlink_dir(target, link) {
         Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+        Err(e) if should_fall_back_to_junction(&e) => {
             // Real symlinks need SeCreateSymbolicLinkPrivilege (admin /
             // Developer Mode); directory junctions don't. mklink is a
-            // cmd.exe builtin, so shell out.
+            // cmd.exe builtin, so shell out — but only after verifying
+            // neither path contains cmd.exe metacharacters (Finding E).
+            refuse_cmd_metachars(link)?;
+            refuse_cmd_metachars(target)?;
             let status = std::process::Command::new("cmd")
                 .arg("/C")
                 .arg("mklink")
@@ -203,34 +248,44 @@ fn remove_link(path: &Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use crate::agent_profiles::store::create_profile;
+    use crate::agent_profiles::test_support::{JarvyHomeGuard, seed_snapshot};
 
-    fn pin_jarvy_home() -> tempfile::TempDir {
-        let tmp = tempfile::tempdir().unwrap();
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::set_var("JARVY_HOME", tmp.path());
-        }
-        tmp
+    // Finding F: should_fall_back_to_junction is testable on all platforms.
+    #[test]
+    fn should_fall_back_only_on_permission_denied() {
+        let perm_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "nope");
+        assert!(should_fall_back_to_junction(&perm_err));
+        let other_err = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+        assert!(!should_fall_back_to_junction(&other_err));
     }
 
-    fn unpin_jarvy_home() {
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::remove_var("JARVY_HOME");
-        }
+    // Finding E + F: metachar guard is testable on all platforms.
+    #[test]
+    fn refuse_cmd_metachars_rejects_dangerous_paths() {
+        let bad = std::path::Path::new("C:\\Users\\user\\profile&evil");
+        assert!(refuse_cmd_metachars(bad).is_err(), "& must be refused");
+        let pipe = std::path::Path::new("C:\\work|dir");
+        assert!(refuse_cmd_metachars(pipe).is_err(), "| must be refused");
+        let pct = std::path::Path::new("C:\\Users\\%APPDATA%\\stuff");
+        assert!(refuse_cmd_metachars(pct).is_err(), "% must be refused");
     }
 
-    /// Create `<profile>/<slug>/` snapshot dirs directly.
-    fn seed_snapshot(profile: &str, agent: Agent) -> PathBuf {
-        let dir = store::profile_dir(profile).unwrap().join(agent.slug());
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    #[test]
+    fn refuse_cmd_metachars_accepts_normal_paths() {
+        // Common Windows path patterns — must not be refused.
+        let normal = std::path::Path::new("C:\\Users\\alice\\.jarvy\\agent-profiles\\work");
+        assert!(refuse_cmd_metachars(normal).is_ok());
+        let paren = std::path::Path::new("C:\\Program Files (x86)\\work");
+        assert!(
+            refuse_cmd_metachars(paren).is_ok(),
+            "parentheses must be allowed"
+        );
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn plan_use_excludes_symlink_tier_without_global() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("work", None).unwrap();
         for agent in [Agent::ClaudeCode, Agent::Codex, Agent::Cursor] {
             seed_snapshot("work", agent);
@@ -257,13 +312,12 @@ mod tests {
                 ..
             }
         ));
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn plan_use_requires_snapshot_and_profile() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         assert!(matches!(
             plan_use("ghost", &[Agent::ClaudeCode], false),
             Err(ProfileError::ProfileNotFound(_))
@@ -274,14 +328,13 @@ mod tests {
             plan_use("thin", &[Agent::ClaudeCode], false),
             Err(ProfileError::AgentNotSnapshotted { .. })
         ));
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn repoint_is_atomic_between_two_profiles() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("a", None).unwrap();
         create_profile("b", None).unwrap();
         let a = seed_snapshot("a", Agent::Cursor);
@@ -303,13 +356,12 @@ mod tests {
             .filter(|n| n.contains("jarvy-new"))
             .collect();
         assert!(leftovers.is_empty(), "stale temp links: {leftovers:?}");
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn repoint_refuses_unmanaged_real_dir() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("a", None).unwrap();
         let a = seed_snapshot("a", Agent::Cursor);
         let live = Agent::Cursor.config_dir().unwrap();
@@ -321,25 +373,23 @@ mod tests {
         ));
         // The real dir survived.
         assert!(fs::symlink_metadata(&live).unwrap().file_type().is_dir());
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn repoint_refuses_target_outside_home() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let outside = tempfile::tempdir().unwrap();
         assert!(matches!(
             apply_symlink_repoint(Agent::Cursor, outside.path()),
             Err(ProfileError::EscapesHome(_))
         ));
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn plan_use_symlink_only_without_global_is_empty() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("work", None).unwrap();
         seed_snapshot("work", Agent::Cursor);
 
@@ -347,13 +397,12 @@ mod tests {
         // do, but NOT an error — the CLI prints a notice instead.
         let plans = plan_use("work", &[Agent::Cursor], false).unwrap();
         assert!(plans.is_empty(), "expected empty plan, got {plans:?}");
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn plan_use_orders_env_exports_before_repoints_regardless_of_input_order() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("work", None).unwrap();
         for agent in [Agent::ClaudeCode, Agent::Codex, Agent::Cursor] {
             seed_snapshot("work", agent);
@@ -376,14 +425,13 @@ mod tests {
                 ..
             }
         ));
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn repoint_refuses_regular_file_at_live_path() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("a", None).unwrap();
         let a = seed_snapshot("a", Agent::Cursor);
         let live = Agent::Cursor.config_dir().unwrap();
@@ -398,7 +446,6 @@ mod tests {
         ));
         // The file survived the refusal.
         assert_eq!(fs::read_to_string(&live).unwrap(), "not a dir");
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
@@ -409,7 +456,7 @@ mod tests {
         // matches ANY symlink at the live path — including one the user
         // created themselves (e.g. a dotfile-repo link elsewhere in
         // home). It is re-pointed; the old target dir is untouched.
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("a", None).unwrap();
         let a = seed_snapshot("a", Agent::Cursor);
 
@@ -426,7 +473,6 @@ mod tests {
             fs::read_to_string(foreign.join("keep.txt")).unwrap(),
             "mine"
         );
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
@@ -437,7 +483,7 @@ mod tests {
         // a symlink to somewhere outside home must canonicalize out and
         // be refused — EscapesHome catches the symlink trick, not just a
         // literal outside path.
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("evil", None).unwrap();
         let outside = tempfile::tempdir().unwrap();
         let snap = store::profile_dir("evil").unwrap().join("cursor");
@@ -449,6 +495,27 @@ mod tests {
         ));
         // No live link was created.
         assert!(fs::symlink_metadata(Agent::Cursor.config_dir().unwrap()).is_err());
-        unpin_jarvy_home();
+    }
+
+    /// Finding I: a relative JARVY_HOME must be refused rather than
+    /// letting canonicalize() silently anchor it to CWD.
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn ensure_under_home_refuses_relative_jarvy_home() {
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("JARVY_HOME", "relative/path");
+        }
+        let some_path = std::path::Path::new("/tmp/anything");
+        let result = ensure_under_home(some_path);
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("JARVY_HOME");
+        }
+        assert!(
+            matches!(result, Err(ProfileError::EscapesHome(_))),
+            "relative JARVY_HOME must be refused, got {:?}",
+            result
+        );
     }
 }

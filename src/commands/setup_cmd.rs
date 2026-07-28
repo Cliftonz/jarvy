@@ -887,6 +887,23 @@ pub fn run_setup(
     profiler.start_phase("dotfiles");
     run_dotfiles_phase(&config, dry_run);
 
+    // Adoption denominator for agent profiles (PRD-058): emit a
+    // debug event when no profiles.json exists so the feature-reach
+    // funnel has a baseline. Mirrors dotfiles.phase_absent. Best-
+    // effort — path errors are swallowed; setup must never fail here.
+    if crate::observability::telemetry_gate::is_enabled() {
+        let profiles_json_absent = crate::paths::agent_profiles_dir()
+            .ok()
+            .map(|d| !d.join("profiles.json").exists())
+            .unwrap_or(false);
+        if profiles_json_absent {
+            tracing::debug!(
+                event = "agent_profile.not_configured",
+                "agent profiles not configured"
+            );
+        }
+    }
+
     if config.has_hooks() && !no_hooks {
         chatter!("\nHooks execution summary:");
         if hooks_config.pre_setup.is_some() {

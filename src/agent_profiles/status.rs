@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::store::{is_symlink_tier, link_points_into};
+use super::store::{active_profile_from_link, link_points_into};
 use super::{ProfileError, ProfileRegistry};
 use crate::agents::Agent;
 
@@ -79,7 +79,7 @@ pub fn collect_status() -> Result<ProfileStatusReport, ProfileError> {
 }
 
 fn agent_status(agent: Agent, registry: &ProfileRegistry, store_root: &Path) -> AgentProfileStatus {
-    let symlink_tier = is_symlink_tier(agent);
+    let symlink_tier = agent.is_symlink_tier();
     let slug = agent.slug();
 
     let (state, active_profile) = match agent.config_dir() {
@@ -97,9 +97,8 @@ fn agent_status(agent: Agent, registry: &ProfileRegistry, store_root: &Path) -> 
             }
             Ok(meta) if meta.file_type().is_symlink() => {
                 if link_points_into(&dir, store_root) {
-                    let active = fs::read_link(&dir)
-                        .ok()
-                        .and_then(|t| profile_name_from_link(store_root, &dir, &t))
+                    // Use the single shared implementation from store.
+                    let active = active_profile_from_link(agent)
                         .or_else(|| registry.active.get(slug).cloned());
                     ("managed", active)
                 } else {
@@ -124,7 +123,9 @@ fn agent_status(agent: Agent, registry: &ProfileRegistry, store_root: &Path) -> 
 /// Extract the profile name from a link target
 /// (`<store>/<profile>/<slug>`): the first component under the store
 /// root, tried against both the raw and canonicalized root spellings
-/// (macOS `/var` vs `/private/var`).
+/// (macOS `/var` vs `/private/var`). Only called from unit tests now —
+/// live code uses `store::active_profile_from_link`.
+#[cfg(test)]
 fn profile_name_from_link(store_root: &Path, link: &Path, target: &Path) -> Option<String> {
     let resolved = if target.is_absolute() {
         target.to_path_buf()
@@ -148,22 +149,7 @@ fn profile_name_from_link(store_root: &Path, link: &Path, target: &Path) -> Opti
 mod tests {
     use super::*;
     use crate::agent_profiles::store::create_profile;
-
-    fn pin_jarvy_home() -> tempfile::TempDir {
-        let tmp = tempfile::tempdir().unwrap();
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::set_var("JARVY_HOME", tmp.path());
-        }
-        tmp
-    }
-
-    fn unpin_jarvy_home() {
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::remove_var("JARVY_HOME");
-        }
-    }
+    use crate::agent_profiles::test_support::JarvyHomeGuard;
 
     fn status_for<'a>(report: &'a ProfileStatusReport, slug: &str) -> &'a AgentProfileStatus {
         report
@@ -176,7 +162,7 @@ mod tests {
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn empty_store_reports_defaults() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let report = collect_status().unwrap();
         assert!(report.profiles.is_empty());
         assert!(report.default_profile.is_none());
@@ -185,14 +171,13 @@ mod tests {
         assert_eq!(status_for(&report, "claude-code").mechanism, "env");
         assert_eq!(status_for(&report, "cursor").mechanism, "symlink");
         assert!(!status_for(&report, "windsurf").switchable_v1);
-        unpin_jarvy_home();
     }
 
     #[cfg(unix)]
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn full_report_covers_all_states() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         // Store: two profiles + the registry file (must be skipped in
         // the profile listing).
         create_profile("work", None).unwrap();
@@ -240,13 +225,12 @@ mod tests {
         assert_eq!(status_for(&report, "continue").state, "unmanaged");
         assert_eq!(status_for(&report, "windsurf").state, "not_installed");
         assert_eq!(status_for(&report, "cline").state, "not_installed");
-        unpin_jarvy_home();
     }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn status_skips_stray_files_and_dot_dirs_in_store() {
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         create_profile("work", None).unwrap();
         let store = crate::paths::agent_profiles_dir().unwrap();
         // A stray regular file (temp file, editor dropping) is skipped
@@ -258,7 +242,6 @@ mod tests {
 
         let report = collect_status().unwrap();
         assert_eq!(report.profiles, vec!["work"]);
-        unpin_jarvy_home();
     }
 
     #[test]
@@ -296,7 +279,7 @@ mod tests {
         // but a manual registry edit (or out-of-band dir removal) can
         // name a profile that no longer exists on disk — status reports
         // it as active/managed anyway; no cross-check against the store.
-        let _home = pin_jarvy_home();
+        let _home = JarvyHomeGuard::new();
         let mut active = std::collections::BTreeMap::new();
         active.insert("claude-code".to_string(), "ghost".to_string());
         let reg = ProfileRegistry {
@@ -311,6 +294,5 @@ mod tests {
         let claude = status_for(&report, "claude-code");
         assert_eq!(claude.state, "managed");
         assert_eq!(claude.active_profile.as_deref(), Some("ghost"));
-        unpin_jarvy_home();
     }
 }

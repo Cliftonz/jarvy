@@ -150,6 +150,13 @@ impl Agent {
         matches!(self, Agent::ClaudeCode | Agent::Codex | Agent::Cursor)
     }
 
+    /// Whether the agent's profile mechanism includes the symlink tier.
+    pub fn is_symlink_tier(self) -> bool {
+        self.profile_mechanisms()
+            .iter()
+            .any(|m| matches!(m, ProfileMechanism::Symlink))
+    }
+
     /// Where skills land for this agent.
     pub fn skills_dir(self) -> Option<PathBuf> {
         self.config_dir().map(|p| p.join("skills"))
@@ -245,6 +252,16 @@ mod tests {
         assert!(!Agent::Windsurf.profile_switchable_v1());
         assert!(!Agent::Cline.profile_switchable_v1());
         assert!(!Agent::Continue.profile_switchable_v1());
+    }
+
+    #[test]
+    fn is_symlink_tier_matches_mechanism_table() {
+        assert!(!Agent::ClaudeCode.is_symlink_tier());
+        assert!(!Agent::Codex.is_symlink_tier());
+        assert!(Agent::Cursor.is_symlink_tier());
+        assert!(Agent::Windsurf.is_symlink_tier());
+        assert!(Agent::Cline.is_symlink_tier());
+        assert!(Agent::Continue.is_symlink_tier());
     }
 
     #[test]
