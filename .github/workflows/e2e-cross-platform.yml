@@ -132,6 +132,18 @@ jobs:
           JARVY_E2E_TIER: ${{ github.event.inputs.tier || 'all' }}
           JARVY_E2E_SKIP_INSTALL: ${{ github.event.inputs.skip_install == 'true' && '1' || '' }}
 
+      # PRD-058: profile lifecycle against the RELEASE binary (init →
+      # create → use --print-env → --global symlink/junction re-point →
+      # refusals). Hermetic under a tempdir JARVY_HOME; on Windows this
+      # exercises the mklink /J junction fallback path.
+      - name: Run Agent Profile E2E
+        if: always()
+        shell: bash
+        run: cargo test --test e2e_agent_profiles -- --show-output --nocapture
+        env:
+          JARVY_BIN: ${{ steps.jarvy.outputs.bin }}
+          JARVY_TEST_MODE: 1
+
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -227,6 +239,17 @@ jobs:
           JARVY_TEST_MODE: 1
           JARVY_E2E_TIER: ${{ github.event.inputs.tier || 'all' }}
           JARVY_E2E_SKIP_INSTALL: ${{ github.event.inputs.skip_install == 'true' && '1' || '' }}
+
+      # PRD-058: profile lifecycle against the release binary (see the
+      # github-hosted job for the scenario description).
+      - name: Run Agent Profile E2E
+        if: always()
+        shell: bash
+        run: cargo test --test e2e_agent_profiles -- --show-output --nocapture
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: gcc
+          JARVY_BIN: ${{ github.workspace }}/target/release/jarvy
+          JARVY_TEST_MODE: 1
 
       - name: Upload Test Results
         if: always()
