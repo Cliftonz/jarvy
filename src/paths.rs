@@ -162,6 +162,42 @@ pub fn registry_remote_cache_dir() -> Result<PathBuf, NoHomeDir> {
     Ok(plugins_dir()?.join(".remote"))
 }
 
+/// `~/.jarvy/agent-profiles/` — AI agent profile store (PRD-058).
+/// Holds `profiles.json` plus one directory per named profile; may
+/// contain live agent credentials, so the store dir is kept 0700
+/// (see `agent_profiles::store::ensure_store_dirs`).
+pub fn agent_profiles_dir() -> Result<PathBuf, NoHomeDir> {
+    Ok(jarvy_home()?.join("agent-profiles"))
+}
+
+/// Validate a user-supplied name that becomes a single directory
+/// component under a jarvy-owned root (skill names, agent-profile
+/// names). Generalizes the grammar of the former skills-local
+/// `validate_skill_name`: refuses empty names, leading dots, path
+/// separators, `..`, control bytes (including DEL), and names longer
+/// than 64 bytes. The `Err` carries a short human-readable reason.
+pub fn validate_component_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("name is empty".to_string());
+    }
+    if name.len() > 64 {
+        return Err(format!("name exceeds 64 bytes ({} bytes)", name.len()));
+    }
+    if name.starts_with('.') {
+        return Err("leading `.` is refused".to_string());
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err("path separators are refused".to_string());
+    }
+    if name.contains("..") {
+        return Err("`..` is refused".to_string());
+    }
+    if name.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err("control bytes are refused".to_string());
+    }
+    Ok(())
+}
+
 /// `~/.jarvy/team-sources.toml` — team config source registry.
 pub fn team_sources_toml() -> Result<PathBuf, NoHomeDir> {
     Ok(jarvy_home()?.join("team-sources.toml"))
@@ -247,6 +283,33 @@ mod tests {
     }
 
     #[test]
+    fn validate_component_name_accepts_plain_names() {
+        assert!(validate_component_name("work").is_ok());
+        assert!(validate_component_name("client-a").is_ok());
+        assert!(validate_component_name("Work_2026").is_ok());
+        // Exactly 64 bytes is still fine.
+        assert!(validate_component_name(&"a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn validate_component_name_refuses_traversal_and_separators() {
+        assert!(validate_component_name("").is_err());
+        assert!(validate_component_name(".hidden").is_err());
+        assert!(validate_component_name("a/b").is_err());
+        assert!(validate_component_name("a\\b").is_err());
+        assert!(validate_component_name("a..b").is_err());
+        assert!(validate_component_name("..").is_err());
+    }
+
+    #[test]
+    fn validate_component_name_refuses_control_bytes_and_length() {
+        assert!(validate_component_name("a\x07b").is_err());
+        assert!(validate_component_name("a\x1bb").is_err());
+        assert!(validate_component_name("a\x7fb").is_err());
+        assert!(validate_component_name(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn derived_paths_share_jarvy_home() {
         // Serialized via #[serial(jarvy_home_env)] so the sibling override
@@ -261,5 +324,6 @@ mod tests {
         assert!(staging_dir().unwrap().starts_with(&home));
         assert!(backup_dir().unwrap().starts_with(&home));
         assert!(config_toml().unwrap().starts_with(&home));
+        assert!(agent_profiles_dir().unwrap().starts_with(&home));
     }
 }

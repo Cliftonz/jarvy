@@ -176,7 +176,13 @@ pub const RC_LOG_HINT: &str = "jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log
 ///
 /// Besides the `jarvy ensure` startup check, defines `jr` as shorthand for
 /// `jarvy run` (the npm-run-style `[commands]` runner) — a function rather
-/// than an alias on PowerShell, where aliases can't carry arguments.
+/// than an alias on PowerShell, where aliases can't carry arguments — and
+/// `jp`, the agent-profile switcher (PRD-058): bare `jp` lists profiles;
+/// `jp <name> [...]` evaluates the `export VAR="path"` lines that
+/// `jarvy agents profile use <name> --print-env` prints on stdout into the
+/// CURRENT shell (human text goes to stderr, so eval only sees exports).
+/// Shells without `eval` parse the lines instead: PowerShell converts them
+/// to `env:` writes; nushell builds a record and `load-env`s it.
 ///
 /// The snippet sets `JARVY_ENSURE_INVOCATION=rc_snippet` before calling
 /// `jarvy ensure` so `ensure` can tag its telemetry with the invocation
@@ -188,11 +194,22 @@ pub const RC_LOG_HINT: &str = "jarvy: ensure failed; see ~/.jarvy/logs/jarvy.log
 /// one line to stderr on non-zero exit so the user gets a lead.
 pub fn generate_rc_snippet(shell: ShellType) -> String {
     match shell {
+        // Fish `eval (cmd)` joins the substitution's lines with spaces,
+        // mangling multi-export output — `| source` executes each line
+        // as-is (fish ≥3.0 ships a bash-compat `export` function), and
+        // mirrors the `jarvy shell-init --shell fish | source` loader idiom.
         ShellType::Fish => format!(
             "if command -q jarvy\n  \
              env JARVY_ENSURE_INVOCATION=rc_snippet jarvy ensure --quiet; \
              or echo \"{hint}\" >&2\n  \
-             alias jr 'jarvy run'\nend",
+             alias jr 'jarvy run'\n  \
+             function jp\n    \
+             if test (count $argv) -eq 0\n      \
+             jarvy agents profile list\n    \
+             else\n      \
+             jarvy agents profile use $argv --print-env | source\n    \
+             end\n  \
+             end\nend",
             hint = RC_LOG_HINT
         ),
         ShellType::PowerShell => format!(
@@ -202,14 +219,39 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
              $__jarvy_exit = $LASTEXITCODE\n  \
              Remove-Item Env:JARVY_ENSURE_INVOCATION -ErrorAction SilentlyContinue\n  \
              if ($__jarvy_exit -ne 0) {{ Write-Error \"{hint}\" }}\n  \
-             function jr {{ jarvy run @args }}\n}}",
+             function jr {{ jarvy run @args }}\n  \
+             function jp {{\n    \
+             if ($args.Count -eq 0) {{ jarvy agents profile list; return }}\n    \
+             jarvy agents profile use @args --print-env | ForEach-Object {{\n      \
+             if ($_ -match '^export ([^=]+)=(.*)$') {{\n        \
+             Set-Item -Path \"env:$($Matches[1])\" -Value $Matches[2].Trim('\"')\n      \
+             }}\n    \
+             }}\n  \
+             }}\n}}",
             hint = RC_LOG_HINT
         ),
         // Nushell has no `eval` — users `source` this from config.nu.
-        // The alias must be top-level: `alias` inside an `if` block is
-        // scoped to that block in nu.
+        // The alias and `def` must be top-level: declarations inside an
+        // `if` block are scoped to that block in nu. `jp` parses the
+        // bash-syntax `export VAR="path"` lines itself (strip prefix,
+        // split on first `=`, trim quotes) and applies them via
+        // `load-env`; `def --env` makes the mutation stick in the caller.
         ShellType::Nushell => format!(
             "alias jr = jarvy run\n\
+             def --env jp [...args] {{\n  \
+             if ($args | is-empty) {{\n    \
+             jarvy agents profile list\n  \
+             }} else {{\n    \
+             jarvy agents profile use ...$args --print-env\n      \
+             | lines\n      \
+             | where {{|l| $l | str starts-with \"export \" }}\n      \
+             | each {{|l|\n          \
+             let kv = ($l | str replace \"export \" \"\" | split row -n 2 \"=\")\n          \
+             {{name: ($kv | first), value: ($kv | last | str trim -c '\"')}}\n        \
+             }}\n      \
+             | reduce -f {{}} {{|it, acc| $acc | insert $it.name $it.value }}\n      \
+             | load-env\n  \
+             }}\n}}\n\
              if (which jarvy | is-not-empty) {{\n  \
              try {{ with-env {{JARVY_ENSURE_INVOCATION: \"rc_snippet\"}} \
              {{ jarvy ensure --quiet }} }} catch \
@@ -221,7 +263,9 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
             "if command -v jarvy &> /dev/null; then\n  \
              JARVY_ENSURE_INVOCATION=rc_snippet jarvy ensure --quiet \
              || echo \"{hint}\" >&2\n  \
-             alias jr='jarvy run'\nfi",
+             alias jr='jarvy run'\n  \
+             jp() {{ if [ $# -eq 0 ]; then jarvy agents profile list; \
+             else eval \"$(jarvy agents profile use \"$@\" --print-env)\"; fi; }}\nfi",
             hint = RC_LOG_HINT
         ),
     }
@@ -478,6 +522,11 @@ mod tests {
         assert!(snippet.contains("command -v jarvy"));
         assert!(snippet.contains("jarvy ensure --quiet"));
         assert!(snippet.contains("alias jr='jarvy run'"));
+        // jp: bare = list, args = eval the --print-env exports; "$@" so
+        // extra flags (e.g. `jp work --agents claude-code`) pass through.
+        assert!(snippet.contains("jp() {"));
+        assert!(snippet.contains("jarvy agents profile list"));
+        assert!(snippet.contains("eval \"$(jarvy agents profile use \"$@\" --print-env)\""));
     }
 
     #[test]
@@ -486,6 +535,10 @@ mod tests {
         assert!(snippet.contains("command -q jarvy"));
         assert!(snippet.contains("alias jr 'jarvy run'"));
         assert!(snippet.contains("end"));
+        assert!(snippet.contains("function jp"));
+        assert!(snippet.contains("jarvy agents profile list"));
+        // `| source`, not `eval (...)` — fish eval joins lines with spaces.
+        assert!(snippet.contains("jarvy agents profile use $argv --print-env | source"));
     }
 
     #[test]
@@ -494,6 +547,11 @@ mod tests {
         assert!(snippet.contains("Get-Command"));
         assert!(snippet.contains("jarvy ensure --quiet"));
         assert!(snippet.contains("function jr { jarvy run @args }"));
+        // jp parses the bash-syntax export lines into $env: writes.
+        assert!(snippet.contains("function jp {"));
+        assert!(snippet.contains("jarvy agents profile list"));
+        assert!(snippet.contains("jarvy agents profile use @args --print-env"));
+        assert!(snippet.contains("Set-Item -Path \"env:$($Matches[1])\""));
     }
 
     #[test]
@@ -504,5 +562,60 @@ mod tests {
         // Alias must be top-level, before the `if` — nu scopes `alias`
         // declared inside a block to that block.
         assert!(snippet.starts_with("alias jr = jarvy run\n"));
+        // jp: `def --env` (so load-env mutates the caller) and also
+        // top-level — nu scopes `def` inside a block to that block.
+        assert!(snippet.contains("def --env jp [...args] {"));
+        assert!(snippet.contains("jarvy agents profile list"));
+        assert!(snippet.contains("jarvy agents profile use ...$args --print-env"));
+        assert!(snippet.contains("load-env"));
+        let def_pos = snippet.find("def --env jp").expect("jp def present");
+        let if_pos = snippet.find("if (which jarvy").expect("if block present");
+        assert!(
+            def_pos < if_pos,
+            "jp def must precede the if block (top-level)"
+        );
+    }
+
+    #[test]
+    fn jp_present_in_all_six_shell_snippets() {
+        // PRD-058: every shell's snippet must define `jp` with the
+        // bare-invocation list fallback and the --print-env switch path.
+        for shell in [
+            ShellType::Bash,
+            ShellType::Zsh,
+            ShellType::Sh,
+            ShellType::Fish,
+            ShellType::PowerShell,
+            ShellType::Nushell,
+        ] {
+            let snippet = generate_rc_snippet(shell);
+            assert!(
+                snippet.contains("jp"),
+                "{shell:?}: jp shorthand missing from snippet"
+            );
+            assert!(
+                snippet.contains("jarvy agents profile list"),
+                "{shell:?}: bare jp must list profiles"
+            );
+            assert!(
+                snippet.contains("--print-env"),
+                "{shell:?}: jp must use the --print-env switch path"
+            );
+        }
+    }
+
+    #[test]
+    fn jp_bash_zsh_sh_share_posix_form() {
+        // Zsh and Sh ride the Bash arm — the POSIX function must be
+        // byte-identical across the three (one arm, no drift).
+        let bash = generate_rc_snippet(ShellType::Bash);
+        assert_eq!(bash, generate_rc_snippet(ShellType::Zsh));
+        assert_eq!(bash, generate_rc_snippet(ShellType::Sh));
+        // Bare jp lists; with args it evals the exports with "$@" so
+        // extra flags pass through.
+        assert!(bash.contains(
+            "jp() { if [ $# -eq 0 ]; then jarvy agents profile list; \
+             else eval \"$(jarvy agents profile use \"$@\" --print-env)\"; fi; }"
+        ));
     }
 }

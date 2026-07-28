@@ -3,10 +3,31 @@
 //! Collects system, tool, configuration, and log information.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use super::{TicketData, TicketError, TicketScope};
 use crate::logging;
+
+/// Directory names under `~/.jarvy` that a debug bundle must NEVER ship.
+/// `agent-profiles/` holds per-profile agent homes (the targets of
+/// `CLAUDE_CONFIG_DIR` / `CODEX_HOME`) with LIVE credentials (PRD-058).
+/// Collection is narrow today (two config files + the log file), so this
+/// is mostly a guard for the future: any collector that starts walking
+/// `~/.jarvy` must consult `is_excluded_path` before reading.
+pub(crate) const TICKET_EXCLUDED_DIRS: &[&str] = &["agent-profiles"];
+
+/// True when any path component names an excluded directory.
+///
+/// Component match, not substring — `agent-profiles.toml` is fine,
+/// `agent-profiles/work/...` is not.
+pub(crate) fn is_excluded_path(path: &Path) -> bool {
+    path.components().any(|c| match c {
+        Component::Normal(name) => TICKET_EXCLUDED_DIRS
+            .iter()
+            .any(|dir| name == std::ffi::OsStr::new(dir)),
+        _ => false,
+    })
+}
 
 /// System information
 #[derive(Debug, Clone, serde::Serialize)]
@@ -181,6 +202,13 @@ impl TicketCollector {
         ];
 
         for path in &config_paths {
+            // Defensive: the fixed paths above never point into an
+            // excluded dir today, but the guard keeps future additions
+            // (or a hostile JARVY_HOME layout) honest — profiles hold
+            // live credentials (PRD-058).
+            if is_excluded_path(path) {
+                continue;
+            }
             if path.exists() {
                 match std::fs::read_to_string(path) {
                     Ok(content) => {
@@ -215,7 +243,10 @@ impl TicketCollector {
     fn collect_environment(&self) -> HashMap<String, String> {
         let mut env = HashMap::new();
 
-        // Allowlist of safe environment variables to include
+        // Allowlist of safe environment variables to include.
+        // Do NOT add CLAUDE_CONFIG_DIR / CODEX_HOME (or other agent-home
+        // overrides): their values reveal agent-profile names and paths
+        // under ~/.jarvy/agent-profiles/ (PRD-058).
         let allowlist = [
             "SHELL",
             "TERM",
@@ -343,6 +374,128 @@ mod tests {
 
         assert!(!info.installed);
         assert!(info.version.is_none());
+    }
+
+    #[test]
+    fn test_is_excluded_path() {
+        // Anywhere in the path, any depth.
+        assert!(is_excluded_path(Path::new(
+            "/Users/x/.jarvy/agent-profiles/work/claude-code/credentials.json"
+        )));
+        assert!(is_excluded_path(Path::new(".jarvy/agent-profiles")));
+        assert!(is_excluded_path(Path::new("agent-profiles")));
+
+        // Component match only — similar names and siblings pass.
+        assert!(!is_excluded_path(Path::new("/Users/x/.jarvy/config.toml")));
+        assert!(!is_excluded_path(Path::new(
+            "/Users/x/.jarvy/agent-profiles.toml"
+        )));
+        assert!(!is_excluded_path(Path::new(
+            "/Users/x/.jarvy/logs/jarvy.log"
+        )));
+        assert!(!is_excluded_path(Path::new("jarvy.toml")));
+    }
+
+    #[test]
+    fn test_is_excluded_path_nested_and_relative_depths() {
+        // Deeply nested files under the excluded dir are caught at any
+        // depth, absolute or relative.
+        assert!(is_excluded_path(Path::new(
+            "agent-profiles/work/claude-code/nested/deeper/.credentials.json"
+        )));
+        assert!(is_excluded_path(Path::new(
+            "/home/u/.jarvy/agent-profiles/p/codex/auth.json"
+        )));
+        // Excluded component mid-path, not just as the leading segment.
+        assert!(is_excluded_path(Path::new(
+            "backup/.jarvy/agent-profiles/x"
+        )));
+    }
+
+    #[test]
+    fn test_is_excluded_path_no_prefix_or_suffix_confusion() {
+        // Sibling dirs sharing the prefix must NOT be excluded —
+        // component equality, not starts_with.
+        assert!(!is_excluded_path(Path::new(
+            "/Users/x/.jarvy/agent-profiles-x/creds.json"
+        )));
+        assert!(!is_excluded_path(Path::new("agent-profiles-backup/file")));
+        // ...and suffix confusion.
+        assert!(!is_excluded_path(Path::new(
+            "/Users/x/.jarvy/old-agent-profiles/file"
+        )));
+        assert!(!is_excluded_path(Path::new("agent-profilesx")));
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn test_env_allowlist_omits_agent_profile_vars() {
+        // CLAUDE_CONFIG_DIR / CODEX_HOME values reveal profile names and
+        // paths under ~/.jarvy/agent-profiles/ — they must never enter
+        // the allowlist (PRD-058).
+        // SAFETY: no other test reads these variables.
+        unsafe {
+            std::env::set_var(
+                "CLAUDE_CONFIG_DIR",
+                "/tmp/.jarvy/agent-profiles/work/claude-code",
+            );
+            std::env::set_var("CODEX_HOME", "/tmp/.jarvy/agent-profiles/work/codex");
+        }
+        let collector = TicketCollector::new(TicketScope::full());
+        let env = collector.collect_environment();
+        unsafe {
+            std::env::remove_var("CLAUDE_CONFIG_DIR");
+            std::env::remove_var("CODEX_HOME");
+        }
+        assert!(!env.contains_key("CLAUDE_CONFIG_DIR"));
+        assert!(!env.contains_key("CODEX_HOME"));
+    }
+
+    /// Regression (PRD-058): a populated `$JARVY_HOME/agent-profiles/`
+    /// tree must leave zero trace in the collected TicketData.
+    /// Serialized on `jarvy_home_env` — see ticket/mod.rs.
+    #[test]
+    #[allow(unsafe_code)]
+    #[serial_test::serial(jarvy_home_env)]
+    fn test_collect_never_includes_agent_profiles() {
+        let home = tempfile::tempdir().unwrap();
+        let creds_dir = home.path().join("agent-profiles/work/claude-code");
+        std::fs::create_dir_all(&creds_dir).unwrap();
+        std::fs::write(
+            creds_dir.join("credentials.json"),
+            r#"{"api_key":"JARVY-TEST-SUPER-SECRET-TOKEN"}"#,
+        )
+        .unwrap();
+        // A legitimate global config so config collection has real work.
+        std::fs::write(
+            home.path().join("config.toml"),
+            "[telemetry]\nenabled = false\n",
+        )
+        .unwrap();
+
+        // SAFETY: serialized on jarvy_home_env; restored before asserts.
+        let prev = std::env::var_os("JARVY_HOME");
+        unsafe { std::env::set_var("JARVY_HOME", home.path()) };
+
+        let scope = TicketScope {
+            config: true,
+            environment: true,
+            logs: true,
+            log_lines: 100,
+            ..Default::default()
+        };
+        let result = TicketCollector::new(scope).collect();
+
+        match prev {
+            Some(v) => unsafe { std::env::set_var("JARVY_HOME", v) },
+            None => unsafe { std::env::remove_var("JARVY_HOME") },
+        }
+
+        let ticket = result.unwrap();
+        let json = serde_json::to_string(&ticket).unwrap();
+        assert!(!json.contains("JARVY-TEST-SUPER-SECRET-TOKEN"));
+        assert!(!json.contains("credentials.json"));
+        assert!(!json.contains("agent-profiles"));
     }
 
     #[test]

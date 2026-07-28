@@ -521,3 +521,60 @@ pub enum TicketAction {
         output_format: String,
     },
 }
+
+#[derive(Subcommand)]
+pub enum AgentsAction {
+    /// Manage named AI agent profiles (snapshot / switch whole config dirs)
+    Profile {
+        #[clap(subcommand)]
+        action: ProfileAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ProfileAction {
+    /// Snapshot every installed agent's current config as profile 'default'
+    Init {},
+    /// Create a new named profile, optionally seeded from an existing one
+    Create {
+        /// Profile name (single path component, no separators)
+        name: String,
+        /// Seed the new profile from an existing profile's snapshots
+        #[clap(long)]
+        from: Option<String>,
+        /// Comma-separated agent slugs to include (e.g. claude-code,codex)
+        #[clap(long)]
+        agents: Option<String>,
+    },
+    /// Switch to a profile: env-tier agents per-terminal, symlink-tier with --global
+    Use {
+        /// Profile name
+        name: String,
+        /// Comma-separated agent slugs to switch (default: all switchable)
+        #[clap(long)]
+        agents: Option<String>,
+        /// Apply global (symlink-tier) swaps too and set the default profile
+        #[clap(long)]
+        global: bool,
+        /// Emit only `export VAR="path"` lines on stdout (for shell eval)
+        #[clap(long)]
+        print_env: bool,
+    },
+    /// List profiles
+    List {
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+    /// Per-agent report: active profile, mechanism, default
+    Status {
+        /// Output format: json, pretty
+        #[clap(short = 'F', long = "format", default_value = "pretty")]
+        output_format: String,
+    },
+    /// Delete a profile (refused while active for a symlink-tier agent)
+    Delete {
+        /// Profile name
+        name: String,
+    },
+}

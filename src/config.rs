@@ -313,6 +313,12 @@ pub struct Config {
     /// AI agent skill installation (`[skills]` — PRD-049 + PRD-054)
     #[serde(default)]
     pub skills: Option<crate::skills::SkillsConfig>,
+    /// `[agents]` block — agent profile switcher (PRD-058). Carries
+    /// the `[agents.profiles]` project-level pinning sub-block.
+    /// Remote-origin configs cannot declare `[agents.profiles]`; the
+    /// block is stripped in `mark_remote()`.
+    #[serde(default)]
+    pub agents: Option<AgentsConfig>,
     /// Drift detection configuration
     #[serde(default)]
     pub drift: Option<crate::drift::DriftConfig>,
@@ -420,6 +426,31 @@ pub struct PackagesTrustConfig {
     pub allow_remote: bool,
 }
 
+/// Top-level `[agents]` block (PRD-058). Today it only carries the
+/// `[agents.profiles]` sub-block; future agent-wide knobs land here.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct AgentsConfig {
+    /// `[agents.profiles]` — project-level profile pinning. Advisory:
+    /// `jarvy setup` compares the active profile against `prefer` and
+    /// prints a hint; it never auto-switches (switching changes
+    /// credentials, and credentials never move without an explicit
+    /// user command).
+    #[serde(default)]
+    pub profiles: Option<AgentProfilesConfig>,
+}
+
+/// `[agents.profiles]` sub-block — see [`AgentsConfig`].
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct AgentProfilesConfig {
+    /// Suggested profile for this repo.
+    #[serde(default)]
+    pub prefer: Option<String>,
+    /// When true, `jarvy setup` warns loudly when active != prefer
+    /// instead of printing a soft hint.
+    #[serde(default)]
+    pub strict: Option<bool>,
+}
+
 /// Canonical list of top-level section names that `jarvy.toml` may use.
 ///
 /// This is the single source of truth for `jarvy validate`'s
@@ -452,6 +483,7 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "git",
     "git_hooks",
     "skills",
+    "agents",
     "drift",
     "maintenance",
     "telemetry",
@@ -677,6 +709,22 @@ impl Config {
         tag(&mut self.git_hooks, ConfigOrigin::Remote);
         tag(&mut self.dotfiles, ConfigOrigin::Remote);
         tag(&mut self.maintenance, ConfigOrigin::Remote);
+        // `[agents.profiles]` is stripped outright rather than tagged:
+        // a hostile remote config suggesting a profile switch is a
+        // credential-redirection primitive, and there is no consumer
+        // phase to gate at — so the block simply never survives a
+        // remote origin. Strip, don't error: setup must not fail.
+        // NOTE: `take()` runs before the gate check (short-circuit),
+        // so the strip is unconditional; only the event is gated.
+        if let Some(agents) = &mut self.agents
+            && agents.profiles.take().is_some()
+            && crate::observability::telemetry_gate::is_enabled()
+        {
+            tracing::warn!(
+                event = "agent_profile.remote_refused",
+                reason = "remote_origin"
+            );
+        }
     }
 
     pub fn new(config_path: &str) -> Self {
@@ -1425,6 +1473,7 @@ chatter = false
                 git: _,
                 git_hooks: _,
                 skills: _,
+                agents: _,
                 drift: _,
                 maintenance: _,
                 telemetry: _,
@@ -1464,6 +1513,7 @@ chatter = false
             "git",
             "git_hooks",
             "skills",
+            "agents",
             "drift",
             "maintenance",
             "telemetry",
@@ -1572,6 +1622,68 @@ check_updates = true
         assert_eq!(
             cfg.maintenance.as_ref().unwrap().origin,
             crate::ai_hooks::ConfigOrigin::Remote
+        );
+    }
+
+    #[test]
+    fn test_agents_profiles_parsing() {
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+
+[agents.profiles]
+prefer = "client-a"
+strict = true
+"#;
+        let config: Config = toml::from_str(toml_str).expect("Failed to parse config");
+        let profiles = config
+            .agents
+            .as_ref()
+            .and_then(|a| a.profiles.as_ref())
+            .expect("[agents.profiles] should parse");
+        assert_eq!(profiles.prefer.as_deref(), Some("client-a"));
+        assert_eq!(profiles.strict, Some(true));
+    }
+
+    #[test]
+    fn test_agents_section_absent_parses_as_none() {
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+"#;
+        let config: Config = toml::from_str(toml_str).expect("Failed to parse config");
+        assert!(config.agents.is_none());
+    }
+
+    /// PRD-058 trust gate: a remote-origin config cannot pin an agent
+    /// profile (credential-redirection primitive). `mark_remote()`
+    /// strips the block; a Local config keeps it.
+    #[test]
+    fn mark_remote_strips_agent_profiles() {
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+
+[agents.profiles]
+prefer = "client-a"
+strict = false
+"#;
+        let mut remote: Config = toml::from_str(toml_str).unwrap();
+        remote.mark_remote();
+        assert_eq!(remote.origin, crate::ai_hooks::ConfigOrigin::Remote);
+        assert!(
+            remote.agents.as_ref().unwrap().profiles.is_none(),
+            "remote config must not retain [agents.profiles]"
+        );
+
+        let local: Config = toml::from_str(toml_str).unwrap();
+        assert!(
+            local
+                .agents
+                .as_ref()
+                .and_then(|a| a.profiles.as_ref())
+                .is_some(),
+            "local config keeps [agents.profiles]"
         );
     }
 

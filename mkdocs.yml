@@ -189,6 +189,7 @@ nav:
     - AI agent skills: skills.md
     - Skill optimization (SkillOpt): skill-optimization.md
     - Agent-driven wizard (PRD-056): wizard.md
+    - Agent profiles (PRD-058): agent-profiles.md
     - Library registry (PRD-054): library-registry.md
     - Tool auto-discovery (PRD-044): discover.md
     - Monorepo workspaces (PRD-047): workspace.md

@@ -290,12 +290,13 @@ mod tests {
         assert!(!ca_bundle_path_is_trusted("/var/tmp/x"));
     }
 
-    // `serial(jarvy_test_home)`: these tests call `jarvy_home()` twice
-    // (directly + inside the predicate); init.rs / maintenance::lock
-    // tests mutate `JARVY_TEST_HOME` concurrently, and a mid-test flip
-    // makes the two prefixes disagree.
+    // Dual serial keys: these tests call `jarvy_home()` twice (directly
+    // + inside the predicate). `jarvy_test_home` guards against init.rs /
+    // maintenance::lock tests flipping `JARVY_TEST_HOME`; `jarvy_home_env`
+    // guards against paths.rs / agent_profiles tests flipping `JARVY_HOME`.
+    // A mid-test flip of either makes the two prefixes disagree.
     #[test]
-    #[serial_test::serial(jarvy_test_home)]
+    #[serial_test::serial(jarvy_test_home, jarvy_home_env)]
     fn ca_bundle_path_under_jarvy_cache_is_refused() {
         // Round-2 P0: the cached body of a hostile remote `jarvy.toml`
         // lives at `~/.jarvy/cache/configs/<sha>.toml`. The broad
@@ -317,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial(jarvy_test_home)]
+    #[serial_test::serial(jarvy_test_home, jarvy_home_env)]
     fn ca_bundle_path_under_curated_ca_dir_is_trusted() {
         if std::env::var("JARVY_ALLOW_CUSTOM_CA").is_ok() {
             return;

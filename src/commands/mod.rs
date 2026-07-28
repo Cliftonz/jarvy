@@ -43,6 +43,7 @@ pub mod upgrade;
 pub mod validate;
 
 // New command modules extracted from main.rs (PRD-037)
+pub mod agents_profile_cmd;
 pub mod ai_hooks_cmd;
 pub mod bootstrap_cmd;
 pub mod check_updates_cmd;
@@ -102,6 +103,7 @@ pub use upgrade::*;
 pub use validate::*;
 
 // Re-exports for new command modules
+pub use agents_profile_cmd::*;
 pub use ai_hooks_cmd::*;
 pub use bootstrap_cmd::*;
 pub use ci_cmd::*;

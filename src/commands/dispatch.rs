@@ -308,6 +308,7 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
         Some(Commands::McpRegister { action, file }) => commands::run_mcp_register(action, file),
         Some(Commands::Hooks { action, file }) => commands::run_hooks(action, file),
         Some(Commands::Skills { action, file }) => commands::run_skills(action, file),
+        Some(Commands::Agents { action }) => commands::run_agents_profile(action),
         Some(Commands::Wizard {
             agent,
             skill_only,

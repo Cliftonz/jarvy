@@ -648,6 +648,12 @@ pub enum Commands {
         #[clap(short, long, default_value = "./jarvy.toml")]
         file: String,
     },
+    /// Manage AI agent profiles (PRD-058): snapshot and switch whole
+    /// per-agent config dirs (credentials, settings, skills, MCP)
+    Agents {
+        #[clap(subcommand)]
+        action: AgentsAction,
+    },
     /// Agent-driven setup: hand the project to your local AI agent (Claude Code,
     /// Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to
     /// `jarvy quickstart` when no agent is installed.
@@ -771,5 +777,142 @@ pub fn parse_install_method(s: &str) -> Option<update::InstallMethod> {
             eprintln!("Unknown install method '{}'. Auto-detecting.", s);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod agents_profile_parse_tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(argv: &[&str]) -> Cli {
+        Cli::try_parse_from(argv).expect("argv should parse")
+    }
+
+    #[test]
+    fn parses_profile_init() {
+        let cli = parse(&["jarvy", "agents", "profile", "init"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Agents {
+                action: AgentsAction::Profile {
+                    action: ProfileAction::Init {}
+                }
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_profile_create_with_from_and_agents() {
+        let cli = parse(&[
+            "jarvy",
+            "agents",
+            "profile",
+            "create",
+            "work",
+            "--from",
+            "default",
+            "--agents",
+            "claude-code,codex",
+        ]);
+        let Some(Commands::Agents {
+            action:
+                AgentsAction::Profile {
+                    action: ProfileAction::Create { name, from, agents },
+                },
+        }) = cli.command
+        else {
+            panic!("expected agents profile create");
+        };
+        assert_eq!(name, "work");
+        assert_eq!(from.as_deref(), Some("default"));
+        assert_eq!(agents.as_deref(), Some("claude-code,codex"));
+    }
+
+    #[test]
+    fn parses_profile_use_with_flags() {
+        let cli = parse(&[
+            "jarvy",
+            "agents",
+            "profile",
+            "use",
+            "work",
+            "--print-env",
+            "--global",
+        ]);
+        let Some(Commands::Agents {
+            action:
+                AgentsAction::Profile {
+                    action:
+                        ProfileAction::Use {
+                            name,
+                            agents,
+                            global,
+                            print_env,
+                        },
+                },
+        }) = cli.command
+        else {
+            panic!("expected agents profile use");
+        };
+        assert_eq!(name, "work");
+        assert!(agents.is_none());
+        assert!(global);
+        assert!(print_env);
+    }
+
+    #[test]
+    fn parses_profile_list_and_status_format_flags() {
+        let cli = parse(&["jarvy", "agents", "profile", "list", "--format", "json"]);
+        let Some(Commands::Agents {
+            action:
+                AgentsAction::Profile {
+                    action: ProfileAction::List { output_format },
+                },
+        }) = cli.command
+        else {
+            panic!("expected agents profile list");
+        };
+        assert_eq!(output_format, "json");
+
+        // Short flag + default mirror the SkillsAction convention.
+        let cli = parse(&["jarvy", "agents", "profile", "status", "-F", "json"]);
+        let Some(Commands::Agents {
+            action:
+                AgentsAction::Profile {
+                    action: ProfileAction::Status { output_format },
+                },
+        }) = cli.command
+        else {
+            panic!("expected agents profile status");
+        };
+        assert_eq!(output_format, "json");
+
+        let cli = parse(&["jarvy", "agents", "profile", "status"]);
+        let Some(Commands::Agents {
+            action:
+                AgentsAction::Profile {
+                    action: ProfileAction::Status { output_format },
+                },
+        }) = cli.command
+        else {
+            panic!("expected agents profile status");
+        };
+        assert_eq!(output_format, "pretty");
+    }
+
+    #[test]
+    fn parses_profile_delete() {
+        let cli = parse(&["jarvy", "agents", "profile", "delete", "old"]);
+        let Some(Commands::Agents {
+            action:
+                AgentsAction::Profile {
+                    action: ProfileAction::Delete { name },
+                },
+        }) = cli.command
+        else {
+            panic!("expected agents profile delete");
+        };
+        assert_eq!(name, "old");
     }
 }

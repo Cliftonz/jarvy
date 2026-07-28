@@ -111,16 +111,13 @@ impl SkillError {
 /// Refuse anything that could traverse outside that root: path
 /// separators, `..`, empty names, and leading dots (which would let a
 /// crafted name overwrite dotfiles like `.jarvy-skill.json` itself).
+/// Delegates to the shared single-path-component grammar in
+/// `paths::validate_component_name` (PRD-058 generalized it for
+/// agent-profile names), which additionally refuses control bytes and
+/// names over 64 bytes.
 fn validate_skill_name(name: &str) -> Result<(), SkillError> {
-    let bad = name.is_empty()
-        || name.starts_with('.')
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains("..");
-    if bad {
-        return Err(SkillError::InvalidName(name.to_string()));
-    }
-    Ok(())
+    crate::paths::validate_component_name(name)
+        .map_err(|_| SkillError::InvalidName(name.to_string()))
 }
 
 #[derive(Debug, Clone)]

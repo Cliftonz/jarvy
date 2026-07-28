@@ -35,6 +35,21 @@ pub enum Agent {
     Continue = 5,
 }
 
+/// How a profile switch is delivered for an agent (PRD-058).
+///
+/// `#[non_exhaustive]` because v1.1 adds a `GlobalStorage` tier for the
+/// VS Code-family agents (IDE user-data `globalStorage` slice swap).
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileMechanism {
+    /// The agent honors an official env var pointing at an alternate
+    /// config dir — per-terminal switching, nothing global changes.
+    Env { var: &'static str },
+    /// The agent's config dir is swapped globally by re-pointing a
+    /// symlink at `~/.{agent}` into the profile store.
+    Symlink,
+}
+
 impl Agent {
     /// Every variant in stable order. Used by setup loops, agent-flag
     /// completion, and as the iteration source for fixed-size-array
@@ -108,6 +123,33 @@ impl Agent {
         })
     }
 
+    /// Profile-switching mechanism(s) for this agent (PRD-058).
+    ///
+    /// Claude Code and Codex honor official config-dir env vars
+    /// (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), so two terminals can run
+    /// different profiles simultaneously. The rest only support a
+    /// global symlink swap of the config dir itself.
+    pub fn profile_mechanisms(self) -> &'static [ProfileMechanism] {
+        match self {
+            Agent::ClaudeCode => &[ProfileMechanism::Env {
+                var: "CLAUDE_CONFIG_DIR",
+            }],
+            Agent::Codex => &[ProfileMechanism::Env { var: "CODEX_HOME" }],
+            Agent::Cursor | Agent::Windsurf | Agent::Cline | Agent::Continue => {
+                &[ProfileMechanism::Symlink]
+            }
+        }
+    }
+
+    /// Whether profile switching is supported for this agent in the
+    /// PRD-058 v1 slice: the two env-tier agents plus cursor's symlink
+    /// swap. The remaining symlink-tier agents wait for the v1.1
+    /// globalStorage transaction (their dotdir alone is not the whole
+    /// profile).
+    pub fn profile_switchable_v1(self) -> bool {
+        matches!(self, Agent::ClaudeCode | Agent::Codex | Agent::Cursor)
+    }
+
     /// Where skills land for this agent.
     pub fn skills_dir(self) -> Option<PathBuf> {
         self.config_dir().map(|p| p.join("skills"))
@@ -128,8 +170,10 @@ impl std::fmt::Display for Agent {
 
 /// Honors `JARVY_HOME` for tests; otherwise standard `HOME` /
 /// `USERPROFILE` lookup. Mirrors the prior helper that lived in
-/// `skills::agents`.
-fn home_dir() -> Option<PathBuf> {
+/// `skills::agents`. `pub(crate)` so `agent_profiles::switcher` can
+/// enforce its stays-under-home boundary against the same root that
+/// produced `config_dir()`.
+pub(crate) fn home_dir() -> Option<PathBuf> {
     if let Some(v) = std::env::var_os("JARVY_HOME") {
         return Some(PathBuf::from(v));
     }
@@ -169,6 +213,38 @@ mod tests {
         assert!(!Agent::Windsurf.supports_project_scope());
         assert!(!Agent::Cline.supports_project_scope());
         assert!(!Agent::Continue.supports_project_scope());
+    }
+
+    #[test]
+    fn profile_mechanisms_match_prd_058_table() {
+        assert_eq!(
+            Agent::ClaudeCode.profile_mechanisms(),
+            &[ProfileMechanism::Env {
+                var: "CLAUDE_CONFIG_DIR"
+            }]
+        );
+        assert_eq!(
+            Agent::Codex.profile_mechanisms(),
+            &[ProfileMechanism::Env { var: "CODEX_HOME" }]
+        );
+        for agent in [
+            Agent::Cursor,
+            Agent::Windsurf,
+            Agent::Cline,
+            Agent::Continue,
+        ] {
+            assert_eq!(agent.profile_mechanisms(), &[ProfileMechanism::Symlink]);
+        }
+    }
+
+    #[test]
+    fn profile_switchable_v1_matches_phasing() {
+        assert!(Agent::ClaudeCode.profile_switchable_v1());
+        assert!(Agent::Codex.profile_switchable_v1());
+        assert!(Agent::Cursor.profile_switchable_v1());
+        assert!(!Agent::Windsurf.profile_switchable_v1());
+        assert!(!Agent::Cline.profile_switchable_v1());
+        assert!(!Agent::Continue.profile_switchable_v1());
     }
 
     #[test]
