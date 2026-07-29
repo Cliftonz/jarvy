@@ -381,6 +381,18 @@ fn copy_tree_inner(
             }
         } else if ft.is_dir() {
             copy_tree_inner(&from, &to, snapshot_root, agent_slug)?;
+        } else if !ft.is_file() {
+            // Sockets / FIFOs / device nodes are live IPC endpoints, not
+            // config (e.g. `~/.codex/ipc/ipc.sock`). `fs::copy` fails on
+            // them with ENOTSUP, which would abort the whole snapshot.
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::debug!(
+                    event = "agent_profile.special_file_skipped",
+                    agent = agent_slug,
+                    kind = special_file_kind(&ft),
+                    "skipped non-regular file during snapshot copy",
+                );
+            }
         } else {
             fs::copy(&from, &to)?;
             // Use symlink_metadata (via entry.metadata()) for the already-
@@ -391,6 +403,30 @@ fn copy_tree_inner(
         }
     }
     Ok(())
+}
+
+/// Bounded telemetry label for a skipped non-regular file. Paths are not
+/// emitted — filenames inside an agent config dir are user content.
+fn special_file_kind(ft: &std::fs::FileType) -> &'static str {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        if ft.is_socket() {
+            return "socket";
+        }
+        if ft.is_fifo() {
+            return "fifo";
+        }
+        if ft.is_block_device() {
+            return "block_device";
+        }
+        if ft.is_char_device() {
+            return "char_device";
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = ft;
+    "other"
 }
 
 /// Return `true` when the symlink at `link` (inside `source_root`) has a
@@ -733,6 +769,33 @@ mod tests {
             "deep"
         );
         assert!(snap.join("empty").is_dir(), "empty dirs must be preserved");
+    }
+
+    /// A live agent leaves IPC endpoints in its config dir (codex keeps
+    /// `ipc/ipc.sock`). `fs::copy` returns ENOTSUP on those, which used
+    /// to abort the whole snapshot mid-copy.
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn snapshot_skips_sockets_instead_of_failing() {
+        let _home = JarvyHomeGuard::new();
+        let src = Agent::ClaudeCode.config_dir().unwrap();
+        fs::create_dir_all(src.join("ipc")).unwrap();
+        fs::write(src.join("settings.json"), "{}").unwrap();
+        std::os::unix::net::UnixListener::bind(src.join("ipc/ipc.sock")).unwrap();
+
+        snapshot_agent(Agent::ClaudeCode, "live", SnapshotMode::Copy).unwrap();
+
+        let snap = profile_dir("live").unwrap().join("claude-code");
+        assert_eq!(
+            fs::read_to_string(snap.join("settings.json")).unwrap(),
+            "{}"
+        );
+        assert!(
+            !snap.join("ipc/ipc.sock").exists(),
+            "socket must be skipped, not recreated"
+        );
+        assert!(snap.join("ipc").is_dir(), "its parent dir still snapshots");
     }
 
     #[test]
