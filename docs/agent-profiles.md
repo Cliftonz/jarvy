@@ -13,7 +13,7 @@ registrations — in one config directory, so "switching identity" today
 means shuffling directories by hand.
 
 `jarvy agents profile` makes those identities first-class: a **profile**
-is a named snapshot of each agent's entire config directory, stored under
+is a named snapshot of each agent's config directory, stored under
 `~/.jarvy/agent-profiles/<profile>/<agent>/`, switchable per terminal or
 globally.
 
@@ -40,7 +40,7 @@ with git-based profile sync and IDE globalStorage handling.
 ## Commands
 
 ```
-jarvy agents profile init                     # snapshot installed agents as 'default'
+jarvy agents profile init   [--agents a,b]    # snapshot installed agents as 'default'
 jarvy agents profile create <name> [--from <src>] [--agents a,b]
 jarvy agents profile use <name> [--agents a,b] [--global] [--print-env]
 jarvy agents profile list   [--format json|pretty]
@@ -55,6 +55,31 @@ it as the default. Env-tier agents are **copied** (the live directory
 keeps working untouched); symlink-tier agents are **moved** into the
 store with a symlink left at the original path. Idempotent — re-running
 skips agents that are already managed.
+
+`--agents claude-code,codex` narrows the snapshot. Use it when a
+symlink-tier editor is open: that tier *moves* the live config directory,
+which a running IDE will not appreciate.
+
+## What a profile does and does not contain
+
+A profile carries **identity**: credentials, `settings.json` /
+`config.toml`, `CLAUDE.md` / `AGENTS.md`, skills, MCP registrations,
+plugin selections.
+
+It deliberately skips what an agent directory merely accumulates —
+conversation transcripts (`~/.claude/projects`), re-downloadable package,
+extension and marketplace trees (`~/.codex/packages`,
+`~/.cursor/extensions`, `~/.claude/plugins/cache`), log databases and
+scratch space. On one real machine that is the difference between 2.3 GB
+and 2.9 MB per profile, and it stops `create --from` cloning one
+identity's conversation history into another.
+
+The rule set (`src/agent_profiles/exclude.rs`) is a denylist: a file
+jarvy does not recognize is **kept**. A profile being larger than
+necessary is a nuisance; a profile silently missing config you rely on is
+a bug. Live IPC endpoints such as `~/.codex/ipc/ipc.sock` are skipped by
+file type — they are not copyable, and one of them used to fail the whole
+snapshot.
 
 ### `use`
 

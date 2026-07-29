@@ -10,6 +10,22 @@ gated telemetry, and the ticket-bundle exclusion all landed on the
 windsurf/cline/continue switching, the `prefer` setup hint) is
 unstarted — see Phasing.
 
+**Amended (2026-07-29), from dogfooding against a real home dir.**
+"Snapshot the whole config dir" turned out to be unshippable as
+written: `~/.claude` + `~/.codex` + `~/.cursor` measured 2.6 GB
+against roughly 2 MB of actual identity, so every profile was a
+multi-gigabyte copy and `create --from` cloned one identity's
+conversation history into another. `src/agent_profiles/exclude.rs`
+now denylists the non-identity bulk (transcripts, re-fetchable
+package / extension / marketplace trees, log DBs, scratch), taking
+this machine's `default` profile from 2.3 GB / 15 s to 2.9 MB /
+0.9 s. Denylist rather than allowlist so an unrecognized new file is
+kept — an oversized profile is a nuisance, a profile silently
+missing config is a bug. Two other real-world defects surfaced the
+same way: `fs::copy` aborts the entire snapshot on the live
+`~/.codex/ipc/ipc.sock`, and `init` needed `--agents` because the
+symlink tier moves a config dir out from under a running editor.
+
 ## Prior art
 
 - [Mamdouh66/claude-switch](https://github.com/Mamdouh66/claude-switch) —

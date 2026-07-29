@@ -64,6 +64,20 @@ for divergences from generic release skills.
   credential-redirection primitive. `jarvy ticket create` bundles
   exclude `agent-profiles/` entirely, and the ticket env allowlist
   omits `CLAUDE_CONFIG_DIR` / `CODEX_HOME`.
+- **Identity-only snapshots** — a profile captures credentials,
+  settings, skills, MCP registrations and plugin selections, and
+  skips what an agent dir merely accumulates: conversation
+  transcripts, re-fetchable package / extension / marketplace
+  trees, log databases and scratch. On a real machine that is the
+  difference between 2.3 GB and 2.9 MB per profile. The rule set is
+  a denylist, so an unrecognized new file is kept rather than
+  silently dropped, and it applies only to copies — the cross-device
+  move fallback deletes its source, so it never filters. Live IPC
+  endpoints (`~/.codex/ipc/ipc.sock`) are skipped by file type;
+  `fs::copy` fails on them and used to abort the whole snapshot.
+- **`init --agents <slugs>`** narrows the snapshot, so the env tier
+  can be captured while a symlink-tier editor is still open — the
+  symlink tier *moves* the live config dir out from under it.
 - **Telemetry** — new gated `agent_profile.*` event family. Profile
   *names* never reach telemetry; events carry counts and bounded
   agent slugs only.

@@ -114,7 +114,12 @@ fn snapshot_agent_at(
     remove_existing(&dest)?;
 
     match mode {
-        SnapshotMode::Copy => copy_tree(&src, &dest, agent.slug())?,
+        SnapshotMode::Copy => copy_tree(
+            &src,
+            &dest,
+            agent.slug(),
+            super::exclude::excluded_paths(agent),
+        )?,
         SnapshotMode::Move => {
             if fs::rename(&src, &dest).is_err() {
                 // Cross-device rename (EXDEV) — delegate to the extracted
@@ -142,7 +147,8 @@ pub fn create_profile(name: &str, from: Option<&str>) -> Result<PathBuf, Profile
             }
             // `src_name` is a profile dir being copied, not an agent dir;
             // use a placeholder slug for the symlink-safety check.
-            copy_tree(&src, &pdir, "<profile>")?;
+            // The source is an existing snapshot, already filtered.
+            copy_tree(&src, &pdir, "<profile>", &[])?;
             // copy_tree preserved the source dir's mode; force 0700
             // regardless — the store invariant beats fidelity here.
             crate::paths::ensure_dir_0700_with_event(&pdir, Some("agent_profile.perms_unsafe"))?;
@@ -322,7 +328,10 @@ fn move_dir_cross_device(src: &Path, dst: &Path, agent: Agent) -> std::io::Resul
             agent = agent.slug(),
         );
     }
-    copy_tree(src, dst, agent.slug())?;
+    // No exclusions: this stands in for a rename, and the source is
+    // deleted below — anything skipped here would be destroyed, not
+    // merely left behind.
+    copy_tree(src, dst, agent.slug(), &[])?;
     if let Err(e) = fs::remove_dir_all(src) {
         if crate::observability::telemetry_gate::is_enabled() {
             tracing::warn!(
@@ -343,9 +352,12 @@ fn move_dir_cross_device(src: &Path, dst: &Path, agent: Agent) -> std::io::Resul
 /// this agent). Hostile absolute or escaping links are skipped and
 /// emitted as `agent_profile.symlink_skipped` events.
 ///
-/// `agent_slug` is passed in for telemetry only.
-fn copy_tree(src: &Path, dst: &Path, agent_slug: &str) -> std::io::Result<()> {
-    copy_tree_inner(src, dst, src, agent_slug)
+/// `agent_slug` is passed in for telemetry only. `excludes` names paths
+/// that carry no identity (transcripts, package trees, log DBs) — see
+/// `super::exclude`; profile-to-profile copies pass an empty list since
+/// the source snapshot was already filtered.
+fn copy_tree(src: &Path, dst: &Path, agent_slug: &str, excludes: &[&str]) -> std::io::Result<()> {
+    copy_tree_inner(src, dst, src, agent_slug, excludes)
 }
 
 fn copy_tree_inner(
@@ -353,6 +365,7 @@ fn copy_tree_inner(
     dst: &Path,
     snapshot_root: &Path,
     agent_slug: &str,
+    excludes: &[&str],
 ) -> std::io::Result<()> {
     fs::create_dir_all(dst)?;
     // Use the metadata already available for `src` to set dst perms.
@@ -366,6 +379,20 @@ fn copy_tree_inner(
         let ft = entry.file_type()?; // never follows symlinks
         let from = entry.path();
         let to = dst.join(entry.file_name());
+        if !excludes.is_empty()
+            && let Ok(rel) = from.strip_prefix(snapshot_root)
+            && let Some(rel) = rel.to_str()
+            && super::exclude::is_excluded(&rel.replace('\\', "/"), excludes)
+        {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::debug!(
+                    event = "agent_profile.path_excluded",
+                    agent = agent_slug,
+                    "skipped non-identity path during snapshot copy",
+                );
+            }
+            continue;
+        }
         if ft.is_symlink() {
             // Finding B: refuse symlinks that are absolute or that escape
             // the snapshot source root (lexical check, no canonicalize).
@@ -380,7 +407,7 @@ fn copy_tree_inner(
                 );
             }
         } else if ft.is_dir() {
-            copy_tree_inner(&from, &to, snapshot_root, agent_slug)?;
+            copy_tree_inner(&from, &to, snapshot_root, agent_slug, excludes)?;
         } else if !ft.is_file() {
             // Sockets / FIFOs / device nodes are live IPC endpoints, not
             // config (e.g. `~/.codex/ipc/ipc.sock`). `fs::copy` fails on
@@ -769,6 +796,34 @@ mod tests {
             "deep"
         );
         assert!(snap.join("empty").is_dir(), "empty dirs must be preserved");
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn snapshot_drops_transcripts_but_keeps_config() {
+        let _home = JarvyHomeGuard::new();
+        let src = Agent::ClaudeCode.config_dir().unwrap();
+        fs::create_dir_all(src.join("projects/repo")).unwrap();
+        fs::write(src.join("projects/repo/session.jsonl"), "transcript").unwrap();
+        fs::create_dir_all(src.join("plugins/cache/x")).unwrap();
+        fs::write(src.join("plugins/cache/x/blob"), "clone").unwrap();
+        fs::create_dir_all(src.join("plugins")).unwrap();
+        fs::write(src.join("plugins/installed_plugins.json"), "{}").unwrap();
+        fs::write(src.join("settings.json"), "{}").unwrap();
+
+        snapshot_agent(Agent::ClaudeCode, "lean", SnapshotMode::Copy).unwrap();
+
+        let snap = profile_dir("lean").unwrap().join("claude-code");
+        assert!(snap.join("settings.json").is_file());
+        assert!(
+            snap.join("plugins/installed_plugins.json").is_file(),
+            "the identity half of plugins/ must survive"
+        );
+        assert!(
+            !snap.join("projects").exists(),
+            "transcripts must be skipped"
+        );
+        assert!(!snap.join("plugins/cache").exists());
     }
 
     /// A live agent leaves IPC endpoints in its config dir (codex keeps

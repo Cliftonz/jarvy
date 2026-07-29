@@ -16,6 +16,7 @@
 //! The CLI surface (`jarvy agents profile ...`) lives in
 //! `commands::agents_profile_cmd`; this module is the library core.
 
+pub mod exclude;
 pub mod status;
 pub mod store;
 pub mod switcher;
