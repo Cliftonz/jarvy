@@ -27,9 +27,56 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [Unreleased] — tool freshness advisory (PRD-057)
+## [Unreleased] — agent profile switcher (PRD-058), tool freshness advisory (PRD-057)
 
-**Features:**
+**Features — agent profile switcher (PRD-058 v1):**
+
+- **`jarvy agents profile {init,create,use,list,status,delete}`** —
+  named profiles that snapshot an AI agent's *whole* config dir
+  (credentials, settings, skills, MCP registrations, memory) into
+  `~/.jarvy/agent-profiles/<profile>/<agent-slug>/`, so a work
+  account and a personal account no longer mean logging out and
+  back in. Store is 0700 with a chmod read-back verify; file modes
+  are preserved so credentials keep their original 0600.
+  See `docs/agent-profiles.md`.
+- **Two switching tiers**, declared per agent on the canonical
+  `agents::Agent` enum so a new variant lands everywhere at once:
+  *env tier* (claude-code → `CLAUDE_CONFIG_DIR`, codex →
+  `CODEX_HOME`) switches per-terminal — two shells can run
+  different profiles at once — and *symlink tier* (cursor)
+  re-points `~/.cursor` atomically via sibling temp link plus
+  rename-over, with a `mklink /J` junction fallback on Windows.
+  `use --print-env` keeps stdout pure for `eval`; human text goes
+  to stderr and paths are escaped.
+- **`jp` shell shorthand** in the existing `jarvy shell-init`
+  snippet — bare `jp` lists profiles, `jp <name>` evals the env
+  exports. Same nushell materialization path as `jr`.
+- **Refusals over clobbering**, matching the git-hooks installer's
+  posture: a real directory where a managed symlink belongs is
+  `UnmanagedDir` (checked with `symlink_metadata`, never
+  followed — the agent reinstalled itself), a target canonicalizing
+  outside `$HOME` is `EscapesHome`, and deleting a profile that a
+  live symlink or registry entry still points into is
+  `ActiveProfileDelete`.
+- **Trust boundaries** — `[agents.profiles]` is stripped outright
+  from remote-fetched configs (`Config::mark_remote`), since a
+  hostile config suggesting a profile switch is a
+  credential-redirection primitive. `jarvy ticket create` bundles
+  exclude `agent-profiles/` entirely, and the ticket env allowlist
+  omits `CLAUDE_CONFIG_DIR` / `CODEX_HOME`.
+- **Telemetry** — new gated `agent_profile.*` event family. Profile
+  *names* never reach telemetry; events carry counts and bounded
+  agent slugs only.
+
+Known v1 limits: windsurf / cline / continue snapshot but are not
+yet switchable; there is no `save` verb, no drift detection, and no
+git-backed sync between machines (all v1.1). `[agents.profiles]
+prefer` parses but is not yet acted on at setup time. `jarvy skills
+install` and `jarvy mcp register` still write to an agent's default
+config path rather than the env-redirected profile of the calling
+terminal.
+
+**Features — tool freshness advisory (PRD-057):**
 
 - **`jarvy check-updates`** and a companion `[maintenance]` block —
   compares installed provisioner / `[cargo]` / `[npm]` / `[pip]` /

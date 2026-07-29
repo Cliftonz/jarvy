@@ -1,6 +1,6 @@
 ---
 title: "Tool registry (auto-generated) — Jarvy"
-description: "Every tool Jarvy knows how to install — 260 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
+description: "Every tool Jarvy knows how to install — 263 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
 tags:
   - reference
   - tools
@@ -12,7 +12,7 @@ tags:
     This page is generated from `jarvy tools --index` by `scripts/gen-docs.sh`. 
     Run that script after registering new tools.
 
-Jarvy currently ships **260 tools**. Reference one in your `jarvy.toml` by its **name**.
+Jarvy currently ships **263 tools**. Reference one in your `jarvy.toml` by its **name**.
 
 | Name | Command | macOS | Linux | Windows | Default hook | Depends on |
 |---|---|---|---|---|---|---|
@@ -47,6 +47,7 @@ Jarvy currently ships **260 tools**. Reference one in your `jarvy.toml` by its *
 | `cargo_nextest` | `cargo-nextest` | — | — | — |  | `rust` |
 | `cfn_lint` | `cfn-lint` | `brew: cfn-lint` | — | — |  | — |
 | `checkov` | `checkov` | `brew: checkov` | — | — |  | — |
+| `chezmoi` | `chezmoi` | `brew: chezmoi` | apt: `chezmoi`<br>dnf: `chezmoi`<br>pacman: `chezmoi`<br>apk: `chezmoi` | `winget: twpayne.chezmoi` |  | — |
 | `choose` | `choose` | `brew: choose-rust` | apt: `choose`<br>dnf: `choose`<br>pacman: `choose`<br>apk: `choose` | `winget: choose.choose` |  | — |
 | `cloudflared` | `cloudflared` | `brew: cloudflared` | — | `winget: Cloudflare.cloudflared` |  | — |
 | `cmake` | `cmake` | `brew: cmake` | apt: `cmake`<br>dnf: `cmake`<br>pacman: `cmake`<br>apk: `cmake` | `winget: Kitware.CMake` |  | — |
@@ -235,6 +236,7 @@ Jarvy currently ships **260 tools**. Reference one in your `jarvy.toml` by its *
 | `sqlite` | `sqlite3` | `brew: sqlite` | apt: `sqlite3`<br>dnf: `sqlite3`<br>pacman: `sqlite3`<br>apk: `sqlite3` | `winget: SQLite.SQLite` |  | — |
 | `starship` | `starship` | `brew: starship` | apt: `starship`<br>dnf: `starship`<br>pacman: `starship`<br>apk: `starship` | `winget: Starship.Starship` | ✓ | — |
 | `stern` | `stern` | `brew: stern` | apt: `stern`<br>dnf: `stern`<br>pacman: `stern`<br>apk: `stern` | `winget: stern.stern` |  | `kubectl` |
+| `stow` | `stow` | `brew: stow` | apt: `stow`<br>dnf: `stow`<br>pacman: `stow`<br>apk: `stow` | — |  | — |
 | `structurizr` | `structurizr` | `brew: structurizr` | — | — |  | — |
 | `syft` | `syft` | `brew: syft` | apk: `syft` | `choco: syft` |  | — |
 | `tailscale` | `tailscale` | `brew: tailscale` | — | `winget: Tailscale.Tailscale` |  | — |
@@ -267,6 +269,7 @@ Jarvy currently ships **260 tools**. Reference one in your `jarvy.toml` by its *
 | `wget` | `wget` | `brew: wget` | apt: `wget`<br>dnf: `wget`<br>pacman: `wget`<br>apk: `wget` | `winget: GnuWin32.Wget` |  | — |
 | `wireguard_tools` | `wg` | `brew: wireguard-tools` | apt: `wireguard-tools`<br>dnf: `wireguard-tools`<br>pacman: `wireguard-tools`<br>apk: `wireguard-tools` | `winget: WireGuard.WireGuard` |  | — |
 | `xz` | `xz` | `brew: xz` | apt: `xz`<br>dnf: `xz`<br>pacman: `xz`<br>apk: `xz` | `winget: XZUtils.XZ` |  | — |
+| `yadm` | `yadm` | `brew: yadm` | apt: `yadm`<br>dnf: `yadm`<br>pacman: `yadm`<br>apk: `yadm` | — |  | — |
 | `yamllint` | `yamllint` | `brew: yamllint` | apt: `yamllint`<br>dnf: `yamllint`<br>pacman: `yamllint`<br>apk: `py3-yamllint` | `winget: adrienverge.yamllint` |  | — |
 | `yarn` | `yarn` | `brew: yarn` | — | `winget: Yarn.Yarn` |  | — |
 | `yazi` | `yazi` | `brew: yazi` | apt: `yazi`<br>dnf: `yazi`<br>pacman: `yazi`<br>apk: `yazi` | `winget: sxyazi.yazi` |  | — |

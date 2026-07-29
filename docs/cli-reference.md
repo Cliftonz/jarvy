@@ -31,55 +31,56 @@ Run without a subcommand to use the interactive menu.
 Usage: jarvy [COMMAND]
 
 Commands:
-  setup         Set up the environment based on the configuration file
-  bootstrap     Perform a minimal machine bootstrap (base requirements only, no dev tooling)
-  configure     Generate a default jarvy.toml configuration in the current directory
-  get           Display configured tools vs what is actually installed
-  tools         List all supported tools or output the tool index
-  env           Manage environment variables from jarvy.toml
-  ci-config     Generate CI configuration files for various providers
-  ci-info       Show detected CI environment information
-  context       Show the current execution context (workspace root, member, resolved config path) so you can sanity-check what jarvy would do from this directory. Read-only
-  library       Inspect / clean the shared library-registry cache (PRD-054 phase 6)
-  workspace     Inspect a monorepo workspace defined by `[workspace]` in jarvy.toml (PRD-047)
-  discover      Scan the project for tooling and suggest a jarvy.toml (PRD-044)
-  services      Manage project services (docker-compose, tilt)
-  doctor        Diagnose environment issues, check tool health, and verify PATH
-  diff          Preview changes before running setup (dry-run)
-  export        Generate jarvy.toml from currently installed tools
-  upgrade       Upgrade tools to their latest versions
-  init          Create a new jarvy.toml configuration file interactively
-  search        Search available tools that Jarvy can install
-  validate      Validate a jarvy.toml configuration file
-  completions   Generate shell completions
-  templates     Browse and use pre-built configuration templates
-  registry      Sync + inspect the remote tool registry configured in ~/.jarvy/config.toml [registry]
-  telemetry     Manage telemetry settings (OTEL endpoint, signals)
-  mcp           Start the MCP (Model Context Protocol) server for LLM integration
-  diagnose      Deep diagnosis for a specific tool - check installation, dependencies, and health
-  team          Manage team configuration sources for shared configs
-  roles         Manage role-based configurations (list, show, diff)
-  lock          Manage version lock files for reproducible environments
-  config        Manage configuration inheritance and remote configs
-  quickstart    Guided quickstart experience for new users
-  update        Check for and install Jarvy updates
-  check-updates Check installed tools against upstream latest versions (PRD-057). Advisory only — never blocks setup. See docs/maintenance.md
-  drift         Detect configuration drift in the environment
-  logs          View and manage log files
-  ticket        Generate debug tickets for support
-  shell-init    Output shell initialization snippet for RC files. Print a shell snippet (defines `jr`, runs `jarvy ensure`) for your rc file, or wire it up directly with --apply
-  ensure        Ensure base tools are installed (lightweight check for shell startup). Reads tool list from [shell_init] in ~/.jarvy/config.toml
-  explain       Get detailed information about a specific tool
-  audit         Run security scanners and produce a unified audit report
-  migrate       Check jarvy.toml for deprecated patterns and suggest migrations
-  schema        Output the JSON Schema for jarvy.toml (for editor autocomplete)
-  ai-hooks      Manage AI agent hooks (Claude Code / Cursor / Codex / Windsurf / Cline / Continue)
-  mcp-register  Register the Jarvy MCP server with terminal AI agents
-  hooks         Manage git hook frameworks (pre-commit, husky, lefthook)
-  skills        Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
-  wizard        Agent-driven setup: hand the project to your local AI agent (Claude Code, Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to `jarvy quickstart` when no agent is installed
-  run           Run a named command from `[commands]` in jarvy.toml (npm-run style). Lifecycle hooks run around it when defined: `pre<name>`/`pre:<name>` before, `post<name>`/`post:<name>` after (post only on success; extra `--` args go to the main command only). With no name, lists the available commands
-  help          Print this message or the help of the given subcommand(s)
+  setup          Set up the environment based on the configuration file
+  bootstrap      Perform a minimal machine bootstrap (base requirements only, no dev tooling)
+  configure      Generate a default jarvy.toml configuration in the current directory
+  get            Display configured tools vs what is actually installed
+  tools          List all supported tools or output the tool index
+  env            Manage environment variables from jarvy.toml
+  ci-config      Generate CI configuration files for various providers
+  ci-info        Show detected CI environment information
+  context        Show the current execution context (workspace root, member, resolved config path) so you can sanity-check what jarvy would do from this directory. Read-only
+  library        Inspect / clean the shared library-registry cache (PRD-054 phase 6)
+  workspace      Inspect a monorepo workspace defined by `[workspace]` in jarvy.toml (PRD-047)
+  discover       Scan the project for tooling and suggest a jarvy.toml (PRD-044)
+  services       Manage project services (docker-compose, tilt)
+  doctor         Diagnose environment issues, check tool health, and verify PATH
+  diff           Preview changes before running setup (dry-run)
+  export         Generate jarvy.toml from currently installed tools
+  upgrade        Upgrade tools to their latest versions
+  init           Create a new jarvy.toml configuration file interactively
+  search         Search available tools that Jarvy can install
+  validate       Validate a jarvy.toml configuration file
+  completions    Generate shell completions
+  templates      Browse and use pre-built configuration templates
+  registry       Sync + inspect the remote tool registry configured in ~/.jarvy/config.toml [registry]
+  telemetry      Manage telemetry settings (OTEL endpoint, signals)
+  mcp            Start the MCP (Model Context Protocol) server for LLM integration
+  diagnose       Deep diagnosis for a specific tool - check installation, dependencies, and health
+  team           Manage team configuration sources for shared configs
+  roles          Manage role-based configurations (list, show, diff)
+  lock           Manage version lock files for reproducible environments
+  config         Manage configuration inheritance and remote configs
+  quickstart     Guided quickstart experience for new users
+  update         Check for and install Jarvy updates
+  check-updates  Check installed tools against upstream latest versions (PRD-057)
+  drift          Detect configuration drift in the environment
+  logs           View and manage log files
+  ticket         Generate debug tickets for support
+  shell-init     Output shell initialization snippet for RC files. Print a shell snippet (defines `jr`, runs `jarvy ensure`) for your rc file, or wire it up directly with --apply
+  ensure         Ensure base tools are installed (lightweight check for shell startup). Reads tool list from [shell_init] in ~/.jarvy/config.toml
+  explain        Get detailed information about a specific tool
+  audit          Run security scanners and produce a unified audit report
+  migrate        Check jarvy.toml for deprecated patterns and suggest migrations
+  schema         Output the JSON Schema for jarvy.toml (for editor autocomplete)
+  ai-hooks       Manage AI agent hooks (Claude Code / Cursor / Codex / Windsurf / Cline / Continue)
+  mcp-register   Register the Jarvy MCP server with terminal AI agents
+  hooks          Manage git hook frameworks (pre-commit, husky, lefthook)
+  skills         Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
+  agents         Manage AI agent profiles (PRD-058): snapshot and switch whole per-agent config dirs (credentials, settings, skills, MCP)
+  wizard         Agent-driven setup: hand the project to your local AI agent (Claude Code, Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to `jarvy quickstart` when no agent is installed
+  run            Run a named command from `[commands]` in jarvy.toml (npm-run style). Lifecycle hooks run around it when defined: `pre<name>`/`pre:<name>` before, `post<name>`/`post:<name>` after (post only on success; extra `--` args go to the main command only). With no name, lists the available commands
+  help           Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help
@@ -427,6 +428,7 @@ Arguments:
 
 Options:
       --instructions  Show installation instructions
+  -v, --verbose       Restore INFO on the console (startup one-shots default to WARN — actionable warnings surface but INFO is suppressed on shell open)
   -h, --help          Print help
 ```
 
@@ -625,42 +627,20 @@ Options:
 ### `jarvy check-updates`
 
 ```text
-Check installed tools against upstream latest versions (PRD-057).
+Check installed tools against upstream latest versions (PRD-057)
 
 Usage: jarvy check-updates [OPTIONS]
 
 Options:
-  -f, --file <FILE>          Path to the configuration file [default: ./jarvy.toml]
-      --refresh              Bypass the cache and fetch fresh data from every backend
-      --background           Background refresh — write cache, exit silently. Used by
-                             setup to keep the check off the hot path. Implies --refresh
-      --only <ONLY>          Restrict the check to these tools (comma-separated)
-      --ignore <IGNORE>      Skip these tools even if they're in the config
-      --include-unchecked    Include version-manager / custom-install tools in the
-                             per-tool listing (default: rolled into a summary line)
-  -F, --format <FORMAT>      Output format: json, pretty [default: pretty]
-  -h, --help                 Print help
+  -f, --file <FILE>             Path to the configuration file [default: ./jarvy.toml]
+      --refresh                 Bypass the cache and fetch fresh data from every backend
+      --background              Background refresh — write cache, exit silently. Used by setup to keep the check off the hot path. Implies --refresh
+      --only <ONLY>             Restrict the check to these tools (comma-separated)
+      --ignore <IGNORE>         Skip these tools even if they're in the config
+      --include-unchecked       Include version-manager / custom-install tools in the per-tool listing (default: rolled into a summary line)
+  -F, --format <OUTPUT_FORMAT>  Output format: json, pretty [default: pretty]
+  -h, --help                    Print help
 ```
-
-Exit codes:
-
-| Code | Meaning |
-|------|---------|
-| `0` | No updates available (or trust-gate skipped) |
-| `1` | Updates available |
-| `2` | Config error |
-| `3` | Every configured tool's backend is unavailable |
-
-Never blocks setup, never auto-upgrades. `jarvy setup` reads the
-freshness cache (`~/.jarvy/update-cache.json`) with zero network
-work and spawns a detached background refresher so the *next*
-invocation's cache is warm. First-ever setup on a machine shows
-no summary because the cache is empty; run #2 onward shows it.
-
-Opt out with `[maintenance] check_updates = false` in `jarvy.toml`
-or `JARVY_CHECK_UPDATES=0` in the environment. See
-[docs/maintenance.md](maintenance.md) for the full model —
-backends, trust boundaries, and cache semantics.
 
 ### `jarvy drift`
 
@@ -727,6 +707,7 @@ Usage: jarvy shell-init [OPTIONS]
 Options:
       --shell <SHELL>  Shell type (bash, zsh, fish, sh, powershell, nushell). Auto-detected if not specified
       --apply          Write the loader line into your shell rc file (idempotent) instead of printing the snippet
+  -v, --verbose        Restore INFO on the console (startup one-shots default to WARN — actionable warnings surface but INFO is suppressed on shell open)
   -h, --help           Print help
 ```
 
@@ -739,8 +720,9 @@ Usage: jarvy ensure [OPTIONS]
 
 Options:
       --force       Force re-check, ignore stamp file
-  -q, --quiet       Suppress all output
+  -q, --quiet       Suppress this command's own stderr lines. Console tracing is already capped at WARN by default for startup one-shots
       --foreground  Run in foreground (override background default)
+  -v, --verbose     Restore INFO on the console (startup one-shots default to WARN — actionable warnings surface but INFO is suppressed on shell open)
   -h, --help        Print help
 ```
 
@@ -878,6 +860,21 @@ Commands:
 Options:
   -f, --file <FILE>  Path to the configuration file [default: ./jarvy.toml]
   -h, --help         Print help
+```
+
+### `jarvy agents`
+
+```text
+Manage AI agent profiles (PRD-058): snapshot and switch whole per-agent config dirs (credentials, settings, skills, MCP)
+
+Usage: jarvy agents <COMMAND>
+
+Commands:
+  profile  Manage named AI agent profiles (snapshot / switch whole config dirs)
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
 ```
 
 ### `jarvy wizard`
