@@ -228,21 +228,37 @@ jarvy_p delete scratch >/dev/null 2>&1 \
     && ok "scratch dir removed from disk" || bad "scratch dir survived delete"
 
 # ----------------------------------------------------------------------
-step "real-world cost projection (what init would copy on this machine)"
+step "exclusion effectiveness on this machine's live agent dirs"
 # ----------------------------------------------------------------------
-total=0
+live=0
 for d in "$HOME/.claude" "$HOME/.codex" "$HOME/.cursor"; do
-    if [[ -d "$d" ]]; then
-        kb=$(du -sk "$d" 2>/dev/null | cut -f1)
-        total=$((total + kb))
-        printf '  %-22s %s\n' "$(basename "$d")" "$(du -sh "$d" 2>/dev/null | cut -f1)"
+    if [[ -d "$d" || -L "$d" ]]; then
+        # Trailing slash dereferences the top-level path only, so a
+        # symlink-tier agent already pointing into the store still measures
+        # its content. Plain `-L` would also follow links *inside* the tree
+        # (e.g. ~/.codex/skills/find-skills), inflating the total 4x.
+        kb=$(du -sk "$d/" 2>/dev/null | cut -f1)
+        live=$((live + kb))
+        printf '  %-24s %s\n' "$(basename "$d") (live)" "$(du -sh "$d/" 2>/dev/null | cut -f1)"
     fi
 done
-seeded=$(du -sk "$SANDBOX" 2>/dev/null | cut -f1)
-printf '  %-22s %s MB\n' "TOTAL per profile" "$((total / 1024))"
-printf '  %-22s %s MB\n' "identity surface only" "$((seeded / 1024))"
-if [[ $seeded -gt 0 ]]; then
-    printf '  %-22s %sx\n' "copied / actually-needed" "$((total / seeded))"
+printf '  %-24s %s MB\n' "live total" "$((live / 1024))"
+
+# Compare against a real snapshot if the user has run `init` against their
+# own home. The sandbox store can't stand in for this: it is seeded with a
+# handful of files, so the denylist barely bites there.
+real_store="$HOME/.jarvy/agent-profiles"
+real_default="$real_store/$(
+    [[ -f "$real_store/profiles.json" ]] \
+        && sed -n 's/.*"default_profile": *"\([^"]*\)".*/\1/p' "$real_store/profiles.json" | head -1
+)"
+if [[ -d "$real_default" ]]; then
+    snap=$(du -sk "$real_default" 2>/dev/null | cut -f1)
+    printf '  %-24s %s MB\n' "snapshot on disk" "$((snap / 1024))"
+    [[ $snap -gt 0 ]] \
+        && printf '  %-24s %sx\n' "shrink factor" "$((live / snap))"
+else
+    printf '  %-24s (none — run: jarvy agents profile init)\n' "snapshot on disk"
 fi
 
 # ----------------------------------------------------------------------
