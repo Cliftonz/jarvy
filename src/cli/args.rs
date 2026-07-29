@@ -796,10 +796,32 @@ mod agents_profile_parse_tests {
             cli.command,
             Some(Commands::Agents {
                 action: AgentsAction::Profile {
-                    action: ProfileAction::Init {}
+                    action: ProfileAction::Init { agents: None }
                 }
             })
         ));
+    }
+
+    #[test]
+    fn parses_profile_init_with_agents() {
+        let cli = parse(&[
+            "jarvy",
+            "agents",
+            "profile",
+            "init",
+            "--agents",
+            "claude-code,codex",
+        ]);
+        let Some(Commands::Agents {
+            action:
+                AgentsAction::Profile {
+                    action: ProfileAction::Init { agents },
+                },
+        }) = cli.command
+        else {
+            panic!("expected profile init");
+        };
+        assert_eq!(agents.as_deref(), Some("claude-code,codex"));
     }
 
     #[test]

@@ -534,7 +534,12 @@ pub enum AgentsAction {
 #[derive(Subcommand)]
 pub enum ProfileAction {
     /// Snapshot every installed agent's current config as profile 'default'
-    Init {},
+    Init {
+        /// Comma-separated agent slugs to snapshot (default: all installed).
+        /// Narrow this to defer the symlink tier while its editor is open.
+        #[clap(long)]
+        agents: Option<String>,
+    },
     /// Create a new named profile, optionally seeded from an existing one
     Create {
         /// Profile name (single path component, no separators)

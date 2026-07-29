@@ -21,7 +21,7 @@ use crate::output::{Outputable, print_and_exit};
 pub fn run_agents_profile(action: &AgentsAction) -> i32 {
     match action {
         AgentsAction::Profile { action } => match action {
-            ProfileAction::Init {} => init_action(),
+            ProfileAction::Init { agents } => init_action(agents.as_deref()),
             ProfileAction::Create { name, from, agents } => {
                 create_action(name, from.as_deref(), agents.as_deref())
             }
@@ -41,8 +41,12 @@ pub fn run_agents_profile(action: &AgentsAction) -> i32 {
 // ---------------------------------------------------------------------------
 // init
 
-fn init_action() -> i32 {
+fn init_action(agents_raw: Option<&str>) -> i32 {
     let started = Instant::now();
+    let only = match parse_optional_agents(agents_raw) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
     // Ensure the 'default' profile dir exists even when no agents are
     // installed — an empty store must still be listable. Idempotent.
     if let Err(e) = agent_profiles::create_profile("default", None)
@@ -50,7 +54,7 @@ fn init_action() -> i32 {
     {
         return fail(&e);
     }
-    let snapshotted = match agent_profiles::init_snapshot("default") {
+    let snapshotted = match agent_profiles::init_snapshot("default", only.as_deref()) {
         Ok(agents) => agents,
         Err(e) => return fail(&e),
     };
@@ -743,7 +747,7 @@ mod tests {
     #[serial_test::serial(jarvy_home_env)]
     fn init_on_empty_home_creates_default_profile() {
         let _home = JarvyHomeGuard::new();
-        let code = run_agents_profile(&profile_cmd(ProfileAction::Init {}));
+        let code = run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None }));
         assert_eq!(code, 0);
 
         assert!(agent_profiles::profile_dir("default").unwrap().is_dir());
@@ -751,7 +755,10 @@ mod tests {
         assert_eq!(registry.default_profile.as_deref(), Some("default"));
 
         // Idempotent re-run.
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
     }
 
     #[test]
@@ -891,7 +898,10 @@ mod tests {
         let _home = JarvyHomeGuard::new();
         // Seed a live cursor dir, init so it's moved + linked back.
         std::fs::create_dir_all(Agent::Cursor.config_dir().unwrap()).unwrap();
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
 
         let code = run_agents_profile(&profile_cmd(ProfileAction::Delete {
             name: "default".into(),
@@ -977,7 +987,10 @@ mod tests {
         let live = Agent::ClaudeCode.config_dir().unwrap();
         std::fs::create_dir_all(&live).unwrap();
         std::fs::write(live.join("settings.json"), "v1").unwrap();
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
 
         let snap = agent_profiles::profile_dir("default")
             .unwrap()
@@ -986,7 +999,10 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&snap).unwrap(), "v1");
 
         // Unchanged live: second init leaves the snapshot content intact.
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
         assert_eq!(std::fs::read_to_string(&snap).unwrap(), "v1");
         // Live dir itself untouched (still a real dir with content).
         assert_eq!(
@@ -996,7 +1012,10 @@ mod tests {
 
         // Changed live: a third init re-captures the new content.
         std::fs::write(live.join("settings.json"), "v2").unwrap();
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
         assert_eq!(std::fs::read_to_string(&snap).unwrap(), "v2");
     }
 
@@ -1095,7 +1114,10 @@ mod tests {
         let _home = JarvyHomeGuard::new();
         // Seed cursor live dir so init can snapshot it.
         std::fs::create_dir_all(Agent::Cursor.config_dir().unwrap()).unwrap();
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
 
         // Create work + seed cursor snapshot.
         agent_profiles::create_profile("work", None).unwrap();
@@ -1113,7 +1135,10 @@ mod tests {
         assert_eq!(code, 0);
 
         // A second init should reconcile the registry from the live link.
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
 
         let registry = ProfileRegistry::load().unwrap();
         assert_eq!(
@@ -1137,7 +1162,10 @@ mod tests {
         let _home = JarvyHomeGuard::new();
         // Set up cursor live dir.
         std::fs::create_dir_all(Agent::Cursor.config_dir().unwrap()).unwrap();
-        assert_eq!(run_agents_profile(&profile_cmd(ProfileAction::Init {})), 0);
+        assert_eq!(
+            run_agents_profile(&profile_cmd(ProfileAction::Init { agents: None })),
+            0
+        );
 
         // Create and seed work profile.
         agent_profiles::create_profile("work", None).unwrap();

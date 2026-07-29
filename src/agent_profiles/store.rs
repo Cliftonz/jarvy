@@ -208,13 +208,20 @@ pub fn delete_profile(name: &str) -> Result<usize, ProfileError> {
 /// and a symlink is created back at the original path. Idempotent —
 /// an already-managed symlink-tier agent is skipped. Returns the
 /// agents that were snapshotted this run.
-pub fn init_snapshot(profile: &str) -> Result<Vec<Agent>, ProfileError> {
+///
+/// `only` narrows the set. The symlink tier *moves* the live config dir,
+/// so narrowing is the way to snapshot the env tier now and defer an
+/// agent whose editor is currently open.
+pub fn init_snapshot(profile: &str, only: Option<&[Agent]>) -> Result<Vec<Agent>, ProfileError> {
     // Compute store root once; snapshot_agent_at reuses it per agent
     // rather than re-running ensure_store_dirs() inside each call.
     let store_root = ensure_store_dirs()?;
     let pdir = profile_dir(profile)?;
     let mut snapshotted = Vec::new();
     for &agent in Agent::ALL {
+        if only.is_some_and(|list| !list.contains(&agent)) {
+            continue;
+        }
         let Some(src) = agent.config_dir() else {
             continue;
         };
@@ -531,7 +538,7 @@ mod tests {
         fs::create_dir_all(&cursor_dir).unwrap();
         fs::write(cursor_dir.join("mcp.json"), "{}").unwrap();
 
-        let done = init_snapshot("default").unwrap();
+        let done = init_snapshot("default", None).unwrap();
         assert!(done.contains(&Agent::Cursor));
 
         // Live path is now a symlink into the store...
@@ -543,7 +550,7 @@ mod tests {
         assert!(cursor_dir.join("mcp.json").exists());
 
         // Idempotent: a second init skips the managed agent.
-        let again = init_snapshot("default").unwrap();
+        let again = init_snapshot("default", None).unwrap();
         assert!(!again.contains(&Agent::Cursor));
     }
 
@@ -554,7 +561,7 @@ mod tests {
         let _home = JarvyHomeGuard::new();
         let cursor_dir = Agent::Cursor.config_dir().unwrap();
         fs::create_dir_all(&cursor_dir).unwrap();
-        init_snapshot("default").unwrap();
+        init_snapshot("default", None).unwrap();
 
         assert!(matches!(
             delete_profile("default"),
@@ -763,7 +770,7 @@ mod tests {
     #[serial_test::serial(jarvy_home_env)]
     fn init_snapshot_empty_home_is_empty_and_creates_no_agent_dirs() {
         let _home = JarvyHomeGuard::new();
-        let done = init_snapshot("default").unwrap();
+        let done = init_snapshot("default", None).unwrap();
         assert!(done.is_empty());
         // The store root exists (ensure_store_dirs), but no per-agent
         // snapshot dirs were materialized — not even the profile dir.
@@ -783,7 +790,7 @@ mod tests {
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join("settings.json"), "{\"k\":1}").unwrap();
 
-        let done = init_snapshot("default").unwrap();
+        let done = init_snapshot("default", None).unwrap();
         assert!(done.contains(&Agent::ClaudeCode));
 
         // Env tier is Copy: the live path stays a REAL directory (not a
