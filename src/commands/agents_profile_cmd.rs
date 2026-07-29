@@ -142,7 +142,17 @@ fn create_action(name: &str, from: Option<&str>, agents_raw: Option<&str>) -> i3
         Some(src) => {
             println!("Created profile '{name}' from '{src}' ({agent_count} agent snapshot(s)).")
         }
-        None => println!("Created empty profile '{name}'."),
+        None => {
+            println!("Created empty profile '{name}'.");
+            // Without `save` (v1.1) an empty profile has no route to
+            // becoming usable, so `use` would fail later with no hint
+            // that `--from` was the missing step.
+            eprintln!(
+                "Note: '{name}' holds no agent snapshots yet, so \
+                 `jarvy agents profile use {name}` will fail. Seed it with \
+                 `--from <existing>`."
+            );
+        }
     }
     emit_created(
         "create",

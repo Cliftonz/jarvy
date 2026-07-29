@@ -70,9 +70,12 @@ pub enum ProfileError {
     #[error("profile `{0}` already exists")]
     ProfileExists(String),
 
+    // Must not reference `save`: that verb is v1.1: see PRD-058 Phasing.
+    // Pointing at it strands the user on a command that does not exist.
     #[error(
-        "agent `{agent}` has no snapshot in profile `{profile}` — run \
-         `jarvy agents profile save {profile}` first"
+        "agent `{agent}` has no snapshot in profile `{profile}` — seed the \
+         profile with `jarvy agents profile create {profile} --from <existing>`, \
+         or run `jarvy agents profile init` to snapshot the live config"
     )]
     AgentNotSnapshotted { agent: String, profile: String },
 
@@ -202,6 +205,23 @@ pub(crate) mod test_support {
 mod tests {
     use super::test_support::JarvyHomeGuard;
     use super::*;
+
+    #[test]
+    fn agent_not_snapshotted_suggests_only_shipped_verbs() {
+        let msg = ProfileError::AgentNotSnapshotted {
+            agent: "claude-code".to_string(),
+            profile: "work".to_string(),
+        }
+        .to_string();
+        assert!(
+            !msg.contains("profile save"),
+            "error points at `save`, a v1.1 verb that does not exist yet: {msg}"
+        );
+        assert!(
+            msg.contains("--from"),
+            "error should name the seeding fix: {msg}"
+        );
+    }
 
     #[test]
     #[serial_test::serial(jarvy_home_env)]
