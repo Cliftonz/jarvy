@@ -189,7 +189,7 @@ fn status_json_parses_and_covers_all_agents() {
         for key in [
             "agent",
             "mechanism",
-            "switchable_v1",
+            "switchable",
             "active_profile",
             "state",
         ] {
@@ -201,31 +201,40 @@ fn status_json_parses_and_covers_all_agents() {
     }
 }
 
+/// windsurf is now switchable (v1.1 follow-up), so a bare `use
+/// myprofile --agents windsurf` routes through the planner and fails
+/// with `AgentNotSnapshotted` — the profile hasn't seeded a windsurf
+/// snapshot. That's the honest error; the old "not v1-switchable"
+/// refusal is gone.
 #[test]
-fn use_all_storage_only_agents_is_refused() {
+fn use_symlink_tier_without_snapshot_is_config_error() {
     let home = TempDir::new().unwrap();
     jarvy(home.path())
         .args(["create", "myprofile"])
         .assert()
         .success();
-    // windsurf is storage-only in v1 — selecting it alone yields no
-    // v1-switchable targets and must exit CONFIG_ERROR (2).
     jarvy(home.path())
-        .args(["use", "myprofile", "--agents", "windsurf"])
+        .args(["use", "myprofile", "--agents", "windsurf", "--global"])
         .assert()
         .failure()
         .code(2)
-        .stderr(predicate::str::contains("no v1-switchable"));
+        .stderr(predicate::str::contains("no snapshot"));
 }
 
+/// Mixed request with one installed switchable agent (claude-code) and
+/// one storage-only-in-v1-but-now-switchable agent (windsurf) still
+/// succeeds. Without `--global`, windsurf is a no-op (symlink tier
+/// requires --global) and claude-code exports flow through.
 #[test]
-fn use_mixed_storage_and_switchable_agents_succeeds() {
+fn use_mixed_env_and_symlink_without_global_succeeds() {
     let home = TempDir::new().unwrap();
     jarvy(home.path())
         .args(["create", "myprofile"])
         .assert()
         .success();
-    // Seed a claude-code snapshot so `use` has a target to export.
+    // Seed only the claude-code snapshot; windsurf is symlink-tier and
+    // will be filtered out of the plan without --global regardless of
+    // whether a snapshot exists.
     seed_snapshot(home.path(), "myprofile", "claude-code");
 
     let output = jarvy(home.path())
@@ -249,10 +258,10 @@ fn use_mixed_storage_and_switchable_agents_succeeds() {
         stdout.contains("CLAUDE_CONFIG_DIR"),
         "stdout must carry the claude-code export"
     );
-    // windsurf is not yet switchable; the advisory message goes to stderr.
+    // Symlink-tier windsurf produces a stderr notice about --global.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("not yet switchable"),
-        "stderr must mention that windsurf is not yet switchable; got: {stderr}"
+        stderr.contains("switch globally"),
+        "stderr must mention that symlink-tier agents need --global; got: {stderr}"
     );
 }

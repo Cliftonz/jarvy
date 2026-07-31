@@ -871,6 +871,7 @@ mod agents_profile_parse_tests {
                             agents,
                             global,
                             print_env,
+                            force,
                         },
                 },
         }) = cli.command
@@ -881,6 +882,7 @@ mod agents_profile_parse_tests {
         assert!(agents.is_none());
         assert!(global);
         assert!(print_env);
+        assert!(!force);
     }
 
     #[test]

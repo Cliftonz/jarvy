@@ -564,6 +564,12 @@ pub enum ProfileAction {
         /// Emit only `export VAR="path"` lines on stdout (for shell eval)
         #[clap(long)]
         print_env: bool,
+        /// Override the running-IDE guard on symlink-tier swaps.
+        /// A running editor caches config in memory; re-pointing its
+        /// dotdir under it produces inconsistent behavior until the
+        /// IDE restarts. Refused-by-default is the safer floor.
+        #[clap(long)]
+        force: bool,
     },
     /// List profiles
     List {
@@ -581,5 +587,44 @@ pub enum ProfileAction {
     Delete {
         /// Profile name
         name: String,
+    },
+    /// Refresh a profile's snapshots from the live agent config dirs
+    Save {
+        /// Profile name (defaults to each agent's currently-active profile)
+        name: Option<String>,
+        /// Comma-separated agent slugs to save (default: all switchable)
+        #[clap(long)]
+        agents: Option<String>,
+    },
+    /// Restore live agent config dirs from a profile's snapshots
+    Restore {
+        /// Profile name
+        name: String,
+        /// Comma-separated agent slugs to restore (default: all switchable)
+        #[clap(long)]
+        agents: Option<String>,
+        /// Override the running-IDE guard on symlink-tier restores.
+        /// Mirrors `use --global`: re-pointing an editor's config dir
+        /// while it's open leaves the on-disk swap inconsistent with the
+        /// in-memory config until the editor restarts. Refused-by-default
+        /// is the safer floor; `--force` bypasses the check.
+        #[clap(long)]
+        force: bool,
+    },
+    /// Advisory-only nudge from a shell `cd` hook: walks up from cwd for
+    /// a `jarvy.toml`, compares `[agents.profiles] prefer` against the
+    /// live profile, and prints a one-line stderr hint on divergence
+    /// (debounced per-terminal). Never switches; never mutates config.
+    #[clap(hide = true)]
+    CheckCwd {
+        /// Terminal session id — used to key the debounce state so a
+        /// switch in *this* shell silences the hint here without
+        /// silencing it in other terminals. Falls back to
+        /// `JARVY_CWD_HINT_SESSION` → `TERM_SESSION_ID` → parent PID.
+        #[clap(long)]
+        session_id: Option<String>,
+        /// Suppress stderr output (telemetry still fires).
+        #[clap(long)]
+        quiet: bool,
     },
 }

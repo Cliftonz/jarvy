@@ -34,6 +34,29 @@ fn profile_cmd(home: &Path, args: &[&str]) -> std::process::Output {
     c.output().expect("failed to spawn jarvy")
 }
 
+/// Variant that spawns with a specific cwd + arbitrary extra env vars.
+/// Needed for `check-cwd` (walks up from cwd for jarvy.toml) and for
+/// setting `JARVY_CWD_HINT_INVOCATION` / `JARVY_NO_CWD_HINT`.
+fn profile_cmd_in(
+    home: &Path,
+    cwd: &Path,
+    extra_env: &[(&str, &str)],
+    args: &[&str],
+) -> std::process::Output {
+    let mut c = Command::new(jarvy_bin());
+    c.env("JARVY_HOME", home);
+    c.env("JARVY_TEST_MODE", "1");
+    c.env("JARVY_TELEMETRY", "0");
+    c.env("JARVY_NO_PERSONAL_CONFIG", "1");
+    for (k, v) in extra_env {
+        c.env(k, v);
+    }
+    c.current_dir(cwd);
+    c.args(["agents", "profile"]);
+    c.args(args);
+    c.output().expect("failed to spawn jarvy")
+}
+
 fn assert_success(out: &std::process::Output, ctx: &str) {
     assert!(
         out.status.success(),
@@ -196,6 +219,162 @@ fn full_profile_lifecycle_cross_platform() {
     let out = profile_cmd(home, &["delete", "work"]);
     assert_success(&out, "delete work after switching away");
     assert!(!store.join("work").exists());
+
+    // ---- save (env tier — refresh single agent from live) ----
+    // Mutate the live claude-code config, then save into 'default'
+    // targeting ONLY claude-code. The snapshot must pick up the new
+    // bytes — proves save reads live and writes into the store.
+    std::fs::write(claude_live.join("settings.json"), "{\"marker\":\"v2\"}").unwrap();
+    let out = profile_cmd(home, &["save", "default", "--agents", "claude-code"]);
+    assert_success(&out, "save default --agents claude-code");
+    let snapshot_settings = store
+        .join("default")
+        .join("claude-code")
+        .join("settings.json");
+    let snap_body = std::fs::read_to_string(&snapshot_settings).unwrap();
+    assert!(
+        snap_body.contains("\"marker\":\"v2\""),
+        "save must refresh the env-tier snapshot; got: {snap_body:?}"
+    );
+
+    // ---- save (unfiltered — every active-profile agent) ----
+    // Mutate codex live too; bare `save` (no name, no --agents) must
+    // target every agent's active profile per-agent. After the earlier
+    // `use default --global` and reconcile-on-init, codex's active
+    // profile is 'default'.
+    std::fs::write(codex_live.join("config.toml"), "# v2").unwrap();
+    let out = profile_cmd(home, &["save"]);
+    assert_success(&out, "save (unfiltered)");
+    let codex_snap = store.join("default").join("codex").join("config.toml");
+    let codex_snap_body = std::fs::read_to_string(&codex_snap).unwrap();
+    assert!(
+        codex_snap_body.contains("# v2"),
+        "unfiltered save must refresh codex snapshot; got: {codex_snap_body:?}"
+    );
+
+    // ---- restore (env tier — snapshot back over live) ----
+    // Clobber the live settings.json with local junk; restore must
+    // put the saved v2 bytes back.
+    std::fs::write(
+        claude_live.join("settings.json"),
+        "{\"marker\":\"local-junk\"}",
+    )
+    .unwrap();
+    let out = profile_cmd(home, &["restore", "default", "--agents", "claude-code"]);
+    assert_success(&out, "restore default --agents claude-code");
+    let live_after = std::fs::read_to_string(claude_live.join("settings.json")).unwrap();
+    assert!(
+        live_after.contains("\"marker\":\"v2\""),
+        "restore must overwrite live with the saved snapshot; got: {live_after:?}"
+    );
+
+    // ---- restore (env tier, target profile has no snapshot) ----
+    // Fresh empty profile; explicit --agents on a missing snapshot
+    // must exit CONFIG_ERROR (AgentNotSnapshotted) without touching
+    // the live dir.
+    let out = profile_cmd(home, &["create", "empty"]);
+    assert_success(&out, "create empty");
+    let out = profile_cmd(home, &["restore", "empty", "--agents", "claude-code"]);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "restore of missing snapshot with explicit --agents must exit CONFIG_ERROR"
+    );
+    let live_untouched = std::fs::read_to_string(claude_live.join("settings.json")).unwrap();
+    assert!(
+        live_untouched.contains("\"marker\":\"v2\""),
+        "refused restore must not mutate live dir; got: {live_untouched:?}"
+    );
+
+    // ---- restore (env tier symlink refusal) — Unix only ----
+    // Windows junctions vs symlinks are messy; the underlying refusal
+    // (`UnmanagedDir` via `symlink_metadata`) fires on Unix symlinks
+    // deterministically, which is what we're validating.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        // Remove real dir, replace with a symlink into a sibling
+        // dotfiles-style tree carrying a marker file.
+        std::fs::remove_dir_all(&claude_live).unwrap();
+        let dotfiles = home.join("dotfiles").join(".claude");
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        std::fs::write(dotfiles.join("dotfile-marker.txt"), "keep-me").unwrap();
+        symlink(&dotfiles, &claude_live).expect("create claude symlink");
+
+        let out = profile_cmd(home, &["restore", "default", "--agents", "claude-code"]);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "restore must refuse to overwrite a user-owned symlink"
+        );
+        // Link is still a symlink and the dotfile marker survives.
+        assert!(
+            std::fs::symlink_metadata(&claude_live)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "claude live path must remain a symlink after refused restore"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dotfiles.join("dotfile-marker.txt")).unwrap(),
+            "keep-me",
+            "symlink target contents must be untouched"
+        );
+
+        // Cleanup: restore live to a real dir carrying the v2 bytes so
+        // the unmanaged-dir block below keeps working.
+        std::fs::remove_file(&claude_live).unwrap();
+        std::fs::create_dir_all(&claude_live).unwrap();
+        std::fs::write(claude_live.join("settings.json"), "{\"marker\":\"v2\"}").unwrap();
+    }
+
+    // ---- check-cwd (mismatch — prefer=work but live=default) ----
+    // The stderr-TTY gate short-circuits when stderr is piped (which
+    // `Command` capture always does), so the run returns Silent{NonTty}
+    // before touching state or emitting the event. The meaningful E2E
+    // check reduces to: the CLI wiring works and exits 0. Pre-create
+    // 'work' so check_preference has a valid profile to compare against.
+    let out = profile_cmd(home, &["create", "work", "--from", "default"]);
+    assert_success(&out, "create work --from default (for check-cwd)");
+    let project = home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("jarvy.toml"),
+        "[agents.profiles]\nprefer = \"work\"\n",
+    )
+    .unwrap();
+    let out = profile_cmd_in(
+        home,
+        &project,
+        &[("JARVY_CWD_HINT_INVOCATION", "rc_snippet")],
+        &["check-cwd", "--session-id", "e2e-test"],
+    );
+    assert_success(&out, "check-cwd (mismatch)");
+    // State-file existence is optional: with stderr piped the run
+    // silently early-returns before writing state. Presence would prove
+    // TTY detection defaults on some CI runners; absence is the
+    // documented non-TTY path. Either is fine — we accept both.
+    let _ = store.join(".cwd-hint-state.json").exists();
+
+    // ---- check-cwd (opt-out env respected) ----
+    let out = profile_cmd_in(
+        home,
+        &project,
+        &[
+            ("JARVY_NO_CWD_HINT", "1"),
+            ("JARVY_CWD_HINT_INVOCATION", "rc_snippet"),
+        ],
+        &["check-cwd", "--session-id", "e2e-test-optout"],
+    );
+    assert_success(&out, "check-cwd (opt-out)");
+
+    // Cleanup 'work' before the unmanaged-dir block re-uses cursor.
+    // Switch cursor back to default first — 'work' is the last
+    // symlink-tier active for cursor if `--from` seeded it, but here
+    // the current active is still 'default' from the earlier switch,
+    // so `delete work` succeeds outright.
+    let out = profile_cmd(home, &["delete", "work"]);
+    assert_success(&out, "delete work (post check-cwd cleanup)");
 
     // ---- unmanaged-dir refusal: real dir at the cursor path ----
     remove_link(&cursor_live);

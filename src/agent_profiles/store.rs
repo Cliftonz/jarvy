@@ -21,6 +21,56 @@ pub enum SnapshotMode {
     Move,
 }
 
+/// What a recursive copy is allowed to leave behind.
+///
+/// This exists because the two callers have opposite safety properties
+/// and the difference used to live only in a comment. `copy_tree` is
+/// both the snapshot copier *and* the stand-in for `fs::rename` when it
+/// fails with EXDEV — and that second caller deletes the source
+/// afterwards. Any path skipped on that path is destroyed, not merely
+/// left behind, so the distinction is encoded in the type instead of
+/// being re-derived correctly at every skip site.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CopyPolicy {
+    /// The source stays on disk and authoritative. Non-identity paths
+    /// (`super::exclude`) are dropped and hostile symlinks refused —
+    /// everything skipped is still reachable where it came from.
+    Snapshot(&'static [&'static str]),
+    /// The source is removed once the copy lands. Nothing may be
+    /// dropped: no exclusions, and symlinks are recreated verbatim
+    /// rather than vetted, because "refusing" a link here would delete
+    /// the user's own data.
+    Relocate,
+}
+
+/// Per-snapshot counters, rolled up into one `agent_profile.snapshot_completed`
+/// event. Individual skips are debug-level and high-volume; the aggregate is
+/// what makes a *miss* visible — a denylist that stops matching shows up as
+/// `subtrees_excluded` collapsing and `bytes` jumping, which per-path events
+/// cannot reveal because they simply stop being emitted.
+///
+/// `subtrees_excluded` counts *matches*, not files: the walk skips an
+/// excluded directory whole rather than descending it, so one match can
+/// stand for a gigabyte.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct SnapshotStats {
+    pub files_copied: u64,
+    pub bytes: u64,
+    pub subtrees_excluded: u64,
+    pub symlinks_skipped: u64,
+    pub special_skipped: u64,
+}
+
+impl SnapshotStats {
+    fn merge(&mut self, other: SnapshotStats) {
+        self.files_copied += other.files_copied;
+        self.bytes += other.bytes;
+        self.subtrees_excluded += other.subtrees_excluded;
+        self.symlinks_skipped += other.symlinks_skipped;
+        self.special_skipped += other.special_skipped;
+    }
+}
+
 /// Create `~/.jarvy/agent-profiles/` and tighten it to 0700, verifying
 /// the chmod actually took effect. Profiles may contain live
 /// credentials — a silently-ignored chmod (NFS, drvfs, exFAT) would
@@ -74,6 +124,115 @@ pub fn snapshot_agent(agent: Agent, profile: &str, mode: SnapshotMode) -> Result
     snapshot_agent_at(&store_root, agent, profile, mode)
 }
 
+/// Outcome of `save_agent`: env-tier agents copy their live dir over
+/// the snapshot; symlink-tier agents are live-in-profile already
+/// (their `~/.slug` is a jarvy-managed symlink into the store) so a
+/// save is a no-op. When a symlink-tier agent's live path isn't a
+/// jarvy-managed link, the agent is unmanaged — save returns
+/// `ProfileError::UnmanagedDir` rather than clobbering the user's config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveOutcome {
+    /// Env-tier snapshot refreshed from the live config dir.
+    EnvCopied,
+    /// Symlink-tier agent: edits are already persisted through the live
+    /// symlink; there is nothing to save.
+    SymlinkNoOp,
+}
+
+/// Refresh a single agent's snapshot in `profile` from its live config
+/// dir. Env-tier agents copy over the existing snapshot (same
+/// replace-semantics as `snapshot_agent`); symlink-tier agents are
+/// already live-in-profile and return `SymlinkNoOp` (or
+/// `ProfileError::UnmanagedDir` when the live symlink is missing /
+/// detached — save refuses rather than clobbering the user's config).
+///
+/// The profile must exist first — `save` deliberately does NOT create
+/// profiles; the caller composes `create_profile` when that's wanted.
+pub fn save_agent(agent: Agent, profile: &str) -> Result<SaveOutcome, ProfileError> {
+    // Validate the profile exists so a typo doesn't silently create
+    // a new store dir on the next snapshot call.
+    let pdir = profile_dir(profile)?;
+    if fs::symlink_metadata(&pdir).is_err() {
+        return Err(ProfileError::ProfileNotFound(profile.to_string()));
+    }
+
+    if agent.is_symlink_tier() {
+        // A symlink-tier agent that jarvy manages already writes into
+        // its profile snapshot through the live symlink, so saving is a
+        // no-op WHEN the live link points at THIS profile. If the link
+        // points at a different profile, the caller asked us to
+        // snapshot content that lives elsewhere on disk — the store
+        // stays authoritative for symlink tier, so the answer is still
+        // no-op (any "copy from live" would be a self-copy through the
+        // symlink into whichever profile the link happens to target).
+        // A real dir or foreign link means the agent is unmanaged —
+        // refuse rather than clobber a live editor.
+        let Some(live) = agent.config_dir() else {
+            return Err(ProfileError::NoHome);
+        };
+        let store_root = ensure_store_dirs()?;
+        return match fs::symlink_metadata(&live) {
+            Ok(meta) if meta.file_type().is_symlink() && link_points_into(&live, &store_root) => {
+                Ok(SaveOutcome::SymlinkNoOp)
+            }
+            Ok(_) | Err(_) => Err(ProfileError::UnmanagedDir(live)),
+        };
+    }
+
+    // Env tier: copy the live dir over the snapshot.
+    let store_root = ensure_store_dirs()?;
+    snapshot_agent_at(&store_root, agent, profile, SnapshotMode::Copy)?;
+    Ok(SaveOutcome::EnvCopied)
+}
+
+/// Restore a single agent's live config dir from its `<profile>/<slug>/`
+/// snapshot. Env-tier agents get the snapshot copied over their
+/// default config dir (NOT the env-var-redirected one — a fresh shell
+/// with no env vars reads there). Symlink-tier agents re-point the
+/// live symlink to the snapshot via `apply_symlink_repoint`.
+///
+/// The snapshot must exist — a missing per-agent snapshot returns
+/// `AgentNotSnapshotted`.
+pub fn restore_agent(agent: Agent, profile: &str) -> Result<(), ProfileError> {
+    let snapshot = profile_dir(profile)?.join(agent.slug());
+    if fs::symlink_metadata(&snapshot).is_err() {
+        return Err(ProfileError::AgentNotSnapshotted {
+            agent: agent.slug().to_string(),
+            profile: profile.to_string(),
+        });
+    }
+
+    if agent.is_symlink_tier() {
+        // Reuse the same primitive `use --global` uses — it handles the
+        // atomic rename, EscapesHome canonicalization, and the
+        // UnmanagedDir refusal.
+        return super::switcher::apply_symlink_repoint(agent, &snapshot);
+    }
+
+    // Env tier: blow away the live dir and copy the snapshot verbatim.
+    // The snapshot was already filtered when it landed here, so the
+    // denylist doesn't apply on the way out (empty exclusion list).
+    let live = agent.config_dir().ok_or(ProfileError::NoHome)?;
+    // A live symlink at an env-tier path is by definition user-owned —
+    // jarvy doesn't create symlinks for env-tier agents. Refuse to
+    // overwrite what the user's dotfile setup put there. The `--force`
+    // flag on the restore CLI does NOT bypass this: restoring OVER a
+    // user's dotfile link is destructive enough to always require an
+    // explicit `rm ~/.claude` first. Reuse `UnmanagedDir` for parity
+    // with `apply_symlink_repoint`'s refusal at the symlink-tier path.
+    if let Ok(meta) = fs::symlink_metadata(&live)
+        && meta.file_type().is_symlink()
+    {
+        return Err(ProfileError::UnmanagedDir(live));
+    }
+    remove_existing(&live)?;
+    if let Some(parent) = live.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    copy_tree(&snapshot, &live, agent.slug(), CopyPolicy::Snapshot(&[]))?;
+    Ok(())
+}
+
 /// Inner variant that takes a pre-computed `store_root` so `init_snapshot`
 /// doesn't call `ensure_store_dirs()` once per agent.
 fn snapshot_agent_at(
@@ -113,22 +272,93 @@ fn snapshot_agent_at(
     let dest = pdir.join(agent.slug());
     remove_existing(&dest)?;
 
-    match mode {
+    let started = std::time::Instant::now();
+    let result = match mode {
         SnapshotMode::Copy => copy_tree(
             &src,
             &dest,
             agent.slug(),
-            super::exclude::excluded_paths(agent),
-        )?,
+            CopyPolicy::Snapshot(super::exclude::excluded_paths(agent)),
+        ),
         SnapshotMode::Move => {
-            if fs::rename(&src, &dest).is_err() {
+            if fs::rename(&src, &dest).is_ok() {
+                // A rename moves the whole tree by definition — there is
+                // nothing to count and nothing was filtered.
+                Ok(SnapshotStats::default())
+            } else {
                 // Cross-device rename (EXDEV) — delegate to the extracted
                 // helper that logs and surfaces cleanup failures clearly.
-                move_dir_cross_device(&src, &dest, agent)?;
+                move_dir_cross_device(&src, &dest, agent)
             }
         }
-    }
+    };
+    // Which agent aborted the run only exists here: the CLI's
+    // `op_failed` knows the subcommand, not the agent it was on, and a
+    // `Move` that failed mid-copy has already deleted part of the source.
+    let stats = match result {
+        Ok(s) => s,
+        Err(e) => {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "agent_profile.snapshot_failed",
+                    agent = agent.slug(),
+                    mode = mode_label(mode),
+                    error_kind = io_error_kind(&e),
+                    duration_ms = started.elapsed().as_millis() as u64,
+                );
+            }
+            return Err(e.into());
+        }
+    };
+    emit_snapshot_completed(agent, mode, &stats, started.elapsed().as_millis() as u64);
     Ok(())
+}
+
+fn mode_label(mode: SnapshotMode) -> &'static str {
+    match mode {
+        SnapshotMode::Copy => "copy",
+        SnapshotMode::Move => "move",
+    }
+}
+
+/// Bounded telemetry label for an IO failure. `ErrorKind`'s own Debug is
+/// bounded too, but the rest of the taxonomy is lowercase-snake.
+fn io_error_kind(e: &std::io::Error) -> &'static str {
+    use std::io::ErrorKind as K;
+    match e.kind() {
+        K::NotFound => "not_found",
+        K::PermissionDenied => "permission_denied",
+        K::AlreadyExists => "already_exists",
+        K::InvalidInput | K::InvalidData => "invalid",
+        K::Unsupported => "unsupported",
+        K::OutOfMemory => "out_of_memory",
+        _ => "io",
+    }
+}
+
+/// One info-level event per agent snapshot. Deliberately info, not debug:
+/// the per-path skip events are debug and the file/OTLP sinks floor at
+/// info, so without this the whole snapshot is invisible in production.
+fn emit_snapshot_completed(
+    agent: Agent,
+    mode: SnapshotMode,
+    stats: &SnapshotStats,
+    duration_ms: u64,
+) {
+    if !crate::observability::telemetry_gate::is_enabled() {
+        return;
+    }
+    tracing::info!(
+        event = "agent_profile.snapshot_completed",
+        agent = agent.slug(),
+        mode = mode_label(mode),
+        files_copied = stats.files_copied,
+        bytes = stats.bytes,
+        subtrees_excluded = stats.subtrees_excluded,
+        symlinks_skipped = stats.symlinks_skipped,
+        special_skipped = stats.special_skipped,
+        duration_ms,
+    );
 }
 
 /// Create a new named profile dir, optionally seeded from an existing
@@ -145,10 +375,13 @@ pub fn create_profile(name: &str, from: Option<&str>) -> Result<PathBuf, Profile
             if !src.is_dir() {
                 return Err(ProfileError::ProfileNotFound(src_name.to_string()));
             }
-            // `src_name` is a profile dir being copied, not an agent dir;
-            // use a placeholder slug for the symlink-safety check.
-            // The source is an existing snapshot, already filtered.
-            copy_tree(&src, &pdir, "<profile>", &[])?;
+            // A half-copied profile is worse than none: `use` would
+            // switch an agent to a snapshot missing files it needs, and
+            // `create` would then refuse to retry because the dir exists.
+            if let Err(e) = clone_profile_tree(&src, &pdir) {
+                let _ = fs::remove_dir_all(&pdir);
+                return Err(e.into());
+            }
             // copy_tree preserved the source dir's mode; force 0700
             // regardless — the store invariant beats fidelity here.
             crate::paths::ensure_dir_0700_with_event(&pdir, Some("agent_profile.perms_unsafe"))?;
@@ -269,12 +502,65 @@ pub(crate) fn active_profile_from_link(agent: Agent) -> Option<String> {
     } else {
         dir.parent()?.join(&target)
     };
-    let rel = match resolved.strip_prefix(&store_root) {
+    profile_name_under_store(&store_root, &resolved)
+}
+
+/// Resolve the currently-active profile name for `agent`, honoring the
+/// same tier priority everywhere:
+/// 1. Env-tier: the config-dir env var if it points into `store_root`.
+/// 2. Registry: `profiles.json` active[slug] as fallback.
+/// 3. Symlink-tier: the live symlink target's profile name.
+///
+/// Walks every mechanism the agent exposes so an agent with both Env AND
+/// Symlink is honored consistently. Callers must pre-load `registry`
+/// and `store_root` (both cheap-to-cache; passing them in avoids
+/// per-agent I/O in loops).
+///
+/// This is the single authoritative implementation — `status::check_preference`
+/// and `commands::agents_profile_cmd::save_action` both call this, so the
+/// "env → registry → link" ordering can never drift between them.
+pub fn resolve_active_profile(
+    agent: crate::agents::Agent,
+    registry: &super::ProfileRegistry,
+    store_root: &Path,
+) -> Option<String> {
+    for mechanism in agent.profile_mechanisms() {
+        match mechanism {
+            crate::agents::ProfileMechanism::Env { var } => {
+                if let Some(val) = std::env::var_os(var) {
+                    let p = std::path::PathBuf::from(val);
+                    if let Some(name) = profile_name_under_store(store_root, &p) {
+                        return Some(name);
+                    }
+                }
+                if let Some(name) = registry.active.get(agent.slug()) {
+                    return Some(name.clone());
+                }
+            }
+            crate::agents::ProfileMechanism::Symlink => {
+                if let Some(name) = active_profile_from_link(agent) {
+                    return Some(name);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The profile name in `<store_root>/<profile>/<agent-slug>`, or `None`
+/// when `path` doesn't land under the store.
+///
+/// The canonicalize fallback is load-bearing on macOS, where the store
+/// resolves through `/var` → `/private/var` and a plain `strip_prefix`
+/// misses. Shared by the symlink-tier reader above and the env-tier one
+/// in `status.rs`, which reads the same shape out of `CLAUDE_CONFIG_DIR`.
+pub(crate) fn profile_name_under_store(store_root: &Path, path: &Path) -> Option<String> {
+    let rel = match path.strip_prefix(store_root) {
         Ok(r) => r.to_path_buf(),
         Err(_) => {
             let root_canon = store_root.canonicalize().ok()?;
-            let resolved_canon = resolved.canonicalize().ok()?;
-            resolved_canon.strip_prefix(&root_canon).ok()?.to_path_buf()
+            let path_canon = path.canonicalize().ok()?;
+            path_canon.strip_prefix(&root_canon).ok()?.to_path_buf()
         }
     };
     rel.components()
@@ -319,19 +605,96 @@ fn remove_existing(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Copy one profile dir onto another for `create --from`.
+///
+/// Per-agent rather than one flat `copy_tree`: the source is a profile,
+/// so its top-level entries are agent slugs, and each subtree has to be
+/// filtered with *that agent's* denylist. The previous flat copy passed
+/// an empty exclusion list on the theory that the source was "already
+/// filtered" — untrue for symlink-tier agents, whose snapshot arrives by
+/// `fs::rename` and is therefore never filtered at all. Cloning a cursor
+/// profile duplicated the entire moved config dir.
+fn clone_profile_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    if let Ok(meta) = fs::metadata(src) {
+        copy_perms_from_meta(&meta, dst);
+    }
+    let started = std::time::Instant::now();
+    let mut stats = SnapshotStats::default();
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let from = entry.path();
+        let to = dst.join(&name);
+        let is_dir = entry.file_type()?.is_dir();
+        let agent = name.to_str().and_then(Agent::from_slug);
+        match agent {
+            Some(agent) if is_dir => {
+                let sub = copy_tree(
+                    &from,
+                    &to,
+                    agent.slug(),
+                    CopyPolicy::Snapshot(super::exclude::excluded_paths(agent)),
+                )?;
+                stats.merge(sub);
+            }
+            // Anything that isn't a recognized agent subdir (registry
+            // sidecars, user notes) is profile-level content with no
+            // denylist of its own — copy it verbatim.
+            _ if is_dir => {
+                stats.merge(copy_tree(
+                    &from,
+                    &to,
+                    "<profile>",
+                    CopyPolicy::Snapshot(&[]),
+                )?);
+            }
+            // Not a directory: a top-level symlink or file sitting beside
+            // the agent subdirs. It goes through the same vetting the
+            // recursive walk applies — a bare `fs::copy` here would follow
+            // a link out of the profile and choke on a socket.
+            _ => copy_entry(
+                &entry,
+                entry.file_type()?,
+                &to,
+                src,
+                "<profile>",
+                CopyPolicy::Snapshot(&[]),
+                &mut stats,
+            )?,
+        }
+    }
+    // Its own event rather than a `snapshot_completed` row with a
+    // sentinel agent: this rolls up every agent in the profile at once,
+    // so filing it under `agent = "<profile>"` would put a value in the
+    // `agent` dimension that no per-agent query can ever mean.
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "agent_profile.clone_completed",
+            files_copied = stats.files_copied,
+            bytes = stats.bytes,
+            subtrees_excluded = stats.subtrees_excluded,
+            symlinks_skipped = stats.symlinks_skipped,
+            special_skipped = stats.special_skipped,
+            duration_ms = started.elapsed().as_millis() as u64,
+        );
+    }
+    Ok(())
+}
+
 /// Fallback for a cross-device rename (EXDEV): copy then remove.
 /// `agent` is only used for telemetry — the operation is generic.
-fn move_dir_cross_device(src: &Path, dst: &Path, agent: Agent) -> std::io::Result<()> {
+fn move_dir_cross_device(src: &Path, dst: &Path, agent: Agent) -> std::io::Result<SnapshotStats> {
     if crate::observability::telemetry_gate::is_enabled() {
         tracing::debug!(
             event = "agent_profile.snapshot_cross_device",
             agent = agent.slug(),
         );
     }
-    // No exclusions: this stands in for a rename, and the source is
-    // deleted below — anything skipped here would be destroyed, not
-    // merely left behind.
-    copy_tree(src, dst, agent.slug(), &[])?;
+    // `Relocate`: this stands in for a rename and the source is deleted
+    // below, so nothing may be dropped — not excluded paths, and not
+    // symlinks the snapshot path would have refused.
+    let stats = copy_tree(src, dst, agent.slug(), CopyPolicy::Relocate)?;
     if let Err(e) = fs::remove_dir_all(src) {
         if crate::observability::telemetry_gate::is_enabled() {
             tracing::warn!(
@@ -343,21 +706,28 @@ fn move_dir_cross_device(src: &Path, dst: &Path, agent: Agent) -> std::io::Resul
         }
         return Err(e);
     }
-    Ok(())
+    Ok(stats)
 }
 
-/// Recursive copy preserving permission bits; symlinks are recreated
-/// as links (never followed) but only when the target is relative AND
-/// stays within `snapshot_root` (the original top-level source dir for
-/// this agent). Hostile absolute or escaping links are skipped and
-/// emitted as `agent_profile.symlink_skipped` events.
+/// Recursive copy preserving permission bits.
 ///
-/// `agent_slug` is passed in for telemetry only. `excludes` names paths
-/// that carry no identity (transcripts, package trees, log DBs) — see
-/// `super::exclude`; profile-to-profile copies pass an empty list since
-/// the source snapshot was already filtered.
-fn copy_tree(src: &Path, dst: &Path, agent_slug: &str, excludes: &[&str]) -> std::io::Result<()> {
-    copy_tree_inner(src, dst, src, agent_slug, excludes)
+/// Under `CopyPolicy::Snapshot`, symlinks are recreated as links (never
+/// followed) but only when the target is relative AND stays within
+/// `snapshot_root`; absolute or escaping links are refused and emitted as
+/// `agent_profile.symlink_skipped`. Under `CopyPolicy::Relocate` every
+/// link is recreated verbatim — the source is about to be deleted, so
+/// refusing one would destroy it rather than leave it behind.
+///
+/// `agent_slug` is passed in for telemetry only.
+fn copy_tree(
+    src: &Path,
+    dst: &Path,
+    agent_slug: &str,
+    policy: CopyPolicy,
+) -> std::io::Result<SnapshotStats> {
+    let mut stats = SnapshotStats::default();
+    copy_tree_inner(src, dst, src, agent_slug, policy, &mut stats)?;
+    Ok(stats)
 }
 
 fn copy_tree_inner(
@@ -365,13 +735,18 @@ fn copy_tree_inner(
     dst: &Path,
     snapshot_root: &Path,
     agent_slug: &str,
-    excludes: &[&str],
+    policy: CopyPolicy,
+    stats: &mut SnapshotStats,
 ) -> std::io::Result<()> {
     fs::create_dir_all(dst)?;
     // Use the metadata already available for `src` to set dst perms.
     if let Ok(meta) = fs::metadata(src) {
         copy_perms_from_meta(&meta, dst);
     }
+    let excludes: &[&'static str] = match policy {
+        CopyPolicy::Snapshot(e) => e,
+        CopyPolicy::Relocate => &[],
+    };
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         // `file_type()` uses symlink_metadata semantics on all platforms
@@ -382,51 +757,103 @@ fn copy_tree_inner(
         if !excludes.is_empty()
             && let Ok(rel) = from.strip_prefix(snapshot_root)
             && let Some(rel) = rel.to_str()
-            && super::exclude::is_excluded(&rel.replace('\\', "/"), excludes)
+            && let Some(pattern) =
+                super::exclude::matched_pattern(&rel.replace('\\', "/"), excludes)
         {
+            stats.subtrees_excluded += 1;
             if crate::observability::telemetry_gate::is_enabled() {
                 tracing::debug!(
                     event = "agent_profile.path_excluded",
                     agent = agent_slug,
+                    pattern,
                     "skipped non-identity path during snapshot copy",
                 );
             }
             continue;
         }
-        if ft.is_symlink() {
-            // Finding B: refuse symlinks that are absolute or that escape
-            // the snapshot source root (lexical check, no canonicalize).
-            if symlink_is_safe_to_copy(&from, snapshot_root) {
-                recreate_symlink(&from, &to)?;
-            } else if crate::observability::telemetry_gate::is_enabled() {
-                tracing::warn!(
-                    event = "agent_profile.symlink_skipped",
-                    agent = agent_slug,
-                    path = %from.display(),
-                    "skipped unsafe symlink during snapshot copy",
-                );
+        // `ft` never follows, so a symlink-to-dir is not `is_dir` here and
+        // falls through to `copy_entry`'s link handling.
+        if ft.is_dir() {
+            copy_tree_inner(&from, &to, snapshot_root, agent_slug, policy, stats)?;
+        } else {
+            copy_entry(&entry, ft, &to, snapshot_root, agent_slug, policy, stats)?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy one non-directory entry under `policy`.
+///
+/// Split out of the recursive walk because `create --from` needs the exact
+/// same vetting for the entries sitting beside a profile's agent subdirs:
+/// `fs::copy` follows symlinks, so the flat version of this leaked file
+/// contents from outside the profile and aborted on a socket.
+fn copy_entry(
+    entry: &fs::DirEntry,
+    ft: std::fs::FileType,
+    to: &Path,
+    snapshot_root: &Path,
+    agent_slug: &str,
+    policy: CopyPolicy,
+    stats: &mut SnapshotStats,
+) -> std::io::Result<()> {
+    let from = entry.path();
+    if ft.is_symlink() {
+        // Absolute or escaping links are hostile *when importing* into
+        // the store. When relocating they are the user's own data and
+        // must survive the impending delete of the source.
+        let refusal = match policy {
+            CopyPolicy::Relocate => None,
+            CopyPolicy::Snapshot(_) => symlink_refusal_reason(&from, snapshot_root),
+        };
+        match refusal {
+            None => recreate_symlink(&from, to)?,
+            Some(reason) => {
+                stats.symlinks_skipped += 1;
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "agent_profile.symlink_skipped",
+                        agent = agent_slug,
+                        reason,
+                        "skipped unsafe symlink during snapshot copy",
+                    );
+                }
             }
-        } else if ft.is_dir() {
-            copy_tree_inner(&from, &to, snapshot_root, agent_slug, excludes)?;
-        } else if !ft.is_file() {
-            // Sockets / FIFOs / device nodes are live IPC endpoints, not
-            // config (e.g. `~/.codex/ipc/ipc.sock`). `fs::copy` fails on
-            // them with ENOTSUP, which would abort the whole snapshot.
-            if crate::observability::telemetry_gate::is_enabled() {
-                tracing::debug!(
+        }
+    } else if !ft.is_file() {
+        // Sockets / FIFOs / device nodes are live IPC endpoints, not
+        // config (e.g. `~/.codex/ipc/ipc.sock`). `fs::copy` fails on
+        // them with ENOTSUP, which would abort the whole snapshot.
+        // There is no way to copy one, so a relocate loses it — say so
+        // at warn level there, since the source is about to be removed.
+        stats.special_skipped += 1;
+        if crate::observability::telemetry_gate::is_enabled() {
+            let kind = special_file_kind(&ft);
+            match policy {
+                CopyPolicy::Relocate => tracing::warn!(
                     event = "agent_profile.special_file_skipped",
                     agent = agent_slug,
-                    kind = special_file_kind(&ft),
+                    kind,
+                    relocating = true,
+                    "non-regular file cannot be relocated and will not survive the move",
+                ),
+                CopyPolicy::Snapshot(_) => tracing::debug!(
+                    event = "agent_profile.special_file_skipped",
+                    agent = agent_slug,
+                    kind,
+                    relocating = false,
                     "skipped non-regular file during snapshot copy",
-                );
+                ),
             }
-        } else {
-            fs::copy(&from, &to)?;
-            // Use symlink_metadata (via entry.metadata()) for the already-
-            // fetched DirEntry stats — avoids a second stat call (D-2).
-            if let Ok(meta) = entry.metadata() {
-                copy_perms_from_meta(&meta, &to);
-            }
+        }
+    } else {
+        fs::copy(&from, to)?;
+        stats.files_copied += 1;
+        // Use symlink_metadata (via entry.metadata()) for the already-
+        // fetched DirEntry stats — avoids a second stat call (D-2).
+        if let Ok(meta) = entry.metadata() {
+            copy_perms_from_meta(&meta, to);
+            stats.bytes += meta.len();
         }
     }
     Ok(())
@@ -456,22 +883,21 @@ fn special_file_kind(ft: &std::fs::FileType) -> &'static str {
     "other"
 }
 
-/// Return `true` when the symlink at `link` (inside `source_root`) has a
-/// relative target that stays within `source_root` — no absolute targets,
-/// no `..` escapes above the source root. Purely lexical; never follows.
-fn symlink_is_safe_to_copy(link: &Path, source_root: &Path) -> bool {
-    let target = match fs::read_link(link) {
-        Ok(t) => t,
-        Err(_) => return false,
+/// `None` when the symlink at `link` (inside `source_root`) has a relative
+/// target that stays within `source_root`; otherwise a bounded reason for
+/// the refusal, which `agent_profile.symlink_skipped` carries instead of a
+/// path. Purely lexical; never follows.
+fn symlink_refusal_reason(link: &Path, source_root: &Path) -> Option<&'static str> {
+    let Ok(target) = fs::read_link(link) else {
+        return Some("unreadable");
     };
     // Absolute targets always point outside the snapshot source.
     if target.is_absolute() {
-        return false;
+        return Some("absolute_target");
     }
     // Resolve the relative target against the link's parent dir.
-    let parent = match link.parent() {
-        Some(p) => p,
-        None => return false,
+    let Some(parent) = link.parent() else {
+        return Some("escapes_root");
     };
     let resolved = parent.join(&target);
     // Walk the components and track depth; any `..` that would go above
@@ -480,7 +906,7 @@ fn symlink_is_safe_to_copy(link: &Path, source_root: &Path) -> bool {
     // Compute the depth of the link parent relative to source_root to
     // know how many `..` steps are allowed.
     let Ok(base_relative) = parent.strip_prefix(source_root) else {
-        return false; // link is not under source_root at all
+        return Some("escapes_root"); // link is not under source_root at all
     };
     let base_depth = base_relative.components().count() as isize;
     for comp in target.components() {
@@ -488,7 +914,7 @@ fn symlink_is_safe_to_copy(link: &Path, source_root: &Path) -> bool {
             std::path::Component::ParentDir => {
                 depth -= 1;
                 if depth < -base_depth {
-                    return false; // escaped above source_root
+                    return Some("escapes_root");
                 }
             }
             std::path::Component::Normal(_) => depth += 1,
@@ -497,7 +923,11 @@ fn symlink_is_safe_to_copy(link: &Path, source_root: &Path) -> bool {
     }
     // Final sanity: the resolved path must still start with source_root
     // (handles edge cases in the depth arithmetic).
-    resolved.starts_with(source_root)
+    if resolved.starts_with(source_root) {
+        None
+    } else {
+        Some("escapes_root")
+    }
 }
 
 #[cfg_attr(not(unix), allow(unused_variables))]
@@ -853,6 +1283,101 @@ mod tests {
         assert!(snap.join("ipc").is_dir(), "its parent dir still snapshots");
     }
 
+    /// `CopyPolicy::Relocate` removes its source once the copy lands, so
+    /// anything it skipped would be destroyed rather than left behind.
+    /// The EXDEV fallback therefore carries denylisted paths and the
+    /// absolute symlinks a snapshot would refuse.
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn move_dir_cross_device_relocates_everything_unfiltered() {
+        let _home = JarvyHomeGuard::new();
+        let src = Agent::Cursor.config_dir().unwrap();
+        // `projects` is on cursor's denylist; a snapshot would drop it.
+        fs::create_dir_all(src.join("projects/repo")).unwrap();
+        fs::write(src.join("projects/repo/state.json"), "scratch").unwrap();
+        fs::write(src.join("mcp.json"), "{}").unwrap();
+        // Absolute target: refused under Snapshot, mandatory under Relocate.
+        std::os::unix::fs::symlink(src.join("mcp.json"), src.join("abs-link")).unwrap();
+        let dst = src.parent().unwrap().join("relocated");
+
+        let stats = move_dir_cross_device(&src, &dst, Agent::Cursor).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dst.join("projects/repo/state.json")).unwrap(),
+            "scratch",
+            "relocate must not apply the denylist"
+        );
+        assert!(
+            fs::symlink_metadata(dst.join("abs-link"))
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "absolute link must be recreated, not dropped"
+        );
+        assert_eq!(stats.subtrees_excluded, 0);
+        assert_eq!(stats.symlinks_skipped, 0);
+        assert!(!src.exists(), "source is removed after a successful move");
+    }
+
+    /// Each top-level dir in a profile is resolved to its agent and
+    /// filtered with *that* agent's denylist. Codex keeps `projects`
+    /// (only `sessions` is transcript state there), so applying
+    /// claude-code's rules across the whole profile would lose data.
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn create_from_applies_each_agents_own_denylist() {
+        let _home = JarvyHomeGuard::new();
+        let a = create_profile("a", None).unwrap();
+        let cc = a.join("claude-code");
+        fs::create_dir_all(cc.join("projects/repo")).unwrap();
+        fs::write(cc.join("projects/repo/session.jsonl"), "transcript").unwrap();
+        fs::write(cc.join("settings.json"), "{}").unwrap();
+        let cx = a.join("codex");
+        fs::create_dir_all(cx.join("sessions/s")).unwrap();
+        fs::write(cx.join("sessions/s/log.jsonl"), "transcript").unwrap();
+        fs::create_dir_all(cx.join("projects")).unwrap();
+        fs::write(cx.join("projects/notes.md"), "keep").unwrap();
+        fs::write(cx.join("config.toml"), "").unwrap();
+
+        let b = create_profile("b", Some("a")).unwrap();
+
+        assert!(b.join("claude-code/settings.json").is_file());
+        assert!(
+            !b.join("claude-code/projects").exists(),
+            "claude-code transcripts must not seed the new profile"
+        );
+        assert!(!b.join("codex/sessions").exists());
+        assert!(
+            b.join("codex/projects/notes.md").is_file(),
+            "claude-code's denylist must not reach codex"
+        );
+        assert!(b.join("codex/config.toml").is_file());
+    }
+
+    /// The clone loop used to `fs::copy` top-level non-directory entries,
+    /// which follows links — a stray symlink beside the agent dirs pulled
+    /// content from outside the profile into the new one.
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn create_from_does_not_follow_top_level_symlink() {
+        let _home = JarvyHomeGuard::new();
+        let a = create_profile("a", None).unwrap();
+        let outside = a.parent().unwrap().join("outside.txt");
+        fs::write(&outside, "sensitive").unwrap();
+        std::os::unix::fs::symlink(&outside, a.join("stray")).unwrap();
+        fs::write(a.join("notes.md"), "mine").unwrap();
+
+        let b = create_profile("b", Some("a")).unwrap();
+
+        assert!(
+            fs::symlink_metadata(b.join("stray")).is_err(),
+            "escaping link must be refused, not followed"
+        );
+        assert_eq!(fs::read_to_string(b.join("notes.md")).unwrap(), "mine");
+    }
+
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn delete_leaves_other_profiles_intact() {
@@ -957,7 +1482,7 @@ mod tests {
     // ── Finding B tests ────────────────────────────────────────────────
 
     #[test]
-    fn symlink_is_safe_absolute_link_refused() {
+    fn symlink_refusal_absolute_link_refused() {
         let tmp = tempfile::tempdir().unwrap();
         let source_root = tmp.path().join("src");
         fs::create_dir_all(&source_root).unwrap();
@@ -969,34 +1494,39 @@ mod tests {
         {
             // On Windows we can't create a symlink in tests; assert false
             // directly since absolute targets are always refused.
-            assert!(!symlink_is_safe_to_copy(&link, &source_root));
+            assert_eq!(
+                symlink_refusal_reason(&link, &source_root),
+                Some("absolute_target")
+            );
             return;
         }
         #[cfg(unix)]
-        assert!(
-            !symlink_is_safe_to_copy(&link, &source_root),
+        assert_eq!(
+            symlink_refusal_reason(&link, &source_root),
+            Some("absolute_target"),
             "absolute symlink must be refused"
         );
     }
 
     #[cfg(unix)]
     #[test]
-    fn symlink_is_safe_escaping_relative_link_refused() {
+    fn symlink_refusal_escaping_relative_link_refused() {
         let tmp = tempfile::tempdir().unwrap();
         let source_root = tmp.path().join("src");
         fs::create_dir_all(source_root.join("sub")).unwrap();
         // A relative link that escapes above source_root.
         let link = source_root.join("escape-link");
         std::os::unix::fs::symlink("../../outside", &link).unwrap();
-        assert!(
-            !symlink_is_safe_to_copy(&link, &source_root),
+        assert_eq!(
+            symlink_refusal_reason(&link, &source_root),
+            Some("escapes_root"),
             "escaping symlink must be refused"
         );
     }
 
     #[cfg(unix)]
     #[test]
-    fn symlink_is_safe_in_tree_relative_link_preserved() {
+    fn symlink_refusal_in_tree_relative_link_preserved() {
         let tmp = tempfile::tempdir().unwrap();
         let source_root = tmp.path().join("src");
         fs::create_dir_all(&source_root).unwrap();
@@ -1004,8 +1534,9 @@ mod tests {
         // A relative link pointing at a sibling file — in-tree.
         let link = source_root.join("alias.txt");
         std::os::unix::fs::symlink("real.txt", &link).unwrap();
-        assert!(
-            symlink_is_safe_to_copy(&link, &source_root),
+        assert_eq!(
+            symlink_refusal_reason(&link, &source_root),
+            None,
             "in-tree relative symlink must be allowed"
         );
     }
@@ -1041,6 +1572,145 @@ mod tests {
 
     // ── Finding C tests ────────────────────────────────────────────────
 
+    // ── save / restore tests ───────────────────────────────────────────
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn save_env_tier_refreshes_snapshot_from_live() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        let live = Agent::ClaudeCode.config_dir().unwrap();
+        fs::create_dir_all(&live).unwrap();
+        fs::write(live.join("settings.json"), "v1").unwrap();
+        // First snapshot lands via save.
+        assert_eq!(
+            save_agent(Agent::ClaudeCode, "work").unwrap(),
+            SaveOutcome::EnvCopied
+        );
+        let snap = profile_dir("work").unwrap().join("claude-code");
+        assert_eq!(
+            fs::read_to_string(snap.join("settings.json")).unwrap(),
+            "v1"
+        );
+
+        // Mutate live, save again: snapshot must mirror the new state.
+        fs::write(live.join("settings.json"), "v2").unwrap();
+        fs::write(live.join("new.txt"), "added").unwrap();
+        assert_eq!(
+            save_agent(Agent::ClaudeCode, "work").unwrap(),
+            SaveOutcome::EnvCopied
+        );
+        assert_eq!(
+            fs::read_to_string(snap.join("settings.json")).unwrap(),
+            "v2"
+        );
+        assert_eq!(fs::read_to_string(snap.join("new.txt")).unwrap(), "added");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn save_symlink_tier_is_noop_when_managed() {
+        let _home = JarvyHomeGuard::new();
+        // init snapshots cursor and links `~/.cursor` back into the store.
+        fs::create_dir_all(Agent::Cursor.config_dir().unwrap()).unwrap();
+        init_snapshot("default", None).unwrap();
+
+        let outcome = save_agent(Agent::Cursor, "default").unwrap();
+        assert_eq!(outcome, SaveOutcome::SymlinkNoOp);
+        // Live link still points into the store, untouched.
+        let live = Agent::Cursor.config_dir().unwrap();
+        let store_root = crate::paths::agent_profiles_dir().unwrap();
+        assert!(link_points_into(&live, &store_root));
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn save_symlink_tier_reports_unmanaged() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        // Real dir at ~/.cursor — not jarvy's to snapshot.
+        fs::create_dir_all(Agent::Cursor.config_dir().unwrap()).unwrap();
+        assert!(matches!(
+            save_agent(Agent::Cursor, "work"),
+            Err(ProfileError::UnmanagedDir(_))
+        ));
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn save_missing_profile_errors() {
+        let _home = JarvyHomeGuard::new();
+        let live = Agent::ClaudeCode.config_dir().unwrap();
+        fs::create_dir_all(&live).unwrap();
+        assert!(matches!(
+            save_agent(Agent::ClaudeCode, "ghost"),
+            Err(ProfileError::ProfileNotFound(_))
+        ));
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn restore_env_tier_copies_snapshot_over_live() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        // Snapshot has X ...
+        let snap = profile_dir("work").unwrap().join("claude-code");
+        fs::create_dir_all(&snap).unwrap();
+        fs::write(snap.join("settings.json"), "snapshot-v").unwrap();
+        // ... live has Y (a completely different file set).
+        let live = Agent::ClaudeCode.config_dir().unwrap();
+        fs::create_dir_all(&live).unwrap();
+        fs::write(live.join("stale.txt"), "gone").unwrap();
+
+        restore_agent(Agent::ClaudeCode, "work").unwrap();
+
+        // Snapshot's content is now live; stale files are gone.
+        assert_eq!(
+            fs::read_to_string(live.join("settings.json")).unwrap(),
+            "snapshot-v"
+        );
+        assert!(!live.join("stale.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn restore_symlink_tier_repoints_link() {
+        let _home = JarvyHomeGuard::new();
+        // Two profiles both carrying a cursor snapshot.
+        create_profile("a", None).unwrap();
+        create_profile("b", None).unwrap();
+        let a = profile_dir("a").unwrap().join("cursor");
+        fs::create_dir_all(&a).unwrap();
+        fs::write(a.join("marker.txt"), "a-side").unwrap();
+        let b = profile_dir("b").unwrap().join("cursor");
+        fs::create_dir_all(&b).unwrap();
+        fs::write(b.join("marker.txt"), "b-side").unwrap();
+
+        // Start pointed at a.
+        let live = Agent::Cursor.config_dir().unwrap();
+        std::os::unix::fs::symlink(&a, &live).unwrap();
+        // Restore b: link re-points, marker reads through the link changes.
+        restore_agent(Agent::Cursor, "b").unwrap();
+        assert_eq!(fs::read_link(&live).unwrap(), b);
+        assert_eq!(
+            fs::read_to_string(live.join("marker.txt")).unwrap(),
+            "b-side"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn restore_missing_snapshot_errors() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        assert!(matches!(
+            restore_agent(Agent::ClaudeCode, "work"),
+            Err(ProfileError::AgentNotSnapshotted { .. })
+        ));
+    }
+
     /// move_dir_cross_device surfaces cleanup failures: if the dst copy
     /// succeeded but remove_dir_all fails (e.g. read-only sub-dir), the
     /// function returns Err AND both src and dst remain on disk.
@@ -1067,6 +1737,59 @@ mod tests {
         assert!(
             dst.exists(),
             "dst must exist (copy succeeded before remove failed)"
+        );
+    }
+
+    /// Env-tier resolution must prefer a live env var over a stale
+    /// registry entry: two shells can differ, and the whole point of
+    /// the env tier is that THIS terminal's env var is authoritative.
+    /// The registry only kicks in when the var is absent.
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn resolve_active_profile_env_var_wins_over_registry() {
+        let _home = JarvyHomeGuard::new();
+        // Seed the store: two profiles, snapshots for claude-code in both.
+        create_profile("work", None).unwrap();
+        create_profile("play", None).unwrap();
+        let play_snap = crate::paths::agent_profiles_dir()
+            .unwrap()
+            .join("play")
+            .join("claude-code");
+        fs::create_dir_all(&play_snap).unwrap();
+
+        // Registry says the agent is on "work".
+        let mut active = std::collections::BTreeMap::new();
+        active.insert("claude-code".to_string(), "work".to_string());
+        let reg = ProfileRegistry {
+            active,
+            ..Default::default()
+        };
+        let store_root = crate::paths::agent_profiles_dir().unwrap();
+
+        // Point CLAUDE_CONFIG_DIR at the "play" snapshot — env must win.
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("CLAUDE_CONFIG_DIR", &play_snap);
+        }
+        let resolved = resolve_active_profile(Agent::ClaudeCode, &reg, &store_root);
+        // Clean up before asserting so a panic doesn't leak env state.
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("CLAUDE_CONFIG_DIR");
+        }
+        assert_eq!(
+            resolved.as_deref(),
+            Some("play"),
+            "env var must win over registry (env={:?}, registry=work)",
+            play_snap
+        );
+
+        // With the env var gone, the registry entry becomes the fallback.
+        let resolved = resolve_active_profile(Agent::ClaudeCode, &reg, &store_root);
+        assert_eq!(
+            resolved.as_deref(),
+            Some("work"),
+            "registry must be the fallback when the env var is unset"
         );
     }
 }

@@ -8,7 +8,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::store::{active_profile_from_link, link_points_into};
-use super::{ProfileError, ProfileRegistry};
+use super::{ProfileError, ProfileRegistry, resolve_active_profile};
 use crate::agents::Agent;
 
 /// `jarvy agents profile status` payload (rides the PRD-051
@@ -29,8 +29,11 @@ pub struct AgentProfileStatus {
     pub agent: String,
     /// `"env"` or `"symlink"`.
     pub mechanism: String,
-    /// Whether switching is supported in the v1 slice.
-    pub switchable_v1: bool,
+    /// Whether switching is supported for this agent (every current
+    /// agent is switchable after the follow-up to PRD-058 v1 —
+    /// windsurf/cline/continue graduated from storage-only). Kept as an
+    /// explicit field so consumers can filter without recomputing.
+    pub switchable: bool,
     /// Active profile, when one can be determined.
     pub active_profile: Option<String>,
     /// `"managed"` | `"unmanaged"` | `"not_installed"`.
@@ -114,10 +117,65 @@ fn agent_status(agent: Agent, registry: &ProfileRegistry, store_root: &Path) -> 
     AgentProfileStatus {
         agent: slug.to_string(),
         mechanism: if symlink_tier { "symlink" } else { "env" }.to_string(),
-        switchable_v1: agent.profile_switchable_v1(),
+        switchable: agent.profile_switchable(),
         active_profile,
         state: state.to_string(),
     }
+}
+
+/// Outcome of comparing the live profile against `[agents.profiles] prefer`.
+#[derive(Debug, Clone, Default)]
+pub struct PreferenceCheck {
+    /// Slugs of switchable agents sitting on a profile other than the
+    /// preferred one.
+    pub mismatched: Vec<&'static str>,
+    /// Slugs of installed switchable agents jarvy isn't managing at all,
+    /// so no profile can be attributed to them.
+    pub unmanaged: Vec<&'static str>,
+}
+
+impl PreferenceCheck {
+    /// True when nothing contradicts the preference. An all-unmanaged
+    /// machine matches: the repo asked for a profile and the user simply
+    /// isn't using profiles, which is a hint about `unmanaged`, not a
+    /// mismatch.
+    pub fn matched(&self) -> bool {
+        self.mismatched.is_empty()
+    }
+}
+
+/// Compare each switchable agent's live profile against `prefer`.
+///
+/// Env-tier agents are read from their config-dir env var rather than
+/// the registry: `profiles.json` records the last *global* switch, but
+/// `CLAUDE_CONFIG_DIR` is what this terminal is actually on, and the
+/// whole point of the env tier is that two shells can differ. Falling
+/// back to the registry when the var is unset keeps a plain
+/// `jarvy setup` in a fresh shell honest.
+///
+/// Read-only by construction — `prefer` is advisory and jarvy never
+/// auto-switches, because switching moves credentials.
+pub fn check_preference(prefer: &str) -> Result<PreferenceCheck, ProfileError> {
+    let registry = ProfileRegistry::load()?;
+    let store_root = crate::paths::agent_profiles_dir()?;
+    let mut check = PreferenceCheck::default();
+
+    for &agent in Agent::ALL {
+        if !agent.profile_switchable() || !agent.is_installed() {
+            continue;
+        }
+        // Single shared helper: same "env var → registry → symlink"
+        // ordering as `save_action`. Previously each callsite spelled
+        // its own walk (mechanism.first vs full loop) and the two
+        // would drift the day an agent had multiple mechanisms.
+        let active = resolve_active_profile(agent, &registry, &store_root);
+        match active {
+            Some(name) if name == prefer => {}
+            Some(_) => check.mismatched.push(agent.slug()),
+            None => check.unmanaged.push(agent.slug()),
+        }
+    }
+    Ok(check)
 }
 
 /// Extract the profile name from a link target
@@ -159,6 +217,29 @@ mod tests {
             .unwrap_or_else(|| panic!("no status entry for {slug}"))
     }
 
+    /// Unsets the config-dir var on drop so a panicking test can't leak
+    /// it into the next serial test — same shape as `JarvyHomeGuard`.
+    struct ConfigDirEnvGuard(&'static str);
+
+    impl ConfigDirEnvGuard {
+        fn set(var: &'static str, value: &std::path::Path) -> Self {
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::set_var(var, value);
+            }
+            Self(var)
+        }
+    }
+
+    impl Drop for ConfigDirEnvGuard {
+        fn drop(&mut self) {
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::remove_var(self.0);
+            }
+        }
+    }
+
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn empty_store_reports_defaults() {
@@ -170,7 +251,8 @@ mod tests {
         assert_eq!(status_for(&report, "claude-code").state, "not_installed");
         assert_eq!(status_for(&report, "claude-code").mechanism, "env");
         assert_eq!(status_for(&report, "cursor").mechanism, "symlink");
-        assert!(!status_for(&report, "windsurf").switchable_v1);
+        // windsurf graduated to switchable — the report reflects that.
+        assert!(status_for(&report, "windsurf").switchable);
     }
 
     #[cfg(unix)]
@@ -225,6 +307,96 @@ mod tests {
         assert_eq!(status_for(&report, "continue").state, "unmanaged");
         assert_eq!(status_for(&report, "windsurf").state, "not_installed");
         assert_eq!(status_for(&report, "cline").state, "not_installed");
+    }
+
+    /// `profiles.json` records the last *global* switch, but the env
+    /// tier's whole point is that two terminals can differ — so the
+    /// hint has to read `CLAUDE_CONFIG_DIR`, not the registry, or a
+    /// user who switched in this shell gets nagged about the profile
+    /// they just left.
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn preference_reads_env_tier_from_env_var_not_registry() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        create_profile("play", None).unwrap();
+        let mut active = std::collections::BTreeMap::new();
+        active.insert("claude-code".to_string(), "work".to_string());
+        ProfileRegistry {
+            active,
+            ..Default::default()
+        }
+        .save()
+        .unwrap();
+        fs::create_dir_all(Agent::ClaudeCode.config_dir().unwrap()).unwrap();
+
+        // Registry says "work"; this shell is on "play".
+        let play = crate::paths::agent_profiles_dir()
+            .unwrap()
+            .join("play")
+            .join("claude-code");
+        fs::create_dir_all(&play).unwrap();
+        let config_dir = ConfigDirEnvGuard::set("CLAUDE_CONFIG_DIR", &play);
+
+        let check = check_preference("play").unwrap();
+        assert!(check.matched(), "env var must win over the registry");
+
+        let check = check_preference("work").unwrap();
+        assert_eq!(check.mismatched, vec!["claude-code"]);
+
+        drop(config_dir);
+        // With the var gone, the registry is the fallback again.
+        assert!(check_preference("work").unwrap().matched());
+    }
+
+    /// An installed agent jarvy isn't managing is not a *mismatch* —
+    /// the repo asked for a profile and the user simply isn't using
+    /// profiles. Conflating the two would nag every non-adopter.
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn preference_separates_unmanaged_from_mismatched() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        fs::create_dir_all(Agent::Codex.config_dir().unwrap()).unwrap();
+
+        let check = check_preference("work").unwrap();
+        assert!(check.matched());
+        assert_eq!(check.unmanaged, vec!["codex"]);
+        assert!(check.mismatched.is_empty());
+    }
+
+    /// Uninstalled agents never appear in the hint. windsurf/cline/
+    /// continue used to be filtered as "storage-only, not switchable
+    /// until v1.1" — after their graduation to switchable they DO
+    /// surface, and an installed-but-unmanaged symlink-tier agent
+    /// lands in `unmanaged` (the hint about `--global` still applies).
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn preference_ignores_uninstalled_agents() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        // No agent config dirs on disk → nothing to compare, matched.
+        let check = check_preference("work").unwrap();
+        assert!(check.matched());
+        assert!(check.unmanaged.is_empty() && check.mismatched.is_empty());
+    }
+
+    /// Once windsurf/cline/continue are switchable, installing them but
+    /// not managing them (no symlink into the store) must surface in
+    /// `unmanaged` — the same hint claude-code/codex/cursor already got.
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn preference_surfaces_unmanaged_windsurf_continue() {
+        let _home = JarvyHomeGuard::new();
+        create_profile("work", None).unwrap();
+        fs::create_dir_all(Agent::Windsurf.config_dir().unwrap()).unwrap();
+        fs::create_dir_all(Agent::Continue.config_dir().unwrap()).unwrap();
+
+        let check = check_preference("work").unwrap();
+        assert!(check.matched(), "unmanaged is not a mismatch");
+        // Both are installed, both are unmanaged → both surface.
+        assert!(check.unmanaged.contains(&"windsurf"));
+        assert!(check.unmanaged.contains(&"continue"));
     }
 
     #[test]

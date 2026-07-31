@@ -209,6 +209,9 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
              else\n      \
              env JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use $argv --print-env | source\n    \
              end\n  \
+             end\n  \
+             function __jarvy_cwd_hint --on-variable PWD\n    \
+             env JARVY_CWD_HINT_SESSION=$fish_pid JARVY_CWD_HINT_INVOCATION=rc_snippet jarvy agents profile check-cwd --quiet; or true\n  \
              end\nend",
             hint = RC_LOG_HINT
         ),
@@ -268,7 +271,15 @@ pub fn generate_rc_snippet(shell: ShellType) -> String {
              || echo \"{hint}\" >&2\n  \
              alias jr='jarvy run'\n  \
              jp() {{ if [ $# -eq 0 ]; then jarvy agents profile list; \
-             else eval \"$(JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use \"$@\" --print-env)\"; fi; }}\nfi",
+             else eval \"$(JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use \"$@\" --print-env)\"; fi; }}\n  \
+             __jarvy_cwd_hint() {{ JARVY_CWD_HINT_SESSION=\"$$\" JARVY_CWD_HINT_INVOCATION=rc_snippet jarvy agents profile check-cwd --quiet || true; }}\n  \
+             if [ -n \"${{ZSH_VERSION:-}}\" ]; then\n    \
+             autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook chpwd __jarvy_cwd_hint\n  \
+             elif [ -n \"${{BASH_VERSION:-}}\" ]; then\n    \
+             case \"${{PROMPT_COMMAND:-}}\" in *__jarvy_cwd_hint*) ;; *) PROMPT_COMMAND=\"if [ \\\"$PWD\\\" != \\\"\\${{__JARVY_LAST_PWD:-}}\\\" ]; then __JARVY_LAST_PWD=\\\"$PWD\\\"; __jarvy_cwd_hint; fi${{PROMPT_COMMAND:+; $PROMPT_COMMAND}}\" ;; esac\n  \
+             else\n    \
+             : # plain sh (dash, BusyBox) has no reliable chpwd hook; __jarvy_cwd_hint is defined but not wired.\n  \
+             fi\nfi",
             hint = RC_LOG_HINT
         ),
     }
@@ -532,6 +543,28 @@ mod tests {
         assert!(snippet.contains(
             "eval \"$(JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use \"$@\" --print-env)\""
         ));
+        // cwd_hint (bash arm): PWD-dedup wrapper wired via PROMPT_COMMAND,
+        // check-cwd invoked with --quiet AND the rc-snippet attribution
+        // env var. Stderr must NOT be closed (`2>/dev/null` would suppress
+        // the stderr_is_tty() TTY probe in check-cwd and kill the nudge).
+        assert!(snippet.contains("__JARVY_LAST_PWD"));
+        assert!(snippet.contains("check-cwd --quiet"));
+        assert!(snippet.contains("JARVY_CWD_HINT_INVOCATION=rc_snippet"));
+        assert!(
+            !snippet.contains("check-cwd --quiet 2>/dev/null"),
+            "bash: check-cwd must NOT redirect stderr — kills TTY probe"
+        );
+    }
+
+    #[test]
+    fn test_generate_rc_snippet_zsh() {
+        // Zsh rides the POSIX arm alongside bash/sh but wires cwd_hint
+        // through zsh's dedicated chpwd hook (bash wraps PROMPT_COMMAND,
+        // plain sh gets nothing). Assert the chpwd wiring plus the
+        // rc-snippet attribution env var.
+        let snippet = generate_rc_snippet(ShellType::Zsh);
+        assert!(snippet.contains("add-zsh-hook chpwd __jarvy_cwd_hint"));
+        assert!(snippet.contains("JARVY_CWD_HINT_INVOCATION=rc_snippet"));
     }
 
     #[test]
@@ -547,6 +580,14 @@ mod tests {
         assert!(snippet.contains(
             "env JARVY_JP_INVOCATION=rc_snippet jarvy agents profile use $argv --print-env | source"
         ));
+        // cwd_hint (fish arm): --on-variable PWD triggers on cd, and the
+        // rc-snippet attribution env var flows to check-cwd.
+        assert!(snippet.contains("__jarvy_cwd_hint --on-variable PWD"));
+        assert!(snippet.contains("JARVY_CWD_HINT_INVOCATION=rc_snippet"));
+        assert!(
+            !snippet.contains("check-cwd --quiet 2>/dev/null"),
+            "fish: check-cwd must NOT redirect stderr — kills TTY probe"
+        );
     }
 
     #[test]
@@ -616,6 +657,22 @@ mod tests {
             assert!(
                 snippet.contains("--print-env"),
                 "{shell:?}: jp must use the --print-env switch path"
+            );
+        }
+    }
+
+    #[test]
+    fn powershell_and_nushell_do_not_wire_cwd_hint() {
+        // PowerShell and Nushell don't yet get the per-`cd` profile-drift
+        // nudge — their hook wiring (PowerShell `$PWD`-tracking prompt
+        // function, nu's `$env.PWD` didn't exist historically) is deferred
+        // to a follow-up. Guard against silent regressions here so a new
+        // rc-snippet contributor can't accidentally add half the wiring.
+        for shell in [ShellType::PowerShell, ShellType::Nushell] {
+            let snippet = generate_rc_snippet(shell);
+            assert!(
+                !snippet.contains("check-cwd"),
+                "{shell:?}: cwd_hint wiring is deferred — must not call check-cwd"
             );
         }
     }

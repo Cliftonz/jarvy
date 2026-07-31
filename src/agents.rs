@@ -141,13 +141,53 @@ impl Agent {
         }
     }
 
-    /// Whether profile switching is supported for this agent in the
-    /// PRD-058 v1 slice: the two env-tier agents plus cursor's symlink
-    /// swap. The remaining symlink-tier agents wait for the v1.1
-    /// globalStorage transaction (their dotdir alone is not the whole
-    /// profile).
-    pub fn profile_switchable_v1(self) -> bool {
-        matches!(self, Agent::ClaudeCode | Agent::Codex | Agent::Cursor)
+    /// Whether profile switching is supported for this agent (PRD-058).
+    /// All six agents are switchable — env-tier agents (claude-code,
+    /// codex) via config-dir env vars, symlink-tier agents (cursor,
+    /// windsurf, cline, continue) via a global symlink swap of the
+    /// dotdir. windsurf/cline/continue graduated from storage-only to
+    /// switchable in the follow-up to PRD-058 v1; their denylists stay
+    /// empty for now (empty denylist keeps everything — safe by the
+    /// "denylist not allowlist" invariant).
+    pub fn profile_switchable(self) -> bool {
+        // Every current variant is switchable; keep the method as a
+        // named boolean so status output / preference filters read as
+        // intent instead of "true".
+        matches!(
+            self,
+            Agent::ClaudeCode
+                | Agent::Codex
+                | Agent::Cursor
+                | Agent::Windsurf
+                | Agent::Cline
+                | Agent::Continue
+        )
+    }
+
+    /// Desktop-app process names to probe for a running IDE when a
+    /// symlink-tier swap is about to re-point the live config dir. Empty
+    /// for agents that run as in-editor extensions (cline / continue)
+    /// or that expose no separate binary — their absence just means the
+    /// probe returns `false`, i.e. never blocks a swap.
+    ///
+    /// Names are matched literally against `pgrep -x <name>` on Unix and
+    /// `tasklist /FI "IMAGENAME eq <name>.exe"` on Windows (see
+    /// `agent_profiles::probe`).
+    pub fn desktop_binary_names(self) -> &'static [&'static str] {
+        match self {
+            // Cursor + Windsurf are Electron desktop apps; both spell
+            // the process name with and without leading capital.
+            Agent::Cursor => &["Cursor", "cursor"],
+            Agent::Windsurf => &["Windsurf", "windsurf"],
+            // Cline / Continue live inside another editor (VS Code /
+            // JetBrains); no separate binary means the probe never
+            // reports them as running, which is the correct fail-safe.
+            Agent::Cline => &[],
+            Agent::Continue => &[],
+            // Env-tier agents don't need this — their swaps are
+            // per-terminal and don't require a global re-point.
+            _ => &[],
+        }
     }
 
     /// Whether the agent's profile mechanism includes the symlink tier.
@@ -245,13 +285,33 @@ mod tests {
     }
 
     #[test]
-    fn profile_switchable_v1_matches_phasing() {
-        assert!(Agent::ClaudeCode.profile_switchable_v1());
-        assert!(Agent::Codex.profile_switchable_v1());
-        assert!(Agent::Cursor.profile_switchable_v1());
-        assert!(!Agent::Windsurf.profile_switchable_v1());
-        assert!(!Agent::Cline.profile_switchable_v1());
-        assert!(!Agent::Continue.profile_switchable_v1());
+    fn profile_switchable_covers_all_agents() {
+        // windsurf / cline / continue graduated from storage-only to
+        // switchable — every agent now returns true. The method is kept
+        // as a named boolean so callers still read intent, not a bare
+        // literal.
+        for agent in Agent::ALL {
+            assert!(
+                agent.profile_switchable(),
+                "{} must be profile-switchable",
+                agent.slug()
+            );
+        }
+    }
+
+    #[test]
+    fn desktop_binary_names_covers_symlink_desktop_apps_only() {
+        assert_eq!(Agent::Cursor.desktop_binary_names(), &["Cursor", "cursor"]);
+        assert_eq!(
+            Agent::Windsurf.desktop_binary_names(),
+            &["Windsurf", "windsurf"]
+        );
+        // In-editor extensions: no dedicated binary, probe reports false.
+        assert!(Agent::Cline.desktop_binary_names().is_empty());
+        assert!(Agent::Continue.desktop_binary_names().is_empty());
+        // Env-tier: probe isn't relevant, empty is correct.
+        assert!(Agent::ClaudeCode.desktop_binary_names().is_empty());
+        assert!(Agent::Codex.desktop_binary_names().is_empty());
     }
 
     #[test]

@@ -16,15 +16,20 @@
 //! The CLI surface (`jarvy agents profile ...`) lives in
 //! `commands::agents_profile_cmd`; this module is the library core.
 
+pub mod cwd_hint;
 pub mod exclude;
+pub mod probe;
 pub mod status;
 pub mod store;
 pub mod switcher;
 
-pub use status::{ProfileStatusReport, collect_status};
+pub use status::{ProfileStatusReport, check_preference, collect_status};
 #[cfg(test)]
 pub use store::profile_dir;
-pub use store::{create_profile, delete_profile, init_snapshot};
+pub use store::{
+    SaveOutcome, create_profile, delete_profile, init_snapshot, resolve_active_profile,
+    restore_agent, save_agent,
+};
 pub use switcher::{SwitchPlan, apply_symlink_repoint, plan_use};
 
 use std::collections::BTreeMap;
