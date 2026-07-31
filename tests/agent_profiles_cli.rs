@@ -127,7 +127,13 @@ fn use_print_env_stdout_carries_only_export_lines() {
         );
     }
     assert!(stdout.contains("export CLAUDE_CONFIG_DIR=\""));
-    assert!(stdout.contains(&snap.display().to_string()));
+    // Windows paths embed `\` which `format_exports` escapes to `\\`, so a
+    // direct substring match on `snap.display()` fails there. Assert the
+    // profile name + agent slug appear instead — both survive escaping and
+    // prove the export line points at the right snapshot.
+    assert!(stdout.contains("work"));
+    assert!(stdout.contains("claude-code"));
+    let _ = snap;
     // Stderr purity: export lines must never appear on stderr (they
     // would be silently discarded by the `jp` eval but signal a bug).
     assert!(

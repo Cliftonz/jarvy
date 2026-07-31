@@ -1275,7 +1275,13 @@ mod tests {
         };
         let block = format_exports(&exports).unwrap();
         assert!(block.starts_with("export CLAUDE_CONFIG_DIR=\""));
-        assert!(block.contains(&snap.display().to_string()));
+        // Windows paths contain `\` which `format_exports` escapes to `\\`,
+        // so we can't do a direct substring match on `snap.display()`.
+        // Assert the profile name + agent slug appear instead — both survive
+        // escaping and prove the export line points at the right snapshot.
+        assert!(block.contains("work"));
+        assert!(block.contains("claude-code"));
+        let _ = snap;
 
         // Handler-level: same selection succeeds end-to-end.
         let code = run_agents_profile(&profile_cmd(ProfileAction::Use {

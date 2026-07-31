@@ -1481,26 +1481,19 @@ mod tests {
 
     // ── Finding B tests ────────────────────────────────────────────────
 
+    #[cfg(unix)]
     #[test]
     fn symlink_refusal_absolute_link_refused() {
+        // Unix-only: Windows symlink creation requires either
+        // Developer Mode or elevated privileges, and `symlink_refusal_reason`
+        // reads the link target from disk (returns "unreadable" for a
+        // non-symlink path). Coverage of the absolute-target refusal on
+        // Windows lives in the integration path via the real snapshot code.
         let tmp = tempfile::tempdir().unwrap();
         let source_root = tmp.path().join("src");
         fs::create_dir_all(&source_root).unwrap();
-        // Absolute symlink inside source_root → refused.
         let link = source_root.join("abs-link");
-        #[cfg(unix)]
         std::os::unix::fs::symlink("/etc/passwd", &link).unwrap();
-        #[cfg(windows)]
-        {
-            // On Windows we can't create a symlink in tests; assert false
-            // directly since absolute targets are always refused.
-            assert_eq!(
-                symlink_refusal_reason(&link, &source_root),
-                Some("absolute_target")
-            );
-            return;
-        }
-        #[cfg(unix)]
         assert_eq!(
             symlink_refusal_reason(&link, &source_root),
             Some("absolute_target"),
