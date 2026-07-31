@@ -13,6 +13,11 @@ Jarvy writes structured logs to `~/.jarvy/logs/` and can bundle a full diagnosti
 - Rotated: `jarvy.log.1.gz`, `jarvy.log.2.gz`, …
 - Format: text or JSON (configurable)
 - Levels: `error`, `warn`, `info`, `debug`, `trace`
+- Permissions: the directory is `0700` and every `jarvy.log*` file is
+  narrowed to `0600` at startup. The sanitizer below is a denylist — it
+  redacts the secret shapes it recognizes and writes everything else
+  verbatim — so the file mode is the second line of defense, not the
+  first.
 
 ## Configuration
 
@@ -35,6 +40,12 @@ max_age_days = 30        # delete logs older than this
 | `max_file_size` | string | `10MB` | Rotation threshold |
 | `max_files` | int | `5` | Rotated file count to retain |
 | `max_age_days` | int | `30` | Compressed-log retention |
+
+The log file captures `info` and above. `-v`/`-vv`/`-vvv` widen it to
+`debug`/`trace` so those events reach a persistent sink instead of only
+the terminal — reproduce a problem under `-vv`, then run `jarvy ticket
+create`. `--quiet` does **not** narrow it: it quiets the console only, so
+a silenced run still produces a usable bundle.
 
 ## Sanitizer
 

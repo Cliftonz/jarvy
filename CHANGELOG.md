@@ -27,11 +27,11 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [Unreleased] — agent profile switcher (PRD-058), tool freshness advisory (PRD-057)
+## [v0.7.0] — agent profile switcher (PRD-058) + tool freshness advisory (PRD-057) (2026-07-31)
 
 **Features — agent profile switcher (PRD-058 v1):**
 
-- **`jarvy agents profile {init,create,use,list,status,delete}`** —
+- **`jarvy agents profile {init,create,use,save,restore,list,status,delete,check-cwd}`** —
   named profiles that snapshot an AI agent's *whole* config dir
   (credentials, settings, skills, MCP registrations, memory) into
   `~/.jarvy/agent-profiles/<profile>/<agent-slug>/`, so a work
@@ -71,24 +71,88 @@ for divergences from generic release skills.
   trees, log databases and scratch. On a real machine that is the
   difference between 2.3 GB and 2.9 MB per profile. The rule set is
   a denylist, so an unrecognized new file is kept rather than
-  silently dropped, and it applies only to copies — the cross-device
-  move fallback deletes its source, so it never filters. Live IPC
-  endpoints (`~/.codex/ipc/ipc.sock`) are skipped by file type;
-  `fs::copy` fails on them and used to abort the whole snapshot.
+  silently dropped. Whether it applies at all is carried by a
+  `CopyPolicy`: `Snapshot` filters, `Relocate` cannot — the
+  cross-device move fallback deletes its source, so anything skipped
+  there would be destroyed rather than left behind. `create --from`
+  clones through the same filter, resolving each top-level directory
+  to its agent so one identity's transcripts never seed another's
+  profile. Cursor's `extensions` tree is deliberately kept: cursor is
+  symlink-tier, its snapshot *is* the live config dir, and nothing
+  re-installs a dropped extension. Live IPC endpoints
+  (`~/.codex/ipc/ipc.sock`) are skipped by file type; `fs::copy`
+  fails on them and used to abort the whole snapshot.
 - **`init --agents <slugs>`** narrows the snapshot, so the env tier
   can be captured while a symlink-tier editor is still open — the
-  symlink tier *moves* the live config dir out from under it.
+  symlink tier *moves* the live config dir out from under it. A
+  narrowed run only speaks for the agents it named, so it leaves an
+  existing `default_profile` alone (it still claims one on a virgin
+  store, or `use` would have no default to fall back on).
+- **`[agents.profiles] prefer` setup hint** — `jarvy setup` compares
+  each switchable agent's live profile against the repo's preference
+  and prints a hint when they diverge; `strict = true` raises it to a
+  stderr warning. It never auto-switches and never fails setup:
+  switching a profile swaps the credentials an agent authenticates
+  with. An agent that isn't profile-managed at all is counted as
+  unmanaged rather than mismatched, so the hint doesn't fire at users
+  who simply aren't using profiles. The env tier is read from
+  `CLAUDE_CONFIG_DIR` / `CODEX_HOME`, not `profiles.json` — the
+  registry records only the last *global* switch, so a shell that just
+  switched would otherwise still be nagged.
+- **`save [name]` refreshes snapshots from live**; symlink-tier agents
+  report a no-op because their `~/.slug` IS the profile snapshot (the
+  live dir is a jarvy-managed symlink into the store, so edits already
+  land in the profile). Without `name`, each agent saves to whichever
+  profile it is currently on — env tier reads the config-dir env var,
+  symlink tier reads the live link.
+- **`restore <name>` copies snapshots back over live dirs** (env tier)
+  or re-points the symlink (symlink tier). Env-tier restores target
+  the DEFAULT config dir (`~/.claude`, `~/.codex`) so a fresh shell
+  with no env vars picks up the restored profile. Refuses cleanly when
+  the profile has no snapshot for a targeted agent.
+- **All six agents are now switchable.** windsurf, cline, and
+  continue graduated from storage-only — their `~/.slug` dirs snapshot
+  the same way cursor's do (per-agent denylist stays empty for now, so
+  everything is kept). A `use --global` for one of them re-points its
+  live symlink identically. A running-IDE probe (`pgrep -x` on unix,
+  `tasklist /FI` on windows, 1s cap, fail-safe false) refuses the
+  swap for cursor / windsurf when the editor is running unless
+  `--force` is passed; cline / continue skip the probe (in-editor
+  extensions have no separate binary to look for). The probe
+  short-circuits to `false` under `cargo test` so the developer's own
+  editor state can't leak into unrelated tests.
+- **`check-cwd` + shell `cd` hook** — the `jarvy shell-init` snippet
+  (bash `PROMPT_COMMAND` / zsh `chpwd_functions` / fish
+  `--on-variable PWD`) runs `jarvy agents profile check-cwd` on every
+  directory change. When the entered directory contains a `jarvy.toml`
+  with `[agents.profiles] prefer` that doesn't match the live profile,
+  one stderr line points at `jp <name>`. Debounced per (session, repo)
+  for 4 h via a 0600 state file at
+  `~/.jarvy/agent-profiles/.cwd-hint-state.json` (keyed by
+  `sha256(session_id + "|" + repo_root)`) — a switch in *this*
+  terminal silences the hint for THIS repo in THIS session without
+  silencing sibling shells. Bash uses a `$PWD` compare so most prompts
+  skip the jarvy spawn entirely. Opt out with `JARVY_NO_CWD_HINT=1`.
 - **Telemetry** — new gated `agent_profile.*` event family. Profile
   *names* never reach telemetry; events carry counts and bounded
-  agent slugs only.
+  agent slugs only. Per-path skips are `debug!`, so each snapshot
+  also emits an info-level `agent_profile.snapshot_completed`
+  carrying the file / byte / excluded / skipped counts — a denylist
+  that stops matching shows up as `subtrees_excluded` collapsing
+  while `bytes` jumps, without shipping a row per file. A failed
+  snapshot emits `agent_profile.snapshot_failed` naming the agent
+  that aborted the run, which `op_failed` (subcommand-scoped) cannot
+  say; `op_failed` itself now carries a `stage`, separating a failed
+  copy from a failed registry write — only the latter leaves the
+  store half-applied. `create --from` reports its own
+  `agent_profile.clone_completed` roll-up rather than borrowing the
+  per-agent event with a sentinel slug.
 
-Known v1 limits: windsurf / cline / continue snapshot but are not
-yet switchable; there is no `save` verb, no drift detection, and no
-git-backed sync between machines (all v1.1). `[agents.profiles]
-prefer` parses but is not yet acted on at setup time. `jarvy skills
-install` and `jarvy mcp register` still write to an agent's default
-config path rather than the env-redirected profile of the calling
-terminal.
+Known v1 limits: no drift detection and no git-backed sync between
+machines (both v1.1). `jarvy skills install` and `jarvy mcp
+register` still write to an agent's default config path rather than
+the env-redirected profile of the calling terminal — run them with
+the target profile active globally, or re-run after switching.
 
 **Features — tool freshness advisory (PRD-057):**
 
@@ -131,6 +195,19 @@ terminal.
   `[telemetry] enabled`) with per-tool `stale_tool` events plus
   a `jarvy.maintenance.stale_tools` gauge metric tagged
   `machine_id + platform` for fleet dashboards.
+
+**Security:**
+
+- `~/.jarvy/logs/` is now created 0700 and every `jarvy.log*` file in
+  it is narrowed to 0600 at startup, including files written by earlier
+  releases. The rotating appender opened with the process umask, so a
+  default 022 left logs world-readable — and the sanitizer is a
+  denylist, redacting the secret shapes it recognizes and writing
+  everything else verbatim.
+- `registry.fetch.*` events no longer emit the per-tool fetch URL
+  unredacted. It is derived from the configured registry URL and so
+  inherits any embedded `user:pass@`, which `registry_url` was already
+  scrubbing on the same event.
 
 ## [v0.6.6] — quiet by default under non-TTY, dotfiles, personal overlay, service preflight (2026-07-22)
 
@@ -3189,7 +3266,8 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.7.0...HEAD
+[v0.7.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.7.0
 [v0.5.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.2
 [v0.5.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.1
 [v0.3.0]: https://github.com/Cliftonz/Jarvy/releases/tag/v0.3.0

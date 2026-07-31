@@ -74,8 +74,11 @@ pub fn excluded_paths(agent: Agent) -> &'static [&'static str] {
             ".DS_Store",
         ],
         Agent::Cursor => &[
-            // Re-installable from the marketplace.
-            "extensions",
+            // `extensions` is deliberately NOT excluded. Cursor is
+            // symlink-tier: its snapshot *is* the live config dir, so a
+            // profile without the extension tree is an editor with no
+            // extensions — and nothing re-installs them. Every other entry
+            // here is per-project state the agent regenerates on demand.
             // Per-project and per-worktree state, not identity.
             "projects",
             "worktrees",
@@ -89,10 +92,20 @@ pub fn excluded_paths(agent: Agent) -> &'static [&'static str] {
     }
 }
 
-/// True when `rel` (a path relative to the snapshot root, slash-joined)
-/// is covered by one of `patterns`.
-pub fn is_excluded(rel: &str, patterns: &[&str]) -> bool {
-    patterns.iter().any(|p| matches_pattern(rel, p))
+/// The pattern that excludes `rel` (a path relative to the snapshot root,
+/// slash-joined), or `None` when the path is kept. Returning the pattern
+/// rather than a bool lets the `agent_profile.path_excluded` event name
+/// which rule fired — without that, a rule that stops matching anything
+/// can never be retired. Patterns are jarvy constants, so emitting one
+/// is cardinality-safe in a way the path itself would not be.
+pub fn matched_pattern(rel: &str, patterns: &[&'static str]) -> Option<&'static str> {
+    patterns.iter().copied().find(|p| matches_pattern(rel, p))
+}
+
+/// True when `rel` is covered by one of `patterns`.
+#[cfg(test)]
+pub fn is_excluded(rel: &str, patterns: &[&'static str]) -> bool {
+    matched_pattern(rel, patterns).is_some()
 }
 
 fn matches_pattern(rel: &str, pattern: &str) -> bool {
@@ -182,6 +195,29 @@ mod tests {
         ] {
             assert!(!is_excluded(keep, pats), "{keep} must be snapshotted");
         }
+    }
+
+    #[test]
+    fn matched_pattern_names_the_rule_that_fired() {
+        let pats: &[&'static str] = &["projects", "plugins/cache"];
+        assert_eq!(matched_pattern("projects/a/b", pats), Some("projects"));
+        assert_eq!(
+            matched_pattern("plugins/cache/x", pats),
+            Some("plugins/cache")
+        );
+        assert_eq!(matched_pattern("settings.json", pats), None);
+    }
+
+    /// Cursor is symlink-tier: the snapshot IS the live config dir, so
+    /// dropping `extensions` would hand the user an extension-less editor
+    /// with no path back.
+    #[test]
+    fn cursor_keeps_extensions() {
+        let pats = excluded_paths(Agent::Cursor);
+        assert!(!is_excluded("extensions", pats));
+        assert!(!is_excluded("extensions/foo.bar/package.json", pats));
+        // Per-project scratch is still dropped.
+        assert!(is_excluded("worktrees/x", pats));
     }
 
     #[test]

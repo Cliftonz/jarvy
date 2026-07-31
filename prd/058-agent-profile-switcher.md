@@ -5,10 +5,10 @@
 v1 implemented, unreleased. Storage + registry, the env tier
 (claude-code, codex) and symlink tier (cursor),
 `init/create/use/list/status/delete`, the `jp` shell shorthand,
-gated telemetry, and the ticket-bundle exclusion all landed on the
-`0.6.7` track. v1.1 (git sync, globalStorage, `save`/drift,
-windsurf/cline/continue switching, the `prefer` setup hint) is
-unstarted — see Phasing.
+gated telemetry, the `[agents.profiles] prefer` setup hint, and the
+ticket-bundle exclusion all landed on the `0.6.7` track. v1.1 (git
+sync, globalStorage, `save`/drift, windsurf/cline/continue
+switching, the cwd shell hook) is unstarted — see Phasing.
 
 **Amended (2026-07-29), from dogfooding against a real home dir.**
 "Snapshot the whole config dir" turned out to be unshippable as
@@ -216,7 +216,7 @@ Constraints:
   state the IDE holds open; swapping under a running IDE corrupts
   or silently loses writes. `use` runs a process check per
   affected IDE and **refuses** (not warns) when it's running,
-  emitting `agent_profile.ide_running { ide }`. `--force` exists
+  emitting `agent_profile.ide_running { agent }`. `--force` exists
   for the user who knows the IDE is a zombie process.
 - Only the *extension's* globalStorage dir is swapped — never the
   whole IDE profile (themes, editor settings, unrelated extensions
@@ -243,9 +243,13 @@ it makes the *need* to switch impossible to miss:
    profile 'client-a' (active: personal) — run 'jp client-a'`.
    Silent when they match. Debounced per (tty, repo) so it fires
    once per session, not per prompt.
-2. **Setup hint.** `jarvy setup` compares active vs `prefer` and
-   prints the same nudge (warning-level with `strict = true`).
-   Already covered by `[agents.profiles]` below.
+2. **Setup hint.** *(Shipped in v1.)* `jarvy setup` compares active
+   vs `prefer` and prints the same nudge (warning-level with
+   `strict = true`). An installed agent jarvy isn't managing counts
+   as unmanaged, not mismatched, so the hint doesn't fire at users
+   who aren't using profiles at all. The env tier is read from
+   `CLAUDE_CONFIG_DIR` / `CODEX_HOME` rather than `profiles.json`,
+   which records only the last *global* switch.
 3. **Agent-side skill.** A `jarvy-profile-awareness` SKILL.md
    distributed through the existing skills infrastructure (PRD-049
    pipeline — same install path, same sidecar) teaches the *agent*
@@ -367,6 +371,14 @@ strict = false           # true: setup warns loudly when active != prefer
 
 ### Telemetry (gated, per convention)
 
+Design sketch, not the shipped contract — `CLAUDE.md`'s Event
+Taxonomy is authoritative for what v1 actually emits (which is a
+superset of the rows below: per-agent `switched`, `snapshot_*`,
+`clone_completed`, `op_failed` with `stage`, …). The `saved`,
+`synced`, `sync_failed`, `restored`, `ide_running`, `cwd_hint`
+rows and the `globalstorage` mechanism belong to features that
+don't exist yet — they land with their features, not before.
+
 | Event | Fields |
 |---|---|
 | `agent_profile.created` / `deleted` / `saved` | `agent_count`, `mechanism_counts` |
@@ -375,7 +387,7 @@ strict = false           # true: setup warns loudly when active != prefer
 | `agent_profile.unmanaged_dir` | `agent` |
 | `agent_profile.perms_unsafe` | `fs_hint` |
 | `agent_profile.setup_hint` | `strict`, `matched` (bool) |
-| `agent_profile.ide_running` | `ide`, `forced` (bool) — globalStorage swap hit a live IDE; refused unless `--force` |
+| `agent_profile.ide_running` | `agent`, `forced` (bool) — globalStorage swap hit a live IDE; refused unless `--force` |
 | `agent_profile.cwd_hint` | `matched` (bool) — shell-hook awareness fired (debounced; no profile names) |
 | `agent_profile.synced` | `pushed` (bool), `encrypted_file_count`, `duration_ms` |
 | `agent_profile.sync_failed` | `error_kind = "git_missing" \| "conflict" \| "auth" \| "network" \| "encrypt" \| "io"` — never raw git stderr (repo URL may embed tokens, same rule as `dotfiles.phase_failed`) |
@@ -388,31 +400,50 @@ All routed through `observability::telemetry_gate::is_enabled()`.
 ```
 src/agent_profiles/
   mod.rs         # public API + ProfileRegistry (profiles.json)
-  store.rs       # snapshot/restore, chmod verify, name validation
+  store.rs       # snapshot / save / restore, chmod verify, name validation
   switcher.rs    # env-tier emit + symlink-tier atomic re-point
-  globalstorage.rs # IDE globalStorage slice swap + running-IDE probe
-  status.rs      # drift heuristic, per-agent report
-  sync.rs        # git shell-out, age encrypt/decrypt, restore
+  probe.rs       # running-IDE probe (pgrep / tasklist, cfg(test) short-circuit)
+  cwd_hint.rs    # check-cwd handler + 0600 debounce state file
+  status.rs      # per-agent report + [agents.profiles] prefer comparison
+  exclude.rs     # per-agent denylist of non-identity paths
+  sync.rs        # v1.1: git shell-out, age encrypt/decrypt, restore
 src/commands/agents_profile_cmd.rs
 ```
 
-`agents::Agent` gains a `profile_mechanism()` -> `Env { var } |
-Symlink { home_dir } | GlobalStorage { ide, ext_id }` accessor so
-per-agent knowledge stays in the one canonical enum
-(VS Code-family agents return both `Symlink` for their home dir
-slice and `GlobalStorage` for the IDE slice — the accessor
-returns a small `&[Mechanism]`).
+`agents::Agent` carries a `profile_mechanisms()` accessor returning
+a `&'static [ProfileMechanism]` (variants: `Env { var } | Symlink`).
+`GlobalStorage` remains in the `#[non_exhaustive]` design surface
+for the future dedicated VS Code User-dir swap — not yet needed
+since the current implementation gets windsurf/cline/continue by
+simply promoting their existing `~/.slug` dirs to symlink-tier
+switching. Anything they store in the VS Code User dir (their
+extension bundles do live there) is a v1.1 follow-up when we have
+per-agent measurements of what actually needs to move.
+
+**Design sketch vs shipped contract.** The tables in this PRD are
+the *original* design. `CLAUDE.md`'s Event Taxonomy and
+`docs/agent-profiles.md` are authoritative for what v1 actually
+emits. The shipped code deliberately diverges in one place: the
+originally proposed `mechanism = "globalstorage"` label was not
+added, because the shipped globalstorage-tier agents still swap
+through the same symlink primitive as cursor (windsurf/cline/continue
+promotion + running-IDE probe was the concrete win; a distinct
+mechanism string without behavioral distinction was empty overhead).
+When the VS Code User-dir swap lands, it will introduce a real
+new variant, and that variant will carry the new label.
 
 ## Phasing
 
-1. **v1**: storage + registry, claude-code (env) + codex (env) +
-   cursor (symlink), `init/create/use/list/status/delete`,
-   shell-init `jp`, telemetry, ticket-bundle exclusion.
-2. **v1.1**: git sync (`sync` / `restore`, `age`-encrypted
-   credential globs, remote push), IDE globalStorage swap for the
-   VS Code-family agents (running-IDE refusal + `--force`),
-   windsurf / cline / continue symlink tier, `save` drift
-   detection, `[agents.profiles]` setup hint + cwd shell hook.
+1. **v1** *(shipped)*: storage + registry, claude-code (env) +
+   codex (env) + cursor + windsurf + cline + continue (symlink),
+   `init/create/use/save/restore/list/status/delete/check-cwd`,
+   shell-init `jp` + `cd` hook, running-IDE probe with `--force`,
+   `[agents.profiles] prefer` setup hint, telemetry (profile names
+   never emitted), ticket-bundle exclusion.
+2. **v1.1**: git-backed profile sync (`sync` / remote push,
+   `age`-encrypted credential globs), dedicated VS Code User-dir
+   swap for globalStorage / snippets / keybindings, `save` drift
+   detection with a `.drift.json` sidecar.
 3. **v2 (separate review)**: `jarvy-profile-awareness` skill via
    the PRD-049 pipeline, profile templates from library_sources,
    token-health display.

@@ -903,6 +903,7 @@ pub fn run_setup(
             );
         }
     }
+    run_agent_profile_hint_phase(&config);
 
     if config.has_hooks() && !no_hooks {
         chatter!("\nHooks execution summary:");
@@ -1846,6 +1847,75 @@ fn run_services_phase(config: &Config, file: &str, is_ci: bool, dry_run: bool) {
                 eprintln!("Warning: Failed to auto-start services: {e}");
             }
         }
+    }
+}
+
+/// Compare the live agent profile against `[agents.profiles] prefer`
+/// and print a hint when they diverge (PRD-058).
+///
+/// Advisory by design and it never auto-switches: switching a profile
+/// swaps the credentials an agent authenticates with, and credentials
+/// don't move without an explicit user command. `strict = true` only
+/// raises the volume from a stdout hint to a stderr warning — it still
+/// does not fail setup, because a wrong-profile machine is a
+/// misconfiguration to tell the user about, not a reason to refuse to
+/// install their tools.
+///
+/// No trust gate needed: `[agents.profiles]` is stripped wholesale from
+/// remote configs in `Config::mark_remote`, so `prefer` is by
+/// construction local.
+fn run_agent_profile_hint_phase(config: &Config) {
+    let Some(prefer) = config
+        .agents
+        .as_ref()
+        .and_then(|a| a.profiles.as_ref())
+        .and_then(|p| p.prefer.as_deref())
+        .filter(|p| !p.trim().is_empty())
+    else {
+        return;
+    };
+    let strict = config
+        .agents
+        .as_ref()
+        .and_then(|a| a.profiles.as_ref())
+        .and_then(|p| p.strict)
+        .unwrap_or(false);
+
+    let Ok(check) = crate::agent_profiles::check_preference(prefer) else {
+        return; // No store yet, unreadable registry — nothing to compare.
+    };
+    let matched = check.matched();
+
+    if !matched {
+        let agents = check.mismatched.join(", ");
+        if strict {
+            eprintln!(
+                "Warning: this repo prefers agent profile '{prefer}', but {agents} \
+                 {} on a different one.\n  Switch with: jarvy agents profile use {prefer}",
+                if check.mismatched.len() == 1 {
+                    "is"
+                } else {
+                    "are"
+                }
+            );
+        } else {
+            chatter!(
+                "\nAgent profile: this repo prefers '{prefer}' ({agents} on another). \
+                 Switch with `jarvy agents profile use {prefer}`."
+            );
+        }
+    }
+
+    if crate::observability::telemetry_gate::is_enabled() {
+        // Profile names never reach telemetry — `matched` is the whole
+        // signal, and the agent slugs are a bounded set.
+        tracing::info!(
+            event = "agent_profile.setup_hint",
+            strict,
+            matched,
+            mismatched_count = check.mismatched.len(),
+            unmanaged_count = check.unmanaged.len(),
+        );
     }
 }
 
