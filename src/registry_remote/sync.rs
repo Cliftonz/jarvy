@@ -535,10 +535,13 @@ fn fetch_with_event(
     max_bytes: u64,
     redacted_registry: &str,
 ) -> Result<Vec<u8>, SyncError> {
+    // Derived from the configured registry URL, so it inherits any
+    // embedded `user:pass@` — redact it the same way `registry_url` is.
+    let safe_url = crate::network::redact_credentials(url);
     emit(|| {
         tracing::debug!(
             event = "registry.fetch.start",
-            url = %url,
+            url = %safe_url,
             max_bytes = max_bytes,
         );
     });
@@ -547,7 +550,7 @@ fn fetch_with_event(
             emit(|| {
                 tracing::debug!(
                     event = "registry.fetch.completed",
-                    url = %url,
+                    url = %safe_url,
                     bytes = bytes.len() as u64,
                 );
             });
@@ -557,7 +560,7 @@ fn fetch_with_event(
             emit(|| {
                 tracing::warn!(
                     event = "registry.fetch.failed",
-                    url = %url,
+                    url = %safe_url,
                     registry_url = %redacted_registry,
                     error = %e,
                 );

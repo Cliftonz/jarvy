@@ -99,6 +99,26 @@ pub(crate) fn cli_log_directives(
     })
 }
 
+/// Floor for the `~/.jarvy/logs/jarvy.log` layer.
+///
+/// INFO by default, widened by `-v`/`-vv`/`-vvv` so `debug!` events reach
+/// a persistent sink. Before this the floor was a hard `LevelFilter::INFO`
+/// and the registry filter was the only thing verbosity moved — so every
+/// `debug!` in the codebase was console-only and vanished the moment the
+/// terminal scrolled, which is precisely when a support bundle is wanted.
+///
+/// `--quiet`/`WarnOnly` deliberately do NOT lower it: those cap the
+/// *console* so shells stay silent, and starving the log file of `tool.*`
+/// / `setup.*` events would hollow out `jarvy ticket create`.
+fn file_layer_level(obs: Option<&crate::observability::ObservabilityConfig>) -> LevelFilter {
+    use crate::observability::LogLevel;
+    match obs.map(|o| o.log.level) {
+        Some(LogLevel::Trace) => LevelFilter::TRACE,
+        Some(LogLevel::Verbose | LogLevel::Debug) => LevelFilter::DEBUG,
+        _ => LevelFilter::INFO,
+    }
+}
+
 /// Build a boxed console `fmt` layer, resolving the JSON/text and
 /// filter axes in one place so the four sink variants (stderr/file ×
 /// text/json) don't drift (perf review F4, maintainability F3).
@@ -268,7 +288,8 @@ pub fn init_logging(
     // single `set_global_default` covers all sinks (observability review #1).
     let file_layer = match ensure_log_dir() {
         Ok(dir) => {
-            let appender = RollingFileAppender::new(Rotation::DAILY, dir, "jarvy.log");
+            let appender = RollingFileAppender::new(Rotation::DAILY, &dir, "jarvy.log");
+            tighten_log_file_modes(&dir);
             // Wrap in non_blocking so per-event tracing writes are
             // coalesced through an mpsc + dedicated worker thread —
             // upstream tracing-appender's recommended pattern. The
@@ -289,7 +310,7 @@ pub fn init_logging(
                 // Capture every level the user might care about during a
                 // failed `jarvy setup`. Cheaper than rebuilding telemetry
                 // from `eprintln!` after the fact.
-                .with_filter(LevelFilter::INFO);
+                .with_filter(file_layer_level(obs));
             Some(layer)
         }
         Err(e) => {
@@ -410,10 +431,28 @@ fn otlp_level_filter() -> LevelFilter {
 /// Returns `~/.jarvy/logs`, creating it if necessary. Path resolution
 /// goes through `crate::paths::logs_dir` so a future XDG migration or
 /// `JARVY_HOME` override is honored without touching this site.
+///
+/// 0700 because the sanitizer is a denylist: it redacts the secret shapes
+/// it knows, and everything it doesn't know lands on disk in full.
 fn ensure_log_dir() -> std::io::Result<std::path::PathBuf> {
     let dir = crate::paths::logs_dir().map_err(|e| std::io::Error::other(e.to_string()))?;
-    std::fs::create_dir_all(&dir)?;
+    crate::paths::ensure_dir_0700(&dir)?;
     Ok(dir)
+}
+
+/// Narrow every `jarvy.log*` file in `dir` to 0600. `RollingFileAppender`
+/// opens with the process umask, so a 022 umask leaves world-readable logs
+/// behind — including ones written before this release. Runs once at
+/// startup; a same-process rotation is covered by the 0700 directory.
+fn tighten_log_file_modes(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().starts_with("jarvy.log") {
+            crate::paths::apply_secure_mode_0600(&entry.path());
+        }
+    }
 }
 
 /// Resolve the per-signal OTLP/HTTP endpoint.
@@ -672,6 +711,41 @@ mod tests {
     fn cli_directives_quiet_beats_verbose_in_from_flags() {
         // -q -vv resolves to Quiet (console-only), not a widened filter.
         assert_eq!(cli_log_directives(&obs(true, 2, None)), None);
+    }
+
+    #[test]
+    fn file_layer_floor_follows_verbosity() {
+        assert_eq!(file_layer_level(None), LevelFilter::INFO);
+        assert_eq!(
+            file_layer_level(Some(&obs(false, 0, None))),
+            LevelFilter::INFO
+        );
+        assert_eq!(
+            file_layer_level(Some(&obs(false, 1, None))),
+            LevelFilter::DEBUG
+        );
+        assert_eq!(
+            file_layer_level(Some(&obs(false, 2, None))),
+            LevelFilter::DEBUG
+        );
+        assert_eq!(
+            file_layer_level(Some(&obs(false, 3, None))),
+            LevelFilter::TRACE
+        );
+    }
+
+    #[test]
+    fn file_layer_floor_is_not_lowered_by_quiet() {
+        // -q caps the console; jarvy.log must keep its INFO floor or
+        // `jarvy ticket create` ships an empty log (review F2).
+        assert_eq!(
+            file_layer_level(Some(&obs(true, 0, None))),
+            LevelFilter::INFO
+        );
+        assert_eq!(
+            file_layer_level(Some(&obs(true, 2, None))),
+            LevelFilter::INFO
+        );
     }
 
     #[test]
