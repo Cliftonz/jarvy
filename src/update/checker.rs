@@ -176,7 +176,14 @@ impl UpdateChecker {
         }
     }
 
-    /// Perform update check
+    /// Perform update check, honoring the throttle and auto-disable
+    /// (the throttle skips redundant network calls; the auto-disable
+    /// keeps background/opportunistic checks quiet under sandboxes and
+    /// CI). Used by opportunistic call sites (`jarvy setup`, `ensure`,
+    /// notification hooks). Explicit user invocations should call
+    /// [`Self::check_now`] instead so a `jarvy update check` typed at
+    /// the prompt never silently reports "up to date" without actually
+    /// asking GitHub.
     pub fn check(&mut self) -> Result<CheckResult, CheckError> {
         if !self.should_check() {
             // Return cached result if available
@@ -190,7 +197,20 @@ impl UpdateChecker {
             }
             return Ok(CheckResult::UpToDate);
         }
+        self.check_force()
+    }
 
+    /// Bypass the throttle AND the sandbox/CI auto-disable — always
+    /// hit the network and report the actual answer. This is what an
+    /// explicit `jarvy update check` runs: the user typed it, so
+    /// silently reporting a stale cached result (or worse, reporting
+    /// "up to date" from an empty state because auto-updates are off)
+    /// is a bug — either check honestly or refuse honestly.
+    pub fn check_now(&mut self) -> Result<CheckResult, CheckError> {
+        self.check_force()
+    }
+
+    fn check_force(&mut self) -> Result<CheckResult, CheckError> {
         // Fetch latest release
         let latest = self
             .client

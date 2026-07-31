@@ -96,7 +96,12 @@ fn run_check(channel_override: Option<Channel>) -> Result<(), UpdateError> {
     let progress = crate::progress::Progress::start();
     let spinner = progress.add("[update]", "Checking for updates...");
 
-    let result = checker.check();
+    // Explicit user command — bypass the throttle AND the sandbox
+    // auto-disable. `check()` would silently return `UpToDate` (from an
+    // empty cache) if `is_seamless_auto()` disabled updates in this env
+    // (e.g. Claude Code, Codespaces). If the user typed `jarvy update
+    // check` they want an honest answer, not a canned one.
+    let result = checker.check_now();
     match &result {
         Ok(CheckResult::UpToDate) => spinner.finish_ok("up to date"),
         Ok(CheckResult::UpdateAvailable { latest, .. }) => {
