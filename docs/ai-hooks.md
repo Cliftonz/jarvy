@@ -124,7 +124,7 @@ If a hook targets an event an agent doesn't support, `jarvy ai-hooks apply` repo
 
 ## The built-in library
 
-Run `jarvy ai-hooks list --library` to see all curated hooks. As of this writing the library ships 16 hooks across five categories:
+Run `jarvy ai-hooks list --library` to see all curated hooks. As of this writing the library ships 17 hooks across five categories:
 
 ### Safety — block destructive operations
 
@@ -161,6 +161,7 @@ Run `jarvy ai-hooks list --library` to see all curated hooks. As of this writing
 | Hook | Does |
 |---|---|
 | `commit-message-format-guard` | Blocks `git commit -m` without a Conventional Commits prefix (`feat:`, `fix:`, `chore:`, ...) |
+| `block-unmanaged-installs` | Blocks AI-driven package installs (`brew`/`apt`/`dnf`/`winget`/`choco`/`scoop` install, `pacman -S`, `apk add`, `pip`/`pipx`/`cargo`/`gem` install, `go install <pkg>`, global `npm`/`pnpm`/`yarn` adds) so tools land through `jarvy.toml` + `jarvy setup` instead. Project-local `npm install` (no `-g`) stays allowed — dependencies aren't machine tools. Opt-in: add `use = "block-unmanaged-installs"` to your `[ai_hooks]` block. |
 
 ### Mapping to specific agents
 

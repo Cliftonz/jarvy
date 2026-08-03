@@ -163,6 +163,15 @@ pub const LIBRARY: &[LibraryHook] = &[
         timeout_ms: 5_000,
     },
     LibraryHook {
+        name: "block-unmanaged-installs",
+        description: "Block AI-driven package installs (brew/apt/winget/npm -g/pip/cargo/gem/go/...) — tools must be declared in jarvy.toml and installed via `jarvy setup`.",
+        event: HookEvent::PreToolUse,
+        matcher: Some("Bash"),
+        bash: BLOCK_UNMANAGED_INSTALLS_BASH,
+        powershell: BLOCK_UNMANAGED_INSTALLS_PS,
+        timeout_ms: 5_000,
+    },
+    LibraryHook {
         name: "audit-log",
         description: "Append every tool call to `~/.jarvy/logs/ai-hooks-audit.jsonl`. Redacts secrets, 0600 perms.",
         event: HookEvent::PreToolUse,
@@ -744,6 +753,57 @@ $cmd = Extract-Command $payload
 $deny = 'discord-app-screenshare|discord-selfbot-v13|noblox\.js-proxy|colorette-tool|@solana/web3-utils|electron-notify|rustdecimal|crossenv|cross-env\.js|fallguys|http-proxy-middleware-v3'
 if ($cmd -match "(?i)(npm\s+(install|i|add)|pnpm\s+(install|i|add)|yarn\s+(add|install)?|pip\s+install|cargo\s+install)\s+[^|;&]*($deny)") {
   [Console]::Error.WriteLine('jarvy: refusing install of known-malicious package')
+  exit 2
+}
+exit 0
+"#;
+
+// block-unmanaged-installs: opt-in gate that forces AI agents to route
+// tool installs through jarvy (declare in jarvy.toml, run `jarvy setup`)
+// instead of invoking package managers directly. System package managers
+// block outright; npm/pnpm block only GLOBAL installs (project-local
+// `npm install` is a dependency, not a machine-level tool). `jarvy ...`
+// invocations never match, so the agent's escape path is jarvy itself.
+const BLOCK_UNMANAGED_INSTALLS_BASH: &str = r#"#!/usr/bin/env bash
+set -u
+payload="$(cat)"
+_jarvy_extract_cmd() {
+  local p="$1"
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$p" | jq -r '(.tool_input.command // .command // .command_line // empty)' 2>/dev/null | head -1
+  else
+    printf '%s' "$p" | sed -n 's/.*"\(command\|command_line\)"[[:space:]]*:[[:space:]]*"\(.*\)"[^"]*$/\2/p' | head -1
+  fi
+}
+cmd="$(_jarvy_extract_cmd "$payload")"
+# System / language package managers that install machine-level tools.
+if printf '%s' "$cmd" | grep -Eiq '(^|[[:space:];&|])(sudo[[:space:]]+)?(brew[[:space:]]+(re)?install([[:space:]]|$)|(apt|apt-get|dnf|yum|zypper)[[:space:]]+(-[a-zA-Z-]+[[:space:]]+)*install([[:space:]]|$)|pacman[[:space:]]+-S([[:space:]]|$)|apk[[:space:]]+add([[:space:]]|$)|winget[[:space:]]+install([[:space:]]|$)|choco[[:space:]]+install([[:space:]]|$)|scoop[[:space:]]+install([[:space:]]|$)|pipx?[[:space:]]+install([[:space:]]|$)|pip3[[:space:]]+install([[:space:]]|$)|cargo[[:space:]]+install([[:space:]]|$)|gem[[:space:]]+install([[:space:]]|$)|go[[:space:]]+install[[:space:]])'; then
+  echo "jarvy: refusing direct package install via AI agent — declare the tool in jarvy.toml and run \`jarvy setup\` instead" >&2
+  exit 2
+fi
+# npm/pnpm/yarn: only GLOBAL installs are machine-level tools.
+if printf '%s' "$cmd" | grep -Eiq '((npm|pnpm)[[:space:]]+(install|i|add)[[:space:]][^|;&]*(-g([[:space:]]|$)|--global)|(npm|pnpm)[[:space:]]+(-g|--global)[[:space:]]+(install|i|add)([[:space:]]|$)|yarn[[:space:]]+global[[:space:]]+add)'; then
+  echo "jarvy: refusing global npm/pnpm/yarn install via AI agent — declare the tool in jarvy.toml [npm] and run \`jarvy setup\` instead" >&2
+  exit 2
+fi
+exit 0
+"#;
+
+const BLOCK_UNMANAGED_INSTALLS_PS: &str = r#"$payload = [Console]::In.ReadToEnd()
+function Extract-Command($p) {
+  if (Get-Command jq -ErrorAction SilentlyContinue) {
+    return ($p | jq -r '(.tool_input.command // .command // .command_line // empty)' 2>$null | Select-Object -First 1)
+  }
+  if ($p -match '"command"\s*:\s*"((?:[^"\\]|\\.)*)"') { return $Matches[1].Replace('\"','"') }
+  return ''
+}
+$cmd = Extract-Command $payload
+if ($cmd -match '(?i)(^|[\s;&|])(sudo\s+)?(brew\s+(re)?install(\s|$)|(apt|apt-get|dnf|yum|zypper)\s+(-[a-zA-Z-]+\s+)*install(\s|$)|pacman\s+-S(\s|$)|apk\s+add(\s|$)|winget\s+install(\s|$)|choco\s+install(\s|$)|scoop\s+install(\s|$)|pipx?\s+install(\s|$)|pip3\s+install(\s|$)|cargo\s+install(\s|$)|gem\s+install(\s|$)|go\s+install\s)') {
+  [Console]::Error.WriteLine('jarvy: refusing direct package install via AI agent — declare the tool in jarvy.toml and run `jarvy setup` instead')
+  exit 2
+}
+if ($cmd -match '(?i)((npm|pnpm)\s+(install|i|add)\s[^|;&]*(-g(\s|$)|--global)|(npm|pnpm)\s+(-g|--global)\s+(install|i|add)(\s|$)|yarn\s+global\s+add)') {
+  [Console]::Error.WriteLine('jarvy: refusing global npm/pnpm/yarn install via AI agent — declare the tool in jarvy.toml [npm] and run `jarvy setup` instead')
   exit 2
 }
 exit 0

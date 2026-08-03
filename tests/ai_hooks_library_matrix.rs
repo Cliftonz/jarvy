@@ -203,6 +203,103 @@ const CASES: &[Case] = &[
         verdict: Verdict::Allow,
         why: "ordinary package",
     },
+    // -- block-unmanaged-installs --------------------------------------
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"brew install ripgrep"}}"#,
+        verdict: Verdict::Block,
+        why: "brew install",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"sudo apt-get install -y jq"}}"#,
+        verdict: Verdict::Block,
+        why: "sudo apt-get install with flags",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"cargo install cargo-nextest"}}"#,
+        verdict: Verdict::Block,
+        why: "cargo install",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"pip install httpie"}}"#,
+        verdict: Verdict::Block,
+        why: "pip install",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"pipx install poetry"}}"#,
+        verdict: Verdict::Block,
+        why: "pipx install",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"npm install -g typescript"}}"#,
+        verdict: Verdict::Block,
+        why: "npm global install",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"npm i -g pnpm"}}"#,
+        verdict: Verdict::Block,
+        why: "npm i -g short form",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"yarn global add serve"}}"#,
+        verdict: Verdict::Block,
+        why: "yarn global add",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"go install golang.org/x/tools/gopls@latest"}}"#,
+        verdict: Verdict::Block,
+        why: "go install binary",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"cd /tmp && brew install wget"}}"#,
+        verdict: Verdict::Block,
+        why: "install after chained command",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"npm install"}}"#,
+        verdict: Verdict::Allow,
+        why: "project-local dep install is not a machine tool",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"npm install react"}}"#,
+        verdict: Verdict::Allow,
+        why: "local package add",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"jarvy setup"}}"#,
+        verdict: Verdict::Allow,
+        why: "jarvy is the sanctioned install path",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"cargo build --release"}}"#,
+        verdict: Verdict::Allow,
+        why: "cargo build is not cargo install",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"go install"}}"#,
+        verdict: Verdict::Allow,
+        why: "bare `go install` compiles the current module, not a remote tool",
+    },
+    Case {
+        hook: "block-unmanaged-installs",
+        payload: r#"{"tool_name":"Bash","tool_input":{"command":"brew list"}}"#,
+        verdict: Verdict::Allow,
+        why: "brew query is fine",
+    },
     // -- block-cat-env-files -------------------------------------------
     Case {
         hook: "block-cat-env-files",
