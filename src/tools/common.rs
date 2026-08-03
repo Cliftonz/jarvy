@@ -316,11 +316,11 @@ fn has_cache() -> &'static std::sync::RwLock<std::collections::HashMap<String, b
 }
 
 fn has_uncached(cmd: &str) -> bool {
-    Command::new(cmd)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    // Presence = the binary spawned at all; exit status is deliberately
+    // ignored. Cobra-style CLIs (talosctl, argocd) exit non-zero on
+    // `--version` when they can't reach their server, yet the binary is
+    // plainly installed. ENOENT / EACCES on spawn = absent.
+    Command::new(cmd).arg("--version").output().is_ok()
 }
 
 /// Outcome of [`probe_with_timeout`]. Distinct from `Result<Output, io::Error>`
@@ -397,8 +397,9 @@ pub fn probe_with_timeout(cmd: &str, args: &[&str], timeout: std::time::Duration
 }
 
 /// Return true iff `cmd` resolves on `PATH`. Different from [`has`]:
-/// - `has` runs `<cmd> --version` and checks exit code — proves the
-///   binary is *runnable*. Right for tools jarvy is about to invoke.
+/// - `has` spawns `<cmd> --version` — proves the binary is *runnable*
+///   (exit code deliberately ignored; see `has_uncached`). Right for
+///   tools jarvy is about to invoke.
 /// - `command_on_path` shells out to `which` (POSIX) / `where`
 ///   (Windows) — proves the binary is *reachable*. Right for
 ///   detection paths where we care about presence but don't want to
@@ -534,21 +535,69 @@ fn version_cache() -> &'static std::sync::RwLock<std::collections::HashMap<Strin
     CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
 }
 
-fn cmd_version_output(cmd: &str) -> Option<String> {
+/// Probe `cmd` for version output, trying `--version`, `-V`, then the
+/// `version` subcommand — each capped at 5 s via [`probe_with_timeout`].
+///
+/// Tolerant by design (doctor false-positive fix):
+/// - Non-zero exit does NOT discard output. Cobra-style CLIs (talosctl,
+///   argocd) print their client version yet exit non-zero when they
+///   can't reach a server.
+/// - stdout + stderr combined — many CLIs banner on stderr.
+/// - Some CLIs answer only `version` as a subcommand (cue), hence the
+///   flag chain.
+///
+/// Return priority:
+/// 1. successful exit whose output parses as a version — stops the chain
+/// 2. any exit whose output parses as a version
+/// 3. successful exit without a parseable version (substring fallback in
+///    `version_satisfies` still gets a shot)
+/// 4. `None` — binary absent, unspawnable, or nothing usable came back
+pub fn cmd_version_output(cmd: &str) -> Option<String> {
     if let Ok(read) = version_cache().read()
         && let Some(hit) = read.get(cmd)
     {
         return hit.clone();
     }
-    let probed = Command::new(cmd)
-        .arg("--version")
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+    let probed = cmd_version_output_uncached(cmd);
     if let Ok(mut write) = version_cache().write() {
         write.insert(cmd.to_string(), probed.clone());
     }
     probed
+}
+
+fn cmd_version_output_uncached(cmd: &str) -> Option<String> {
+    const FLAGS: [&str; 3] = ["--version", "-V", "version"];
+    let timeout = std::time::Duration::from_secs(5);
+    let mut parseable_any_exit: Option<String> = None;
+    let mut unparseable_success: Option<String> = None;
+    for flag in FLAGS {
+        match probe_with_timeout(cmd, &[flag], timeout) {
+            ProbeResult::Completed(out) => {
+                let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+                if !out.stderr.is_empty() {
+                    if !text.is_empty() {
+                        text.push('\n');
+                    }
+                    text.push_str(&String::from_utf8_lossy(&out.stderr));
+                }
+                if text.trim().is_empty() {
+                    continue;
+                }
+                let parseable = super::version::extract_version(&text).is_some();
+                if out.status.success() && parseable {
+                    return Some(text);
+                }
+                if parseable {
+                    parseable_any_exit.get_or_insert(text);
+                } else if out.status.success() {
+                    unparseable_success.get_or_insert(text);
+                }
+            }
+            ProbeResult::Missing | ProbeResult::PermissionDenied => return None,
+            ProbeResult::Timeout | ProbeResult::IoError(_) => {}
+        }
+    }
+    parseable_any_exit.or(unparseable_success)
 }
 
 /// Check if a command's version satisfies the given requirement.
@@ -1344,5 +1393,58 @@ impl PkgOps {
             }
         };
         Ok(())
+    }
+}
+
+/// Doctor false-positive regression tests: version probing must tolerate
+/// non-zero exits (talosctl/argocd print the client version then exit
+/// non-zero when their server is unreachable) and `version`-subcommand-only
+/// CLIs (cue). Fake shell scripts at unique absolute paths dodge the
+/// process-wide caches.
+#[cfg(all(test, unix))]
+mod version_probe_tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn fake_cli(dir: &tempfile::TempDir, name: &str, script: &str) -> String {
+        let path = dir.path().join(name);
+        let mut f = std::fs::File::create(&path).unwrap();
+        write!(f, "#!/bin/sh\n{script}").unwrap();
+        f.sync_all().unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn nonzero_exit_version_output_still_parses() {
+        let dir = tempfile::tempdir().unwrap();
+        // argocd-style: prints version, exits non-zero (server unreachable)
+        let cli = fake_cli(&dir, "fake-argocd", "echo \"fake: v9.9.9\"\nexit 20\n");
+        let out = cmd_version_output(&cli).expect("output despite non-zero exit");
+        assert!(out.contains("v9.9.9"));
+        assert!(cmd_satisfies(&cli, "9.9"), "9.9.9 must satisfy 9.9");
+        assert!(has(&cli), "binary spawned → present, exit code irrelevant");
+    }
+
+    #[test]
+    fn version_subcommand_only_cli_is_probed() {
+        let dir = tempfile::tempdir().unwrap();
+        // cue-style: --version / -V fail, only `version` subcommand answers
+        let cli = fake_cli(
+            &dir,
+            "fake-cue",
+            "if [ \"$1\" = \"version\" ]; then echo \"fake version v0.16.1\"; exit 0; fi\n\
+             echo \"unknown flag\" >&2\nexit 1\n",
+        );
+        assert!(cmd_satisfies(&cli, "~0.16"), "0.16.1 must satisfy ~0.16");
+    }
+
+    #[test]
+    fn missing_binary_returns_none() {
+        assert_eq!(
+            cmd_version_output("/nonexistent/definitely-not-a-cli"),
+            None
+        );
     }
 }

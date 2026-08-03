@@ -13,7 +13,7 @@
 use crate::config::Config;
 use crate::output::{ExitCode, Outputable, colors, header, icons, subheader};
 use crate::telemetry;
-use crate::tools::common::{cmd_satisfies, has};
+use crate::tools::common::has;
 use crate::tools::spec::{
     DependencyCheckResult, check_tool_dependencies, get_tool_default_hook, get_tool_dependencies,
     get_tool_flexible_dependencies, get_tool_spec, should_ignore_missing_deps,
@@ -200,13 +200,29 @@ impl Outputable for DoctorResult {
                     .installed
                     .as_ref()
                     .map(|v| format!(" (installed: {})", v))
-                    .unwrap_or_else(|| " - not found".to_string());
+                    .unwrap_or_else(|| {
+                        if tool.path.is_some() {
+                            // On PATH but no parseable version output —
+                            // "not found" here was the old false positive.
+                            " (installed)".to_string()
+                        } else {
+                            " - not found".to_string()
+                        }
+                    });
 
                 let status_msg = match tool.status {
                     ToolStatus::Ok => "satisfies requirement",
-                    ToolStatus::Outdated => "outdated",
+                    // Not "outdated": with tilde/caret pins the installed
+                    // version can be NEWER than the requirement.
+                    ToolStatus::Outdated => "version mismatch",
                     ToolStatus::NotInstalled => "not installed",
-                    ToolStatus::Unknown => "unknown tool",
+                    ToolStatus::Unknown => {
+                        if tool.path.is_some() {
+                            "installed (version undetectable)"
+                        } else {
+                            "unknown tool"
+                        }
+                    }
                 };
 
                 output.push_str(&format!(
@@ -696,15 +712,29 @@ fn check_tool_health(
             }
 
             let command = spec.map(|s| s.command).unwrap_or(name.as_str());
-            let installed = get_installed_version(command);
             let path = which_command(command);
+            // One probe feeds both the display version and the requirement
+            // check — a second probe could disagree with the first (flaky
+            // CLIs) and doubles the fork count.
+            let probe_output = crate::tools::common::cmd_version_output(command);
+            let installed = probe_output
+                .as_deref()
+                .and_then(crate::tools::version::extract_version)
+                .map(|v| v.to_string());
 
-            let status = if installed.is_none() {
+            let status = if path.is_none() && probe_output.is_none() {
                 ToolStatus::NotInstalled
-            } else if cmd_satisfies(command, version) {
+            } else if let Some(ref out) = probe_output {
+                if crate::tools::version::version_satisfies(out, version) {
+                    ToolStatus::Ok
+                } else {
+                    ToolStatus::Outdated
+                }
+            } else if matches!(version.as_str(), "" | "latest" | "*") {
+                // On PATH but version undetectable; no pin to violate.
                 ToolStatus::Ok
             } else {
-                ToolStatus::Outdated
+                ToolStatus::Unknown
             };
 
             // Check dependencies
@@ -787,30 +817,6 @@ fn check_tool_dependency_status(
             will_install: None,
         }),
     }
-}
-
-fn get_installed_version(command: &str) -> Option<String> {
-    // Try common version flags
-    for flag in ["--version", "-v", "-V", "version"] {
-        if let Ok(output) = std::process::Command::new(command).arg(flag).output()
-            && output.status.success()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let combined = format!("{}{}", stdout, stderr);
-
-            // Extract version number
-            if let Some(version) = extract_version(&combined) {
-                return Some(version);
-            }
-        }
-    }
-    None
-}
-
-fn extract_version(text: &str) -> Option<String> {
-    let re = regex::Regex::new(r"v?(\d+\.\d+(?:\.\d+)?)").ok()?;
-    re.captures(text).map(|c| c[1].to_string())
 }
 
 fn which_command(command: &str) -> Option<String> {
@@ -913,7 +919,10 @@ fn generate_recommendations(
         } else if tool.status == ToolStatus::Outdated {
             recommendations.push(Recommendation {
                 severity: RecommendationSeverity::Warning,
-                message: format!("Update {} to {}", tool.name, tool.required),
+                message: format!(
+                    "{} version differs from required {}",
+                    tool.name, tool.required
+                ),
                 fix: Some(format!("jarvy upgrade {}", tool.name)),
             });
         }
@@ -1169,13 +1178,29 @@ impl Outputable for DoctorResultExtended {
                     .installed
                     .as_ref()
                     .map(|v| format!(" (installed: {})", v))
-                    .unwrap_or_else(|| " - not found".to_string());
+                    .unwrap_or_else(|| {
+                        if tool.path.is_some() {
+                            // On PATH but no parseable version output —
+                            // "not found" here was the old false positive.
+                            " (installed)".to_string()
+                        } else {
+                            " - not found".to_string()
+                        }
+                    });
 
                 let status_msg = match tool.status {
                     ToolStatus::Ok => "satisfies requirement",
-                    ToolStatus::Outdated => "outdated",
+                    // Not "outdated": with tilde/caret pins the installed
+                    // version can be NEWER than the requirement.
+                    ToolStatus::Outdated => "version mismatch",
                     ToolStatus::NotInstalled => "not installed",
-                    ToolStatus::Unknown => "unknown tool",
+                    ToolStatus::Unknown => {
+                        if tool.path.is_some() {
+                            "installed (version undetectable)"
+                        } else {
+                            "unknown tool"
+                        }
+                    }
                 };
 
                 output.push_str(&format!(
@@ -1671,14 +1696,14 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_version() {
-        assert_eq!(
-            extract_version("git version 2.43.0"),
-            Some("2.43.0".to_string())
-        );
-        assert_eq!(extract_version("v20.11.0"), Some("20.11.0".to_string()));
-        assert_eq!(extract_version("Python 3.12.1"), Some("3.12.1".to_string()));
-        assert_eq!(extract_version("1.75.0"), Some("1.75.0".to_string()));
+    fn test_extract_version_via_shared_parser() {
+        // doctor now delegates to tools::version::extract_version — assert
+        // the shared parser covers the shapes the old local regex handled.
+        let extract = |s: &str| crate::tools::version::extract_version(s).map(|v| v.to_string());
+        assert_eq!(extract("git version 2.43.0"), Some("2.43.0".to_string()));
+        assert_eq!(extract("v20.11.0"), Some("20.11.0".to_string()));
+        assert_eq!(extract("Python 3.12.1"), Some("3.12.1".to_string()));
+        assert_eq!(extract("1.75.0"), Some("1.75.0".to_string()));
     }
 
     #[test]
