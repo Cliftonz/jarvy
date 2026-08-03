@@ -1,0 +1,21 @@
+{
+  "prd": "059-native-hooks-husky-parity",
+  "title": "Native Git Hooks — Husky-parity experience for any repo",
+  "version": "1.0.0",
+  "priority": "medium",
+  "estimated_days": 5,
+  "created": "2026-08-03",
+  "status": "proposed",
+  "scope": "Extend [git_hooks.native] (PRD-048) from inline-TOML hook bodies to the full Husky experience for non-Node repos: file-based hooks in a committed .jarvy/hooks/ dir, core.hooksPath install mode (zero-drift), `jarvy hooks add <stage> <cmd>` authoring, JARVY_SKIP_HOOKS bypass guard, minimal {staged_files} variable, and a hardened remote-config refusal matrix for hooks-path redirection. Full PRD: tasks/prd-059-native-hooks-husky-parity.md",
+  "progress": {
+    "completed": 0,
+    "total": 2,
+    "percentage": 0
+  },
+  "follow_up": [
+    "Phase 1: .jarvy/hooks/ dir + copy mode + `jarvy hooks add` + skip guard + docs (Path 4 in replace-husky.md)",
+    "Phase 2: hooks-path mode + uninstall + refusal matrix + {staged_files} + telemetry + Windows CI proof",
+    "Open: toml_edit for comment-preserving jarvy.toml writes from `hooks add`",
+    "Open: discover-rule nudge when .husky/ present"
+  ]
+}
