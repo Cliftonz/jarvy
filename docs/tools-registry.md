@@ -1,6 +1,6 @@
 ---
 title: "Tool registry (auto-generated) — Jarvy"
-description: "Every tool Jarvy knows how to install — 270 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
+description: "Every tool Jarvy knows how to install — 276 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
 tags:
   - reference
   - tools
@@ -12,7 +12,7 @@ tags:
     This page is generated from `jarvy tools --index` by `scripts/gen-docs.sh`. 
     Run that script after registering new tools.
 
-Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its **name**.
+Jarvy currently ships **276 tools**. Reference one in your `jarvy.toml` by its **name**.
 
 | Name | Command | macOS | Linux | Windows | Default hook | Depends on |
 |---|---|---|---|---|---|---|
@@ -56,6 +56,7 @@ Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its *
 | `composer` | `composer` | `brew: composer` | apt: `composer`<br>dnf: `composer`<br>pacman: `composer`<br>apk: `composer` | — |  | — |
 | `cosign` | `cosign` | `brew: cosign` | apk: `cosign` | `winget: sigstore.cosign` |  | — |
 | `crane` | `crane` | `brew: crane` | apt: `crane`<br>dnf: `crane`<br>pacman: `crane`<br>apk: `crane` | — |  | — |
+| `crossplane` | `crossplane` | `brew: crossplane` | — | — |  | `kubectl` |
 | `crystal` | `crystal` | `brew: crystal` | apt: `crystal`<br>dnf: `crystal`<br>pacman: `crystal`<br>apk: `crystal` | — |  | — |
 | `cue` | `cue` | `brew: cue` | apt: `cue`<br>dnf: `cue`<br>pacman: `cue`<br>apk: `cue` | — |  | — |
 | `curl` | `curl` | `brew: curl` | apt: `curl`<br>dnf: `curl`<br>pacman: `curl`<br>apk: `curl` | `winget: cURL.cURL` |  | — |
@@ -69,6 +70,7 @@ Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its *
 | `deno` | `deno` | `brew: deno` | — | `winget: DenoLand.Deno` |  | — |
 | `detect_secrets` | `detect-secrets` | `brew: detect-secrets` | — | — |  | — |
 | `dfc` | `dfc` | `brew: chainguard-dev/tap/dfc` | — | — |  | — |
+| `difftastic` | `difft` | `brew: difftastic` | — | `winget: Wilfred.Difftastic` |  | — |
 | `direnv` | `direnv` | `brew: direnv` | apt: `direnv`<br>dnf: `direnv`<br>pacman: `direnv`<br>apk: `direnv` | `winget: direnv.direnv` | ✓ | — |
 | `dive` | `dive` | `brew: dive` | apk: `dive` | — |  | `docker`, `podman` |
 | `docker` | `docker` | `cask: docker` | apt: `docker.io`<br>dnf: `docker`<br>pacman: `docker`<br>apk: `docker` | `winget: Docker.DockerDesktop` | ✓ | — |
@@ -92,6 +94,7 @@ Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its *
 | `gcloud` | `gcloud` | `cask: gcloud-cli` | apt: `google-cloud-cli`<br>dnf: `google-cloud-cli`<br>pacman: `google-cloud-cli`<br>apk: `google-cloud-sdk` | `winget: Google.CloudSDK` | ✓ | — |
 | `gh` | `gh` | `brew: gh` | apt: `gh`<br>dnf: `gh`<br>pacman: `github-cli`<br>apk: `github-cli` | `winget: GitHub.cli` | ✓ | — |
 | `git` | `git` | `brew: git` | apt: `git`<br>dnf: `git`<br>pacman: `git`<br>apk: `git` | `winget: Git.Git` | ✓ | — |
+| `git_cliff` | `git-cliff` | `brew: git-cliff` | — | `winget: orhun.git-cliff` |  | `git` |
 | `git_lfs` | `git-lfs` | `brew: git-lfs` | apt: `git-lfs`<br>dnf: `git-lfs`<br>pacman: `git-lfs`<br>apk: `git-lfs` | `winget: GitHub.GitLFS` |  | — |
 | `git_secrets` | `git-secrets` | `brew: git-secrets` | apt: `git-secrets`<br>dnf: `git-secrets`<br>pacman: `git-secrets`<br>apk: `git-secrets` | — |  | `git` |
 | `gitleaks` | `gitleaks` | `brew: gitleaks` | — | `winget: Gitleaks.Gitleaks` |  | `git` |
@@ -150,6 +153,7 @@ Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its *
 | `kubectl` | `kubectl` | `brew: kubectl` | apt: `kubectl`<br>dnf: `kubectl`<br>pacman: `kubectl`<br>apk: `kubectl` | `winget: Kubernetes.kubectl` | ✓ | `minikube`, `kind`, `k3d`… |
 | `kubectx` | `kubectx` | `brew: kubectx` | — | `winget: ahmetb.kubectx` | ✓ | — |
 | `kubens` | `kubens` | `brew: kubectx` | — | — |  | — |
+| `kubent` | `kubent` | `brew: kubent` | — | — |  | `kubectl` |
 | `kubescape` | `kubescape` | `brew: kubescape` | apt: `kubescape`<br>dnf: `kubescape`<br>pacman: `kubescape`<br>apk: `kubescape` | `winget: kubescape.kubescape` |  | `kubectl` |
 | `kubeseal` | `kubeseal` | `brew: kubeseal` | — | — |  | `kubectl` |
 | `kustomize` | `kustomize` | `brew: kustomize` | apt: `kustomize`<br>dnf: `kustomize`<br>pacman: `kustomize`<br>apk: `kustomize` | `winget: Kubernetes.kustomize` |  | — |
@@ -267,6 +271,7 @@ Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its *
 | `uv` | `uv` | `brew: uv` | apk: `uv` | `winget: astral-sh.uv` |  | — |
 | `vagrant` | `vagrant` | `cask: vagrant` | apt: `vagrant`<br>dnf: `vagrant`<br>pacman: `vagrant`<br>apk: `vagrant` | `winget: Hashicorp.Vagrant`<br>`choco: vagrant` |  | — |
 | `vault` | `vault` | `brew: vault` | apt: `vault`<br>dnf: `vault`<br>pacman: `vault`<br>apk: `vault` | `winget: HashiCorp.Vault` |  | — |
+| `vcluster` | `vcluster` | `brew: vcluster` | — | — |  | `kubectl`, `helm` |
 | `velero` | `velero` | `brew: velero` | — | — |  | `kubectl` |
 | `vfox` | `vfox` | `brew: vfox` | — | `winget: vfox` | ✓ | — |
 | `vim` | `vim` | `brew: vim` | apt: `vim`<br>dnf: `vim-enhanced`<br>pacman: `vim`<br>apk: `vim` | `winget: vim.vim` |  | — |
@@ -282,6 +287,7 @@ Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its *
 | `yazi` | `yazi` | `brew: yazi` | apt: `yazi`<br>dnf: `yazi`<br>pacman: `yazi`<br>apk: `yazi` | `winget: sxyazi.yazi` |  | — |
 | `yq` | `yq` | `brew: yq` | apt: `yq`<br>dnf: `yq`<br>pacman: `yq`<br>apk: `yq` | `winget: mikefarah.yq` |  | — |
 | `zed` | `zed` | `cask: zed` | — | — |  | — |
+| `zellij` | `zellij` | `brew: zellij` | — | `winget: Zellij.Zellij` |  | — |
 | `zerotier` | `zerotier-cli` | `cask: zerotier-one` | — | `winget: ZeroTier.ZeroTierOne` |  | — |
 | `zig` | `zig` | `brew: zig` | apt: `zig`<br>dnf: `zig`<br>pacman: `zig`<br>apk: `zig` | `winget: zig.zig`<br>`choco: zig` |  | — |
 | `zoxide` | `zoxide` | `brew: zoxide` | apt: `zoxide`<br>dnf: `zoxide`<br>pacman: `zoxide`<br>apk: `zoxide` | `winget: ajeetdsouza.zoxide` | ✓ | — |
