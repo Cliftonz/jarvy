@@ -31,6 +31,7 @@ pub mod completions;
 pub mod diagnose;
 pub mod diff;
 pub mod doctor;
+pub mod doctor_cache;
 pub mod explain;
 pub mod export;
 pub mod init;

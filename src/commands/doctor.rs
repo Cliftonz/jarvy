@@ -694,7 +694,7 @@ fn check_tool_health(
         .collect();
 
     // Second pass: check health and dependencies
-    tools
+    let health: Vec<ToolHealth> = tools
         .iter()
         .map(|(name, version)| {
             let spec = get_tool_spec(name);
@@ -715,8 +715,9 @@ fn check_tool_health(
             let path = which_command(command);
             // One probe feeds both the display version and the requirement
             // check — a second probe could disagree with the first (flaky
-            // CLIs) and doubles the fork count.
-            let probe_output = crate::tools::common::cmd_version_output(command);
+            // CLIs) and doubles the fork count. Disk-cached by binary
+            // path+mtime+size so run #2 skips the forks entirely.
+            let probe_output = super::doctor_cache::version_output(command, path.as_deref());
             let installed = probe_output
                 .as_deref()
                 .and_then(crate::tools::version::extract_version)
@@ -749,7 +750,9 @@ fn check_tool_health(
                 dependencies,
             }
         })
-        .collect()
+        .collect();
+    super::doctor_cache::persist();
+    health
 }
 
 /// Check dependencies for a tool and return DependencyInfo

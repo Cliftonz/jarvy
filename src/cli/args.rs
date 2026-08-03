@@ -307,6 +307,9 @@ pub enum Commands {
         /// Export diagnostic report as markdown
         #[clap(long)]
         report: Option<String>,
+        /// Bypass the version-probe cache and re-probe every tool
+        #[clap(long)]
+        fresh: bool,
     },
     /// Preview changes before running setup (dry-run)
     Diff {

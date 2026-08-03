@@ -185,7 +185,8 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             output_format,
             extended,
             report,
-        }) => handle_doctor(file, tools, check, output_format, *extended, report),
+            fresh,
+        }) => handle_doctor(file, tools, check, output_format, *extended, report, *fresh),
         Some(Commands::Diff {
             file,
             changes_only,
@@ -343,7 +344,9 @@ fn handle_doctor(
     output_format: &str,
     extended: bool,
     report: &Option<String>,
+    fresh: bool,
 ) -> i32 {
+    commands::doctor_cache::set_fresh(fresh);
     // Parse --check up front so an invalid category fails fast with a
     // clear message rather than silently running every category.
     let categories = match check {
