@@ -1,6 +1,6 @@
 ---
 title: "Tool registry (auto-generated) — Jarvy"
-description: "Every tool Jarvy knows how to install — 263 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
+description: "Every tool Jarvy knows how to install — 270 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
 tags:
   - reference
   - tools
@@ -12,7 +12,7 @@ tags:
     This page is generated from `jarvy tools --index` by `scripts/gen-docs.sh`. 
     Run that script after registering new tools.
 
-Jarvy currently ships **263 tools**. Reference one in your `jarvy.toml` by its **name**.
+Jarvy currently ships **270 tools**. Reference one in your `jarvy.toml` by its **name**.
 
 | Name | Command | macOS | Linux | Windows | Default hook | Depends on |
 |---|---|---|---|---|---|---|
@@ -49,7 +49,9 @@ Jarvy currently ships **263 tools**. Reference one in your `jarvy.toml` by its *
 | `checkov` | `checkov` | `brew: checkov` | — | — |  | — |
 | `chezmoi` | `chezmoi` | `brew: chezmoi` | apt: `chezmoi`<br>dnf: `chezmoi`<br>pacman: `chezmoi`<br>apk: `chezmoi` | `winget: twpayne.chezmoi` |  | — |
 | `choose` | `choose` | `brew: choose-rust` | apt: `choose`<br>dnf: `choose`<br>pacman: `choose`<br>apk: `choose` | `winget: choose.choose` |  | — |
+| `cilium` | `cilium` | `brew: cilium-cli` | — | `winget: Cilium.CiliumCLI` |  | `kubectl` |
 | `cloudflared` | `cloudflared` | `brew: cloudflared` | — | `winget: Cloudflare.cloudflared` |  | — |
+| `clusterctl` | `clusterctl` | `brew: clusterctl` | — | — |  | `kubectl` |
 | `cmake` | `cmake` | `brew: cmake` | apt: `cmake`<br>dnf: `cmake`<br>pacman: `cmake`<br>apk: `cmake` | `winget: Kitware.CMake` |  | — |
 | `composer` | `composer` | `brew: composer` | apt: `composer`<br>dnf: `composer`<br>pacman: `composer`<br>apk: `composer` | — |  | — |
 | `cosign` | `cosign` | `brew: cosign` | apk: `cosign` | `winget: sigstore.cosign` |  | — |
@@ -115,6 +117,7 @@ Jarvy currently ships **263 tools**. Reference one in your `jarvy.toml` by its *
 | `headscale` | `headscale` | — | — | — |  | — |
 | `helix` | `hx` | `brew: helix` | apt: `helix-editor`<br>dnf: `helix`<br>pacman: `helix`<br>apk: `helix` | `winget: Helix.Helix` |  | — |
 | `helm` | `helm` | `brew: helm` | apt: `helm`<br>dnf: `helm`<br>pacman: `helm`<br>apk: `helm` | `winget: Helm.Helm` | ✓ | `kubectl` |
+| `helmfile` | `helmfile` | `brew: helmfile` | — | — |  | `helm` |
 | `htop` | `htop` | `brew: htop` | apt: `htop`<br>dnf: `htop`<br>pacman: `htop`<br>apk: `htop` | — |  | — |
 | `httpie` | `http` | `brew: httpie` | apt: `httpie`<br>dnf: `httpie`<br>pacman: `httpie`<br>apk: `py3-httpie` | `winget: HTTPie.HTTPie` |  | — |
 | `hugo` | `hugo` | `brew: hugo` | apt: `hugo`<br>dnf: `hugo`<br>pacman: `hugo`<br>apk: `hugo` | `winget: Hugo.Hugo.Extended` |  | — |
@@ -142,10 +145,13 @@ Jarvy currently ships **263 tools**. Reference one in your `jarvy.toml` by its *
 | `ko` | `ko` | `brew: ko` | apt: `ko`<br>dnf: `ko`<br>pacman: `ko`<br>apk: `ko` | `winget: ko-build.ko` |  | `go` |
 | `kotlin` | `kotlin` | `brew: kotlin` | apt: `kotlin`<br>dnf: `kotlin`<br>pacman: `kotlin`<br>apk: `kotlin` | `winget: JetBrains.Kotlin.Compiler`<br>`choco: kotlinc` |  | `java` |
 | `krew` | `kubectl-krew` | `brew: krew` | apk: `kubectl-krew` | — | ✓ | `kubectl` |
+| `kube_linter` | `kube-linter` | `brew: kube-linter` | — | — |  | — |
+| `kubeconform` | `kubeconform` | `brew: kubeconform` | — | `winget: YannHamon.kubeconform` |  | — |
 | `kubectl` | `kubectl` | `brew: kubectl` | apt: `kubectl`<br>dnf: `kubectl`<br>pacman: `kubectl`<br>apk: `kubectl` | `winget: Kubernetes.kubectl` | ✓ | `minikube`, `kind`, `k3d`… |
 | `kubectx` | `kubectx` | `brew: kubectx` | — | `winget: ahmetb.kubectx` | ✓ | — |
 | `kubens` | `kubens` | `brew: kubectx` | — | — |  | — |
 | `kubescape` | `kubescape` | `brew: kubescape` | apt: `kubescape`<br>dnf: `kubescape`<br>pacman: `kubescape`<br>apk: `kubescape` | `winget: kubescape.kubescape` |  | `kubectl` |
+| `kubeseal` | `kubeseal` | `brew: kubeseal` | — | — |  | `kubectl` |
 | `kustomize` | `kustomize` | `brew: kustomize` | apt: `kustomize`<br>dnf: `kustomize`<br>pacman: `kustomize`<br>apk: `kustomize` | `winget: Kubernetes.kustomize` |  | — |
 | `lazydocker` | `lazydocker` | `brew: lazydocker` | apk: `lazydocker` | `choco: lazydocker` |  | `docker` |
 | `lazygit` | `lazygit` | `brew: lazygit` | apt: `lazygit`<br>dnf: `lazygit`<br>pacman: `lazygit`<br>apk: `lazygit` | `winget: JesseDuffield.lazygit` | ✓ | — |
@@ -261,6 +267,7 @@ Jarvy currently ships **263 tools**. Reference one in your `jarvy.toml` by its *
 | `uv` | `uv` | `brew: uv` | apk: `uv` | `winget: astral-sh.uv` |  | — |
 | `vagrant` | `vagrant` | `cask: vagrant` | apt: `vagrant`<br>dnf: `vagrant`<br>pacman: `vagrant`<br>apk: `vagrant` | `winget: Hashicorp.Vagrant`<br>`choco: vagrant` |  | — |
 | `vault` | `vault` | `brew: vault` | apt: `vault`<br>dnf: `vault`<br>pacman: `vault`<br>apk: `vault` | `winget: HashiCorp.Vault` |  | — |
+| `velero` | `velero` | `brew: velero` | — | — |  | `kubectl` |
 | `vfox` | `vfox` | `brew: vfox` | — | `winget: vfox` | ✓ | — |
 | `vim` | `vim` | `brew: vim` | apt: `vim`<br>dnf: `vim-enhanced`<br>pacman: `vim`<br>apk: `vim` | `winget: vim.vim` |  | — |
 | `vllm` | `vllm` | — | — | — |  | — |
