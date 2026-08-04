@@ -22,6 +22,7 @@
     "DECIDED: toolchain bootstrap distro-vs-linuxbrew ordering = tool-def ordering as-is, no special casing",
     "DECIDED: jarvy diff / dry-run preview shows fallback route — yes, Phase 2",
     "DECIDED: already-installed tools never enter fallback — cmd_satisfies skip-detection fires before install(); no receipt for pre-existing installs",
-    "OPEN: composer ecosystem route uninvestigated; go-route freshness for cmd/ subpaths may degrade (go list -m on a package path errors → error bucket, not wrong data)"
+    "RESOLVED (2026-08-04): go-route freshness for cmd/ subpaths — GoBackend::module_candidate lexically truncates at /cmd/ (min 3 segments), probes module first, NotFound retries full path",
+    "OPEN: composer ecosystem route — tracked in issue #80"
   ]
 }

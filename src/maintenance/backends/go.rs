@@ -10,6 +10,15 @@
 //! and fall back to the last entry of `Versions` when it's
 //! absent. `v`-prefixes are stripped so the value compares as
 //! plain semver.
+//!
+//! `go list -m` takes MODULE paths, but receipt-routed fallback
+//! tools carry PACKAGE paths (`<module>/cmd/<bin>`, e.g.
+//! `github.com/doitintl/kube-no-trouble/cmd/kubent`). Probing a
+//! package path errors, which used to dump those tools in the
+//! error bucket. `module_candidate` lexically truncates at the
+//! `/cmd/` layout-convention boundary and probes the module
+//! first; a `NotFound` there retries the full path in case a
+//! module genuinely contains `/cmd/` in its own path.
 
 use super::{BACKEND_TIMEOUT, BackendError, FreshnessBackend, probe_error};
 
@@ -21,25 +30,44 @@ impl FreshnessBackend for GoBackend {
     }
 
     fn latest(&self, pkg_id: &str) -> Result<String, BackendError> {
-        let arg = format!("{pkg_id}@latest");
-        let probe = crate::tools::common::probe_with_timeout(
-            "go",
-            &["list", "-m", "-versions", "-json", &arg],
-            BACKEND_TIMEOUT,
-        );
-        let out = probe_error(probe)?;
-        if !out.status.success() {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            if stderr.contains("no matching versions")
-                || stderr.contains("module not found")
-                || stderr.contains("no required module provides package")
-            {
-                return Err(BackendError::NotFound);
-            }
-            return Err(BackendError::Other);
+        match module_candidate(pkg_id) {
+            Some(module) => match probe_module(module) {
+                Err(BackendError::NotFound) => probe_module(pkg_id),
+                other => other,
+            },
+            None => probe_module(pkg_id),
         }
-        parse_go_list(&out.stdout)
     }
+}
+
+fn probe_module(module: &str) -> Result<String, BackendError> {
+    let arg = format!("{module}@latest");
+    let probe = crate::tools::common::probe_with_timeout(
+        "go",
+        &["list", "-m", "-versions", "-json", &arg],
+        BACKEND_TIMEOUT,
+    );
+    let out = probe_error(probe)?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if stderr.contains("no matching versions")
+            || stderr.contains("module not found")
+            || stderr.contains("no required module provides package")
+        {
+            return Err(BackendError::NotFound);
+        }
+        return Err(BackendError::Other);
+    }
+    parse_go_list(&out.stdout)
+}
+
+/// Lexical module-path guess for a `<module>/cmd/<bin>` package
+/// path: everything before the first `/cmd/` segment, kept only
+/// when it still has the `host/org/repo` minimum of 3 segments.
+fn module_candidate(pkg_id: &str) -> Option<&str> {
+    let idx = pkg_id.find("/cmd/")?;
+    let prefix = &pkg_id[..idx];
+    (prefix.split('/').count() >= 3).then_some(prefix)
 }
 
 fn parse_go_list(stdout: &[u8]) -> Result<String, BackendError> {
@@ -89,5 +117,41 @@ mod tests {
     fn missing_both_fields_is_parse_failed() {
         let out = br#"{"Path":"foo"}"#;
         assert_eq!(parse_go_list(out).unwrap_err(), BackendError::ParseFailed);
+    }
+
+    #[test]
+    fn module_candidate_truncates_at_cmd_boundary() {
+        assert_eq!(
+            module_candidate("github.com/doitintl/kube-no-trouble/cmd/kubent"),
+            Some("github.com/doitintl/kube-no-trouble")
+        );
+        assert_eq!(
+            module_candidate("github.com/argoproj/argo-workflows/v4/cmd/argo"),
+            Some("github.com/argoproj/argo-workflows/v4")
+        );
+    }
+
+    #[test]
+    fn module_candidate_passes_module_roots_through() {
+        assert_eq!(
+            module_candidate("github.com/deviceinsight/kafkactl/v5"),
+            None
+        );
+        assert_eq!(module_candidate("github.com/nats-io/nats-server/v2"), None);
+    }
+
+    #[test]
+    fn module_candidate_refuses_short_prefixes() {
+        // Prefix below host/org/repo can't be a module path.
+        assert_eq!(module_candidate("github.com/cmd/foo"), None);
+        assert_eq!(module_candidate("cmd/foo"), None);
+    }
+
+    #[test]
+    fn module_candidate_cuts_at_first_cmd_segment() {
+        assert_eq!(
+            module_candidate("github.com/x/y/cmd/a/cmd/b"),
+            Some("github.com/x/y")
+        );
     }
 }
