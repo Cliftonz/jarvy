@@ -476,6 +476,8 @@ pub fn run_setup(
                     let kind = e.kind();
                     if e.is_no_platform_installer() {
                         for (tool_name, _, version) in packages {
+                            let (fallback_declared, fallback_blocked) =
+                                tools::fallback::unsupported_info(tool_name);
                             tracing::info!(
                                 event = "tool.unsupported",
                                 tool = %tool_name,
@@ -484,6 +486,8 @@ pub fn run_setup(
                                 channel = "registered_no_platform_installer",
                                 platform = std::env::consts::OS,
                                 exit_code = error_codes::TOOL_UNSUPPORTED,
+                                fallback_declared,
+                                fallback_blocked,
                             );
                             telemetry::tool_not_supported(
                                 tool_name,
@@ -642,6 +646,8 @@ pub fn run_setup(
                             // counter on Windows when a tool ships with
                             // no winget manifest (Observability F1).
                             if e.is_no_platform_installer() {
+                                let (fallback_declared, fallback_blocked) =
+                                    tools::fallback::unsupported_info(name);
                                 tracing::info!(
                                     event = "tool.unsupported",
                                     tool = %name,
@@ -650,6 +656,8 @@ pub fn run_setup(
                                     channel = "registered_no_platform_installer",
                                     platform = std::env::consts::OS,
                                     exit_code = error_codes::TOOL_UNSUPPORTED,
+                                    fallback_declared,
+                                    fallback_blocked,
                                 );
                                 telemetry::tool_not_supported(
                                     name,

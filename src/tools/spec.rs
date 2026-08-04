@@ -260,6 +260,64 @@ impl DefaultHook {
     }
 }
 
+/// Ecosystem package manager a fallback route installs through (PRD-060).
+///
+/// Deliberately closed: ecosystem package managers only — they give us
+/// naming authority, checksums, and uninstall. `curl | sh` routes are a
+/// hard non-goal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FallbackEco {
+    Go,
+    Npm,
+    Cargo,
+    Uv,
+}
+
+impl FallbackEco {
+    /// Command that must be on PATH for this route to run.
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::Go => "go",
+            Self::Npm => "npm",
+            Self::Cargo => "cargo",
+            Self::Uv => "uv",
+        }
+    }
+
+    /// Jarvy registry tool name used to bootstrap the missing toolchain.
+    pub fn toolchain_tool(self) -> &'static str {
+        match self {
+            Self::Go => "go",
+            Self::Npm => "node",
+            Self::Cargo => "rust",
+            Self::Uv => "uv",
+        }
+    }
+
+    /// Bounded label for telemetry (`install_route` field values).
+    pub fn route_label(self) -> &'static str {
+        match self {
+            Self::Go => "fallback_go",
+            Self::Npm => "fallback_npm",
+            Self::Cargo => "fallback_cargo",
+            Self::Uv => "fallback_uv",
+        }
+    }
+}
+
+/// One declared fallback install route: ecosystem + first-party package
+/// identifier (compile-time constant — never user input).
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct FallbackRoute {
+    pub eco: FallbackEco,
+    pub package: &'static str,
+}
+
+fn fallback_is_empty(routes: &&'static [FallbackRoute]) -> bool {
+    routes.is_empty()
+}
+
 /// Declarative tool specification that eliminates boilerplate.
 ///
 /// A `ToolSpec` defines everything needed to check for and install a tool
@@ -313,6 +371,12 @@ pub struct ToolSpec {
     /// Optional category for filtering and organization (e.g., "devops", "language", "editor").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<&'static str>,
+
+    /// Ecosystem fallback routes tried in declared order when no
+    /// platform installer covers the current OS (PRD-060). Platform
+    /// slots always win; this only fires on `InstallError::Unsupported`.
+    #[serde(skip_serializing_if = "fallback_is_empty")]
+    pub fallback: &'static [FallbackRoute],
 }
 
 impl ToolSpec {
@@ -347,11 +411,20 @@ impl ToolSpec {
 
     /// Install the tool using the appropriate method for the current platform.
     fn install(&self, min_hint: &str) -> Result<(), InstallError> {
-        // Check for custom installer first
-        if let Some(custom_fn) = self.custom_install {
-            return custom_fn(min_hint);
+        // Custom installer takes precedence, then platform slots.
+        let primary = if let Some(custom_fn) = self.custom_install {
+            custom_fn(min_hint)
+        } else {
+            self.install_platform()
+        };
+        // Platform slots always win; fallback routes fire only when the
+        // primary path had nothing for this OS (PRD-060).
+        match primary {
+            Err(e) if e.is_no_platform_installer() && !self.fallback.is_empty() => {
+                crate::tools::fallback::install_via_fallback(self, min_hint)
+            }
+            other => other,
         }
-        self.install_platform()
     }
 
     /// Platform-slot installation, bypassing `custom_install`. Public
@@ -545,6 +618,7 @@ macro_rules! define_tool {
         $(linux: { $($linux_key:ident: $linux_val:expr),* $(,)? },)?
         $(windows: { $($windows_key:ident: $windows_val:expr),* $(,)? },)?
         $(bsd: { $($bsd_key:ident: $bsd_val:expr),* $(,)? },)?
+        $(fallback: { $($fb_key:ident: $fb_val:expr),* $(,)? },)?
         $(custom_install: $custom:expr,)?
         $(default_hook: { description: $hook_desc:expr, script: $hook_script:expr $(, platform: $hook_platform:expr)? },)?
         $(default_hook_shell_init: ($shell_tool:literal, $shell_verb:literal),)?
@@ -569,6 +643,7 @@ macro_rules! define_tool {
             depends_on: define_tool!(@depends_on $($deps)?),
             depends_on_one_of: define_tool!(@depends_on_one_of $($flex_deps)?),
             category: define_tool!(@category $($category)?),
+            fallback: define_tool!(@fallback $($($fb_key: $fb_val),*)?),
         };
 
         #[allow(dead_code)] // Public API for tool installation
@@ -755,6 +830,38 @@ macro_rules! define_tool {
     // Category helper
     (@category) => { None };
     (@category $cat:expr) => { Some($cat) };
+
+    // Fallback route helpers (PRD-060). Declared order = attempt order.
+    // Keys are the closed FallbackEco set — a new ecosystem needs a new
+    // @fallback_route rule, which is the point: no open-ended shell routes.
+    (@fallback) => { &[] };
+    (@fallback $($key:ident: $val:expr),*) => {
+        &[$(define_tool!(@fallback_route $key $val)),*]
+    };
+    (@fallback_route go $v:expr) => {
+        $crate::tools::spec::FallbackRoute {
+            eco: $crate::tools::spec::FallbackEco::Go,
+            package: $v,
+        }
+    };
+    (@fallback_route npm $v:expr) => {
+        $crate::tools::spec::FallbackRoute {
+            eco: $crate::tools::spec::FallbackEco::Npm,
+            package: $v,
+        }
+    };
+    (@fallback_route cargo $v:expr) => {
+        $crate::tools::spec::FallbackRoute {
+            eco: $crate::tools::spec::FallbackEco::Cargo,
+            package: $v,
+        }
+    };
+    (@fallback_route uv $v:expr) => {
+        $crate::tools::spec::FallbackRoute {
+            eco: $crate::tools::spec::FallbackEco::Uv,
+            package: $v,
+        }
+    };
 }
 
 #[allow(unused_imports)]
@@ -1856,6 +1963,7 @@ mod tests {
         depends_on: None,
         depends_on_one_of: None,
         category: None,
+        fallback: &[],
     };
 
     // Test ToolSpec with a default hook
@@ -1874,6 +1982,7 @@ mod tests {
         depends_on: None,
         depends_on_one_of: None,
         category: None,
+        fallback: &[],
     };
 
     #[test]
@@ -1946,6 +2055,7 @@ mod tests {
             depends_on: None,
             depends_on_one_of: None,
             category: None,
+            fallback: &[],
         };
         assert!(!tool.is_satisfied("1.0"));
     }
@@ -1979,6 +2089,7 @@ mod tests {
             depends_on: None,
             depends_on_one_of: None,
             category: None,
+            fallback: &[],
         };
         let entry = ToolIndexEntry::from(&custom_tool);
         assert!(entry.custom_install.has_custom_installer);
@@ -2184,6 +2295,7 @@ mod tests {
             depends_on: None,
             depends_on_one_of: None,
             category: None,
+            fallback: &[],
         };
 
         // Hook should be available on current platform

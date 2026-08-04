@@ -5,18 +5,19 @@
   "priority": "medium",
   "estimated_days": 4,
   "created": "2026-08-03",
-  "status": "proposed",
+  "status": "in_progress",
   "scope": "Declarative `fallback: { go|npm|cargo|uv: \"<first-party pkg>\" }` slot on define_tool!. Platform slots always win; on is_no_platform_installer() the runtime takes fallback routes in declared order, auto-installing the missing ecosystem toolchain through jarvy's own registry (go/nvm+node/rustup/uv all have first-party routes) before running the route. Python route is `uv tool install` (isolated, no PEP-668 issues), NOT pip. HARD REQUIREMENT: ecosystem package managers only — no curl|sh fallbacks ever. Package strings pass validate_package_name. Install receipts (~/.jarvy/install-receipts.json, doctor-cache-style stat signature for staleness) route fallback-installed tools to the right check-updates probe and make receipt-aware `jarvy upgrade` work. tool.installed gains install_route + toolchain_bootstrapped; tool.unsupported fires only when all routes exhausted. betterleaks is the first consumer (deletes its bespoke custom_install, 4cadf92); ~20 'no first-party winget manifest' tools are migration candidates. Full PRD: tasks/prd-060-fallback-installers.md",
   "progress": {
-    "completed": 0,
+    "completed": 1,
     "total": 2,
-    "percentage": 0
+    "percentage": 50
   },
   "follow_up": [
-    "Phase 1: FallbackRoute type + macro slot + go/npm/cargo/uv runtime + toolchain bootstrap + receipt WRITES + validation + telemetry + betterleaks migration",
-    "Phase 2: receipt READS (check-updates resolver routing + UvBackend + cache route field) + receipt-aware upgrade (+ --native flag) + candidate-tool audit/migration (verify first-party packages per the verification rule)",
-    "Open: UvBackend latest-version probe — `uv tool upgrade --dry-run` parse vs PyPI JSON API via bounded-fetch",
-    "Open: toolchain bootstrap on distros with ancient native toolchain versions — distro pkg vs linuxbrew ordering",
-    "Open: jarvy diff / dry-run preview of the fallback route"
+    "Phase 1 DONE (2026-08-03): FallbackRoute type + macro slot + go/npm/cargo/uv runtime + toolchain bootstrap (registry::add + forget_has PATH-cache eviction) + receipt WRITES (~/.jarvy/install-receipts.json) + validation gauntlet + telemetry (install_route/toolchain_bootstrapped/fallback_declared/fallback_blocked/tool.fallback_failed/tool.receipt_write_failed) + betterleaks migration off bespoke custom_install",
+    "Phase 2: receipt READS (check-updates resolver routing + UvBackend + cache route field) + receipt-aware upgrade (+ --native flag) + candidate-tool audit/migration (verify first-party packages per the verification rule) + diff/dry-run fallback-route preview",
+    "DECIDED: UvBackend latest-version probe = PyPI JSON API via net::bounded_fetch (uv dry-run output not a stable contract)",
+    "DECIDED: toolchain bootstrap distro-vs-linuxbrew ordering = tool-def ordering as-is, no special casing",
+    "DECIDED: jarvy diff / dry-run preview shows fallback route — yes, Phase 2",
+    "DECIDED: already-installed tools never enter fallback — cmd_satisfies skip-detection fires before install(); no receipt for pre-existing installs"
   ]
 }

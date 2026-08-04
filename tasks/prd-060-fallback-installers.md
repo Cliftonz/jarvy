@@ -1,6 +1,6 @@
 # PRD-060 — Generalized Fallback Installers
 
-- **Status:** proposed
+- **Status:** in_progress (Phase 1 complete 2026-08-03; Phase 2 pending)
 - **Created:** 2026-08-03
 - **Priority:** medium
 - **Estimated:** 4 days
@@ -293,17 +293,24 @@ All gated by `telemetry_gate::is_enabled()` per the standing contract.
 Receipt writes land in Phase 1 so Phase-1 fallback installs are
 already attributable when Phase 2 ships — no receipt backfill needed.
 
-## Open Questions
+## Open Questions — DECIDED (Phase 1, 2026-08-03)
 
-1. UvBackend latest-version probe: parse `uv tool upgrade --dry-run`,
-   or PyPI JSON API via the existing bounded-fetch helper? Decide in
-   Phase 2 (dry-run parse avoids new network surface; JSON API is
-   sturdier against uv output-format drift).
-2. Toolchain bootstrap on Linux distros without the toolchain in the
-   native repo (e.g. old apt with ancient go): accept the distro
-   version, or prefer linuxbrew fallback within the toolchain's own
-   tool def? Current tool-def ordering already answers this per tool —
-   confirm during Phase 1 testing.
-3. Should `jarvy diff` / dry-run preview show the fallback route
-   ("would install via go install …") — presumably yes, cheap; confirm
-   the preview plumbing reaches the fallback resolution point.
+1. UvBackend latest-version probe: **PyPI JSON API via the existing
+   `net::bounded_fetch` helper.** Sturdier than parsing
+   `uv tool upgrade --dry-run` output (uv output format is not a
+   stable contract); bounded_fetch already carries the HTTPS-only /
+   size-cap discipline. Implement in Phase 2.
+2. Toolchain bootstrap on distros with ancient native toolchains:
+   **tool-def ordering as-is.** Each toolchain's own tool def already
+   encodes the distro-vs-linuxbrew preference; the bootstrap path
+   (`registry::add(toolchain, "latest")`) inherits it. No special
+   casing.
+3. `jarvy diff` / dry-run preview of the fallback route: **yes** —
+   show "would install via go install …". Phase 2 alongside receipt
+   READS.
+
+Also settled during Phase 1: **already-installed tools never enter
+fallback.** `ensure()`'s `cmd_satisfies` skip-detection fires before
+`install()`, so pre-existing installs get no receipt and keep their
+current attribution (`install_route` fields only describe installs
+jarvy itself performed this process).

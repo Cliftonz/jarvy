@@ -137,7 +137,7 @@ define_tool!(JQ, {
 });
 ```
 
-Macro slots: `macos.brew` / `macos.cask`, `linux.uniform` OR `linux.{apt,dnf,pacman,apk}`, `windows.winget` / `windows.choco`, `custom_install: Some(fn)` for shell-script installs (nvm/rustup/brew), `default_hook: { description, script }`, `depends_on: &[...]` (strict — all required), `depends_on_one_of: &[...]` (flexible — one required), `category: "messaging" | …`. Register in `src/tools/mod.rs::register_all()`.
+Macro slots: `macos.brew` / `macos.cask`, `linux.uniform` OR `linux.{apt,dnf,pacman,apk}`, `windows.winget` / `windows.choco`, `custom_install: Some(fn)` for shell-script installs (nvm/rustup/brew), `fallback: { go|npm|cargo|uv: "<first-party pkg>" }` (PRD-060 — ecosystem routes tried in declared order when no platform slot covers the OS; missing toolchains auto-bootstrap through jarvy's own registry; ecosystem package managers ONLY, never curl|sh), `default_hook: { description, script }`, `depends_on: &[...]` (strict — all required), `depends_on_one_of: &[...]` (flexible — one required), `category: "messaging" | …`. Register in `src/tools/mod.rs::register_all()`.
 
 **Non-obvious rules:**
 
@@ -184,9 +184,11 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | Event | Source | Notes |
 |-------|--------|-------|
 | `tool.requested` | per tool in config | Setup phase |
-| `tool.installed` | per successful install | Setup phase |
+| `tool.installed` | per successful install | Setup phase. Carries `install_route` (`"platform"` \| `"fallback_go"` \| `"fallback_npm"` \| `"fallback_cargo"` \| `"fallback_uv"`) + `toolchain_bootstrapped` (bool), populated by querying `tools::fallback::route_for` internally so call sites keep their signatures (PRD-060). `install_route` is also an OTEL counter attr. |
 | `tool.failed` | per failed install | Setup phase |
-| `tool.unsupported` | setup unknown-tool loop + `--request` | Uniform field shape across both call sites |
+| `tool.unsupported` | setup unknown-tool loop + `--request` | Uniform field shape across both call sites. The registered-but-no-platform-installer sites additionally carry `fallback_declared` (bool) + `fallback_blocked` (`"toolchain_uninstallable"` \| `"none_declared"`) — fires only after all declared fallback routes are exhausted (PRD-060). |
+| `tool.fallback_failed` | fallback route blocked on its toolchain (PRD-060) | `tool`, `eco` (`go`\|`npm`\|`cargo`\|`uv`), `error_kind = "toolchain_unavailable"`. Warn. Gated. Actual install-command failures surface as the returned error, not this event. |
+| `tool.receipt_write_failed` | best-effort install-receipt write returned Err (PRD-060) | `tool`, `error_kind = "no_home" \| "io" \| "json"`. Warn. Gated. Receipts at `~/.jarvy/install-receipts.json` (doctor-cache pattern: schema version, atomic 0600, stat signature; Phase 1 = writes only). |
 | `tool.already_installed` | skip-detection path | `install_path`, `detection_method`, `prompted_user` |
 | `setup.started` / `setup.completed` | run lifecycle | Carries duration, counts |
 | `hook.started` / `hook.completed` / `hook.failed` / `hook.timeout` | per hook | |

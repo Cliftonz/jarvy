@@ -574,12 +574,19 @@ pub fn tool_installed(tool: &str, version: &str, package_manager: &str, duration
 
     let duration_ms = duration.as_millis() as u64;
     let category = crate::tools::spec::get_tool_category(tool).unwrap_or("uncategorized");
+    // PRD-060: attribute ecosystem-fallback installs without changing
+    // call-site signatures — the fallback runtime records the route it
+    // took per tool; everything else is a platform install.
+    let (install_route, toolchain_bootstrapped) = crate::tools::fallback::route_for(tool)
+        .map_or(("platform", false), |(label, boot)| (label, boot));
     tracing::info!(
         event = "tool.installed",
         tool = %tool,
         version = %version,
         category = %category,
         package_manager = %package_manager,
+        install_route = %install_route,
+        toolchain_bootstrapped = %toolchain_bootstrapped,
         duration_ms = %duration_ms,
         platform = %env::consts::OS,
     );
@@ -593,6 +600,7 @@ pub fn tool_installed(tool: &str, version: &str, package_manager: &str, duration
             KeyValue::new("platform", env::consts::OS.to_string()),
             KeyValue::new("status", "success"),
             KeyValue::new("category", category.to_string()),
+            KeyValue::new("install_route", install_route),
         ];
         metrics.tool_installs.add(1, &attrs);
         // Histogram label set excludes `status` and `category` to

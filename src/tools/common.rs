@@ -315,6 +315,16 @@ fn has_cache() -> &'static std::sync::RwLock<std::collections::HashMap<String, b
     CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
 }
 
+/// Drop one command's `has()` cache entry. The cache assumes PATH is
+/// stable for the whole setup run; a fallback-route toolchain bootstrap
+/// (PRD-060) deliberately breaks that assumption, so the runtime evicts
+/// the entry before re-probing.
+pub(crate) fn forget_has(cmd: &str) {
+    if let Ok(mut write) = has_cache().write() {
+        write.remove(cmd);
+    }
+}
+
 fn has_uncached(cmd: &str) -> bool {
     // Presence = the binary spawned at all; exit status is deliberately
     // ignored. Cobra-style CLIs (talosctl, argocd) exit non-zero on
