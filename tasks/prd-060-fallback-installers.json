@@ -1,0 +1,22 @@
+{
+  "prd": "060-fallback-installers",
+  "title": "Generalized Fallback Installers — ecosystem routes when no native package manager covers the OS",
+  "version": "1.0.0",
+  "priority": "medium",
+  "estimated_days": 4,
+  "created": "2026-08-03",
+  "status": "proposed",
+  "scope": "Declarative `fallback: { go|npm|cargo|pip: \"<first-party pkg>\" }` slot on define_tool!. Platform slots always win; on is_no_platform_installer() the runtime tries fallback routes in declared order using the first toolchain on PATH, maps concrete version pins to ecosystem syntax, and runs package strings through validate_package_name. Install receipts (~/.jarvy/install-receipts.json) route fallback-installed tools to the right check-updates probe instead of the unchecked bucket. tool.installed gains install_route; tool.unsupported fires only when fallbacks are also unusable. betterleaks is the first consumer (deletes its bespoke custom_install, 4cadf92); ~20 'no first-party winget manifest' tools are migration candidates. Full PRD: tasks/prd-060-fallback-installers.md",
+  "progress": {
+    "completed": 0,
+    "total": 2,
+    "percentage": 0
+  },
+  "follow_up": [
+    "Phase 1: FallbackRoute type + macro slot + go/npm/cargo/pip runtime + validation + telemetry + betterleaks migration",
+    "Phase 2: install receipts + check-updates receipt routing + candidate-tool audit/migration (verify first-party packages per the verification rule)",
+    "Open: jarvy upgrade receipt-awareness in v1?",
+    "Open: pip vs pipx (PEP-668 externally-managed environments)",
+    "Open: receipt staleness when user reinstalls natively — stat-signature validity like doctor-cache?"
+  ]
+}
