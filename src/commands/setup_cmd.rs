@@ -404,10 +404,17 @@ pub fn run_setup(
             );
         }
         for (name, version) in &tool_groups.custom_install {
-            println!(
-                "[DRY-RUN] Would install {} version {} using custom installer",
-                name, version
-            );
+            if let Some((_eco, cmd)) = crate::tools::fallback::preview_route(name, version) {
+                println!(
+                    "[DRY-RUN] Would install {} via fallback route: `{}`",
+                    name, cmd
+                );
+            } else {
+                println!(
+                    "[DRY-RUN] Would install {} version {} using custom installer",
+                    name, version
+                );
+            }
         }
     } else {
         // Emit setup_started event

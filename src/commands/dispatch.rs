@@ -204,8 +204,9 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             tools,
             dry_run,
             force,
+            native,
             output_format,
-        }) => handle_upgrade(file, tools, *dry_run, *force, output_format),
+        }) => handle_upgrade(file, tools, *dry_run, *force, *native, output_format),
         Some(Commands::Init {
             template,
             non_interactive,
@@ -467,6 +468,7 @@ fn handle_upgrade(
     tools: &Option<String>,
     dry_run: bool,
     force: bool,
+    native: bool,
     output_format: &str,
 ) -> i32 {
     let config = file.as_ref().map(|f| Config::new(f));
@@ -475,7 +477,8 @@ fn handle_upgrade(
             .map(|s| s.trim().to_string())
             .collect::<Vec<_>>()
     });
-    let result = commands::upgrade::run_upgrade(config.as_ref(), specific_tools, dry_run, force);
+    let result =
+        commands::upgrade::run_upgrade(config.as_ref(), specific_tools, dry_run, force, native);
     crate::output::print_and_exit(result, output_format)
 }
 

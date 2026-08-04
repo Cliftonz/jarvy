@@ -102,14 +102,21 @@ impl Outputable for UpgradeResult {
     }
 }
 
-/// Run the upgrade command
+/// Run the upgrade command. `native = true` skips fallback-receipt
+/// routes and, after a successful native upgrade, deletes the tool's
+/// receipt so future resolution goes back to the platform backend
+/// (PRD-060 Phase 2).
 pub fn run_upgrade(
     config: Option<&Config>,
     specific_tools: Option<Vec<String>>,
     dry_run: bool,
     force: bool,
+    native: bool,
 ) -> UpgradeResult {
     let mut upgrades = Vec::new();
+    // One disk read; still-valid fallback receipts route the upgrade
+    // back through the ecosystem that installed the tool.
+    let receipts = crate::tools::receipts::load_valid();
 
     // Determine which tools to upgrade
     let tools_to_upgrade: Vec<(String, String)> = if let Some(tools) = specific_tools {
@@ -141,7 +148,7 @@ pub fn run_upgrade(
     };
 
     for (name, target_version) in tools_to_upgrade {
-        let result = upgrade_tool(&name, &target_version, dry_run, force);
+        let result = upgrade_tool(&name, &target_version, dry_run, force, native, &receipts);
         upgrades.push(result);
     }
 
@@ -169,7 +176,14 @@ pub fn run_upgrade(
     }
 }
 
-fn upgrade_tool(name: &str, target_version: &str, dry_run: bool, force: bool) -> ToolUpgrade {
+fn upgrade_tool(
+    name: &str,
+    target_version: &str,
+    dry_run: bool,
+    force: bool,
+    native: bool,
+    receipts: &std::collections::BTreeMap<String, crate::tools::receipts::Receipt>,
+) -> ToolUpgrade {
     let spec = get_tool_spec(name);
 
     // Check if tool is installed
@@ -201,18 +215,52 @@ fn upgrade_tool(name: &str, target_version: &str, dry_run: bool, force: bool) ->
         };
     }
 
+    // PRD-060 Phase 2: a still-valid fallback receipt routes the
+    // upgrade back through the ecosystem that installed the tool —
+    // the native package manager doesn't own this binary. `--native`
+    // opts out (migrate back to the platform installer).
+    let fallback_route = if native {
+        None
+    } else {
+        crate::tools::receipts::lookup(receipts, name).and_then(|r| {
+            crate::tools::spec::FallbackEco::from_receipt_route(&r.route)
+                .map(|eco| (eco, r.package.clone()))
+        })
+    };
+
     if dry_run {
+        let msg = match &fallback_route {
+            Some((eco, _)) => format!(
+                "Would upgrade via {} fallback route (dry-run)",
+                eco.receipt_route()
+            ),
+            None => "Would upgrade (dry-run)".to_string(),
+        };
         return ToolUpgrade {
             name: name.to_string(),
             from_version: current_version,
             to_version: Some(target_version.to_string()),
             status: UpgradeStatus::DryRun,
-            message: Some("Would upgrade (dry-run)".to_string()),
+            message: Some(msg),
         };
     }
 
     // Perform the upgrade
-    let upgrade_result = perform_upgrade(name, target_version);
+    let upgrade_result = match &fallback_route {
+        Some((eco, package)) => {
+            perform_fallback_upgrade(name, command, *eco, package, target_version)
+        }
+        None => perform_upgrade(name, target_version).inspect(|_| {
+            if native {
+                // Successful native upgrade under --native: drop the
+                // receipt so resolution returns to the platform
+                // backend. Best-effort — the stat signature has
+                // diverged anyway, so a failed delete only leaves an
+                // already-invalid entry behind.
+                let _ = crate::tools::receipts::remove(name);
+            }
+        }),
+    };
 
     match upgrade_result {
         Ok(msg) => {
@@ -233,6 +281,47 @@ fn upgrade_tool(name: &str, target_version: &str, dry_run: bool, force: bool) ->
             message: Some(e),
         },
     }
+}
+
+/// Re-run a receipt's ecosystem route (PRD-060 Phase 2). No toolchain
+/// bootstrap here — the toolchain installed the tool in the first
+/// place; if it's gone, tell the user rather than silently
+/// reinstalling go/node/rustup during an upgrade.
+fn perform_fallback_upgrade(
+    name: &str,
+    command: &str,
+    eco: crate::tools::spec::FallbackEco,
+    package: &str,
+    target_version: &str,
+) -> Result<String, String> {
+    if !has(eco.command()) {
+        return Err(format!(
+            "fallback toolchain `{}` not on PATH — rerun `jarvy setup` or pass --native",
+            eco.command()
+        ));
+    }
+    crate::tools::fallback::upgrade_via_route(name, eco, package, target_version)
+        .map_err(|e| format!("fallback upgrade failed: {:?}", e))?;
+    // Refresh the receipt — the binary's stat signature just changed.
+    if let Err(e) = crate::tools::receipts::record(
+        name,
+        command,
+        eco.receipt_route(),
+        package,
+        target_version,
+        false,
+    ) && crate::observability::telemetry_gate::is_enabled()
+    {
+        tracing::warn!(
+            event = "tool.receipt_write_failed",
+            tool = name,
+            error_kind = e.kind(),
+        );
+    }
+    Ok(format!(
+        "Upgraded via {} fallback route",
+        eco.receipt_route()
+    ))
 }
 
 fn perform_upgrade(name: &str, _target_version: &str) -> Result<String, String> {
@@ -410,6 +499,59 @@ mod tests {
             skipped_count: 0,
         };
         assert_eq!(err_result.exit_code(), ExitCode::Error);
+    }
+
+    fn receipt_map(
+        tool: &str,
+        route: &str,
+    ) -> std::collections::BTreeMap<String, crate::tools::receipts::Receipt> {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert(
+            tool.to_string(),
+            crate::tools::receipts::Receipt {
+                route: route.to_string(),
+                package: "example-pkg".to_string(),
+                version_hint: "latest".to_string(),
+                installed_at_unix: 1,
+                toolchain_bootstrapped: false,
+                bin_path: None,
+                bin_mtime_unix: None,
+                bin_size: None,
+            },
+        );
+        m
+    }
+
+    #[test]
+    fn dry_run_reports_fallback_route_from_receipt() {
+        // `git` is installed everywhere this test suite runs; the
+        // receipt (already validity-filtered by the caller contract)
+        // routes its dry-run through the cargo eco.
+        let receipts = receipt_map("git", "cargo");
+        let result = upgrade_tool("git", "latest", true, false, false, &receipts);
+        assert_eq!(result.status, UpgradeStatus::DryRun);
+        assert!(
+            result
+                .message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("cargo fallback route")
+        );
+    }
+
+    #[test]
+    fn native_flag_ignores_receipt_in_dry_run() {
+        let receipts = receipt_map("git", "cargo");
+        let result = upgrade_tool("git", "latest", true, false, true, &receipts);
+        assert_eq!(result.status, UpgradeStatus::DryRun);
+        assert_eq!(result.message.as_deref(), Some("Would upgrade (dry-run)"));
+    }
+
+    #[test]
+    fn unknown_receipt_route_falls_back_to_native_dry_run() {
+        let receipts = receipt_map("git", "curl-sh");
+        let result = upgrade_tool("git", "latest", true, false, false, &receipts);
+        assert_eq!(result.message.as_deref(), Some("Would upgrade (dry-run)"));
     }
 
     #[test]

@@ -355,6 +355,10 @@ pub enum Commands {
         /// Force upgrade even if already at required version
         #[clap(long)]
         force: bool,
+        /// Ignore fallback install receipts: upgrade via the native
+        /// package manager and drop the tool's receipt on success
+        #[clap(long)]
+        native: bool,
         /// Output format: json, pretty
         #[clap(short = 'F', long = "format", default_value = "pretty")]
         output_format: String,

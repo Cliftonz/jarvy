@@ -13,7 +13,10 @@ define_tool!(NATS_SERVER, {
     linux: { uniform: "nats-server" },
     // No first-party winget manifest as of 2026-06; the prior
     // `Synadia.NATSServer` id never existed in microsoft/winget-pkgs.
-    // Windows users: install from https://github.com/nats-io/nats-server/releases.
+    // The go fallback route covers Windows: main package at module
+    // root `github.com/nats-io/nats-server/v2` (verified 2026-08, no
+    // replace directives in go.mod).
+    fallback: { go: "github.com/nats-io/nats-server/v2" },
     category: "messaging",
 });
 
@@ -32,6 +35,15 @@ mod tests {
         assert!(
             NATS_SERVER.windows.is_none(),
             "no first-party winget manifest; install from upstream releases"
+        );
+        assert_eq!(NATS_SERVER.fallback.len(), 1);
+        assert_eq!(
+            NATS_SERVER.fallback[0].eco,
+            crate::tools::spec::FallbackEco::Go
+        );
+        assert_eq!(
+            NATS_SERVER.fallback[0].package,
+            "github.com/nats-io/nats-server/v2"
         );
     }
 }

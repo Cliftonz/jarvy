@@ -14,8 +14,9 @@ define_tool!(CFN_LINT, {
     macos: { brew: "cfn-lint" },
     // Linux: no distro package; install via Linuxbrew (or `pip install cfn-lint`).
     linux: { brew: "cfn-lint" },
-    // No first-party winget manifest as of 2026-07; install with
-    // `pip install cfn-lint` per https://github.com/aws-cloudformation/cfn-lint.
+    // No first-party winget manifest as of 2026-07; the uv fallback
+    // route covers Windows via PyPI `cfn-lint` (verified 2026-08).
+    fallback: { uv: "cfn-lint" },
 });
 
 #[cfg(test)]
@@ -30,5 +31,11 @@ mod tests {
         let linux = CFN_LINT.linux.expect("must support Linux");
         assert_eq!(linux.brew, Some("cfn-lint"));
         assert!(CFN_LINT.windows.is_none(), "no first-party winget manifest");
+        assert_eq!(CFN_LINT.fallback.len(), 1);
+        assert_eq!(
+            CFN_LINT.fallback[0].eco,
+            crate::tools::spec::FallbackEco::Uv
+        );
+        assert_eq!(CFN_LINT.fallback[0].package, "cfn-lint");
     }
 }

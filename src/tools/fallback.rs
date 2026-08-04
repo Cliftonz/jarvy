@@ -148,9 +148,48 @@ fn ensure_toolchain(tool: &str, eco: FallbackEco) -> Result<bool, &'static str> 
 
 /// Run the ecosystem install command for one route.
 fn run_route(spec: &ToolSpec, route: &FallbackRoute, min_hint: &str) -> Result<(), InstallError> {
-    // Defense-in-depth: route.package is a compile-time constant, but it
-    // still passes the same gauntlet as user-supplied package entries.
-    if validate_package_name(route.package, "fallback_route").is_err() {
+    run_eco(
+        spec.name,
+        route.eco,
+        route.package,
+        min_hint,
+        EcoOp::Install,
+    )
+}
+
+/// Re-run a receipt's ecosystem route to upgrade (PRD-060 Phase 2).
+/// The package here comes from the user-writable receipts file —
+/// `run_eco` runs the same validation gauntlet as the install path.
+/// Callers must verify the toolchain is on PATH first (no bootstrap
+/// on upgrade — the toolchain installed the tool in the first place).
+pub fn upgrade_via_route(
+    tool: &str,
+    eco: FallbackEco,
+    package: &str,
+    version_hint: &str,
+) -> Result<(), InstallError> {
+    run_eco(tool, eco, package, version_hint, EcoOp::Upgrade)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EcoOp {
+    Install,
+    Upgrade,
+}
+
+/// Shared install/upgrade runner. `package` is `&str` (not `'static`)
+/// because the upgrade path feeds it from a receipt; the gauntlet
+/// below is therefore load-bearing for both callers.
+fn run_eco(
+    tool: &str,
+    eco: FallbackEco,
+    package: &str,
+    min_hint: &str,
+    op: EcoOp,
+) -> Result<(), InstallError> {
+    // Defense-in-depth on install (package is a compile-time constant);
+    // the whole defense on upgrade (package is receipt-sourced).
+    if validate_package_name(package, "fallback_route").is_err() {
         return Err(InstallError::Parse("fallback package id failed validation"));
     }
     let pin = concrete_pin(min_hint);
@@ -161,51 +200,106 @@ fn run_route(spec: &ToolSpec, route: &FallbackRoute, min_hint: &str) -> Result<(
             "fallback package version failed validation",
         ));
     }
-    match route.eco {
+    let verb = match op {
+        EcoOp::Install => "Installing",
+        EcoOp::Upgrade => "Upgrading",
+    };
+    match eco {
         FallbackEco::Go => {
+            // `go install pkg@version` is already idempotent-upgrade.
             let spec_arg = match pin.as_deref() {
-                Some(p) => format!("{}@v{p}", route.package),
-                None => format!("{}@latest", route.package),
+                Some(p) => format!("{package}@v{p}"),
+                None => format!("{package}@latest"),
             };
-            println!("  Installing {} via `go install {spec_arg}`", spec.name);
+            println!("  {verb} {tool} via `go install {spec_arg}`");
             run("go", &["install", &spec_arg])?;
         }
         FallbackEco::Npm => {
+            // `npm install -g` replaces an existing global in place.
             let spec_arg = match pin.as_deref() {
-                Some(p) => format!("{}@{p}", route.package),
-                None => route.package.to_string(),
+                Some(p) => format!("{package}@{p}"),
+                None => package.to_string(),
             };
-            println!("  Installing {} via `npm install -g {spec_arg}`", spec.name);
+            println!("  {verb} {tool} via `npm install -g {spec_arg}`");
             run("npm", &["install", "-g", &spec_arg])?;
         }
         FallbackEco::Cargo => {
             // `--locked` mirrors `install_via_cargo_install` — the
             // supply-chain contract for every cargo route in jarvy.
-            println!(
-                "  Installing {} via `cargo install --locked {}`",
-                spec.name, route.package
-            );
-            match pin.as_deref() {
-                Some(p) => run(
-                    "cargo",
-                    &["install", "--locked", route.package, "--version", p],
-                )?,
-                None => run("cargo", &["install", "--locked", route.package])?,
-            };
+            // Upgrade adds `--force`: cargo refuses to overwrite an
+            // existing binary otherwise.
+            let mut args = vec!["install", "--locked"];
+            if op == EcoOp::Upgrade {
+                args.push("--force");
+            }
+            args.push(package);
+            if let Some(p) = pin.as_deref() {
+                args.push("--version");
+                args.push(p);
+            }
+            println!("  {verb} {tool} via `cargo {}`", args.join(" "));
+            run("cargo", &args)?;
         }
         FallbackEco::Uv => {
+            // Upgrade uses `--reinstall`: re-resolves (latest when
+            // unpinned) and replaces the existing tool env.
             let spec_arg = match pin.as_deref() {
-                Some(p) => format!("{}=={p}", route.package),
-                None => route.package.to_string(),
+                Some(p) => format!("{package}=={p}"),
+                None => package.to_string(),
             };
-            println!(
-                "  Installing {} via `uv tool install {spec_arg}`",
-                spec.name
-            );
-            run("uv", &["tool", "install", &spec_arg])?;
+            let mut args = vec!["tool", "install"];
+            if op == EcoOp::Upgrade {
+                args.push("--reinstall");
+            }
+            args.push(&spec_arg);
+            println!("  {verb} {tool} via `uv {}`", args.join(" "));
+            run("uv", &args)?;
         }
     }
     Ok(())
+}
+
+/// Preview the fallback route `tool` would take on THIS platform, for
+/// `jarvy setup --dry-run` / `jarvy diff`. `Some((eco_label, command))`
+/// — e.g. `("go", "go install github.com/x/y@latest")` — only when the
+/// tool has no platform installer here, no custom installer, and
+/// declares at least one route (mirrors the runtime's handoff
+/// condition; first declared route shown, matching try order).
+pub fn preview_route(tool: &str, min_hint: &str) -> Option<(&'static str, String)> {
+    let spec = crate::tools::spec::get_tool_spec(tool)?;
+    if spec.custom_install.is_some()
+        || crate::tools::spec::get_tool_install_info(tool, min_hint).is_some()
+    {
+        return None;
+    }
+    let route = spec.fallback.first()?;
+    Some((
+        route.eco.receipt_route(),
+        preview_command(route.eco, route.package, min_hint),
+    ))
+}
+
+/// Display string for a fallback install — mirrors `run_eco`'s install argv.
+fn preview_command(eco: FallbackEco, package: &str, min_hint: &str) -> String {
+    let pin = concrete_pin(min_hint);
+    match eco {
+        FallbackEco::Go => match pin.as_deref() {
+            Some(p) => format!("go install {package}@v{p}"),
+            None => format!("go install {package}@latest"),
+        },
+        FallbackEco::Npm => match pin.as_deref() {
+            Some(p) => format!("npm install -g {package}@{p}"),
+            None => format!("npm install -g {package}"),
+        },
+        FallbackEco::Cargo => match pin.as_deref() {
+            Some(p) => format!("cargo install --locked {package} --version {p}"),
+            None => format!("cargo install --locked {package}"),
+        },
+        FallbackEco::Uv => match pin.as_deref() {
+            Some(p) => format!("uv tool install {package}=={p}"),
+            None => format!("uv tool install {package}"),
+        },
+    }
 }
 
 /// Map a config version hint to a concrete pin. Concrete = digits and
@@ -225,12 +319,7 @@ pub fn concrete_pin(version: &str) -> Option<String> {
 /// Best-effort receipt write — the install already succeeded, so a
 /// failed receipt never fails the route.
 fn write_receipt(spec: &ToolSpec, route: &FallbackRoute, min_hint: &str, bootstrapped: bool) {
-    let route_name = match route.eco {
-        FallbackEco::Go => "go",
-        FallbackEco::Npm => "npm",
-        FallbackEco::Cargo => "cargo",
-        FallbackEco::Uv => "uv",
-    };
+    let route_name = route.eco.receipt_route();
     if let Err(e) = crate::tools::receipts::record(
         spec.name,
         spec.command,
@@ -266,6 +355,40 @@ mod tests {
         ] {
             assert_eq!(concrete_pin(hint), None, "hint {hint:?}");
         }
+    }
+
+    #[test]
+    fn preview_command_mirrors_install_argv() {
+        assert_eq!(
+            preview_command(FallbackEco::Go, "github.com/x/y", "latest"),
+            "go install github.com/x/y@latest"
+        );
+        assert_eq!(
+            preview_command(FallbackEco::Go, "github.com/x/y", "1.2.3"),
+            "go install github.com/x/y@v1.2.3"
+        );
+        assert_eq!(
+            preview_command(FallbackEco::Npm, "allure-commandline", "2.30.0"),
+            "npm install -g allure-commandline@2.30.0"
+        );
+        assert_eq!(
+            preview_command(FallbackEco::Cargo, "cargo-deny", "latest"),
+            "cargo install --locked cargo-deny"
+        );
+        assert_eq!(
+            preview_command(FallbackEco::Uv, "cfn-lint", "1.5"),
+            "uv tool install cfn-lint==1.5"
+        );
+    }
+
+    #[test]
+    fn preview_route_gates_on_platform_and_custom_install() {
+        // Unknown tool → None.
+        assert!(preview_route("no_such_tool", "latest").is_none());
+        // jq has a platform installer on every supported OS → None.
+        assert!(preview_route("jq", "latest").is_none());
+        // rust is custom_install → None even with no PM slot.
+        assert!(preview_route("rust", "latest").is_none());
     }
 
     #[test]

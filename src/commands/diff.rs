@@ -320,7 +320,11 @@ pub fn run_diff(config: &Config, changes_only: bool) -> DiffResult {
 
         // Get install method
         let install_method = get_tool_install_info(&tool.name, &tool.version)
-            .map(|info| format!("{:?}", info.package_manager).to_lowercase());
+            .map(|info| format!("{:?}", info.package_manager).to_lowercase())
+            .or_else(|| {
+                crate::tools::fallback::preview_route(&tool.name, &tool.version)
+                    .map(|(eco, _)| format!("fallback ({eco})"))
+            });
 
         // Check dependencies
         let dependency_resolution =

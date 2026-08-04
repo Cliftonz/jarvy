@@ -4,6 +4,9 @@
 //! package-manager CLI. No new HTTP surface — if the manager isn't
 //! on `PATH`, the backend returns [`BackendError::ManagerMissing`]
 //! and the tool lands in the report's `unchecked` bucket.
+//! One deliberate exception: [`uv`] probes the PyPI JSON API over
+//! `net::bounded_fetch` because `uv tool upgrade --dry-run` output is
+//! not a stable contract (PRD-060 decision).
 
 pub mod apk;
 pub mod apt;
@@ -18,6 +21,7 @@ pub mod nuget;
 pub mod pacman;
 pub mod pip;
 pub mod scoop;
+pub mod uv;
 pub mod winget;
 
 use std::time::Duration;

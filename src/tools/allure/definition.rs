@@ -15,8 +15,10 @@ define_tool!(ALLURE, {
     // Linux: no distro package; homebrew-core's `allure` ships an
     // architecture-independent ("all") bottle that Linuxbrew installs.
     linux: { brew: "allure" },
-    // No first-party winget manifest as of 2026-07; install via scoop
-    // or from https://allurereport.org/docs/v2/install-for-windows/.
+    // No first-party winget manifest as of 2026-07; the npm fallback
+    // route covers Windows via `allure-commandline` (bin = `allure`,
+    // verified 2026-08).
+    fallback: { npm: "allure-commandline" },
     category: "testing",
 });
 
@@ -33,5 +35,8 @@ mod tests {
         let linux = ALLURE.linux.expect("must support Linux");
         assert_eq!(linux.brew, Some("allure"));
         assert!(ALLURE.windows.is_none(), "no first-party winget manifest");
+        assert_eq!(ALLURE.fallback.len(), 1);
+        assert_eq!(ALLURE.fallback[0].eco, crate::tools::spec::FallbackEco::Npm);
+        assert_eq!(ALLURE.fallback[0].package, "allure-commandline");
     }
 }

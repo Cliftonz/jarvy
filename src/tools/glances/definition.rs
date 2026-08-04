@@ -11,6 +11,9 @@ define_tool!(GLANCES, {
     macos: { brew: "glances" },
     linux: { uniform: "glances" },
     bsd: { pkg: "py-glances" },
+    // No first-party winget manifest as of 2026-06; the uv fallback
+    // route covers Windows via PyPI `glances` (verified 2026-08).
+    fallback: { uv: "glances" },
     default_hook: {
         description: "Seed ~/.config/glances/glances.conf with CSV history export to ~/.jarvy/glances/",
         script: r#"
@@ -55,5 +58,8 @@ mod tests {
         assert_eq!(linux.apt, Some("glances"));
         assert!(GLANCES.windows.is_none(), "no first-party winget manifest");
         assert!(GLANCES.has_default_hook());
+        assert_eq!(GLANCES.fallback.len(), 1);
+        assert_eq!(GLANCES.fallback[0].eco, crate::tools::spec::FallbackEco::Uv);
+        assert_eq!(GLANCES.fallback[0].package, "glances");
     }
 }

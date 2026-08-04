@@ -1,6 +1,6 @@
 # PRD-060 — Generalized Fallback Installers
 
-- **Status:** in_progress (Phase 1 complete 2026-08-03; Phase 2 pending)
+- **Status:** complete (Phase 1 2026-08-03; Phase 2 2026-08-04)
 - **Created:** 2026-08-03
 - **Priority:** medium
 - **Estimated:** 4 days
@@ -228,13 +228,23 @@ check-updates refresher only reads.
   `fallback: { go: "github.com/betterleaks/betterleaks" }`. Issue #78
   (winget tracking) stays open — a first-party winget manifest still
   beats the fallback.
-- Candidates (audit each upstream for a first-party ecosystem package
-  before migrating — verification rule applies): cfn-lint (uv),
-  locust (uv), glances (uv), kafkactl (go), helmfile (go), kubent
-  (go), velero (go), kubeseal (go), clusterctl (go), temporal (go),
-  nats-server (go), argo (go), composer (n/a — investigate), allure
-  (npm?), structurizr/emqx/kcat/rabbitmq/nebula/stow/microk8s (likely
-  no ecosystem route — keep unsupported).
+- Candidate audit — DONE (Phase 2, 2026-08-04; every package
+  web-verified per the verification rule):
+  - **Migrated (8):** cfn-lint (uv `cfn-lint`), locust (uv `locust`),
+    glances (uv `glances`), allure (npm `allure-commandline`),
+    kafkactl (go `github.com/deviceinsight/kafkactl/v5` — documented
+    upstream), nats-server (go `github.com/nats-io/nats-server/v2`),
+    kubent (go `github.com/doitintl/kube-no-trouble/cmd/kubent`),
+    argo (go `github.com/argoproj/argo-workflows/v4/cmd/argo` — the
+    v3 module had replace directives; v4 dropped them).
+  - **Excluded — `go install` refuses modules with replace
+    directives:** helmfile, temporal (temporalio/cli), velero,
+    clusterctl (cluster-api). Revisit if upstream go.mods drop them.
+  - **Excluded — module path mismatch:** kubeseal (go.mod declares
+    `module github.com/bitnami/sealed-secrets` while the repo lives at
+    `bitnami-labs/` — `go install` fails the declared-path check).
+  - structurizr/emqx/kcat/rabbitmq/nebula/stow/microk8s: no ecosystem
+    route — stay unsupported; composer still uninvestigated.
 - Migrated tools update their dated comment to name the fallback route
   instead of a dead end.
 
@@ -292,6 +302,32 @@ All gated by `telemetry_gate::is_enabled()` per the standing contract.
 
 Receipt writes land in Phase 1 so Phase-1 fallback installs are
 already attributable when Phase 2 ships — no receipt backfill needed.
+
+### Phase 2 shipped (2026-08-04) — deviations from the design above
+
+- **Cache `route` field NOT added.** `CacheStore::key(backend, pkg_id)`
+  is `"{backend}:{pkg_id}"` — a route change alters both parts, so the
+  old entry is an automatic miss. The extra field would have been dead
+  weight.
+- **Readers never prune receipts.** §4 said "stat diverges → receipt
+  pruned"; shipped behavior is *treated as absent* — `load_valid()`
+  filters, nothing deletes. Writers are the fallback install path
+  (record/refresh) and `upgrade --native` (delete on success) only, so
+  a transient stat mismatch can't destroy state.
+- **No `uv tool list` batching.** There is no `[uv]` config section;
+  UvBackend only serves receipt-routed targets, and the installed side
+  comes from the route-agnostic `detect_installed_version` probe.
+- **Receipt strings are hostile input.** `receipt_package_safe` =
+  path-shape refusal + `validate_package_name` + (go routes)
+  `is_safe_go_module_path`; refusals bucket as `refused_unsafe_name`
+  with a `maintenance.refused_unsafe_name` warn event. Same gauntlet
+  re-runs inside `run_eco` before the upgrade argv.
+- **Upgrade never bootstraps toolchains** — missing toolchain is a
+  user-facing error pointing at `jarvy setup` / `--native`.
+- **Dry-run preview** (`fallback::preview_route`): fires only when the
+  runtime handoff would (no custom_install, no platform install info,
+  ≥1 route); setup dry-run prints the concrete route command, diff's
+  `install_method` shows `fallback (<eco>)`.
 
 ## Open Questions — DECIDED (Phase 1, 2026-08-03)
 

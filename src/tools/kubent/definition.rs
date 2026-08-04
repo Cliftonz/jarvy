@@ -10,9 +10,11 @@ define_tool!(KUBENT, {
     command: "kubent",
     macos: { brew: "kubent" },
     linux: { brew: "kubent" },
-    // No first-party winget manifest as of 2026-08; upstream ships
-    // release binaries at
-    // https://github.com/doitintl/kube-no-trouble/releases.
+    // No first-party winget manifest as of 2026-08; the go fallback
+    // route covers Windows: main package at
+    // `github.com/doitintl/kube-no-trouble/cmd/kubent` (verified
+    // 2026-08, no replace directives in go.mod).
+    fallback: { go: "github.com/doitintl/kube-no-trouble/cmd/kubent" },
     depends_on: &["kubectl"],
     category: "devops",
 });
@@ -27,6 +29,12 @@ mod tests {
         assert_eq!(KUBENT.macos.expect("macOS").brew, Some("kubent"));
         assert_eq!(KUBENT.linux.expect("Linux").brew, Some("kubent"));
         assert!(KUBENT.windows.is_none(), "no first-party winget yet");
+        assert_eq!(KUBENT.fallback.len(), 1);
+        assert_eq!(KUBENT.fallback[0].eco, crate::tools::spec::FallbackEco::Go);
+        assert_eq!(
+            KUBENT.fallback[0].package,
+            "github.com/doitintl/kube-no-trouble/cmd/kubent"
+        );
         assert!(
             KUBENT
                 .depends_on

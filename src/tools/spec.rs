@@ -304,6 +304,29 @@ impl FallbackEco {
             Self::Uv => "fallback_uv",
         }
     }
+
+    /// Route string stored in install receipts
+    /// (`~/.jarvy/install-receipts.json`).
+    pub fn receipt_route(self) -> &'static str {
+        match self {
+            Self::Go => "go",
+            Self::Npm => "npm",
+            Self::Cargo => "cargo",
+            Self::Uv => "uv",
+        }
+    }
+
+    /// Inverse of [`Self::receipt_route`] for Phase 2 readers. `None`
+    /// for unrecognized strings (hand-edited / future-schema receipt).
+    pub fn from_receipt_route(route: &str) -> Option<Self> {
+        match route {
+            "go" => Some(Self::Go),
+            "npm" => Some(Self::Npm),
+            "cargo" => Some(Self::Cargo),
+            "uv" => Some(Self::Uv),
+            _ => None,
+        }
+    }
 }
 
 /// One declared fallback install route: ecosystem + first-party package

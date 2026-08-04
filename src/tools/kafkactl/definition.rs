@@ -13,8 +13,11 @@ define_tool!(KAFKACTL, {
     // Linux: install via Linuxbrew through the same tap, or use the
     // upstream release binary. No native distro package.
     linux: { brew: "deviceinsight/packages/kafkactl" },
-    // No first-party winget manifest; install from
-    // https://github.com/deviceinsight/kafkactl/releases.
+    // No first-party winget manifest; the go fallback route covers
+    // Windows — upstream README documents
+    // `go install github.com/deviceinsight/kafkactl/v5@latest`
+    // (verified 2026-08, no replace directives in go.mod).
+    fallback: { go: "github.com/deviceinsight/kafkactl/v5" },
     category: "messaging",
 });
 
@@ -35,5 +38,14 @@ mod tests {
         let linux = KAFKACTL.linux.expect("kafkactl must support Linux");
         assert_eq!(linux.brew, Some("deviceinsight/packages/kafkactl"));
         assert!(KAFKACTL.windows.is_none(), "no first-party winget manifest");
+        assert_eq!(KAFKACTL.fallback.len(), 1);
+        assert_eq!(
+            KAFKACTL.fallback[0].eco,
+            crate::tools::spec::FallbackEco::Go
+        );
+        assert_eq!(
+            KAFKACTL.fallback[0].package,
+            "github.com/deviceinsight/kafkactl/v5"
+        );
     }
 }

@@ -30,7 +30,7 @@ use super::backends::{
     FreshnessBackend, apk::ApkBackend, apt::AptBackend, brew::BrewBackend, cargo::CargoBackend,
     choco::ChocoBackend, dnf::DnfBackend, gem::GemBackend, go::GoBackend, npm::NpmBackend,
     nuget::NugetBackend, pacman::PacmanBackend, pip::PipBackend, scoop::ScoopBackend,
-    winget::WingetBackend,
+    uv::UvBackend, winget::WingetBackend,
 };
 use super::checker::{CheckTarget, UncheckedTool, VERSION_MANAGERS, version_manager_reason};
 use super::config::MaintenanceConfig;
@@ -120,6 +120,14 @@ fn resolve_targets_with_mode(
     let mut unchecked: Vec<UncheckedTool> = Vec::new();
     let ignored: HashSet<&str> = maintenance.ignore.iter().map(|s| s.as_str()).collect();
     let mut seen: HashSet<String> = HashSet::new();
+    // `backend:pkg_id` dedup across ALL push sites — a receipt-routed
+    // provisioner tool must not double-probe when the same package
+    // also appears in its ecosystem section (provisioner loop runs
+    // first, so the receipt-routed target wins).
+    let mut seen_pkg: HashSet<String> = HashSet::new();
+    // PRD-060 Phase 2: still-valid fallback install receipts. One
+    // disk read + a stat per receipt — cheap enough for both modes.
+    let receipts = crate::tools::receipts::load_valid();
 
     // 1. Provisioner tools.
     for name in &input.provisioner_tools {
@@ -143,38 +151,90 @@ fn resolve_targets_with_mode(
             continue;
         }
 
-        let spec = find_spec(name);
-        match spec {
-            None => unchecked.push(UncheckedTool {
+        let Some(spec) = find_spec(name) else {
+            unchecked.push(UncheckedTool {
                 tool: name.clone(),
                 reason: "unregistered_tool".to_string(),
                 manager: None,
-            }),
-            Some(spec) if spec.custom_install.is_some() => unchecked.push(UncheckedTool {
+            });
+            continue;
+        };
+
+        // PRD-060 Phase 2: a still-valid fallback receipt wins over
+        // BOTH the custom_install bucket and the platform backend —
+        // the binary on PATH is the ecosystem-installed one, so
+        // asking brew/winget about it produces garbage. Receipt
+        // strings are hostile input (user-writable file): the package
+        // passes the same gauntlet as ecosystem TOML keys before it
+        // can reach a backend argv. Unknown route strings fall
+        // through to normal platform routing.
+        if let Some(receipt) = crate::tools::receipts::lookup(&receipts, name)
+            && let Some(backend) = receipt_backend(&receipt.route)
+        {
+            if receipt_package_safe(&receipt.route, &receipt.package) {
+                let installed = if mode == ResolveMode::Full {
+                    detect_installed_version(spec.command)
+                } else {
+                    None
+                };
+                push_target(
+                    &mut targets,
+                    &mut seen_pkg,
+                    CheckTarget {
+                        tool: name.clone(),
+                        backend,
+                        pkg_id: receipt.package.clone(),
+                        installed,
+                    },
+                );
+            } else {
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "maintenance.refused_unsafe_name",
+                        purpose = "[receipt]",
+                        reason = "receipt_package_invalid",
+                    );
+                }
+                unchecked.push(UncheckedTool {
+                    tool: name.clone(),
+                    reason: "refused_unsafe_name".to_string(),
+                    manager: None,
+                });
+            }
+            continue;
+        }
+
+        if spec.custom_install.is_some() {
+            unchecked.push(UncheckedTool {
                 tool: name.clone(),
                 reason: "custom_install".to_string(),
                 manager: None,
-            }),
-            Some(spec) => match provisioner_backend(spec) {
-                Some((backend, pkg_id)) => {
-                    let installed = if mode == ResolveMode::Full {
-                        detect_installed_version(spec.command)
-                    } else {
-                        None
-                    };
-                    targets.push(CheckTarget {
+            });
+            continue;
+        }
+        match provisioner_backend(spec) {
+            Some((backend, pkg_id)) => {
+                let installed = if mode == ResolveMode::Full {
+                    detect_installed_version(spec.command)
+                } else {
+                    None
+                };
+                push_target(
+                    &mut targets,
+                    &mut seen_pkg,
+                    CheckTarget {
                         tool: name.clone(),
                         backend,
                         pkg_id,
                         installed,
-                    });
-                }
-                None => unchecked.push(UncheckedTool {
-                    tool: name.clone(),
-                    reason: "no_backend_for_platform".to_string(),
-                    manager: None,
-                }),
-            },
+                    },
+                );
+            }
+            None => unchecked.push(UncheckedTool {
+                tool: name.clone(),
+                reason: "no_backend_for_platform".to_string(),
+                manager: None,
+            }),
         }
     }
 
@@ -205,12 +265,16 @@ fn resolve_targets_with_mode(
         } else {
             None
         };
-        targets.push(CheckTarget {
-            tool: name.clone(),
-            backend: Box::new(CargoBackend),
-            pkg_id: name.clone(),
-            installed,
-        });
+        push_target(
+            &mut targets,
+            &mut seen_pkg,
+            CheckTarget {
+                tool: name.clone(),
+                backend: Box::new(CargoBackend),
+                pkg_id: name.clone(),
+                installed,
+            },
+        );
     }
 
     // 3. [npm] packages. Detect installed globals in one shot so
@@ -238,12 +302,16 @@ fn resolve_targets_with_mode(
         if !push_if_safe(name, "[maintenance-npm]", &mut unchecked) {
             continue;
         }
-        targets.push(CheckTarget {
-            tool: name.clone(),
-            backend: Box::new(NpmBackend),
-            pkg_id: name.clone(),
-            installed: npm_globals.get(name).cloned(),
-        });
+        push_target(
+            &mut targets,
+            &mut seen_pkg,
+            CheckTarget {
+                tool: name.clone(),
+                backend: Box::new(NpmBackend),
+                pkg_id: name.clone(),
+                installed: npm_globals.get(name).cloned(),
+            },
+        );
     }
 
     // 4. [pip] packages.
@@ -267,12 +335,16 @@ fn resolve_targets_with_mode(
         } else {
             None
         };
-        targets.push(CheckTarget {
-            tool: name.clone(),
-            backend: Box::new(PipBackend),
-            pkg_id: name.clone(),
-            installed,
-        });
+        push_target(
+            &mut targets,
+            &mut seen_pkg,
+            CheckTarget {
+                tool: name.clone(),
+                backend: Box::new(PipBackend),
+                pkg_id: name.clone(),
+                installed,
+            },
+        );
     }
 
     // 5. [gem] packages.
@@ -296,12 +368,16 @@ fn resolve_targets_with_mode(
         } else {
             None
         };
-        targets.push(CheckTarget {
-            tool: name.clone(),
-            backend: Box::new(GemBackend),
-            pkg_id: name.clone(),
-            installed,
-        });
+        push_target(
+            &mut targets,
+            &mut seen_pkg,
+            CheckTarget {
+                tool: name.clone(),
+                backend: Box::new(GemBackend),
+                pkg_id: name.clone(),
+                installed,
+            },
+        );
     }
 
     // 6. [go] packages. Bare command names are inferred from the
@@ -334,11 +410,13 @@ fn resolve_targets_with_mode(
                 reason: "refused_unsafe_name".to_string(),
                 manager: None,
             });
-            tracing::warn!(
-                event = "maintenance.refused_unsafe_name",
-                purpose = "[maintenance-go]",
-                reason = "traversal_segment",
-            );
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "maintenance.refused_unsafe_name",
+                    purpose = "[maintenance-go]",
+                    reason = "traversal_segment",
+                );
+            }
             continue;
         }
         let installed = if mode == ResolveMode::Full {
@@ -347,12 +425,16 @@ fn resolve_targets_with_mode(
         } else {
             None
         };
-        targets.push(CheckTarget {
-            tool: path.clone(),
-            backend: Box::new(GoBackend),
-            pkg_id: path.clone(),
-            installed,
-        });
+        push_target(
+            &mut targets,
+            &mut seen_pkg,
+            CheckTarget {
+                tool: path.clone(),
+                backend: Box::new(GoBackend),
+                pkg_id: path.clone(),
+                installed,
+            },
+        );
     }
 
     // 7. [nuget] global tools.
@@ -379,15 +461,55 @@ fn resolve_targets_with_mode(
         } else {
             None
         };
-        targets.push(CheckTarget {
-            tool: name.clone(),
-            backend: Box::new(NugetBackend),
-            pkg_id: name.clone(),
-            installed,
-        });
+        push_target(
+            &mut targets,
+            &mut seen_pkg,
+            CheckTarget {
+                tool: name.clone(),
+                backend: Box::new(NugetBackend),
+                pkg_id: name.clone(),
+                installed,
+            },
+        );
     }
 
     (targets, unchecked)
+}
+
+/// Push a target unless the same `backend:pkg_id` pair is already
+/// queued — first declaration wins. Silent skip, not an `unchecked`
+/// row: the package IS being checked, just under its earlier target.
+fn push_target(
+    targets: &mut Vec<CheckTarget>,
+    seen_pkg: &mut HashSet<String>,
+    target: CheckTarget,
+) {
+    let key = format!("{}:{}", target.backend.name(), target.pkg_id);
+    if seen_pkg.insert(key) {
+        targets.push(target);
+    }
+}
+
+/// Map a receipt's route string onto its freshness backend. `None`
+/// for anything unrecognized (hand-edited or future-schema receipt) —
+/// caller falls through to normal platform routing.
+fn receipt_backend(route: &str) -> Option<Box<dyn FreshnessBackend + Send + Sync>> {
+    match route {
+        "go" => Some(Box::new(GoBackend)),
+        "npm" => Some(Box::new(NpmBackend)),
+        "cargo" => Some(Box::new(CargoBackend)),
+        "uv" => Some(Box::new(UvBackend)),
+        _ => None,
+    }
+}
+
+/// Receipt package strings run the same gauntlet as ecosystem TOML
+/// keys (the receipts file is user-writable): charset validation,
+/// path-shape refusal, and for go routes the `..` segment check.
+fn receipt_package_safe(route: &str, package: &str) -> bool {
+    !(package.starts_with('/') || package.starts_with('\\'))
+        && validate_package_name(package, "[receipt]").is_ok()
+        && (route != "go" || is_safe_go_module_path(package))
 }
 
 /// Gate an ecosystem-key against [`validate_package_name`] and, on
@@ -416,7 +538,7 @@ fn push_if_safe(name: &str, purpose: &'static str, unchecked: &mut Vec<Unchecked
     if !path_shaped && validate_package_name(name, purpose).is_ok() {
         return true;
     }
-    if path_shaped {
+    if path_shaped && crate::observability::telemetry_gate::is_enabled() {
         tracing::warn!(
             event = "maintenance.refused_unsafe_name",
             purpose = %purpose,
@@ -855,5 +977,68 @@ mod tests {
         assert!(is_safe_go_module_path("gopkg.in/yaml.v3"));
         assert!(!is_safe_go_module_path("github.com/x/.."));
         assert!(!is_safe_go_module_path("../../../evil"));
+    }
+
+    #[test]
+    fn receipt_backend_maps_known_routes_only() {
+        for (route, name) in [
+            ("go", "go"),
+            ("npm", "npm"),
+            ("cargo", "cargo"),
+            ("uv", "uv"),
+        ] {
+            let backend = receipt_backend(route).expect(route);
+            assert_eq!(backend.name(), name);
+        }
+        assert!(receipt_backend("pip").is_none());
+        assert!(receipt_backend("curl-sh").is_none());
+        assert!(receipt_backend("").is_none());
+    }
+
+    #[test]
+    fn receipt_package_gauntlet_refuses_hostile_strings() {
+        assert!(receipt_package_safe(
+            "go",
+            "github.com/betterleaks/betterleaks"
+        ));
+        assert!(receipt_package_safe("uv", "cfn-lint"));
+        assert!(receipt_package_safe("npm", "@scope/pkg"));
+        // Path-shaped, traversal, and injection shapes refused.
+        assert!(!receipt_package_safe("uv", "/usr/bin/evil"));
+        assert!(!receipt_package_safe("npm", "\\\\share\\evil"));
+        assert!(!receipt_package_safe("go", "github.com/x/../../etc"));
+        assert!(!receipt_package_safe("cargo", "--registry=evil"));
+        assert!(!receipt_package_safe("uv", "pkg; rm -rf ~"));
+    }
+
+    #[test]
+    fn push_target_dedups_backend_pkg_pairs() {
+        let mut targets = Vec::new();
+        let mut seen_pkg = HashSet::new();
+        for tool in ["betterleaks", "dup-entry"] {
+            push_target(
+                &mut targets,
+                &mut seen_pkg,
+                CheckTarget {
+                    tool: tool.to_string(),
+                    backend: Box::new(GoBackend),
+                    pkg_id: "github.com/betterleaks/betterleaks".to_string(),
+                    installed: None,
+                },
+            );
+        }
+        // Same pkg on a DIFFERENT backend is not a dup.
+        push_target(
+            &mut targets,
+            &mut seen_pkg,
+            CheckTarget {
+                tool: "other".to_string(),
+                backend: Box::new(NpmBackend),
+                pkg_id: "github.com/betterleaks/betterleaks".to_string(),
+                installed: None,
+            },
+        );
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].tool, "betterleaks");
     }
 }

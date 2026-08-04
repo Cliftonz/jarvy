@@ -192,6 +192,75 @@ pub fn record(
     save(&store)
 }
 
+/// A receipt is valid only while the live binary still matches the
+/// stat signature captured at install time. A receipt without a
+/// signature (`bin_path = None`) is NEVER valid — we can't prove the
+/// binary on PATH is the one the route installed.
+pub fn is_valid(receipt: &Receipt) -> bool {
+    let (Some(path), Some(mtime), Some(size)) =
+        (&receipt.bin_path, receipt.bin_mtime_unix, receipt.bin_size)
+    else {
+        return false;
+    };
+    stat_sig(path) == Some((mtime, size))
+}
+
+/// One disk read → only the receipts whose stat signature still
+/// matches. Corrupt file / schema mismatch / no-home → empty map
+/// (receipts are advisory; readers never fail on them). Invalid
+/// entries are ignored, not pruned — writers are the fallback
+/// installer and `jarvy upgrade` only.
+pub fn load_valid() -> BTreeMap<String, Receipt> {
+    match load() {
+        Ok(store) if store.schema_version == RECEIPTS_SCHEMA_VERSION => store
+            .entries
+            .into_iter()
+            .filter(|(_, r)| is_valid(r))
+            .collect(),
+        _ => BTreeMap::new(),
+    }
+}
+
+/// Look up `tool` with the same dash ↔ underscore aliasing as
+/// `registry::get_tool` / the resolver's `find_spec`.
+pub fn lookup<'a>(entries: &'a BTreeMap<String, Receipt>, tool: &str) -> Option<&'a Receipt> {
+    if let Some(r) = entries.get(tool) {
+        return Some(r);
+    }
+    let dash = tool.replace('_', "-");
+    if dash != tool
+        && let Some(r) = entries.get(&dash)
+    {
+        return Some(r);
+    }
+    let underscore = tool.replace('-', "_");
+    if underscore != tool
+        && let Some(r) = entries.get(&underscore)
+    {
+        return Some(r);
+    }
+    None
+}
+
+/// Delete a tool's receipt (any aliased spelling). Idempotent: absent
+/// entry, missing file, and corrupt store are all `Ok` — there is
+/// nothing left to remove.
+pub fn remove(tool: &str) -> Result<(), ReceiptError> {
+    let mut store = match load() {
+        Ok(s) if s.schema_version == RECEIPTS_SCHEMA_VERSION => s,
+        Ok(_) | Err(ReceiptError::Json(_)) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let before = store.entries.len();
+    store.entries.remove(tool);
+    store.entries.remove(&tool.replace('_', "-"));
+    store.entries.remove(&tool.replace('-', "_"));
+    if store.entries.len() == before {
+        return Ok(());
+    }
+    save(&store)
+}
+
 /// Binary identity at receipt time: (mtime unix seconds, byte size).
 fn stat_sig(path: &str) -> Option<(i64, u64)> {
     let meta = fs::metadata(path).ok()?;
@@ -280,6 +349,64 @@ mod tests {
         assert!(bad.is_err());
         let empty: ReceiptStore = serde_json::from_str(r#"{"schema_version":1}"#).expect("parse");
         assert!(empty.entries.is_empty());
+    }
+
+    fn receipt_with_sig(path: Option<String>, mtime: Option<i64>, size: Option<u64>) -> Receipt {
+        Receipt {
+            route: "go".to_string(),
+            package: "github.com/x/y".to_string(),
+            version_hint: "latest".to_string(),
+            installed_at_unix: 1,
+            toolchain_bootstrapped: false,
+            bin_path: path,
+            bin_mtime_unix: mtime,
+            bin_size: size,
+        }
+    }
+
+    #[test]
+    fn receipt_without_signature_is_never_valid() {
+        assert!(!is_valid(&receipt_with_sig(None, None, None)));
+        assert!(!is_valid(&receipt_with_sig(
+            Some("/no/such/bin".to_string()),
+            None,
+            Some(1),
+        )));
+    }
+
+    #[test]
+    fn receipt_validity_tracks_live_binary_stat() {
+        let dir = std::env::temp_dir().join(format!("jarvy-receipt-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("mkdir");
+        let bin = dir.join("fakebin");
+        fs::write(&bin, b"v1").expect("write");
+        let path_str = bin.to_string_lossy().to_string();
+        let (mtime, size) = stat_sig(&path_str).expect("sig");
+        let receipt = receipt_with_sig(Some(path_str.clone()), Some(mtime), Some(size));
+        assert!(is_valid(&receipt));
+        // Size change = native reinstall → stale by construction.
+        fs::write(&bin, b"different contents").expect("rewrite");
+        assert!(!is_valid(&receipt));
+        // Missing binary → invalid, not a panic.
+        fs::remove_file(&bin).expect("rm");
+        assert!(!is_valid(&receipt));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lookup_applies_dash_underscore_aliasing() {
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "nats-server".to_string(),
+            receipt_with_sig(None, None, None),
+        );
+        assert!(lookup(&entries, "nats-server").is_some());
+        assert!(lookup(&entries, "nats_server").is_some());
+        assert!(lookup(&entries, "natsserver").is_none());
+
+        let mut entries2 = BTreeMap::new();
+        entries2.insert("cfn_lint".to_string(), receipt_with_sig(None, None, None));
+        assert!(lookup(&entries2, "cfn-lint").is_some());
     }
 
     #[test]

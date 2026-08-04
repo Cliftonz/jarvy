@@ -15,8 +15,9 @@ define_tool!(LOCUST, {
     // Linux: no distro package; homebrew-core ships arm64/x86_64
     // Linux bottles for `locust`.
     linux: { brew: "locust" },
-    // No first-party winget manifest as of 2026-07; install with
-    // `pip install locust` per https://docs.locust.io/en/stable/installation.html.
+    // No first-party winget manifest as of 2026-07; the uv fallback
+    // route covers Windows via PyPI `locust` (verified 2026-08).
+    fallback: { uv: "locust" },
     category: "testing",
 });
 
@@ -33,5 +34,8 @@ mod tests {
         let linux = LOCUST.linux.expect("must support Linux");
         assert_eq!(linux.brew, Some("locust"));
         assert!(LOCUST.windows.is_none(), "no first-party winget manifest");
+        assert_eq!(LOCUST.fallback.len(), 1);
+        assert_eq!(LOCUST.fallback[0].eco, crate::tools::spec::FallbackEco::Uv);
+        assert_eq!(LOCUST.fallback[0].package, "locust");
     }
 }
