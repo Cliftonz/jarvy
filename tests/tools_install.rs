@@ -67,6 +67,37 @@ fn every_spec_has_either_a_platform_resolver_or_custom_install() {
 }
 
 #[test]
+fn every_declared_fallback_package_passes_the_install_gauntlet() {
+    // EP-4: fallback packages are compile-time constants, but nothing
+    // stopped a future contributor from typing a leading `-`, a scheme
+    // prefix, or a control byte into a `define_tool!` invocation. The
+    // resulting spec would slip past `iter_tools()` and only blow up
+    // at install time in a user's terminal. Run every declared route's
+    // package through the same gauntlet `[cargo]`/`[npm]`/… entries
+    // face at load time so the boundary is enforced at test time.
+    let mut offenders: Vec<String> = Vec::new();
+    for entry in iter_tools() {
+        let spec: &ToolSpec = entry.spec;
+        for route in spec.fallback {
+            let purpose: &'static str = match route.eco {
+                jarvy::tools::spec::FallbackEco::Go => "[fallback-go]",
+                jarvy::tools::spec::FallbackEco::Npm => "[fallback-npm]",
+                jarvy::tools::spec::FallbackEco::Cargo => "[fallback-cargo]",
+                jarvy::tools::spec::FallbackEco::Uv => "[fallback-uv]",
+            };
+            if let Err(e) = jarvy::packages::common::validate_package_name(route.package, purpose) {
+                offenders.push(format!("{} ({}): {e}", spec.name, route.package));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "declared fallback packages failed the install gauntlet:\n  {}",
+        offenders.join("\n  ")
+    );
+}
+
+#[test]
 fn add_handler_returns_a_result_without_panicking() {
     // Sanity: install attempts skip via JARVY_FAST_TEST and surface a Result.
     // This is intentionally narrow — we're only verifying handler dispatch

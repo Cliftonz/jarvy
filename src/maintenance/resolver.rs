@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use crate::packages::common::validate_package_name;
-use crate::tools::spec::{ToolSpec, iter_tools};
+use crate::tools::spec::ToolSpec;
 
 // Backend imports — several are per-OS via `#[cfg(...)]` branches
 // in `provisioner_backend`. Rust's dead-code check runs after cfg
@@ -756,13 +756,9 @@ fn provisioner_backend(
 }
 
 fn find_spec(name: &str) -> Option<&'static ToolSpec> {
-    let key = name.to_ascii_lowercase();
-    let alias_dash = key.replace('_', "-");
-    let alias_underscore = key.replace('-', "_");
-    iter_tools().map(|entry| entry.spec).find(|s| {
-        let sname = s.name.to_ascii_lowercase();
-        sname == key || sname == alias_dash || sname == alias_underscore
-    })
+    // Same aliasing as before, but O(1) via the shared spec map instead
+    // of a per-call linear scan over ~180 specs.
+    crate::tools::spec::get_tool_spec(name)
 }
 
 fn version_manager_match(name: &str) -> Option<&'static str> {
@@ -799,17 +795,26 @@ fn detect_installed_version(cmd: &str) -> Option<String> {
     {
         return None;
     }
-    let out = Command::new(cmd)
-        .arg("--version")
-        .output()
-        .or_else(|_| Command::new(cmd).arg("-V").output())
-        .or_else(|_| Command::new(cmd).arg("version").output())
-        .ok()?;
-    if !out.status.success() {
-        return None;
+    // EP-12: cap each probe at 5s via `probe_with_timeout`. A `Command::new(cmd).output()`
+    // chain can hang forever if the tool spawns a background daemon or blocks on stdin
+    // (cobra CLIs, node CLIs that lazily connect to a registry) — a maintenance sweep of
+    // 40 tools then hangs the setup phase. `cmd_version_output` already uses this helper
+    // for `jarvy doctor`; the maintenance sweep needed the same guarantee.
+    use crate::tools::common::{ProbeResult, probe_with_timeout};
+    const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+    for flag in ["--version", "-V", "version"] {
+        match probe_with_timeout(cmd, &[flag], PROBE_TIMEOUT) {
+            ProbeResult::Completed(out) if out.status.success() => {
+                let text = String::from_utf8_lossy(&out.stdout);
+                if let Some(v) = crate::tools::version::extract_version(&text) {
+                    return Some(v.to_string());
+                }
+            }
+            ProbeResult::Missing | ProbeResult::PermissionDenied => return None,
+            _ => {}
+        }
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    crate::tools::version::extract_version(&text).map(|v| v.to_string())
+    None
 }
 
 #[cfg(test)]

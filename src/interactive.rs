@@ -8,6 +8,7 @@ use inquire::{InquireError, Select};
 use crate::commands;
 use crate::commands::shared::{sanitize_for_display, short_cmd_hash, spawn_shell};
 use crate::config::{CommandsConfig, read_commands_config};
+use crate::observability::telemetry_gate::is_enabled;
 use crate::onboarding::{WelcomeBannerConfig, is_first_run, mark_initialized, show_welcome_banner};
 use crate::output::Outputable;
 use crate::setup::setup;
@@ -41,33 +42,51 @@ pub fn user_select() {
             Select::new("How would you like to get started?", options).prompt();
 
         match selection {
-            Ok(choice) => match choice {
-                "Run quickstart (guided setup)" => {
-                    let options = commands::quickstart::QuickstartOptions::default();
-                    let result = commands::quickstart::run_quickstart(options);
-                    println!("{}", result.to_human());
-                    // Mark as initialized after quickstart
-                    let _ = mark_initialized();
+            Ok(choice) => {
+                // Bounded label — never the raw menu string.
+                let choice_label = match choice {
+                    "Run quickstart (guided setup)" => "quickstart",
+                    "Create a config (jarvy init)" => "init",
+                    "Browse templates" => "templates",
+                    _ => "skip",
+                };
+                if is_enabled() {
+                    tracing::info!(
+                        event = "interactive.first_run.choice",
+                        choice = choice_label,
+                    );
                 }
-                "Create a config (jarvy init)" => {
-                    let options = commands::init::InitOptions::default();
-                    let result = commands::init::run_init(options);
-                    print!("{}", result.to_human());
-                    // Mark as initialized after init
-                    let _ = mark_initialized();
+                match choice {
+                    "Run quickstart (guided setup)" => {
+                        let options = commands::quickstart::QuickstartOptions::default();
+                        let result = commands::quickstart::run_quickstart(options);
+                        println!("{}", result.to_human());
+                        // Mark as initialized after quickstart
+                        let _ = mark_initialized();
+                    }
+                    "Create a config (jarvy init)" => {
+                        let options = commands::init::InitOptions::default();
+                        let result = commands::init::run_init(options);
+                        print!("{}", result.to_human());
+                        // Mark as initialized after init
+                        let _ = mark_initialized();
+                    }
+                    "Browse templates" => {
+                        let result = commands::templates::list_templates();
+                        println!("{}", result.to_human());
+                    }
+                    _ => {
+                        println!("\nYou can always run these later:");
+                        println!("  \x1b[36mjarvy quickstart\x1b[0m  - Guided setup");
+                        println!("  \x1b[36mjarvy init\x1b[0m        - Create a config");
+                        println!("  \x1b[36mjarvy templates\x1b[0m   - Browse templates\n");
+                    }
                 }
-                "Browse templates" => {
-                    let result = commands::templates::list_templates();
-                    println!("{}", result.to_human());
-                }
-                _ => {
-                    println!("\nYou can always run these later:");
-                    println!("  \x1b[36mjarvy quickstart\x1b[0m  - Guided setup");
-                    println!("  \x1b[36mjarvy init\x1b[0m        - Create a config");
-                    println!("  \x1b[36mjarvy templates\x1b[0m   - Browse templates\n");
-                }
-            },
+            }
             Err(_) => {
+                if is_enabled() {
+                    tracing::info!(event = "interactive.menu.cancelled", context = "first_run",);
+                }
                 println!("No choice was made");
             }
         }
@@ -139,6 +158,9 @@ pub fn user_select() {
             }
         },
         Err(_) => {
+            if is_enabled() {
+                tracing::info!(event = "interactive.menu.cancelled", context = "main");
+            }
             println!("No choice was made")
         }
     }
@@ -200,11 +222,13 @@ fn run_shell_command(cmd: &str, label: &str) {
     match classify_shell_command(cmd) {
         ShellCommandPolicy::SafeDefault => {}
         ShellCommandPolicy::Refused(reason) => {
-            tracing::warn!(
-                event = "interactive.command.refused",
-                label = %label,
-                reason = %reason,
-            );
+            if is_enabled() {
+                tracing::warn!(
+                    event = "interactive.command.refused",
+                    label = %label,
+                    reason = %reason,
+                );
+            }
             eprintln!(
                 "\x1b[31m[SECURITY]\x1b[0m Refusing to run {} command: {}",
                 label, reason
@@ -224,6 +248,15 @@ fn run_shell_command(cmd: &str, label: &str) {
             match confirm {
                 Ok(true) => {}
                 _ => {
+                    // Default-No Enter, explicit "n", and Esc all land
+                    // here — the denominator for confirm-accept rate.
+                    if is_enabled() {
+                        tracing::info!(
+                            event = "interactive.command.declined",
+                            label = %label,
+                            cmd_hash = %short_cmd_hash(cmd),
+                        );
+                    }
                     println!("Command cancelled.");
                     return;
                 }
@@ -234,23 +267,27 @@ fn run_shell_command(cmd: &str, label: &str) {
     let safe_default = SAFE_DEFAULTS.contains(&cmd);
     let cmd_hash = short_cmd_hash(cmd);
     let start = std::time::Instant::now();
-    tracing::info!(
-        event = "interactive.command.start",
-        label = %label,
-        cmd_hash = %cmd_hash,
-        is_default = safe_default,
-    );
+    if is_enabled() {
+        tracing::info!(
+            event = "interactive.command.start",
+            label = %label,
+            cmd_hash = %cmd_hash,
+            is_default = safe_default,
+        );
+    }
 
     println!("Running {} command: {}", label, cmd);
     match spawn_shell(cmd, None) {
         Ok(status) => {
-            tracing::info!(
-                event = "interactive.command.complete",
-                label = %label,
-                cmd_hash = %cmd_hash,
-                exit_code = status.code().unwrap_or(-1),
-                duration_ms = start.elapsed().as_millis() as u64,
-            );
+            if is_enabled() {
+                tracing::info!(
+                    event = "interactive.command.complete",
+                    label = %label,
+                    cmd_hash = %cmd_hash,
+                    exit_code = status.code().unwrap_or(-1),
+                    duration_ms = start.elapsed().as_millis() as u64,
+                );
+            }
             if !status.success() {
                 eprintln!(
                     "{} command exited with code {}",
@@ -260,12 +297,14 @@ fn run_shell_command(cmd: &str, label: &str) {
             }
         }
         Err(e) => {
-            tracing::warn!(
-                event = "interactive.command.failed",
-                label = %label,
-                cmd_hash = %cmd_hash,
-                error = %e,
-            );
+            if is_enabled() {
+                tracing::warn!(
+                    event = "interactive.command.failed",
+                    label = %label,
+                    cmd_hash = %cmd_hash,
+                    error = %e,
+                );
+            }
             eprintln!("Failed to execute {} command: {}", label, e);
         }
     }

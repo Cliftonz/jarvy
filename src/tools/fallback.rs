@@ -33,6 +33,17 @@ static ROUTES: OnceLock<Mutex<HashMap<String, (&'static str, bool)>>> = OnceLock
 /// enrichment ("toolchain_uninstallable" when every declared route was
 /// blocked on its toolchain).
 static BLOCKED: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
+/// Per-ecosystem bootstrap FAILURE memo (keyed by eco command). `has()`
+/// caches the success path already; this stops a setup with five npm
+/// fallback tools from re-attempting the full npm toolchain install
+/// five times after the first attempt failed.
+static BOOTSTRAP_FAILED: OnceLock<Mutex<HashMap<&'static str, &'static str>>> = OnceLock::new();
+/// Per-tool record of the route whose install COMMAND failed (the
+/// toolchain was available; the ecosystem install itself errored).
+/// `telemetry::tool_failed_with_kind` reads this so `tool.failed`
+/// carries the same `install_route` dimension as `tool.installed` —
+/// without it, per-route failure rates are uncomputable.
+static FAILED_ROUTES: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
 
 fn routes() -> &'static Mutex<HashMap<String, (&'static str, bool)>> {
     ROUTES.get_or_init(|| Mutex::new(HashMap::new()))
@@ -42,14 +53,43 @@ fn blocked() -> &'static Mutex<HashMap<String, &'static str>> {
     BLOCKED.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn bootstrap_failed() -> &'static Mutex<HashMap<&'static str, &'static str>> {
+    BOOTSTRAP_FAILED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn failed_routes() -> &'static Mutex<HashMap<String, &'static str>> {
+    FAILED_ROUTES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Route whose install command failed for `tool` this process, if any.
+pub fn failed_route_for(tool: &str) -> Option<&'static str> {
+    failed_routes()
+        .lock()
+        .ok()?
+        .get(&canonical_key(tool))
+        .copied()
+}
+
+/// Canonical key for ROUTES / BLOCKED / receipts. `spec.name` comes
+/// from `stringify!` (`KNIP`, `NATS_SERVER`) while readers — telemetry,
+/// receipt lookups — query with the config spelling (`knip`,
+/// `nats-server`). Resolving through `get_tool_spec` (O(1) map with
+/// dash ↔ underscore aliasing) makes writers and readers agree; an
+/// unregistered name falls back to plain lowercasing.
+fn canonical_key(tool: &str) -> String {
+    crate::tools::spec::get_tool_spec(tool)
+        .map(|s| s.name.to_ascii_lowercase())
+        .unwrap_or_else(|| tool.to_ascii_lowercase())
+}
+
 /// Route that installed `tool` this process, if fallback did.
 pub fn route_for(tool: &str) -> Option<(&'static str, bool)> {
-    routes().lock().ok()?.get(tool).copied()
+    routes().lock().ok()?.get(&canonical_key(tool)).copied()
 }
 
 /// Why fallback was exhausted for `tool` this process, if it was.
 pub fn blocked_reason_for(tool: &str) -> Option<&'static str> {
-    blocked().lock().ok()?.get(tool).copied()
+    blocked().lock().ok()?.get(&canonical_key(tool)).copied()
 }
 
 /// Enrichment for `tool.unsupported`: (fallback_declared,
@@ -57,17 +97,7 @@ pub fn blocked_reason_for(tool: &str) -> Option<&'static str> {
 /// declared route died on its toolchain this process, `"none_declared"`
 /// when the tool has no routes at all.
 pub fn unsupported_info(tool: &str) -> (bool, &'static str) {
-    // Mirror registry::get_tool's dash ↔ underscore aliasing.
-    let key = tool.to_ascii_lowercase();
-    let alias_dash = key.replace('_', "-");
-    let alias_underscore = key.replace('-', "_");
-    let declared = crate::tools::spec::iter_tools()
-        .map(|entry| entry.spec)
-        .any(|s| {
-            let sname = s.name.to_ascii_lowercase();
-            (sname == key || sname == alias_dash || sname == alias_underscore)
-                && !s.fallback.is_empty()
-        });
+    let declared = crate::tools::spec::get_tool_spec(tool).is_some_and(|s| !s.fallback.is_empty());
     if !declared {
         return (false, "none_declared");
     }
@@ -85,10 +115,15 @@ pub fn install_via_fallback(spec: &ToolSpec, min_hint: &str) -> Result<(), Insta
     for route in spec.fallback {
         match ensure_toolchain(spec.name, route.eco) {
             Ok(bootstrapped) => {
-                run_route(spec, route, min_hint)?;
+                if let Err(e) = run_route(spec, route, min_hint) {
+                    if let Ok(mut map) = failed_routes().lock() {
+                        map.insert(canonical_key(spec.name), route.eco.route_label());
+                    }
+                    return Err(e);
+                }
                 if let Ok(mut map) = routes().lock() {
                     map.insert(
-                        spec.name.to_string(),
+                        canonical_key(spec.name),
                         (route.eco.route_label(), bootstrapped),
                     );
                 }
@@ -108,13 +143,14 @@ pub fn install_via_fallback(spec: &ToolSpec, min_hint: &str) -> Result<(), Insta
                         tool = spec.name,
                         eco = route.eco.command(),
                         error_kind = "toolchain_unavailable",
+                        cause = reason,
                     );
                 }
             }
         }
     }
     if any_blocked && let Ok(mut map) = blocked().lock() {
-        map.insert(spec.name.to_string(), "toolchain_uninstallable");
+        map.insert(canonical_key(spec.name), "toolchain_uninstallable");
     }
     Err(InstallError::Unsupported)
 }
@@ -126,14 +162,26 @@ fn ensure_toolchain(tool: &str, eco: FallbackEco) -> Result<bool, &'static str> 
     if has(eco.command()) {
         return Ok(false);
     }
+    if let Ok(map) = bootstrap_failed().lock()
+        && let Some(reason) = map.get(eco.command()).copied()
+    {
+        return Err(reason);
+    }
     println!(
         "  {} needs {} — installing {} via jarvy first",
         tool,
         eco.command(),
         eco.toolchain_tool()
     );
-    if crate::tools::registry::add(eco.toolchain_tool(), "latest").is_err() {
-        return Err("toolchain install failed");
+    if let Err(e) = crate::tools::registry::add(eco.toolchain_tool(), "latest") {
+        // Preserve the bounded root cause (`prereq_missing`,
+        // `permission_required`, …) instead of flattening every
+        // bootstrap failure to one opaque string.
+        let reason = e.kind();
+        if let Ok(mut map) = bootstrap_failed().lock() {
+            map.insert(eco.command(), reason);
+        }
+        return Err(reason);
     }
     // Freshly installed toolchains may need a new shell for PATH
     // (winget PATH edits, nvm sourcing) — evict the stale `has()` cache
@@ -142,7 +190,12 @@ fn ensure_toolchain(tool: &str, eco: FallbackEco) -> Result<bool, &'static str> 
     if has(eco.command()) {
         Ok(true)
     } else {
-        Err("toolchain installed but not on PATH in this shell — open a new terminal and re-run")
+        let reason =
+            "toolchain installed but not on PATH in this shell — open a new terminal and re-run";
+        if let Ok(mut map) = bootstrap_failed().lock() {
+            map.insert(eco.command(), reason);
+        }
+        Err(reason)
     }
 }
 
@@ -321,7 +374,7 @@ pub fn concrete_pin(version: &str) -> Option<String> {
 fn write_receipt(spec: &ToolSpec, route: &FallbackRoute, min_hint: &str, bootstrapped: bool) {
     let route_name = route.eco.receipt_route();
     if let Err(e) = crate::tools::receipts::record(
-        spec.name,
+        &canonical_key(spec.name),
         spec.command,
         route_name,
         route.package,
@@ -399,6 +452,43 @@ mod tests {
             .expect("lock")
             .insert("fake_tool".to_string(), ("fallback_go", true));
         assert_eq!(route_for("fake_tool"), Some(("fallback_go", true)));
+    }
+
+    #[test]
+    fn route_lookup_bridges_macro_ident_and_config_spellings() {
+        // install_via_fallback inserts under canonical_key(spec.name)
+        // where spec.name is the stringify!-uppercase macro ident;
+        // telemetry::tool_installed queries with the config spelling.
+        routes()
+            .lock()
+            .expect("lock")
+            .insert(canonical_key("CARGO_TARPAULIN"), ("fallback_cargo", false));
+        assert_eq!(
+            route_for("cargo-tarpaulin"),
+            Some(("fallback_cargo", false)),
+            "config (dashed) spelling must resolve"
+        );
+        assert_eq!(
+            route_for("cargo_tarpaulin"),
+            Some(("fallback_cargo", false)),
+            "underscore spelling must resolve"
+        );
+        assert_eq!(
+            route_for("CARGO_TARPAULIN"),
+            Some(("fallback_cargo", false)),
+            "macro-ident spelling must resolve"
+        );
+    }
+
+    #[test]
+    fn unsupported_info_aliases_and_reports_none_declared() {
+        assert_eq!(unsupported_info("no_such_tool"), (false, "none_declared"));
+        // jq declares no fallback routes.
+        assert_eq!(unsupported_info("jq"), (false, "none_declared"));
+        // cargo-tarpaulin is ecosystem-only: fallback declared, and the
+        // dashed config spelling must resolve through the alias map.
+        let (declared, _) = unsupported_info("cargo-tarpaulin");
+        assert!(declared, "dashed spelling must see the declared fallback");
     }
 
     #[test]

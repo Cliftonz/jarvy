@@ -1091,10 +1091,10 @@ pub fn list_tool_names() -> Vec<String> {
 /// / `tool.failed` events carry a category label without forcing
 /// every event emission to know the tool ontology.
 pub fn get_tool_category(name: &str) -> Option<&'static str> {
-    let lower = name.to_ascii_lowercase();
-    iter_tools()
-        .find(|e| e.spec.name.eq_ignore_ascii_case(&lower))
-        .and_then(|e| e.spec.category)
+    // Routes through the O(1) `get_tool_spec` map so dash ↔ underscore
+    // aliased spellings (`cargo-tarpaulin` vs `CARGO_TARPAULIN`) resolve
+    // instead of silently landing in "uncategorized".
+    get_tool_spec(name).and_then(|s| s.category)
 }
 
 /// Render the canonical `define_tool!` template — re-exported from
@@ -1141,9 +1141,10 @@ pub fn get_tool_spec(name: &str) -> Option<&'static ToolSpec> {
     }
     // Tolerate the natural user form: every NATS doc shows
     // `nats-server` (hyphen) but `define_tool!(NATS_SERVER, ...)`
-    // stringifies as `nats_server` (underscore). Without this fallback
-    // `validate` would accept the hyphen form (it has its own aliasing
-    // — see `commands::validate::validate_tools`) while
+    // stringifies as `NATS_SERVER` (underscore, preserved case), which
+    // we lowercase into `nats_server` at map-insert time. Without this
+    // fallback `validate` would accept the hyphen form (it has its own
+    // aliasing — see `commands::validate::validate_tools`) while
     // `check_tools_parallel` would emit `tool.unsupported` for the same
     // name — a user-visible divergence found during v0.2.0-rc.1 soak.
     if key.contains('-') {

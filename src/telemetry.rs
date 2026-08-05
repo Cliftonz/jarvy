@@ -692,6 +692,9 @@ pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error:
 
     let redacted_error = redact_sensitive(error);
     let category = crate::tools::spec::get_tool_category(tool).unwrap_or("uncategorized");
+    // Same dimension as `tool.installed` so per-route failure rates are
+    // computable; "platform" = the native package-manager path failed.
+    let install_route = crate::tools::fallback::failed_route_for(tool).unwrap_or("platform");
 
     tracing::error!(
         event = "tool.failed",
@@ -699,6 +702,7 @@ pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error:
         version = %version,
         category = %category,
         error_kind = %error_kind,
+        install_route = %install_route,
         error = %redacted_error,
         platform = %env::consts::OS,
     );

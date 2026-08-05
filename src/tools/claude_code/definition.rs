@@ -14,6 +14,7 @@ define_tool!(CLAUDE_CODE, {
     // Windows.
     windows: { winget: "Anthropic.ClaudeCode" },
     fallback: { npm: "@anthropic-ai/claude-code" },
+    category: "ai-agent",
 });
 
 #[cfg(test)]

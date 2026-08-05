@@ -110,7 +110,23 @@ fn filter_narrows_and_custom_command_defaults_to_cancelled() {
     s.expect("Execute this command?").expect("confirm prompt");
     s.send(ENTER).expect("accept default (No)");
     s.expect("Command cancelled.").expect("declined");
-    s.expect(Eof).expect("process exits");
+    let tail = s.expect(Eof).expect("process exits");
+    // EP-3: the command body must NEVER run when the confirm defaults to
+    // No. Without a negative assertion this test would still pass if
+    // "Command cancelled." printed AND the command ran anyway.
+    let tail_text = String::from_utf8_lossy(tail.before());
+    assert!(
+        !tail_text.contains("formatted-ok"),
+        "declined command body executed anyway; post-cancel output:\n{tail_text}",
+    );
+    // EP-9: after typing "format" the non-matching default options must
+    // be filtered out of the visible frame. Pre-EP-9 the test only
+    // verified the matching option was present, so a broken filter
+    // (everything shown) would still pass.
+    assert!(
+        !tail_text.contains("Test the project"),
+        "filter did not narrow — non-matching option still visible:\n{tail_text}",
+    );
 }
 
 #[test]
@@ -206,7 +222,15 @@ fn setup_slot_custom_command_explicit_no_cancels() {
     s.send(ENTER).expect("submit");
 
     s.expect("Command cancelled.").expect("declined");
-    s.expect(Eof).expect("process exits");
+    let tail = s.expect(Eof).expect("process exits");
+    // EP-3: explicit "n" must not run the command body. Without this
+    // assertion a bug that prints "Command cancelled." AND executes
+    // would still slip through.
+    let tail_text = String::from_utf8_lossy(tail.before());
+    assert!(
+        !tail_text.contains("should-not-run"),
+        "declined command body executed anyway; post-cancel output:\n{tail_text}",
+    );
 }
 
 #[test]
@@ -229,7 +253,20 @@ fn chained_command_is_refused_without_any_prompt() {
         .expect("hard refusal");
     // No "Execute this command?" prompt — the process exits directly
     // after the refusal, which Eof proves.
-    s.expect(Eof).expect("process exits");
+    let tail = s.expect(Eof).expect("process exits");
+    // EP-3: the refusal path must NEVER fall back to the confirm prompt
+    // AND must not execute either segment of the chained command. A bug
+    // that printed the refusal AND still shelled out would print "a"
+    // and "b" here — the negative assertions catch it.
+    let tail_text = String::from_utf8_lossy(tail.before());
+    assert!(
+        !tail_text.contains("Execute this command?"),
+        "hard-refused command still fell through to confirm prompt:\n{tail_text}",
+    );
+    assert!(
+        !tail_text.contains("echo a") && !tail_text.contains("echo b"),
+        "hard-refused command chain executed after refusal:\n{tail_text}",
+    );
 }
 
 #[test]

@@ -17,6 +17,7 @@ define_tool!(AIDER, {
     // route covers Windows. Note: the PyPI package is `aider-chat` but
     // the installed binary is `aider` (verified 2026-08).
     fallback: { uv: "aider-chat" },
+    category: "ai-agent",
 });
 
 #[cfg(test)]

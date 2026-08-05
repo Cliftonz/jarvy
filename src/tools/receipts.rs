@@ -176,8 +176,10 @@ pub fn record(
         }
         None => (None, None, None),
     };
+    // Case-fold the store key: `spec.name` is `stringify!`-uppercase
+    // (`KNIP`) while readers look up with config spellings (`knip`).
     store.entries.insert(
-        tool.to_string(),
+        tool.to_ascii_lowercase(),
         Receipt {
             route: route.to_string(),
             package: package.to_string(),
@@ -224,17 +226,18 @@ pub fn load_valid() -> BTreeMap<String, Receipt> {
 /// Look up `tool` with the same dash ↔ underscore aliasing as
 /// `registry::get_tool` / the resolver's `find_spec`.
 pub fn lookup<'a>(entries: &'a BTreeMap<String, Receipt>, tool: &str) -> Option<&'a Receipt> {
-    if let Some(r) = entries.get(tool) {
+    let key = tool.to_ascii_lowercase();
+    if let Some(r) = entries.get(&key) {
         return Some(r);
     }
-    let dash = tool.replace('_', "-");
-    if dash != tool
+    let dash = key.replace('_', "-");
+    if dash != key
         && let Some(r) = entries.get(&dash)
     {
         return Some(r);
     }
-    let underscore = tool.replace('-', "_");
-    if underscore != tool
+    let underscore = key.replace('-', "_");
+    if underscore != key
         && let Some(r) = entries.get(&underscore)
     {
         return Some(r);
@@ -252,9 +255,10 @@ pub fn remove(tool: &str) -> Result<(), ReceiptError> {
         Err(e) => return Err(e),
     };
     let before = store.entries.len();
-    store.entries.remove(tool);
-    store.entries.remove(&tool.replace('_', "-"));
-    store.entries.remove(&tool.replace('-', "_"));
+    let key = tool.to_ascii_lowercase();
+    store.entries.remove(&key);
+    store.entries.remove(&key.replace('_', "-"));
+    store.entries.remove(&key.replace('-', "_"));
     if store.entries.len() == before {
         return Ok(());
     }
@@ -407,6 +411,16 @@ mod tests {
         let mut entries2 = BTreeMap::new();
         entries2.insert("cfn_lint".to_string(), receipt_with_sig(None, None, None));
         assert!(lookup(&entries2, "cfn-lint").is_some());
+    }
+
+    #[test]
+    fn lookup_is_case_insensitive() {
+        // Store keys are lowercased at record() time; readers may query
+        // with any casing (spec.name is stringify!-uppercase).
+        let mut entries = BTreeMap::new();
+        entries.insert("knip".to_string(), receipt_with_sig(None, None, None));
+        assert!(lookup(&entries, "KNIP").is_some());
+        assert!(lookup(&entries, "Knip").is_some());
     }
 
     #[test]

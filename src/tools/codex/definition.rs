@@ -14,6 +14,7 @@ define_tool!(CODEX, {
     // verified 2026-08). Winget is first-party on Windows.
     windows: { winget: "OpenAI.Codex" },
     fallback: { npm: "@openai/codex" },
+    category: "ai-agent",
 });
 
 #[cfg(test)]
