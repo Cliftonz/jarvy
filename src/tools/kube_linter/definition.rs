@@ -15,8 +15,10 @@ define_tool!(KUBE_LINTER, {
     command: "kube-linter",
     macos: { brew: "kube-linter" },
     linux: { brew: "kube-linter" },
-    // No first-party winget manifest as of 2026-08; install from
-    // https://docs.kubelinter.io/#/using-kubelinter?id=installing-kubelinter
+    // No first-party winget manifest as of 2026-08; the go fallback
+    // route covers Windows — upstream README documents exactly this
+    // go install path (verified 2026-08).
+    fallback: { go: "golang.stackrox.io/kube-linter/cmd/kube-linter" },
     category: "devops",
 });
 
@@ -30,5 +32,14 @@ mod tests {
         assert_eq!(KUBE_LINTER.macos.expect("macOS").brew, Some("kube-linter"));
         assert_eq!(KUBE_LINTER.linux.expect("Linux").brew, Some("kube-linter"));
         assert!(KUBE_LINTER.windows.is_none(), "no first-party winget yet");
+        assert_eq!(KUBE_LINTER.fallback.len(), 1);
+        assert_eq!(
+            KUBE_LINTER.fallback[0].eco,
+            crate::tools::spec::FallbackEco::Go
+        );
+        assert_eq!(
+            KUBE_LINTER.fallback[0].package,
+            "golang.stackrox.io/kube-linter/cmd/kube-linter"
+        );
     }
 }

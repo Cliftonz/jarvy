@@ -11,6 +11,10 @@ define_tool!(DIVE, {
     macos: { brew: "dive" },
     linux: { brew: "dive", apk: "dive" },
     bsd: { pkg: "dive" },
+    // No first-party winget manifest; the go fallback route covers
+    // Windows — main package at module root, README-documented
+    // (verified 2026-08).
+    fallback: { go: "github.com/wagoodman/dive" },
     // dive can explore images from docker or podman
     depends_on_one_of: &["docker", "podman"],
 });
@@ -24,5 +28,9 @@ mod tests {
         assert_eq!(DIVE.command, "dive");
         let mac = DIVE.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("dive"));
+        assert!(DIVE.windows.is_none(), "no first-party winget manifest");
+        assert_eq!(DIVE.fallback.len(), 1);
+        assert_eq!(DIVE.fallback[0].eco, crate::tools::spec::FallbackEco::Go);
+        assert_eq!(DIVE.fallback[0].package, "github.com/wagoodman/dive");
     }
 }

@@ -42,24 +42,27 @@ fn no_duplicate_registered_tool_names() {
 
 #[test]
 fn every_spec_has_either_a_platform_resolver_or_custom_install() {
-    // A ToolSpec with no macos/linux/windows package AND no custom_install
-    // would silently fail every install attempt with "no platform support".
+    // A ToolSpec with no macos/linux/windows package, no custom_install,
+    // AND no fallback route (PRD-060) would silently fail every install
+    // attempt with "no platform support". Ecosystem-only tools (e.g.
+    // cargo-tarpaulin, pm2) legitimately declare only `fallback`.
     // Catch the configuration error at the test layer instead of at runtime.
     let mut offenders: Vec<&'static str> = Vec::new();
     for entry in iter_tools() {
         let spec: &ToolSpec = entry.spec;
-        let any_platform = spec.macos.is_some()
+        let any_install_route = spec.macos.is_some()
             || spec.linux.is_some()
             || spec.windows.is_some()
             || spec.bsd.is_some()
-            || spec.custom_install.is_some();
-        if !any_platform {
+            || spec.custom_install.is_some()
+            || !spec.fallback.is_empty();
+        if !any_install_route {
             offenders.push(spec.name);
         }
     }
     assert!(
         offenders.is_empty(),
-        "tool specs with no platform install and no custom_install: {offenders:?}"
+        "tool specs with no platform install, no custom_install, and no fallback route: {offenders:?}"
     );
 }
 

@@ -23,6 +23,7 @@
     "DECIDED: jarvy diff / dry-run preview shows fallback route — yes, Phase 2",
     "DECIDED: already-installed tools never enter fallback — cmd_satisfies skip-detection fires before install(); no receipt for pre-existing installs",
     "RESOLVED (2026-08-04): go-route freshness for cmd/ subpaths — GoBackend::module_candidate lexically truncates at /cmd/ (min 3 segments), probes module first, NotFound retries full path",
+    "RESOLVED (2026-08-04): candidate migration sweep complete — 15 more tools gained fallback (checkov/detect-secrets/semgrep/localstack uv, openclaw npm, crane/cue/kaf/kube-linter/kubens/dive/govulncheck/grafanactl/dfc/nebula go) + 11 new tool defs added (claude-code/codex/wrangler/dbt/aider hybrid; pm2/nodemon/knip/semantic-release/oapi-codegen/cargo-tarpaulin ecosystem-only). Excluded: replace-directive modules (kn/crossplane/up/trufflehog/tilt), module-path mismatch (talisman), binary-name mismatch (krew/vcluster), crates.io squat (dog), broken versioning (linkerd)",
     "OPEN: composer ecosystem route — tracked in issue #80"
   ]
 }

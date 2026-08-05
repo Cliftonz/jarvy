@@ -827,12 +827,13 @@ command = "bad;rm -rf /"
     /// Pre-fix the index path bypassed the per-tool validators that
     /// `load_tools_from_dir` ran; this pins the equivalence.
     #[test]
+    #[serial_test::serial(jarvy_home_env)]
     #[allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
     fn try_load_remote_index_rejects_invalid_command_field() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let prev = std::env::var_os("JARVY_HOME");
-        // SAFETY: serial-test gate would help here but the test is
-        // small; we restore on drop via the let-_ = guard pattern.
+        // SAFETY: serialized via jarvy_home_env; restored on drop
+        // via the guard below.
         unsafe {
             std::env::set_var("JARVY_HOME", tmp.path());
         }
@@ -893,6 +894,7 @@ command = "bad;rm -rf /"
     /// Item 9 — try_load_remote_index returns None on each enumerated
     /// rejection condition.
     #[test]
+    #[serial_test::serial(jarvy_home_env)]
     #[allow(unsafe_code, clippy::undocumented_unsafe_blocks)]
     fn try_load_remote_index_rejects_stale_timestamp() {
         let tmp = tempfile::tempdir().expect("tempdir");

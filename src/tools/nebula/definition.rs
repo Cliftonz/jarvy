@@ -17,6 +17,10 @@ define_tool!(NEBULA, {
     command: "nebula",
     macos: { brew: "nebula" },
     linux: { brew: "nebula" },
+    // No first-party winget manifest; the go fallback route covers
+    // Windows (verified 2026-08). Caveat: installs only the `nebula`
+    // binary — `nebula-cert` (which brew bundles) is not covered.
+    fallback: { go: "github.com/slackhq/nebula/cmd/nebula" },
     category: "networking",
 });
 
@@ -33,5 +37,11 @@ mod tests {
         assert_eq!(lin.brew, Some("nebula"));
         // Windows intentionally omitted — see module doc.
         assert!(NEBULA.windows.is_none());
+        assert_eq!(NEBULA.fallback.len(), 1);
+        assert_eq!(NEBULA.fallback[0].eco, crate::tools::spec::FallbackEco::Go);
+        assert_eq!(
+            NEBULA.fallback[0].package,
+            "github.com/slackhq/nebula/cmd/nebula"
+        );
     }
 }

@@ -10,7 +10,9 @@ define_tool!(CUE, {
     macos: { brew: "cue" },
     linux: { uniform: "cue" },
     bsd: { pkg: "cue" },
-    // No Windows support
+    // No first-party winget manifest; the go fallback route covers
+    // Windows (verified 2026-08).
+    fallback: { go: "cuelang.org/go/cmd/cue" },
 });
 
 #[cfg(test)]
@@ -22,5 +24,9 @@ mod tests {
         assert_eq!(CUE.command, "cue");
         let mac = CUE.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("cue"));
+        assert!(CUE.windows.is_none(), "no first-party winget manifest");
+        assert_eq!(CUE.fallback.len(), 1);
+        assert_eq!(CUE.fallback[0].eco, crate::tools::spec::FallbackEco::Go);
+        assert_eq!(CUE.fallback[0].package, "cuelang.org/go/cmd/cue");
     }
 }

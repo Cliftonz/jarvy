@@ -13,8 +13,9 @@ define_tool!(KAF, {
     macos: { brew: "kaf" },
     // Linux: no distro package; install via Linuxbrew or release binary.
     linux: { brew: "kaf" },
-    // No first-party winget manifest; install from
-    // https://github.com/birdayz/kaf/releases.
+    // No first-party winget manifest; the go fallback route covers
+    // Windows (verified 2026-08).
+    fallback: { go: "github.com/birdayz/kaf/cmd/kaf" },
     category: "messaging",
 });
 
@@ -31,5 +32,8 @@ mod tests {
         let linux = KAF.linux.expect("kaf must support Linux");
         assert_eq!(linux.brew, Some("kaf"));
         assert!(KAF.windows.is_none(), "no first-party winget manifest");
+        assert_eq!(KAF.fallback.len(), 1);
+        assert_eq!(KAF.fallback[0].eco, crate::tools::spec::FallbackEco::Go);
+        assert_eq!(KAF.fallback[0].package, "github.com/birdayz/kaf/cmd/kaf");
     }
 }
