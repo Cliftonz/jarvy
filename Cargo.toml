@@ -120,6 +120,13 @@ serial_test = "4.0"
 # mounted into an arm64 debian container, native, no emulation).
 testcontainers = { version = "0.27", features = ["blocking"] }
 
+# PTY-driven e2e tests for the interactive inquire menus
+# (tests/e2e_interactive_pty.rs). Declared unix-only: the test file is
+# #[cfg(unix)] anyway — conpty rendering on Windows differs enough
+# that the expect patterns would be flaky there.
+[target.'cfg(unix)'.dev-dependencies]
+expectrl = "0.9"
+
 # Integration tests that exercise the `test-bypass` escape hatches
 # (`JARVY_REGISTRY_ALLOW_INSECURE_FETCH`, `JARVY_LIBRARY_ALLOW_INSECURE_FETCH`).
 # Without `--features test-bypass`, cargo silently skips them so a local

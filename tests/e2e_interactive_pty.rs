@@ -1,0 +1,159 @@
+//! PTY-driven e2e tests for the interactive menu (`jarvy` with no
+//! subcommand, `src/interactive.rs`).
+//!
+//! These spawn the real binary inside a pseudo-terminal via `expectrl`
+//! and script the inquire prompts: type-to-filter, Enter to select,
+//! Esc to cancel. Unlike `JARVY_TEST_MODE` tests, these exercise the
+//! actual TTY code path — raw mode, ANSI rendering, the confirm
+//! gauntlet for custom `[commands]` entries.
+//!
+//! Environment is built from scratch (`env_clear`) so CI/sandbox
+//! detection (`sandbox::is_seamless`) can't suppress the flows: all
+//! provider checks are env-var based, and the generic-container
+//! fallback requires stdin NOT be a TTY — the PTY defeats it.
+//!
+//! Unix-only: conpty rendering on Windows differs enough that the
+//! expect patterns would be flaky there.
+
+#![cfg(unix)]
+
+use expectrl::{Eof, Expect, Session, session::OsSession};
+use std::process::Command;
+use std::time::Duration;
+
+const EXPECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// ESC key in raw mode — inquire maps it to `OperationCanceled`.
+const ESC: &str = "\x1b";
+/// Enter key in raw mode (PTYs deliver CR, not LF).
+const ENTER: &str = "\r";
+
+struct TestEnv {
+    /// Project dir (cwd for the spawned jarvy) — holds jarvy.toml.
+    project: tempfile::TempDir,
+    /// Isolated `JARVY_HOME`.
+    home: tempfile::TempDir,
+}
+
+impl TestEnv {
+    fn new() -> Self {
+        Self {
+            project: tempfile::tempdir().expect("project tempdir"),
+            home: tempfile::tempdir().expect("home tempdir"),
+        }
+    }
+
+    fn write_jarvy_toml(&self, contents: &str) {
+        std::fs::write(self.project.path().join("jarvy.toml"), contents).expect("write jarvy.toml");
+    }
+
+    /// Create the first-run marker so the returning-user menu shows.
+    fn mark_initialized(&self) {
+        std::fs::write(self.home.path().join(".jarvy_initialized"), "").expect("write marker");
+    }
+
+    fn spawn(&self) -> OsSession {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_jarvy"));
+        cmd.current_dir(self.project.path());
+        // Scrubbed env: no CI/sandbox vars leak in, so the interactive
+        // flows are deterministic on developer machines AND CI runners.
+        cmd.env_clear();
+        cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
+        cmd.env("HOME", self.home.path());
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("JARVY_HOME", self.home.path());
+        cmd.env("JARVY_TELEMETRY", "0");
+        cmd.env("JARVY_NO_PERSONAL_CONFIG", "1");
+        cmd.env("JARVY_NO_CWD_HINT", "1");
+        cmd.env("JARVY_UPDATE", "0");
+        let mut session = Session::spawn(cmd).expect("spawn jarvy in pty");
+        session.set_expect_timeout(Some(EXPECT_TIMEOUT));
+        session
+    }
+}
+
+#[test]
+fn returning_user_menu_lists_defaults_and_extras_esc_cancels() {
+    let env = TestEnv::new();
+    env.mark_initialized();
+    env.write_jarvy_toml("[commands]\nformat = \"echo formatted-ok\"\n");
+
+    let mut s = env.spawn();
+    s.expect("J A R V Y").expect("logo renders");
+    s.expect("What would you like to do today?")
+        .expect("menu prompt");
+    s.expect("Run the project").expect("default option");
+    s.expect("Run `format`").expect("[commands] extra surfaced");
+
+    s.send(ESC).expect("send esc");
+    s.expect("No choice was made").expect("cancel message");
+    s.expect(Eof).expect("process exits");
+}
+
+#[test]
+fn filter_narrows_and_custom_command_defaults_to_cancelled() {
+    let env = TestEnv::new();
+    env.mark_initialized();
+    env.write_jarvy_toml("[commands]\nformat = \"echo formatted-ok\"\n");
+
+    let mut s = env.spawn();
+    s.expect("What would you like to do today?")
+        .expect("menu prompt");
+
+    // Type-to-filter (the fzf-style interaction) down to the extra,
+    // then select it.
+    s.send("format").expect("type filter");
+    s.expect("Run `format`").expect("filtered option visible");
+    s.send(ENTER).expect("select");
+
+    // Custom (non-default) command → security confirm, default No.
+    s.expect("[SECURITY]").expect("confirm banner");
+    s.expect("Execute this command?").expect("confirm prompt");
+    s.send(ENTER).expect("accept default (No)");
+    s.expect("Command cancelled.").expect("declined");
+    s.expect(Eof).expect("process exits");
+}
+
+#[test]
+fn custom_command_confirm_yes_executes() {
+    let env = TestEnv::new();
+    env.mark_initialized();
+    env.write_jarvy_toml("[commands]\nhello = \"echo hello-from-pty\"\n");
+
+    let mut s = env.spawn();
+    s.expect("What would you like to do today?")
+        .expect("menu prompt");
+
+    s.send("hello").expect("type filter");
+    s.expect("Run `hello`").expect("filtered option visible");
+    s.send(ENTER).expect("select");
+
+    s.expect("Execute this command?").expect("confirm prompt");
+    s.send("y").expect("confirm yes");
+    s.send(ENTER).expect("submit");
+
+    s.expect("Running hello command").expect("execution banner");
+    s.expect("hello-from-pty")
+        .expect("command output reaches pty");
+    s.expect(Eof).expect("process exits");
+}
+
+#[test]
+fn first_run_shows_welcome_and_skip_prints_hints() {
+    let env = TestEnv::new();
+    // No marker → first-run flow.
+
+    let mut s = env.spawn();
+    s.expect("How would you like to get started?")
+        .expect("first-run prompt");
+    s.expect("Run quickstart (guided setup)")
+        .expect("quickstart option");
+
+    s.send("Skip").expect("filter to skip option");
+    s.expect("Skip for now").expect("filtered option visible");
+    s.send(ENTER).expect("select skip");
+
+    s.expect("You can always run these later")
+        .expect("skip hints printed");
+    s.expect("jarvy quickstart").expect("hint lists quickstart");
+    s.expect(Eof).expect("process exits");
+}
