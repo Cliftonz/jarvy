@@ -157,3 +157,101 @@ fn first_run_shows_welcome_and_skip_prints_hints() {
     s.expect("jarvy quickstart").expect("hint lists quickstart");
     s.expect(Eof).expect("process exits");
 }
+
+#[test]
+fn setup_slot_custom_command_confirm_yes_executes() {
+    let env = TestEnv::new();
+    env.mark_initialized();
+    env.write_jarvy_toml("[commands]\nsetup = \"echo setup-ran-ok\"\n");
+
+    let mut s = env.spawn();
+    s.expect("What would you like to do today?")
+        .expect("menu prompt");
+
+    // "setup" filters down to "Development environment setup".
+    s.send("setup").expect("type filter");
+    s.expect("Development environment setup")
+        .expect("setup option visible");
+    s.send(ENTER).expect("select setup");
+
+    // Custom [commands] setup replaces the built-in setup phase and
+    // must pass the same confirm gauntlet as any custom command.
+    s.expect("[SECURITY]").expect("confirm banner");
+    s.expect("Execute this command?").expect("confirm prompt");
+    s.send("y").expect("confirm yes");
+    s.send(ENTER).expect("submit");
+
+    s.expect("Running setup command").expect("execution banner");
+    s.expect("setup-ran-ok")
+        .expect("command output reaches pty");
+    s.expect(Eof).expect("process exits");
+}
+
+#[test]
+fn setup_slot_custom_command_explicit_no_cancels() {
+    let env = TestEnv::new();
+    env.mark_initialized();
+    env.write_jarvy_toml("[commands]\nsetup = \"echo should-not-run\"\n");
+
+    let mut s = env.spawn();
+    s.expect("What would you like to do today?")
+        .expect("menu prompt");
+
+    s.send("setup").expect("type filter");
+    s.send(ENTER).expect("select setup");
+
+    s.expect("Execute this command?").expect("confirm prompt");
+    // Explicit "n" (not just the default-No Enter path).
+    s.send("n").expect("decline");
+    s.send(ENTER).expect("submit");
+
+    s.expect("Command cancelled.").expect("declined");
+    s.expect(Eof).expect("process exits");
+}
+
+#[test]
+fn chained_command_is_refused_without_any_prompt() {
+    let env = TestEnv::new();
+    env.mark_initialized();
+    // `&&` carries `&` — a HARD_BLOCKED metachar. The menu must refuse
+    // outright rather than fall back to the confirm prompt.
+    env.write_jarvy_toml("[commands]\ndeploy = \"echo a && echo b\"\n");
+
+    let mut s = env.spawn();
+    s.expect("What would you like to do today?")
+        .expect("menu prompt");
+
+    s.send("deploy").expect("type filter");
+    s.expect("Run `deploy`").expect("filtered option visible");
+    s.send(ENTER).expect("select");
+
+    s.expect("Refusing to run deploy command")
+        .expect("hard refusal");
+    // No "Execute this command?" prompt — the process exits directly
+    // after the refusal, which Eof proves.
+    s.expect(Eof).expect("process exits");
+}
+
+#[test]
+fn safe_default_test_command_runs_without_confirmation() {
+    let env = TestEnv::new();
+    env.mark_initialized();
+    // No jarvy.toml → the "Test the project" slot uses the safe
+    // default `cargo test`, which is allowlisted: NO confirm prompt.
+
+    let mut s = env.spawn();
+    s.expect("What would you like to do today?")
+        .expect("menu prompt");
+
+    s.send("Test").expect("filter to test option");
+    s.expect("Test the project")
+        .expect("filtered option visible");
+    s.send(ENTER).expect("select");
+
+    // Straight to execution — the confirm gauntlet is skipped for
+    // exact safe defaults. (cargo test then fails fast in the empty
+    // project dir; the menu surfaces the exit code and moves on.)
+    s.expect("Running test command: cargo test")
+        .expect("executes without confirm prompt");
+    s.expect(Eof).expect("process exits");
+}
