@@ -53,7 +53,7 @@ jobs:
         run: npx --yes @vscode/vsce package --out jarvy-vscode.vsix
 
       - name: Upload .vsix artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: jarvy-vscode-vsix
           path: editors/vscode/jarvy-vscode.vsix

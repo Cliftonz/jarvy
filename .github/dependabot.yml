@@ -27,3 +27,16 @@ updates:
       - "github-actions"
     commit-message:
       prefix: "chore(ci):"
+
+  # VS Code extension (npm)
+  - package-ecosystem: "npm"
+    directory: "/editors/vscode"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "npm"
+    commit-message:
+      prefix: "chore(vscode):"
