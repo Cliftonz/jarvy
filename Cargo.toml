@@ -118,7 +118,7 @@ serial_test = "4.0"
 # CI Linux runners exercise it directly; macOS/Apple-Silicon devs run
 # it via `make test-sandbox` (cross-compiled aarch64-linux binary
 # mounted into an arm64 debian container, native, no emulation).
-testcontainers = { version = "0.27", features = ["blocking"] }
+testcontainers = { version = "0.28", features = ["blocking"] }
 
 # PTY-driven e2e tests for the interactive inquire menus
 # (tests/e2e_interactive_pty.rs). Declared unix-only: the test file is
