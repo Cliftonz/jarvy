@@ -1,6 +1,6 @@
 # PRD-060 — Generalized Fallback Installers
 
-- **Status:** complete (Phase 1 2026-08-03; Phase 2 2026-08-04)
+- **Status:** closed 2026-08-07 (Phase 1 2026-08-03; Phase 2 2026-08-04)
 - **Created:** 2026-08-03
 - **Priority:** medium
 - **Estimated:** 4 days
