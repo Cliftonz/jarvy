@@ -15,6 +15,7 @@ define_tool!(GRAFANACTL, {
     // No first-party winget manifest; the go fallback route covers
     // Windows (verified 2026-08).
     fallback: { go: "github.com/grafana/grafanactl/cmd/grafanactl" },
+    category: "observability",
 });
 
 #[cfg(test)]
@@ -24,6 +25,7 @@ mod tests {
     #[test]
     fn grafanactl_registration_shape() {
         assert_eq!(GRAFANACTL.command, "grafanactl");
+        assert_eq!(GRAFANACTL.category, Some("observability"));
         let mac = GRAFANACTL.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("grafanactl"));
         assert!(

@@ -13,6 +13,7 @@ define_tool!(XK6, {
     // No first-party brew, apt/dnf, or winget package as of 2026-08.
     // The go fallback covers every platform (canonical vanity path).
     fallback: { go: "go.k6.io/xk6/cmd/xk6" },
+    category: "testing",
 });
 
 #[cfg(test)]
@@ -22,6 +23,7 @@ mod tests {
     #[test]
     fn xk6_registration_shape() {
         assert_eq!(XK6.command, "xk6");
+        assert_eq!(XK6.category, Some("testing"));
         assert!(XK6.macos.is_none());
         assert!(XK6.linux.is_none());
         assert!(XK6.windows.is_none());

@@ -98,6 +98,28 @@ fn every_declared_fallback_package_passes_the_install_gauntlet() {
 }
 
 #[test]
+fn grafana_ecosystem_tools_are_registered() {
+    // Guard: a future refactor that drops `pub mod <name>;` from
+    // src/tools/mod.rs, or a cfg gate around `inventory::submit!`, would
+    // silently unregister the Grafana ecosystem sweep (commit fdf4986).
+    // Per-tool shape tests can't catch that — they only prove the static
+    // value. Fail loudly at the boundary instead.
+    jarvy::tools::register_all();
+    let names: HashSet<String> = jarvy::tools::registered_tool_names()
+        .into_iter()
+        .collect();
+    for expected in [
+        "alloy", "logcli", "mimirtool", "promtail", "tanka", "xk6",
+    ] {
+        assert!(
+            names.contains(expected),
+            "{expected} not registered — check `pub mod {expected};` in \
+             src/tools/mod.rs and the define_tool! invocation"
+        );
+    }
+}
+
+#[test]
 fn add_handler_returns_a_result_without_panicking() {
     // Sanity: install attempts skip via JARVY_FAST_TEST and surface a Result.
     // This is intentionally narrow — we're only verifying handler dispatch

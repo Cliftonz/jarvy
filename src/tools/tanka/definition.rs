@@ -15,7 +15,10 @@ define_tool!(TANKA, {
     // install`; Windows users to `go install`. The go fallback covers
     // both.
     fallback: { go: "github.com/grafana/tanka/cmd/tk" },
-    category: "kubernetes",
+    // Matches the existing k8s cohort (helmfile, kubent, velero,
+    // crossplane, kubeconform, kube_linter, clusterctl, vcluster,
+    // cilium, kubeseal) — one label per cohort keeps funnels sliceable.
+    category: "devops",
 });
 
 #[cfg(test)]
@@ -25,7 +28,7 @@ mod tests {
     #[test]
     fn tanka_registration_shape() {
         assert_eq!(TANKA.command, "tk");
-        assert_eq!(TANKA.category, Some("kubernetes"));
+        assert_eq!(TANKA.category, Some("devops"));
         let mac = TANKA.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("tanka"));
         assert!(TANKA.linux.is_none());
