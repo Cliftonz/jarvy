@@ -26,7 +26,7 @@ All of these are committed under `docs/` and ship on every `main` build
 | `/tags.json` | `tags` plugin | page → topic index |
 | `/.well-known/security.txt` | `docs/.well-known/security.txt` | RFC 9116 |
 | `/.well-known/api-catalog` | `docs/.well-known/api-catalog` | RFC 9727 / RFC 9264 linkset |
-| `/.well-known/agent-skills/index.json` (+ `jarvy-integration/SKILL.md`) | `docs/.well-known/agent-skills/` | [Agent Skills Discovery](https://agentskills.io) v0.2.0 |
+| `/.well-known/agent-skills/index.json` (+ `jarvy-integration/SKILL.md`) | `docs/.well-known/agent-skills/` | [Agent Skills Discovery](https://agentskills.io/home) v0.2.0 |
 | `<head>` JSON-LD + `<link rel>` pointers | `docs/overrides/main.html` | schema.org, RFC 8288/8631 |
 
 **Content signals.** `docs/robots.txt` declares

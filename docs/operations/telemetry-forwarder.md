@@ -1191,6 +1191,6 @@ month, not a thing that requires constant attention.
 - Traefik IngressRoute reference:
   <https://doc.traefik.io/traefik/routing/providers/kubernetes-crd/>
 - Grafana Cloud OTLP gateway docs:
-  <https://grafana.com/docs/grafana-cloud/send-data/otlp/>
+  <https://grafana.com/docs/grafana-cloud/observe-and-act/send-data/otlp/>
 - OTTL (OpenTelemetry Transformation Language) reference:
   <https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/ottl/README.md>

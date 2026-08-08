@@ -107,4 +107,4 @@ In CI, set `DATABASE_URL` from the platform's secret manager (GitHub Actions, Gi
 
 - [Configuration reference — env.secrets](../configuration.md#environment-variables-env)
 - [Hooks guide](../hooks.md)
-- [1Password CLI docs](https://developer.1password.com/docs/cli)
+- [1Password CLI docs](https://www.1password.dev/cli)

@@ -1,7 +1,7 @@
 # Task runner (`jarvy run`)
 
 `jarvy run` executes named shell commands from a `[commands]` table in
-your `jarvy.toml` — the same idea as [npm scripts](https://docs.npmjs.com/cli/v10/commands/npm-run-script)
+your `jarvy.toml` — the same idea as [npm scripts](https://docs.npmjs.com/cli/v10/commands/npm-run-script/)
 (`npm run <script>`), but living next to the rest of your dev-environment
 config and working for any stack.
 

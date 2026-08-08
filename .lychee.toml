@@ -16,8 +16,9 @@ verbose = "info"
 # Allow common 4xx codes that aren't real failures.
 accept = [
     "200..=299",
-    "403", # GitHub anti-bot — content exists, just gated
-    "429", # Rate limited — link is fine
+    "300..=308", # Redirects — auto-followed; presence in summary shouldn't fail CI
+    "403",       # GitHub anti-bot — content exists, just gated
+    "429",       # Rate limited — link is fine
 ]
 
 # Skip private / internal / placeholder URLs.
@@ -36,6 +37,11 @@ exclude = [
     # OpenSSF Scorecards site — intermittent connection failures from CI
     # runners (DNS / TLS handshake flake). Link is real, just flaky.
     "^https?://securityscorecards\\.dev",
+    # Login-gated GitHub / VS Code Marketplace URLs — always redirect to a
+    # login page from CI (no session), never a real breakage.
+    "^https://github\\.com/settings/",
+    "^https://github\\.com/.+/issues/new",
+    "^https://marketplace\\.visualstudio\\.com/manage",
 ]
 
 # Be patient with rate-limited domains.
