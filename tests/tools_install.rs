@@ -105,12 +105,8 @@ fn grafana_ecosystem_tools_are_registered() {
     // Per-tool shape tests can't catch that — they only prove the static
     // value. Fail loudly at the boundary instead.
     jarvy::tools::register_all();
-    let names: HashSet<String> = jarvy::tools::registered_tool_names()
-        .into_iter()
-        .collect();
-    for expected in [
-        "alloy", "logcli", "mimirtool", "promtail", "tanka", "xk6",
-    ] {
+    let names: HashSet<String> = jarvy::tools::registered_tool_names().into_iter().collect();
+    for expected in ["alloy", "logcli", "mimirtool", "promtail", "tanka", "xk6"] {
         assert!(
             names.contains(expected),
             "{expected} not registered — check `pub mod {expected};` in \
