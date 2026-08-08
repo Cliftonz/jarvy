@@ -62,7 +62,7 @@ Versioning and Releases
 - Release workflow is managed via GitHub Actions; do not hardcode version-specific logic in code.
 
 Documentation
-- Keep Readme.md accurate. Update usage docs when CLI behavior or configuration changes.
+- Keep README.md accurate. Update usage docs when CLI behavior or configuration changes.
 - Include examples and comments for new modules or public functions.
 
 Testing Guidance

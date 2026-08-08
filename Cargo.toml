@@ -8,7 +8,7 @@ description = "Jarvy is a fast, cross-platform CLI that installs and manages dev
 repository = "https://github.com/Cliftonz/jarvy"
 homepage = "https://jarvy.dev"
 documentation = "https://docs.rs/jarvy"
-readme = "Readme.md"
+readme = "README.md"
 keywords = ["devtools", "provisioning", "cli", "developer-experience", "setup"]
 categories = ["command-line-utilities", "development-tools"]
 include = [
@@ -22,7 +22,7 @@ include = [
     "assets/wizard-skill/**/*",
     "Cargo.toml",
     "LICENSE*",
-    "Readme.md",
+    "README.md",
     "CHANGELOG.md",
 ]
 
@@ -254,17 +254,17 @@ icons = ["assets/icns/CLI_Logo.icns", "assets/CLI_Logo.png"]
 
 # AppImage extra files (optional; keep/remove to match your repo)
 [package.metadata.packager.appimage.files]
-"Readme.md" = "usr/share/doc/jarvy/README.md"
+"README.md" = "usr/share/doc/jarvy/README.md"
 "LICENSE" = "usr/share/doc/jarvy/LICENSE"
 
 # Debian package extra files (optional)
 [package.metadata.packager.deb.files]
-"Readme.md" = "usr/share/doc/jarvy/README.md"
+"README.md" = "usr/share/doc/jarvy/README.md"
 "LICENSE" = "usr/share/doc/jarvy/LICENSE"
 
 # Pacman package extra files (optional)
 [package.metadata.packager.pacman.files]
-"Readme.md" = "usr/share/doc/jarvy/README.md"
+"README.md" = "usr/share/doc/jarvy/README.md"
 "LICENSE" = "usr/share/doc/jarvy/LICENSE"
 
 # If you also build RPMs via generate-rpm (optional; remove if unused)
@@ -272,7 +272,7 @@ icons = ["assets/icns/CLI_Logo.icns", "assets/CLI_Logo.png"]
 assets = [
     { source = "target/release/jarvy", dest = "/usr/bin/jarvy", mode = "0755" },
     { source = "LICENSE", dest = "/usr/share/doc/jarvy/LICENSE", doc = true, mode = "0644" },
-    { source = "Readme.md", dest = "/usr/share/doc/jarvy/README.md", doc = true, mode = "0644" }
+    { source = "README.md", dest = "/usr/share/doc/jarvy/README.md", doc = true, mode = "0644" }
 ]
 
 # Ensure your binary section matches the actual binary name/path

@@ -151,7 +151,7 @@ stable tag and the candidate tag touches any of these surfaces:
 Validation is **not required** (cut a normal patch via `cutting-release`) if
 the diff only touches:
 
-- `docs/**`, `Readme.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `prd/**`
+- `docs/**`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `prd/**`
 - Comments-only changes
 - Test-only changes (`tests/**`, `benches/**`) with full green CI
 - A single new tool added via `define_tool!` whose e2e test is green and which
