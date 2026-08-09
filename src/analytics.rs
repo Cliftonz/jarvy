@@ -223,9 +223,21 @@ pub fn init_logging(
 
     let json_console = obs.is_some_and(|o| o.log.format == crate::observability::LogFormat::Json);
     // Per-layer console cap. See `LogLevel::WarnOnly` for full rationale.
+    //
+    // `Normal` (the default when the user passes no flags) also caps at
+    // WARN so structured tracing events (`event="setup.start"`,
+    // `event="tool.installed"`, …) don't spam stderr — those events
+    // exist for the file log at `~/.jarvy/logs/jarvy.log` and the OTLP
+    // bridge, not for the terminal. `-v` widens the console back to
+    // INFO; `-vv` to DEBUG; `-vvv` to TRACE. The `println!`-based
+    // human status output ("Detecting Platform is: macos", hook
+    // banners, drift summary) is unaffected because it doesn't go
+    // through tracing at all.
     let quiet_filter = obs.and_then(|o| match o.log.level {
         crate::observability::LogLevel::Quiet => Some(LevelFilter::ERROR),
-        crate::observability::LogLevel::WarnOnly => Some(LevelFilter::WARN),
+        crate::observability::LogLevel::WarnOnly | crate::observability::LogLevel::Normal => {
+            Some(LevelFilter::WARN)
+        }
         _ => None,
     });
 

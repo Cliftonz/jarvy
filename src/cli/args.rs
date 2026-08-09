@@ -81,6 +81,7 @@ pub enum OutputFormat {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Set up the environment based on the configuration file
+    #[command(visible_aliases = ["install", "i"])]
     Setup {
         /// Path to the configuration file
         #[clap(short, long, default_value = "./jarvy.toml")]
@@ -166,6 +167,7 @@ pub enum Commands {
         output: Option<String>,
     },
     /// List all supported tools or output the tool index
+    #[command(visible_alias = "ls")]
     Tools {
         /// Output the full tool index as JSON
         #[clap(long)]
@@ -287,6 +289,7 @@ pub enum Commands {
         file: String,
     },
     /// Diagnose environment issues, check tool health, and verify PATH
+    #[command(visible_alias = "d")]
     Doctor {
         /// Path to the configuration file (optional)
         #[clap(short, long)]
@@ -342,6 +345,7 @@ pub enum Commands {
         output: Option<String>,
     },
     /// Upgrade tools to their latest versions
+    #[command(visible_alias = "up")]
     Upgrade {
         /// Path to the configuration file (optional)
         #[clap(short, long)]

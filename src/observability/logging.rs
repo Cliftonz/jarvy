@@ -37,10 +37,14 @@ pub enum LogLevel {
     /// refusals) still reach stderr. NOT user-selectable via
     /// `[logging] level` — this is an internal cap.
     WarnOnly,
-    /// Info and above (default).
+    /// Default. Console cap = WARN (structured tracing events like
+    /// `event="setup.start"` / `event="tool.installed"` go to the file
+    /// log and OTLP only — the terminal stays clean). The registry
+    /// filter still admits INFO for file/OTLP so support bundles keep
+    /// full detail. `-v` widens the console back to INFO.
     #[default]
     Normal,
-    /// Warnings included (`--verbose` / `-v` on setup).
+    /// Info on console (`-v` on setup).
     Verbose,
     /// Full debug logs (`-vv`).
     Debug,
