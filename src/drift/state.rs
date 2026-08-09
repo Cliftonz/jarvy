@@ -99,13 +99,39 @@ impl EnvironmentState {
 
     /// Save state to the project's .jarvy/state.json file (canonical
     /// resolver in `crate::paths`).
+    ///
+    /// Write path is tmp+rename+chmod-0600 with a 0700-tightened
+    /// parent dir so state.json isn't world-readable on shared build
+    /// hosts (its `ToolState.path` field records absolute install
+    /// paths like `/Users/<user>/.nvm/…`, leaking the account name
+    /// and home layout — security F4). Uses `to_string` not
+    /// `to_string_pretty`: state.json is a machine artifact, saving
+    /// ~2× disk write per baseline (perf F5).
     pub fn save(&self, project_dir: &Path) -> Result<(), DriftError> {
         let state_path = crate::paths::state_json(project_dir);
         if let Some(parent) = state_path.parent() {
             fs::create_dir_all(parent)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                // Best-effort — some filesystems (NFS, drvfs, exFAT)
+                // silently ignore chmod; state.json still lands.
+                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+            }
         }
-        let content = serde_json::to_string_pretty(self)?;
-        fs::write(&state_path, content)?;
+        let content = serde_json::to_string(self)?;
+        // Atomic tmp+rename so a partial write can't leave state.json
+        // in a half-parseable shape (concurrent readers get either
+        // the old or the new payload, never a truncated one).
+        let tmp = state_path.with_extension("json.tmp");
+        let _ = fs::remove_file(&tmp);
+        fs::write(&tmp, content.as_bytes())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+        }
+        fs::rename(&tmp, &state_path)?;
         Ok(())
     }
 

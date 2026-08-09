@@ -340,8 +340,35 @@ fn run_drift_accept(
         }
     }
 
-    // Update tracked file hashes
-    for file_path in &drift_config.track_files {
+    // Update tracked file hashes. Same remote-config gate + safety
+    // check as the setup path — a hostile remote config could
+    // otherwise turn `jarvy drift accept` into a SHA-256 disclosure
+    // oracle for arbitrary host files (security F1).
+    let track_files: &[String] =
+        if config.origin == crate::ai_hooks::ConfigOrigin::Remote && !drift_config.allow_remote {
+            if !drift_config.track_files.is_empty()
+                && crate::observability::telemetry_gate::is_enabled()
+            {
+                tracing::warn!(
+                    event = "drift.remote_refused",
+                    reason = "allow_remote_not_set",
+                    refused_track_files = drift_config.track_files.len(),
+                );
+            }
+            &[]
+        } else {
+            drift_config.track_files.as_slice()
+        };
+    for file_path in track_files {
+        if !crate::drift::track_file_is_safe(file_path) {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "drift.track_files.refused",
+                    reason = "unsafe_path_shape",
+                );
+            }
+            continue;
+        }
         let full_path = project_dir.join(file_path);
         if full_path.exists()
             && let Ok(hash) = crate::drift::state::hash_file(&full_path)

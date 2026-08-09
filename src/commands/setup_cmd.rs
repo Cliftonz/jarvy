@@ -955,11 +955,32 @@ pub fn run_setup(
             && version_check.unknown.is_empty()
             && !crate::paths::state_json(project_dir).exists();
         if drift_config.enabled || auto_baseline_eligible {
+            // Remote configs cannot broaden trust: refuse the
+            // track_files list from a remote origin unless the user
+            // explicitly opted in via `[drift] allow_remote = true`.
+            // Empty slice = still capture tool state (safe — bounded
+            // to the tool registry) but no arbitrary file hashing.
+            let track_files: &[String] = if config.origin == crate::ai_hooks::ConfigOrigin::Remote
+                && !drift_config.allow_remote
+            {
+                if !drift_config.track_files.is_empty()
+                    && crate::observability::telemetry_gate::is_enabled()
+                {
+                    tracing::warn!(
+                        event = "drift.remote_refused",
+                        reason = "allow_remote_not_set",
+                        refused_track_files = drift_config.track_files.len(),
+                    );
+                }
+                &[]
+            } else {
+                drift_config.track_files.as_slice()
+            };
             capture_drift_baseline(
                 project_dir,
                 std::path::Path::new(file),
                 &known_tools,
-                &drift_config.track_files,
+                track_files,
                 auto_baseline_eligible,
             );
         }
@@ -2060,6 +2081,19 @@ fn capture_drift_baseline_borrowed(
         }
     }
     for file_path in track_files {
+        // Reject entries whose path shape could escape project_dir —
+        // absolute paths (Path::join drops the base) or any parent-dir
+        // (`..`) component. Same primitive a hostile remote config
+        // would abuse via `track_files = ["/etc/shadow"]` (security F1).
+        if !crate::drift::track_file_is_safe(file_path) {
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "drift.track_files.refused",
+                    reason = "unsafe_path_shape",
+                );
+            }
+            continue;
+        }
         let full_path = project_dir.join(file_path);
         if full_path.exists()
             && let Ok(hash) = crate::drift::state::hash_file(&full_path)

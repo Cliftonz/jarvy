@@ -28,6 +28,15 @@ pub struct DriftConfig {
     /// Allow upgrades (only flag downgrades as drift)
     #[serde(default)]
     pub allow_upgrades: bool,
+
+    /// Remote-config trust gate. When the enclosing `jarvy.toml` was
+    /// fetched via `--from <url>` (ConfigOrigin::Remote), `track_files`
+    /// is refused unless `allow_remote = true`. Without this a hostile
+    /// remote could set `track_files = ["/etc/shadow", ...]` and turn
+    /// baseline capture into a SHA-256 file-existence oracle. Mirrors
+    /// the `[packages]/[git_hooks]/[maintenance] allow_remote` pattern.
+    #[serde(default)]
+    pub allow_remote: bool,
 }
 
 fn default_enabled() -> bool {
@@ -43,8 +52,28 @@ impl Default for DriftConfig {
             version_policy: VersionPolicy::Minor,
             ignore_tools: Vec::new(),
             allow_upgrades: false,
+            allow_remote: false,
         }
     }
+}
+
+/// True if a `track_files` entry is safe to hash — rejects absolute
+/// paths (Path::join discards the base for absolute rhs, so an entry
+/// like `"/etc/shadow"` resolves outside project_dir) and any entry
+/// containing a `..` component (naïve traversal). Callers pair this
+/// with the canonicalize-based traversal check in
+/// `state::path_is_within_project_dir` for defense in depth.
+pub fn track_file_is_safe(entry: &str) -> bool {
+    let p = std::path::Path::new(entry);
+    if p.is_absolute() {
+        return false;
+    }
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
+    true
 }
 
 /// Version matching policy for drift detection
@@ -177,6 +206,25 @@ mod tests {
         assert_eq!(config.version_policy, VersionPolicy::Minor);
         assert!(config.ignore_tools.is_empty());
         assert!(!config.allow_upgrades);
+        assert!(!config.allow_remote);
+    }
+
+    #[test]
+    fn track_file_safety_rejects_absolute_and_traversal() {
+        // Safe: project-relative descendants.
+        assert!(track_file_is_safe("package.json"));
+        assert!(track_file_is_safe(".vscode/settings.json"));
+        assert!(track_file_is_safe("some/nested/file"));
+
+        // Unsafe: absolute paths (Path::join(rhs) drops project_dir
+        // when rhs is absolute — this is the primitive CVE would use).
+        assert!(!track_file_is_safe("/etc/shadow"));
+        assert!(!track_file_is_safe("/Users/victim/.ssh/id_rsa"));
+
+        // Unsafe: any parent-dir component.
+        assert!(!track_file_is_safe("../etc/passwd"));
+        assert!(!track_file_is_safe("../../secret"));
+        assert!(!track_file_is_safe("nested/../../escape"));
     }
 
     #[test]

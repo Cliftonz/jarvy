@@ -172,12 +172,24 @@ impl<'a> DriftDetector<'a> {
                             continue;
                         }
 
+                        // Re-derive install_method at check time
+                        // instead of trusting the value in
+                        // state.json. A hostile state.json could
+                        // otherwise set install_method="brew" on a
+                        // rustup-managed tool and let `drift fix`
+                        // clobber a version-manager toolchain
+                        // (security F3). state.json's install_method
+                        // is now a hint / audit trail only, not a
+                        // trust boundary.
+                        let live_method =
+                            crate::tools::install_method::detect_install_method_for_tool(name)
+                                .to_string();
                         report.version_changes.push(VersionChange {
                             tool: name.clone(),
                             expected: baseline.to_string(),
                             actual: actual_version,
                             direction,
-                            auto_fixable: is_auto_fixable(name, &expected.install_method),
+                            auto_fixable: is_auto_fixable(name, &live_method),
                             reason: None,
                         });
                     }
@@ -195,9 +207,37 @@ impl<'a> DriftDetector<'a> {
             }
         }
 
-        // Check tracked files
+        // Check tracked files. Refuse entries whose canonicalized
+        // join escapes project_dir — a hostile `state.json` (e.g.
+        // committed into a downstream repo checkout via a bad PR)
+        // could otherwise use `.jarvy/state.json` keys like
+        // `"../../../../etc/passwd"` to turn `jarvy drift check`
+        // into a SHA-256 disclosure oracle for arbitrary host files
+        // (security F2). Purely-lexical `track_file_is_safe` catches
+        // the naïve cases; canonicalize + starts_with is the belt.
+        let canon_root = self.project_dir.canonicalize().ok();
         for (path, expected_hash) in &self.expected_state.files {
+            if !super::config::track_file_is_safe(path) {
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "drift.state.path_refused",
+                        reason = "unsafe_path_shape",
+                    );
+                }
+                continue;
+            }
             let file_path = self.project_dir.join(path);
+            if let (Some(root), Ok(canon)) = (canon_root.as_ref(), file_path.canonicalize())
+                && !canon.starts_with(root)
+            {
+                if crate::observability::telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "drift.state.path_refused",
+                        reason = "escapes_project_dir",
+                    );
+                }
+                continue;
+            }
 
             if !file_path.exists() {
                 report.changed_files.push(ChangedFile {

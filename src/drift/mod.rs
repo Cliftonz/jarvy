@@ -17,7 +17,7 @@ mod reporter;
 pub mod state;
 
 #[allow(unused_imports)]
-pub use config::{DriftConfig, VersionPolicy};
+pub use config::{DriftConfig, VersionPolicy, track_file_is_safe};
 #[allow(unused_imports)]
 pub use detector::{
     ChangedFile, DriftDetector, DriftReport, DriftStatus, DriftSummary, ExtraTool, MissingTool,
