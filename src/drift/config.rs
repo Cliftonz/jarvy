@@ -133,6 +133,41 @@ mod tests {
         assert!(!policy.versions_match("abc123", "abc124"));
     }
 
+    /// Regression pin for Codex P1 / parallel-review QA F2: the
+    /// spec-vs-concrete arm (one semver, one not) was previously
+    /// untested. Historically the setup-time write path stored the
+    /// config constraint (`"latest"`, `"^20"`) into ToolState.version;
+    /// check-time then compared that string against the probed
+    /// concrete version, and this fallback returned false for every
+    /// tool — resulting in the "22 tools drift on every check" loop.
+    ///
+    /// The fix moved the concrete version onto ToolState.installed_version
+    /// so this arm is no longer reachable in practice; the test pins
+    /// the semantic (`(constraint, concrete) → false`) so a future
+    /// refactor that undoes the field split fails loudly here first.
+    #[test]
+    fn version_policy_constraint_vs_concrete_returns_false() {
+        for policy in [
+            VersionPolicy::Major,
+            VersionPolicy::Minor,
+            VersionPolicy::Patch,
+            VersionPolicy::Exact,
+        ] {
+            for (constraint, concrete) in [
+                ("latest", "20.10.0"),
+                ("^20", "20.10.0"),
+                (">=1.75", "1.75.0"),
+                ("20.10.0", "latest"),
+            ] {
+                assert!(
+                    !policy.versions_match(constraint, concrete),
+                    "{policy:?} matched constraint {constraint:?} against concrete {concrete:?} — \
+                     did the string-fallback semantics change?"
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_drift_config_defaults() {
         let config = DriftConfig::default();

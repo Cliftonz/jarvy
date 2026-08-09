@@ -30,19 +30,24 @@ pub fn generate_lock(tools: &HashMap<String, Tool>) -> Result<LockFile, LockErro
 
 /// Lock a single tool by detecting its installed version and source
 fn lock_tool(name: &str) -> Option<LockedTool> {
+    // Route through the canonical config-key → binary-name resolver so
+    // tools like `rust` (binary `rustc`) and `ripgrep` (binary `rg`)
+    // don't silently drop out of the lock file (parallel-review item 5).
+    let binary = crate::tools::spec::binary_for(name);
+
     // Check if tool is installed
-    if !has(name) {
+    if !has(binary) {
         return None;
     }
 
     // Get installed version
-    let version = get_installed_version(name)?;
+    let version = get_installed_version(binary)?;
 
     // Determine install source
-    let source = detect_install_source(name);
+    let source = detect_install_source(binary);
 
     // Get binary path
-    let binary_path = get_binary_path(name);
+    let binary_path = get_binary_path(binary);
 
     // Compute checksum (optional, expensive)
     let checksum = binary_path.as_ref().and_then(|p| compute_checksum(p).ok());

@@ -2041,10 +2041,19 @@ fn capture_drift_baseline_borrowed(
 ) {
     let mut state = crate::drift::EnvironmentState::new();
     for (tool_name, tool) in known_tools {
-        if let Ok(path) = which::which(tool_name.as_str()) {
-            state.set_tool(
+        let binary = crate::tools::spec::binary_for(tool_name);
+        if let Ok(path) = which::which(binary) {
+            // Probe the actual installed version so `drift check`
+            // compares like-for-like. Storing the config constraint
+            // (`"latest"`, `"^20"`) here caused every check to
+            // false-positive because VersionPolicy::versions_match
+            // falls back to exact-string compare for non-semver
+            // values (Codex P1 / parallel-review item 1).
+            let installed = crate::drift::detector::get_tool_version(binary);
+            state.set_tool_with_installed(
                 tool_name,
                 &tool.version,
+                installed.as_deref(),
                 &path,
                 &detect_install_method(tool_name),
             );

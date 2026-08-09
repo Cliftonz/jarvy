@@ -11,7 +11,7 @@
 //! Configuration is read from the `[drift]` section of `jarvy.toml`.
 
 mod config;
-mod detector;
+pub mod detector;
 mod fixer;
 mod reporter;
 pub mod state;

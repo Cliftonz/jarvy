@@ -243,14 +243,25 @@ fn run_drift_accept(
 
     let mut accepted = 0;
     for tool_name in &tools_to_accept {
-        if let Some(version) = get_installed_version(tool_name) {
-            let path = which::which(tool_name.as_str())
-                .unwrap_or_else(|_| std::path::PathBuf::from("unknown"));
+        let binary = crate::tools::spec::binary_for(tool_name);
+        if let Some(installed) = crate::drift::detector::get_tool_version(binary) {
+            let path = which::which(binary).unwrap_or_else(|_| std::path::PathBuf::from("unknown"));
 
-            // Determine install method (simplified detection)
             let install_method = detect_install_method(tool_name);
-
-            state.set_tool(tool_name, &version, &path, &install_method);
+            // Preserve config constraint separately so a later
+            // `jarvy drift check` compares against the concrete
+            // installed version, not the constraint (Codex P1 fix).
+            let constraint = tool_configs
+                .get(tool_name)
+                .map(|t| t.version.as_str())
+                .unwrap_or(&installed);
+            state.set_tool_with_installed(
+                tool_name,
+                constraint,
+                Some(&installed),
+                &path,
+                &install_method,
+            );
             accepted += 1;
         }
     }
@@ -420,44 +431,6 @@ fn run_drift_fix(project_dir: &Path, config_file: &str, dry_run: bool, output_fo
     }
 
     0
-}
-
-/// Get installed version of a tool
-fn get_installed_version(tool: &str) -> Option<String> {
-    use std::process::Command;
-
-    let output = Command::new(tool)
-        .arg("--version")
-        .output()
-        .or_else(|_| Command::new(tool).arg("-V").output())
-        .or_else(|_| Command::new(tool).arg("version").output())
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    extract_version(&output_str)
-}
-
-/// Extract version from command output.
-///
-/// The regex is compiled once per process via `OnceLock` (review item
-/// P1 #11) — `drift accept` iterates every configured tool calling
-/// `get_installed_version` → `extract_version`, so re-compiling on
-/// each tool was O(N) wasted regex work.
-fn extract_version(output: &str) -> Option<String> {
-    use std::sync::OnceLock;
-    static VERSION_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = VERSION_RE.get_or_init(|| {
-        regex::Regex::new(r"(?i)v?(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9.]+)?(?:\+[a-zA-Z0-9.]+)?)")
-            .expect("static version regex must compile")
-    });
-
-    re.captures(output)
-        .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().to_string())
 }
 
 /// Detect install method for a tool. Delegates to the canonical

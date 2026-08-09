@@ -31,11 +31,29 @@ pub struct EnvironmentState {
     pub files: HashMap<String, String>,
 }
 
-/// State of a single installed tool
+/// State of a single installed tool.
+///
+/// Historically `version` was described as "installed version" but the
+/// setup-time write path stored the config constraint (`"latest"`,
+/// `"^20"`) here — which caused every drift check to false-positive
+/// (Codex P1). The field is now the **config constraint**;
+/// `installed_version` (added later via `#[serde(default)]` so legacy
+/// state.json files still deserialize) is the concrete version the
+/// probe returned at capture time. Detector reads `installed_version`
+/// when present, falling back to `version` for pre-migration state
+/// files (bounded false-positive window per tool per user).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolState {
-    /// Installed version
+    /// Config constraint (`"latest"`, `"^20"`, `"20.10.0"`). Preserved
+    /// for parity with the source jarvy.toml and for pre-migration
+    /// state-file compatibility.
     pub version: String,
+
+    /// Concrete version returned by the binary probe at capture time
+    /// (`"20.10.0"`). Absent on state files written before the P1 fix
+    /// or when the probe returned nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_version: Option<String>,
 
     /// Path to the tool binary
     pub path: PathBuf,
@@ -91,12 +109,33 @@ impl EnvironmentState {
         Ok(())
     }
 
-    /// Add or update a tool in the state
+    /// Add or update a tool in the state. `version` here is the
+    /// **config constraint** (`"latest"`, `"^20"`, `"20.10.0"`).
+    /// Drift baseline capture should prefer `set_tool_with_installed`
+    /// so the concrete probed version is recorded and check-time
+    /// comparisons don't false-positive.
     pub fn set_tool(&mut self, name: &str, version: &str, path: &Path, install_method: &str) {
+        self.set_tool_with_installed(name, version, None, path, install_method);
+    }
+
+    /// Add or update a tool with an explicit installed version. When
+    /// `installed_version` is `Some(v)`, the drift detector compares
+    /// against `v` instead of the config constraint — this is the
+    /// setup-time write path that avoids the "config says 'latest',
+    /// probe returns '20.10.0'" false-positive loop.
+    pub fn set_tool_with_installed(
+        &mut self,
+        name: &str,
+        version: &str,
+        installed_version: Option<&str>,
+        path: &Path,
+        install_method: &str,
+    ) {
         self.tools.insert(
             name.to_string(),
             ToolState {
                 version: version.to_string(),
+                installed_version: installed_version.map(str::to_string),
                 path: path.to_path_buf(),
                 install_method: install_method.to_string(),
             },
@@ -203,7 +242,53 @@ mod tests {
         assert_eq!(state.tools.len(), 1);
         let tool = state.tools.get("node").unwrap();
         assert_eq!(tool.version, "20.10.0");
+        assert_eq!(tool.installed_version, None);
         assert_eq!(tool.install_method, "brew");
+    }
+
+    #[test]
+    fn set_tool_with_installed_records_concrete_version() {
+        let mut state = EnvironmentState::new();
+        state.set_tool_with_installed(
+            "node",
+            "^20",
+            Some("20.10.0"),
+            Path::new("/usr/bin/node"),
+            "brew",
+        );
+
+        let tool = state.tools.get("node").unwrap();
+        // Config constraint preserved for parity with jarvy.toml,
+        // concrete probed version recorded separately (Codex P1 fix).
+        assert_eq!(tool.version, "^20");
+        assert_eq!(tool.installed_version.as_deref(), Some("20.10.0"));
+    }
+
+    /// Legacy `state.json` files (pre P1 fix) omit `installed_version`.
+    /// Confirm they still deserialize via `#[serde(default)]` so the
+    /// migration is transparent — users on an old baseline get
+    /// bounded false-positives (the pre-fix behavior) until they
+    /// re-run `jarvy setup`, not a hard parse error.
+    #[test]
+    fn legacy_state_without_installed_version_field_still_loads() {
+        let json = r#"{
+            "version": "1",
+            "created_at": "0Z",
+            "updated_at": "0Z",
+            "config_hash": "",
+            "tools": {
+                "node": {
+                    "version": "20.10.0",
+                    "path": "/usr/bin/node",
+                    "install_method": "brew"
+                }
+            },
+            "files": {}
+        }"#;
+        let state: EnvironmentState = serde_json::from_str(json).expect("legacy shape must load");
+        let node = state.tools.get("node").unwrap();
+        assert_eq!(node.version, "20.10.0");
+        assert_eq!(node.installed_version, None);
     }
 
     #[test]

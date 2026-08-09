@@ -1097,6 +1097,23 @@ pub fn get_tool_category(name: &str) -> Option<&'static str> {
     get_tool_spec(name).and_then(|s| s.category)
 }
 
+/// Canonical config-key → binary-name resolver. Returns the tool's
+/// `command` field when the spec is registered, otherwise falls back
+/// to the raw name. Drift / lock / doctor callers must consult this
+/// (never `which::which(config_key)` directly) so tools like `rust`
+/// (binary `rustc`) or `ripgrep` (binary `rg`) don't silently drop
+/// out of baseline capture and version probes.
+///
+/// The pattern already existed at `commands::doctor.rs:714` and
+/// `mcp/tools.rs:447`; extracting here so drift+lock stop being the
+/// odd sites out.
+pub fn binary_for(name: &str) -> &str {
+    match get_tool_spec(name) {
+        Some(spec) => spec.command,
+        None => name,
+    }
+}
+
 /// Render the canonical `define_tool!` template — re-exported from
 /// the dep-free `jarvy-templates` crate. Both `cargo-jarvy new-tool`
 /// and `jarvy tools --request` call the same implementation, so the

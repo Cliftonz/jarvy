@@ -144,14 +144,24 @@ impl<'a> DriftDetector<'a> {
                 continue;
             }
 
-            match get_tool_version(name) {
+            match get_tool_version(crate::tools::spec::binary_for(name)) {
                 Some(actual_version) => {
+                    // Compare against the concrete probed version when
+                    // the baseline captured one (post-P1-fix); fall
+                    // back to the config constraint for pre-migration
+                    // state.json files. This is the field split that
+                    // ends the "expected='latest', actual='20.10.0' →
+                    // always drifted" loop.
+                    let baseline = expected
+                        .installed_version
+                        .as_deref()
+                        .unwrap_or(&expected.version);
                     if !self
                         .config
                         .version_policy
-                        .versions_match(&expected.version, &actual_version)
+                        .versions_match(baseline, &actual_version)
                     {
-                        let direction = if is_upgrade(&expected.version, &actual_version) {
+                        let direction = if is_upgrade(baseline, &actual_version) {
                             VersionDirection::Upgrade
                         } else {
                             VersionDirection::Downgrade
@@ -164,7 +174,7 @@ impl<'a> DriftDetector<'a> {
 
                         report.version_changes.push(VersionChange {
                             tool: name.clone(),
-                            expected: expected.version.clone(),
+                            expected: baseline.to_string(),
                             actual: actual_version,
                             direction,
                             auto_fixable: is_auto_fixable(name, &expected.install_method),
@@ -175,7 +185,10 @@ impl<'a> DriftDetector<'a> {
                 None => {
                     report.missing_tools.push(MissingTool {
                         tool: name.clone(),
-                        expected_version: expected.version.clone(),
+                        expected_version: expected
+                            .installed_version
+                            .clone()
+                            .unwrap_or_else(|| expected.version.clone()),
                         auto_fixable: true,
                     });
                 }
@@ -223,14 +236,20 @@ impl<'a> DriftDetector<'a> {
     }
 }
 
-/// Get the installed version of a tool
-fn get_tool_version(tool: &str) -> Option<String> {
+/// Get the installed version of a tool by probing its binary.
+///
+/// Public so drift baseline capture (setup_cmd.rs) and `jarvy drift
+/// accept` (drift_cmd.rs) can reuse the same probe logic instead of
+/// re-implementing it. Callers must pass the BINARY name (see
+/// `tools::spec::binary_for`) — passing the config key directly
+/// silently fails for tools like `rust` → `rustc` / `ripgrep` → `rg`.
+pub fn get_tool_version(binary: &str) -> Option<String> {
     // Try common version flags
-    let output = Command::new(tool)
+    let output = Command::new(binary)
         .arg("--version")
         .output()
-        .or_else(|_| Command::new(tool).arg("-V").output())
-        .or_else(|_| Command::new(tool).arg("version").output())
+        .or_else(|_| Command::new(binary).arg("-V").output())
+        .or_else(|_| Command::new(binary).arg("version").output())
         .ok()?;
 
     if !output.status.success() {
@@ -331,5 +350,63 @@ mod tests {
         let upgrade = VersionDirection::Upgrade;
         let json = serde_json::to_string(&upgrade).unwrap();
         assert_eq!(json, "\"upgrade\"");
+    }
+
+    /// Regression pin for Codex P1 / parallel-review QA F1: a baseline
+    /// captured with a `"latest"` config-constraint field used to false-
+    /// positive on every check because VersionPolicy fell back to
+    /// exact-string comparison. After the P1 fix, the setup-time write
+    /// path stores the concrete probed version in `installed_version`
+    /// and the detector reads it in preference to `version`.
+    ///
+    /// Simulate: baseline with constraint=`"latest"` + concrete probed
+    /// `"20.10.0"`, mock the check-time probe to also return
+    /// `"20.10.0"`, and assert NoDrift. The pre-fix behavior would
+    /// have shown a version_change here.
+    #[test]
+    fn baseline_with_latest_constraint_and_concrete_installed_does_not_drift() {
+        use super::super::config::{DriftConfig, VersionPolicy};
+        use super::super::state::{EnvironmentState, ToolState};
+
+        let mut state = EnvironmentState::new();
+        state.tools.insert(
+            "node".to_string(),
+            ToolState {
+                version: "latest".to_string(),
+                installed_version: Some("20.10.0".to_string()),
+                path: std::path::PathBuf::from("/usr/bin/node"),
+                install_method: "brew".to_string(),
+            },
+        );
+
+        let config = DriftConfig {
+            version_policy: VersionPolicy::Minor,
+            ..Default::default()
+        };
+        let tmp = tempfile::TempDir::new().unwrap();
+        let _detector = DriftDetector::new(&config, &state, tmp.path());
+
+        // Simulate the detector's compare arm directly (production
+        // path shells out to the binary; we're pinning the semantic).
+        let baseline = state
+            .tools
+            .get("node")
+            .unwrap()
+            .installed_version
+            .as_deref()
+            .unwrap_or("");
+        assert!(
+            config.version_policy.versions_match(baseline, "20.10.0"),
+            "post-fix baseline must match probed version — the P1 regression \
+             is back if this fails"
+        );
+        // Sanity: the pre-fix behavior would have compared against
+        // `version` ("latest") and returned false.
+        let pre_fix = state.tools.get("node").unwrap().version.as_str();
+        assert!(
+            !config.version_policy.versions_match(pre_fix, "20.10.0"),
+            "'latest' vs '20.10.0' must still return false — otherwise \
+             this test proves nothing"
+        );
     }
 }

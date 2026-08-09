@@ -97,6 +97,30 @@ fn every_declared_fallback_package_passes_the_install_gauntlet() {
     );
 }
 
+/// Regression pin for Codex P2 / parallel-review item 6: drift
+/// baseline capture used to call `which::which(config_key)` directly,
+/// so tools whose binary name differs from the config key (`rust` →
+/// `rustc`, `ripgrep` → `rg`) silently dropped out of the baseline
+/// and check reported nothing wrong. The `binary_for` helper now
+/// routes every drift/lock/doctor caller through `ToolSpec.command`.
+/// This test walks the whole registry and asserts every registered
+/// spec resolves via that helper — so future tool defs whose macro
+/// key differs from their command can't opt out of drift by accident.
+#[test]
+fn binary_for_resolves_command_for_every_registered_tool() {
+    jarvy::tools::register_all();
+    for entry in jarvy::tools::spec::iter_tools() {
+        let spec = entry.spec;
+        let resolved = jarvy::tools::spec::binary_for(spec.name);
+        assert_eq!(
+            resolved, spec.command,
+            "binary_for({}) returned {:?}, expected spec.command {:?} — \
+             drift baseline capture would probe the wrong binary",
+            spec.name, resolved, spec.command
+        );
+    }
+}
+
 #[test]
 fn grafana_ecosystem_tools_are_registered() {
     // Guard: a future refactor that drops `pub mod <name>;` from
