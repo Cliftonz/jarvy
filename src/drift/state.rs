@@ -367,6 +367,32 @@ mod tests {
         assert!(result.is_none());
     }
 
+    /// QA F5 / parallel-review item 11: `.jarvy/state.json` corruption
+    /// paths were untested. `load` mapped only "file missing" to Ok(None);
+    /// every other failure (empty, truncated JSON, wrong shape) hit the
+    /// StateParseError arm which downstream CLI mapped to exit-1 with a
+    /// bare `eprintln!` — undefined-behavior contract, no regression
+    /// barrier. Pin the wire contract explicitly.
+    #[test]
+    fn load_corruption_paths_return_parse_error() {
+        for (label, content) in [
+            ("empty file", ""),
+            ("plain garbage", "not json"),
+            ("truncated json", "{\"version\":\"1\""),
+            ("missing required fields", "{}"),
+        ] {
+            let temp_dir = TempDir::new().unwrap();
+            let state_path = crate::paths::state_json(temp_dir.path());
+            fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+            fs::write(&state_path, content).unwrap();
+
+            match EnvironmentState::load(temp_dir.path()) {
+                Err(DriftError::StateParseError(_)) => {}
+                other => panic!("{label}: expected StateParseError, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn test_hash_file() {
         let temp_dir = TempDir::new().unwrap();

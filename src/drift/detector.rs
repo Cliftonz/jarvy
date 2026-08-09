@@ -122,6 +122,7 @@ impl<'a> DriftDetector<'a> {
 
     /// Detect drift between expected and actual state
     pub fn detect(&self) -> Result<DriftReport, DriftError> {
+        use rayon::prelude::*;
         let mut report = DriftReport {
             timestamp: current_timestamp(),
             status: DriftStatus::NoDrift,
@@ -138,13 +139,47 @@ impl<'a> DriftDetector<'a> {
             changed_files: Vec::new(),
         };
 
+        // Fan out version probes across a bounded worker pool so
+        // `drift check` on a 20-tool project doesn't pay
+        // 20 × fork+exec of dead wall time (perf F1). n=4 matches
+        // the setup phase's parallelism convention per CLAUDE.md.
+        // Compare/reporting stays serial to keep the shared report
+        // mutation single-threaded.
+        let probe_targets: Vec<&String> = self
+            .expected_state
+            .tools
+            .keys()
+            .filter(|n| !self.config.ignore_tools.contains(n))
+            .collect();
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().ok();
+        let probed: std::collections::HashMap<String, Option<String>> = match pool {
+            Some(p) => p.install(|| {
+                probe_targets
+                    .par_iter()
+                    .map(|name| {
+                        let binary = crate::tools::spec::binary_for(name);
+                        ((*name).clone(), get_tool_version(binary))
+                    })
+                    .collect()
+            }),
+            // Rayon pool construction failure is exceedingly rare; the
+            // serial fallback keeps drift check functional in that case.
+            None => probe_targets
+                .iter()
+                .map(|name| {
+                    let binary = crate::tools::spec::binary_for(name);
+                    ((*name).clone(), get_tool_version(binary))
+                })
+                .collect(),
+        };
+
         // Check each expected tool
         for (name, expected) in &self.expected_state.tools {
             if self.config.ignore_tools.contains(name) {
                 continue;
             }
 
-            match get_tool_version(crate::tools::spec::binary_for(name)) {
+            match probed.get(name).and_then(|v| v.clone()) {
                 Some(actual_version) => {
                     // Compare against the concrete probed version when
                     // the baseline captured one (post-P1-fix); fall
@@ -184,17 +219,28 @@ impl<'a> DriftDetector<'a> {
                         let live_method =
                             crate::tools::install_method::detect_install_method_for_tool(name)
                                 .to_string();
+                        let auto_fixable = is_auto_fixable(name, &live_method);
+                        emit_detected(
+                            name,
+                            "version_change",
+                            match direction {
+                                VersionDirection::Upgrade => "upgrade",
+                                VersionDirection::Downgrade => "downgrade",
+                            },
+                            auto_fixable,
+                        );
                         report.version_changes.push(VersionChange {
                             tool: name.clone(),
                             expected: baseline.to_string(),
                             actual: actual_version,
                             direction,
-                            auto_fixable: is_auto_fixable(name, &live_method),
+                            auto_fixable,
                             reason: None,
                         });
                     }
                 }
                 None => {
+                    emit_detected(name, "missing_tool", "n/a", true);
                     report.missing_tools.push(MissingTool {
                         tool: name.clone(),
                         expected_version: expected
@@ -308,6 +354,27 @@ fn extract_version(output: &str) -> Option<String> {
     crate::tools::version::extract_version(output).map(|v| v.to_string())
 }
 
+/// Emit a per-tool `drift.detected` event with bounded labels so
+/// operators can slice detected drift by category / kind / direction
+/// (analytics F4). Categorization comes from the tool registry
+/// (`get_tool_category`) so no ontology lives in this module. Fields
+/// are all bounded — NEVER version strings, NEVER file paths, NEVER
+/// error messages as labels (analytics F5 cardinality guidance).
+fn emit_detected(tool: &str, kind: &'static str, direction: &'static str, auto_fixable: bool) {
+    if !crate::observability::telemetry_gate::is_enabled() {
+        return;
+    }
+    let category = crate::tools::spec::get_tool_category(tool).unwrap_or("uncategorized");
+    tracing::info!(
+        event = "drift.detected",
+        tool = tool,
+        category = category,
+        kind = kind,
+        direction = direction,
+        auto_fixable = auto_fixable,
+    );
+}
+
 /// Check if new version is an upgrade from old version
 fn is_upgrade(old: &str, new: &str) -> bool {
     match (semver::Version::parse(old), semver::Version::parse(new)) {
@@ -364,6 +431,33 @@ mod tests {
         assert!(!is_upgrade("1.0.1", "1.0.0"));
         assert!(!is_upgrade("2.0.0", "1.0.0"));
         assert!(!is_upgrade("1.0.0", "1.0.0"));
+    }
+
+    /// QA F7: pin the string-fallback semantics for non-semver inputs.
+    /// This arm only fires when either side fails semver parsing —
+    /// after the P1 fix that's rare (installed_version comes from
+    /// version-probe extraction), but a hostile / degraded state.json
+    /// can still land here. Lock the behavior so future refactors that
+    /// change the fallback don't silently change the direction of every
+    /// non-semver report.
+    #[test]
+    fn is_upgrade_string_fallback_is_lexicographic() {
+        // Both non-semver: pure lexicographic compare.
+        assert!(is_upgrade("abc", "abd"));
+        assert!(!is_upgrade("abd", "abc"));
+        assert!(!is_upgrade("abc", "abc"));
+
+        // Mixed (one semver, one not) — semver parse fails on the
+        // non-semver side, we drop into lexicographic. Sanity-pin the
+        // result so a change in direction (e.g. someone "fixing" it
+        // to return false for missing-semver) is caught here. Note:
+        // 'l' (0x6C) > '2' (0x32) — so "latest" is lexicographically
+        // GREATER than "20.10.0". Any Semantics-Aware Fix should pin
+        // this arm's return to something meaningful (probably
+        // `false` / a new `Direction::Unknown` variant) and update
+        // this test at the same time.
+        assert!(is_upgrade("20.10.0", "latest"));
+        assert!(!is_upgrade("latest", "20.10.0"));
     }
 
     #[test]
