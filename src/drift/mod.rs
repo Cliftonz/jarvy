@@ -51,3 +51,18 @@ pub enum DriftError {
     #[error("Failed to hash file: {0}")]
     HashError(String),
 }
+
+impl DriftError {
+    /// Bounded label for the `error_kind` telemetry attribute. Never
+    /// emit the error's `Display` into a metric label — the underlying
+    /// `io::Error` / `serde_json::Error` payloads are unbounded.
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            DriftError::StateReadError(_) => "io",
+            DriftError::StateParseError(_) => "parse",
+            DriftError::NoBaseline => "no_baseline",
+            DriftError::VersionDetectionError(_) => "version_probe",
+            DriftError::HashError(_) => "hash",
+        }
+    }
+}

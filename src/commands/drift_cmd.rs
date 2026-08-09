@@ -50,17 +50,37 @@ fn workspace_aware_path(file: &str) -> (String, std::path::PathBuf) {
     let dir = resolved.parent().unwrap_or(Path::new(".")).to_path_buf();
     let path = resolved.to_string_lossy().into_owned();
     if path != file && crate::observability::telemetry_gate::is_enabled() {
+        // `resolved` (the full config path) is deliberately NOT
+        // emitted — the leading `$HOME` on macOS/Windows carries the
+        // account name and matches the PII pattern
+        // agent_profile.cwd_hint / config.personal_overlay_applied
+        // already resolved. `reason` is the diagnostic signal.
         tracing::info!(
             event = "drift.context.auto_redirected",
-            resolved = %path,
             reason = "cwd_inside_workspace_member",
         );
     }
     (path, dir)
 }
 
+/// Emit a bounded warn event when a `.jarvy/state.json` I/O op
+/// fails. Callers still surface the error via `eprintln!` for the
+/// user; this adds the persistent trail on-call needs.
+fn emit_state_io_failed(op: &'static str, err: &crate::drift::DriftError) {
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::warn!(
+            event = "drift.state.io_failed",
+            op = op,
+            error_kind = err.kind_label(),
+            error = %err,
+        );
+    }
+}
+
 /// Run drift check command
 fn run_drift_check(project_dir: &Path, config_file: &str, output_format: &str) -> i32 {
+    let started = std::time::Instant::now();
+
     // Load config
     let config = Config::new(config_file);
     let drift_config = config.drift.clone().unwrap_or_default();
@@ -78,10 +98,19 @@ fn run_drift_check(project_dir: &Path, config_file: &str, output_format: &str) -
             println!("\x1b[33m⚠\x1b[0m No baseline state found.");
             println!("  Run 'jarvy setup' to capture the initial state, or");
             println!("  Run 'jarvy drift accept' to create a baseline from current state.");
+            emit_drift_check_completed(
+                "no_baseline",
+                0,
+                0,
+                0,
+                0,
+                started.elapsed().as_millis() as u64,
+            );
             return 1;
         }
         Err(e) => {
             eprintln!("Failed to load state: {}", e);
+            emit_state_io_failed("load", &e);
             return 1;
         }
     };
@@ -92,6 +121,13 @@ fn run_drift_check(project_dir: &Path, config_file: &str, output_format: &str) -
         Ok(report) => report,
         Err(e) => {
             eprintln!("Drift detection failed: {}", e);
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "drift.check.failed",
+                    error_kind = e.kind_label(),
+                    error = %e,
+                );
+            }
             return 1;
         }
     };
@@ -109,11 +145,48 @@ fn run_drift_check(project_dir: &Path, config_file: &str, output_format: &str) -
         DriftReporter::print_report(&report);
     }
 
+    emit_drift_check_completed(
+        match report.status {
+            DriftStatus::NoDrift => "no_drift",
+            DriftStatus::DriftDetected => "drift_detected",
+            DriftStatus::NoBaseline => "no_baseline",
+        },
+        report.summary.version_changes,
+        report.summary.missing_tools,
+        report.summary.changed_files,
+        report.summary.total_issues,
+        started.elapsed().as_millis() as u64,
+    );
+
     // Return appropriate code
     match report.status {
         DriftStatus::NoDrift => 0,
         DriftStatus::DriftDetected => 1,
         DriftStatus::NoBaseline => 2,
+    }
+}
+
+/// Emit the drift.check.completed lifecycle event. Bounded status
+/// label + integer counters + duration only — no version strings, no
+/// paths (cardinality bombs per analytics F5).
+fn emit_drift_check_completed(
+    status: &'static str,
+    version_change_count: usize,
+    missing_count: usize,
+    changed_files_count: usize,
+    drifted_count: usize,
+    duration_ms: u64,
+) {
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "drift.check.completed",
+            status = status,
+            drifted_count = drifted_count,
+            version_change_count = version_change_count,
+            missing_count = missing_count,
+            changed_files_count = changed_files_count,
+            duration_ms = duration_ms,
+        );
     }
 }
 
@@ -149,6 +222,7 @@ fn run_drift_status(project_dir: &Path, verbose: bool, output_format: &str) -> i
             } else {
                 eprintln!("Failed to load state: {}", e);
             }
+            emit_state_io_failed("load", &e);
             return 1;
         }
     };
@@ -297,7 +371,17 @@ fn run_drift_accept(
         } else {
             eprintln!("Failed to save state: {}", e);
         }
+        emit_state_io_failed("save", &e);
         return 1;
+    }
+
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "drift.baseline.accepted",
+            tools_accepted = accepted,
+            files_tracked = drift_config.track_files.len(),
+            source = "manual_accept",
+        );
     }
 
     if output_format == "json" {
@@ -375,9 +459,12 @@ fn run_drift_fix(project_dir: &Path, config_file: &str, dry_run: bool, output_fo
             } else {
                 eprintln!("Failed to load state: {}", e);
             }
+            emit_state_io_failed("load", &e);
             return 1;
         }
     };
+
+    let started = std::time::Instant::now();
 
     // Detect drift
     let detector = DriftDetector::new(&drift_config, &state, project_dir);
@@ -391,6 +478,13 @@ fn run_drift_fix(project_dir: &Path, config_file: &str, dry_run: bool, output_fo
                 );
             } else {
                 eprintln!("Drift detection failed: {}", e);
+            }
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "drift.fix.failed",
+                    error_kind = e.kind_label(),
+                    error = %e,
+                );
             }
             return 1;
         }
@@ -415,6 +509,58 @@ fn run_drift_fix(project_dir: &Path, config_file: &str, dry_run: bool, output_fo
     // Run fixer
     let fixer = DriftFixer::new(dry_run);
     let results = fixer.fix_all(&report);
+
+    // Aggregate lifecycle telemetry (item 3 / F2). Per-tool events
+    // land as `drift.fix.tool_result` — labels are the tool name,
+    // registry-derived category, and bounded outcome/kind. NEVER
+    // expected_version / actual_version / path as labels (cardinality
+    // bomb — analytics F5).
+    let mut succeeded = 0;
+    let mut failed = 0;
+    let mut skipped = 0;
+    let mut dry_run_count = 0;
+    for r in &results {
+        let outcome = match r.status {
+            crate::drift::FixStatus::Success => {
+                succeeded += 1;
+                "success"
+            }
+            crate::drift::FixStatus::Failed => {
+                failed += 1;
+                "failed"
+            }
+            crate::drift::FixStatus::Skipped => {
+                skipped += 1;
+                "skipped"
+            }
+            crate::drift::FixStatus::DryRun => {
+                dry_run_count += 1;
+                "dry_run"
+            }
+        };
+        if crate::observability::telemetry_gate::is_enabled() {
+            let category =
+                crate::tools::spec::get_tool_category(&r.target).unwrap_or("uncategorized");
+            tracing::info!(
+                event = "drift.fix.tool_result",
+                tool = %r.target,
+                category = category,
+                outcome = outcome,
+            );
+        }
+    }
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "drift.fix.completed",
+            dry_run = dry_run,
+            attempted = results.len(),
+            succeeded = succeeded,
+            failed = failed,
+            skipped = skipped,
+            dry_run_count = dry_run_count,
+            duration_ms = started.elapsed().as_millis() as u64,
+        );
+    }
 
     if output_format == "json" {
         let json = serde_json::json!({

@@ -2073,31 +2073,52 @@ fn capture_drift_baseline_borrowed(
         state.set_config_hash(&hash);
     }
     match state.save(project_dir) {
-        Err(e) => eprintln!("Warning: Could not save drift detection state: {}", e),
-        Ok(()) if auto => {
-            tracing::info!(
-                event = "drift.baseline.auto_captured",
-                tool_count = state.tool_count(),
-                provider = %crate::sandbox::detect()
-                    .map(|e| e.provider.to_string())
-                    .unwrap_or_default(),
-                "auto-baselined drift state for seamless mode"
-            );
-            eprintln!(
-                "[jarvy] auto-baselined drift state for seamless mode ({} tools)",
-                state.tool_count()
-            );
+        Err(e) => {
+            eprintln!("Warning: Could not save drift detection state: {}", e);
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "drift.state.io_failed",
+                    op = "save",
+                    error_kind = e.kind_label(),
+                    error = %e,
+                );
+            }
         }
         Ok(()) => {
-            tracing::info!(
-                event = "drift.baseline.captured",
-                tool_count = state.tool_count(),
-                "drift detection baseline captured"
-            );
-            chatter!(
-                "\nDrift detection baseline captured ({} tools)",
-                state.tool_count()
-            );
+            // Single event with bounded `source` discriminant so
+            // downstream funnel queries don't have to UNION two
+            // event names, and any future field lands in one place
+            // (parallel-review item 13 / obs F5). Baseline captures
+            // that lose tools to the binary_for lookup are still
+            // implicit-shape-visible via tool_count vs known_tools
+            // count.
+            let source = if auto { "setup_seamless" } else { "setup" };
+            let provider = if auto {
+                crate::sandbox::detect()
+                    .map(|e| e.provider.to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::info!(
+                    event = "drift.baseline.captured",
+                    tool_count = state.tool_count(),
+                    source = source,
+                    provider = %provider,
+                );
+            }
+            if auto {
+                eprintln!(
+                    "[jarvy] auto-baselined drift state for seamless mode ({} tools)",
+                    state.tool_count()
+                );
+            } else {
+                chatter!(
+                    "\nDrift detection baseline captured ({} tools)",
+                    state.tool_count()
+                );
+            }
         }
     }
 }
