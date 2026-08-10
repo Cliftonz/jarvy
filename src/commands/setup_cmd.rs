@@ -947,12 +947,14 @@ pub fn run_setup(
         let project_dir = std::path::Path::new(file)
             .parent()
             .unwrap_or(std::path::Path::new("."));
-        let auto_baseline_eligible = !drift_config.enabled
-            && crate::sandbox::is_seamless()
-            && version_check.needs_install.is_empty()
-            && version_check.unknown.is_empty()
-            && !crate::paths::state_json(project_dir).exists();
-        if drift_config.enabled || auto_baseline_eligible {
+        let auto_baseline_eligible_now = auto_baseline_eligible(
+            drift_config.enabled,
+            crate::sandbox::is_seamless(),
+            version_check.needs_install.is_empty(),
+            version_check.unknown.is_empty(),
+            crate::paths::state_json(project_dir).exists(),
+        );
+        if drift_config.enabled || auto_baseline_eligible_now {
             // Remote configs cannot broaden trust: refuse the
             // track_files list from a remote origin unless the user
             // explicitly opted in via `[drift] allow_remote = true`.
@@ -979,7 +981,7 @@ pub fn run_setup(
                 std::path::Path::new(file),
                 &known_tools,
                 track_files,
-                auto_baseline_eligible,
+                auto_baseline_eligible_now,
             );
         }
     }
@@ -2810,6 +2812,19 @@ fn spawn_background_refresher(file: &str) -> Result<u32, &'static str> {
     }
 }
 
+/// Extracted from the seamless-mode branch of `run_setup` so the
+/// 5-conjunct eligibility rule is testable without mocking
+/// `sandbox::is_seamless` / `paths::state_json`.
+fn auto_baseline_eligible(
+    drift_enabled: bool,
+    seamless: bool,
+    needs_install_empty: bool,
+    unknown_empty: bool,
+    state_json_exists: bool,
+) -> bool {
+    !drift_enabled && seamless && needs_install_empty && unknown_empty && !state_json_exists
+}
+
 #[cfg(test)]
 mod tests {
     //! Smoke tests for the extracted phase helpers (review item 21 / item 8
@@ -3249,5 +3264,52 @@ git = "latest"
         let root = tmp.path().join("jarvy.toml");
         let err = resolve_workspace_project(root.to_str().unwrap(), "apps/web").unwrap_err();
         assert!(err.contains("workspace"), "got: {err}");
+    }
+
+    // -------------------------------------------------------------
+    // `auto_baseline_eligible`: six named cases pinning each of the
+    // five conjuncts. One TRUE row, five FALSE rows (each flipping a
+    // single guard). Chosen over the 32-row exhaustive matrix.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn all_clean_verify_only_eligible() {
+        // The one row that returns TRUE: drift not explicit, in seamless,
+        // no installs pending, no unknown tools, no existing state.json.
+        assert!(auto_baseline_eligible(false, true, true, true, false));
+    }
+
+    #[test]
+    fn drift_explicit_ineligible() {
+        // If [drift].enabled = true, the explicit path handles baseline;
+        // the auto path must stay out of it.
+        assert!(!auto_baseline_eligible(true, true, true, true, false));
+    }
+
+    #[test]
+    fn non_seamless_ineligible() {
+        // Auto-baseline is a seamless-mode primitive; on a real host it
+        // must not fire.
+        assert!(!auto_baseline_eligible(false, false, true, true, false));
+    }
+
+    #[test]
+    fn has_pending_installs_ineligible() {
+        // A partial-match baseline would ship the wrong sentinel; wait
+        // until the install queue drains.
+        assert!(!auto_baseline_eligible(false, true, false, true, false));
+    }
+
+    #[test]
+    fn has_unknown_tools_ineligible() {
+        // Unregistered tools would silently drop out of the baseline; wait
+        // for them to be resolved.
+        assert!(!auto_baseline_eligible(false, true, true, false, false));
+    }
+
+    #[test]
+    fn existing_state_json_ineligible() {
+        // Never overwrite a hand-crafted or previously-captured baseline.
+        assert!(!auto_baseline_eligible(false, true, true, true, true));
     }
 }
