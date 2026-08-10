@@ -107,10 +107,12 @@ pub fn run_tools(
                 s.push_str("─".repeat(50).as_str());
                 s.push('\n');
                 for tool in &tool_index.tools {
+                    let universal =
+                        tool.custom_install.has_custom_installer || !tool.fallback.is_empty();
                     let platforms = [
-                        tool.macos.as_ref().map(|_| "macOS"),
-                        tool.linux.as_ref().map(|_| "Linux"),
-                        tool.windows.as_ref().map(|_| "Windows"),
+                        (tool.macos.is_some() || universal).then_some("macOS"),
+                        (tool.linux.is_some() || universal).then_some("Linux"),
+                        (tool.windows.is_some() || universal).then_some("Windows"),
                     ]
                     .into_iter()
                     .flatten()
@@ -118,6 +120,8 @@ pub fn run_tools(
                     .join(", ");
                     let custom = if tool.custom_install.has_custom_installer {
                         " [custom]"
+                    } else if !tool.fallback.is_empty() {
+                        " [fallback]"
                     } else {
                         ""
                     };

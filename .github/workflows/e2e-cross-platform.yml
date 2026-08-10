@@ -121,6 +121,15 @@ jobs:
           ${{ steps.jarvy.outputs.bin }} --version
           ${{ steps.jarvy.outputs.bin }} --help
 
+      - name: Run Mobile Tool Dry-Run Matrix
+        shell: bash
+        run: cargo test --test e2e_base_tools e2e_base_tools_installation -- --show-output --nocapture
+        env:
+          JARVY_BIN: ${{ steps.jarvy.outputs.bin }}
+          JARVY_TEST_MODE: 1
+          JARVY_E2E_TOOLS: android-command-line-tools,android-platform-tools,appium,eas-cli,java,kotlin,watchman
+          JARVY_E2E_SKIP_INSTALL: 1
+
       - name: Run E2E Tests
         shell: bash
         run: |

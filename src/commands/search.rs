@@ -200,21 +200,16 @@ fn calculate_relevance(name: &str, query: &str) -> f64 {
 /// Get platform list for a tool
 fn get_platforms(tool: &crate::tools::spec::ToolIndexEntry) -> Vec<String> {
     let mut platforms = Vec::new();
+    let universal = tool.custom_install.has_custom_installer || !tool.fallback.is_empty();
 
-    if tool.macos.is_some() {
+    if tool.macos.is_some() || universal {
         platforms.push("macOS".to_string());
     }
-    if tool.linux.is_some() {
+    if tool.linux.is_some() || universal {
         platforms.push("Linux".to_string());
     }
-    if tool.windows.is_some() {
+    if tool.windows.is_some() || universal {
         platforms.push("Windows".to_string());
-    }
-
-    // Custom installer tools typically work on all platforms
-    if platforms.is_empty() && tool.custom_install.has_custom_installer {
-        platforms.push("macOS".to_string());
-        platforms.push("Linux".to_string());
     }
 
     platforms
@@ -237,6 +232,18 @@ mod tests {
         let results = search_tools("doc", false);
         // Should find docker
         assert!(results.results.iter().any(|r| r.name.contains("docker")));
+    }
+
+    #[test]
+    fn fallback_tool_search_reports_cross_platform_support() {
+        let results = search_tools("eas_cli", false);
+        let eas = results
+            .results
+            .iter()
+            .find(|result| result.name == "eas_cli")
+            .expect("EAS CLI must be searchable");
+
+        assert_eq!(eas.platforms, ["macOS", "Linux", "Windows"]);
     }
 
     #[test]

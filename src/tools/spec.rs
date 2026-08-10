@@ -935,6 +935,9 @@ pub struct ToolIndexEntry {
     pub bsd: Option<BsdInstall>,
     /// Custom installation info
     pub custom_install: CustomInstallInfo,
+    /// Ecosystem package routes used when no native platform package exists
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fallback: Vec<FallbackRoute>,
     /// Tool category for filtering (e.g., "devops", "language", "editor")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
@@ -962,6 +965,7 @@ impl From<&ToolSpec> for ToolIndexEntry {
             custom_install: CustomInstallInfo {
                 has_custom_installer: spec.custom_install.is_some(),
             },
+            fallback: spec.fallback.to_vec(),
             category: spec.category.map(|s| s.to_string()),
             depends_on: spec
                 .depends_on
@@ -990,9 +994,10 @@ pub struct ToolIndex {
 
 impl ToolIndex {
     /// Current version of the tool index format.
+    /// 1.2.0: added ecosystem `fallback` routes to entries — additive.
     /// 1.1.0: added `depends_on`, `depends_on_one_of`, `default_hook`
     /// (description + platform only) to entries — additive.
-    pub const VERSION: &'static str = "1.1.0";
+    pub const VERSION: &'static str = "1.2.0";
 }
 
 /// Manually registered tools that don't use the `define_tool!` macro.
@@ -1027,6 +1032,7 @@ pub fn generate_tool_index() -> ToolIndex {
             custom_install: CustomInstallInfo {
                 has_custom_installer: true,
             },
+            fallback: Vec::new(),
             category: None,
             depends_on: None,
             depends_on_one_of: None,
@@ -2114,6 +2120,7 @@ mod tests {
         assert!(entry.linux.is_some());
         assert!(entry.windows.is_some());
         assert!(!entry.custom_install.has_custom_installer);
+        assert!(entry.fallback.is_empty());
     }
 
     #[test]
@@ -2134,6 +2141,34 @@ mod tests {
         };
         let entry = ToolIndexEntry::from(&custom_tool);
         assert!(entry.custom_install.has_custom_installer);
+    }
+
+    #[test]
+    fn test_tool_index_entry_preserves_fallback_routes() {
+        static ROUTES: &[FallbackRoute] = &[FallbackRoute {
+            eco: FallbackEco::Npm,
+            package: "example-cli",
+        }];
+        let fallback_tool = ToolSpec {
+            name: "fallback",
+            command: "fallback",
+            macos: None,
+            linux: None,
+            windows: None,
+            bsd: None,
+            custom_install: None,
+            default_hook: None,
+            depends_on: None,
+            depends_on_one_of: None,
+            category: None,
+            fallback: ROUTES,
+        };
+
+        let entry = ToolIndexEntry::from(&fallback_tool);
+
+        assert_eq!(entry.fallback.len(), 1);
+        assert_eq!(entry.fallback[0].eco, FallbackEco::Npm);
+        assert_eq!(entry.fallback[0].package, "example-cli");
     }
 
     #[test]

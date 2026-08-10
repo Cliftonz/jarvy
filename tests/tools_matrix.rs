@@ -89,6 +89,29 @@ fn new_tools_batch_is_registered() {
     }
 }
 
+/// Mobile development tools must remain connected to inventory registration.
+/// The canonical configuration names use underscores where the product name
+/// contains dashes; registry alias coverage below verifies the user-facing
+/// dash forms as well.
+#[test]
+fn mobile_development_tools_are_registered() {
+    jarvy::tools::register_all();
+    let names = jarvy::tools::registered_tool_names();
+    for tool in [
+        "android_command_line_tools",
+        "android_platform_tools",
+        "appium",
+        "eas_cli",
+        "kotlin",
+        "watchman",
+    ] {
+        assert!(
+            names.iter().any(|name| name == tool),
+            "mobile tool `{tool}` must be registered"
+        );
+    }
+}
+
 /// The dash/underscore alias resolution in `tools::registry::get_tool()`
 /// must find every new tool whose canonical form uses an underscore
 /// (Rust identifiers can't contain dashes). Users typing the natural
@@ -98,7 +121,10 @@ fn new_tools_batch_is_registered() {
 fn dash_form_tool_names_resolve_via_aliasing() {
     jarvy::tools::register_all();
     for (dash, expected_underscore) in [
+        ("android-command-line-tools", "android_command_line_tools"),
+        ("android-platform-tools", "android_platform_tools"),
         ("cargo-nextest", "cargo_nextest"),
+        ("eas-cli", "eas_cli"),
         ("release-plz", "release_plz"),
         ("aws-sam-cli", "aws_sam_cli"),
         ("cfn-lint", "cfn_lint"),

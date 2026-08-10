@@ -11,15 +11,15 @@
     "just", "git-lfs", "hugo", "curl", "httpie",
     "kubens", "krew", "gcloud", "checkov", "ansible", "pre-commit", "localstack",
     "bicep", "infracost",
-    "aws-sam-cli", "playwright", "cypress", "task", "allure", "locust",
+    "aws-sam-cli", "playwright", "cypress", "appium", "task", "allure", "locust",
     "goaccess", "linkerd", "cfn-lint", "putty"
   ],
   "implementation_status": {
     "completed_date": "2026-01-14",
-    "updated_date": "2026-07-08",
+    "updated_date": "2026-08-09",
     "total_from_list": 73,
-    "implemented_count": 57,
-    "notes": "Many tools already implemented from T12 batch. 23 new tools added in the 2026-01-14 session. 2026-07-08 batch (feat/new-tools-batch) drained the remaining high-priority queue (aws-sam-cli, playwright, cypress) plus 7 backlog picks (task, allure, locust, goaccess, linkerd, cfn-lint, putty), and reconciled 9 tools that were already in src/tools/ but missing from this list (kubens, krew, gcloud, checkov, ansible, pre-commit, localstack, bicep, infracost). Allure/locust/cfn-lint/linkerd ship without a windows block — no first-party winget manifests exist (JSON's Allure.Allure was a placeholder; supply-chain rule forbids it)."
+    "implemented_count": 58,
+    "notes": "Many tools already implemented from T12 batch. 23 new tools added in the 2026-01-14 session. 2026-07-08 batch (feat/new-tools-batch) drained the remaining high-priority queue (aws-sam-cli, playwright, cypress) plus 7 backlog picks (task, allure, locust, goaccess, linkerd, cfn-lint, putty), and reconciled 9 tools that were already in src/tools/ but missing from this list (kubens, krew, gcloud, checkov, ansible, pre-commit, localstack, bicep, infracost). The 2026-08 mobile tooling batch added appium. Allure/locust/cfn-lint/linkerd ship without a windows block — no first-party winget manifests exist (JSON's Allure.Allure was a placeholder; supply-chain rule forbids it)."
   },
   "categories": [
     {
@@ -855,7 +855,7 @@
       "nyc"
     ],
     "low_priority": [
-      "appium", "mockoon", "prism", "testcontainers",
+      "mockoon", "prism", "testcontainers",
       "everything"
     ]
   },

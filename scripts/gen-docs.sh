@@ -126,8 +126,8 @@ lines = [
     "",
     f"Jarvy currently ships **{count} tools**. Reference one in your `jarvy.toml` by its **name**.",
     "",
-    "| Name | Command | macOS | Linux | Windows | Default hook | Depends on |",
-    "|---|---|---|---|---|---|---|",
+    "| Name | Command | macOS | Linux | Windows | Fallback | Default hook | Depends on |",
+    "|---|---|---|---|---|---|---|---|",
 ]
 
 def fmt_macos(m):
@@ -144,6 +144,7 @@ def fmt_linux(l):
     parts = []
     for mgr in ("apt", "dnf", "pacman", "apk"):
         if l.get(mgr): parts.append(f"{mgr}: `{l[mgr]}`")
+    if l.get("brew"): parts.append(f"brew: `{l['brew']}`")
     if l.get("custom_install"): parts.append("custom")
     return "<br>".join(parts) or "—"
 
@@ -156,16 +157,21 @@ def fmt_windows(w):
     if w.get("custom_install"): parts.append("custom")
     return "<br>".join(parts) or "—"
 
+def fmt_fallback(routes):
+    if not routes: return "—"
+    return "<br>".join(f"{r['eco']}: `{r['package']}`" for r in routes)
+
 for t in sorted(tools, key=lambda x: x["name"]):
     name = t["name"]
     cmd  = f"`{t.get('command', name)}`"
     macos = fmt_macos(t.get("macos"))
     linux = fmt_linux(t.get("linux"))
     windows = fmt_windows(t.get("windows"))
+    fallback = fmt_fallback(t.get("fallback"))
     has_hook = "✓" if t.get("default_hook") else ""
     deps = t.get("depends_on") or t.get("depends_on_one_of") or []
     deps_str = ", ".join(f"`{d}`" for d in deps[:3]) + ("…" if len(deps) > 3 else "") if deps else "—"
-    lines.append(f"| `{name}` | {cmd} | {macos} | {linux} | {windows} | {has_hook} | {deps_str} |")
+    lines.append(f"| `{name}` | {cmd} | {macos} | {linux} | {windows} | {fallback} | {has_hook} | {deps_str} |")
 
 lines.append("")
 lines.append("---")
@@ -219,6 +225,8 @@ for t in sorted(tools, key=lambda x: x["name"]):
     if b.get("pkg"): e["pkg"] = b["pkg"]
     if (t.get("custom_install") or {}).get("has_custom_installer"):
         e["custom"] = True
+    for route in t.get("fallback") or []:
+        e[route["eco"]] = route["package"]
     deps = t.get("depends_on")
     if deps: e["deps"] = deps
     flex = t.get("depends_on_one_of")
@@ -365,7 +373,7 @@ html = r"""
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   const supports = (t, os) => {
-    if (os === "all" || t.custom) return true;
+    if (os === "all" || t.custom || t.npm || t.cargo || t.go || t.uv) return true;
     if (os === "macos") return !!(t.brew || t.cask);
     if (os === "linux") return !!(t.apt || t.dnf || t.pacman || t.apk || t.lbrew);
     if (os === "windows") return !!(t.winget || t.choco);
@@ -400,6 +408,12 @@ html = r"""
     if (t.choco) win.push(cmdRow("choco", "choco install -y " + t.choco));
     h += section("Windows", win);
     if (t.pkg) h += section("BSD", [cmdRow("pkg", "sudo pkg install " + t.pkg)]);
+    const fallback = [];
+    if (t.npm) fallback.push(cmdRow("npm", "npm install -g " + t.npm));
+    if (t.cargo) fallback.push(cmdRow("cargo", "cargo install --locked " + t.cargo));
+    if (t.go) fallback.push(cmdRow("go", "go install " + t.go + "@latest"));
+    if (t.uv) fallback.push(cmdRow("uv", "uv tool install " + t.uv));
+    h += section("Ecosystem fallback — any OS", fallback);
     if (t.custom)
       h += '<p class="jt-note">⚙ Uses a custom installer — Jarvy runs the official install script for you during <code>jarvy setup</code>.</p>';
     if (t.deps)
@@ -414,6 +428,7 @@ html = r"""
   const osBadges = (t) => {
     const b = [];
     if (t.custom) b.push("custom");
+    if (t.npm || t.cargo || t.go || t.uv) b.push("fallback");
     if (t.brew || t.cask) b.push("macOS");
     if (t.apt || t.dnf || t.pacman || t.apk || t.lbrew) b.push("Linux");
     if (t.winget || t.choco) b.push("Windows");
@@ -433,7 +448,8 @@ html = r"""
       '<div class="jt-body">' + body(t) + "</div>";
     frag.appendChild(d);
     const hay = [t.n, t.c, t.cat, t.brew, t.cask, t.apt, t.dnf, t.pacman, t.apk,
-                 t.lbrew, t.winget, t.choco, t.pkg].filter(Boolean).join(" ").toLowerCase();
+                 t.lbrew, t.winget, t.choco, t.pkg, t.npm, t.cargo, t.go, t.uv]
+                 .filter(Boolean).join(" ").toLowerCase();
     return { t, el: d, hay };
   });
   list.appendChild(frag);

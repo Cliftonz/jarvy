@@ -435,6 +435,22 @@ mod tests {
     }
 
     #[test]
+    fn mobile_npm_fallback_previews_are_exact() {
+        assert_eq!(
+            preview_route("eas-cli", "latest"),
+            Some(("npm", "npm install -g eas-cli".to_string()))
+        );
+        assert_eq!(
+            preview_route("appium", "latest"),
+            Some(("npm", "npm install -g appium".to_string()))
+        );
+        assert_eq!(
+            preview_route("eas-cli", "16.20.1"),
+            Some(("npm", "npm install -g eas-cli@16.20.1".to_string()))
+        );
+    }
+
+    #[test]
     fn preview_route_gates_on_platform_and_custom_install() {
         // Unknown tool → None.
         assert!(preview_route("no_such_tool", "latest").is_none());

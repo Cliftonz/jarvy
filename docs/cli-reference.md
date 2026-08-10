@@ -31,11 +31,11 @@ Run without a subcommand to use the interactive menu.
 Usage: jarvy [COMMAND]
 
 Commands:
-  setup          Set up the environment based on the configuration file
+  setup          Set up the environment based on the configuration file [aliases: install, i]
   bootstrap      Perform a minimal machine bootstrap (base requirements only, no dev tooling)
   configure      Generate a default jarvy.toml configuration in the current directory
   get            Display configured tools vs what is actually installed
-  tools          List all supported tools or output the tool index
+  tools          List all supported tools or output the tool index [aliases: ls]
   env            Manage environment variables from jarvy.toml
   ci-config      Generate CI configuration files for various providers
   ci-info        Show detected CI environment information
@@ -44,10 +44,10 @@ Commands:
   workspace      Inspect a monorepo workspace defined by `[workspace]` in jarvy.toml (PRD-047)
   discover       Scan the project for tooling and suggest a jarvy.toml (PRD-044)
   services       Manage project services (docker-compose, tilt)
-  doctor         Diagnose environment issues, check tool health, and verify PATH
+  doctor         Diagnose environment issues, check tool health, and verify PATH [aliases: d]
   diff           Preview changes before running setup (dry-run)
   export         Generate jarvy.toml from currently installed tools
-  upgrade        Upgrade tools to their latest versions
+  upgrade        Upgrade tools to their latest versions [aliases: up]
   init           Create a new jarvy.toml configuration file interactively
   search         Search available tools that Jarvy can install
   validate       Validate a jarvy.toml configuration file
@@ -320,6 +320,7 @@ Options:
   -F, --format <OUTPUT_FORMAT>  Output format: json, pretty [default: pretty]
       --extended                Show extended health dashboard with system metrics
       --report <REPORT>         Export diagnostic report as markdown
+      --fresh                   Bypass the version-probe cache and re-probe every tool
   -h, --help                    Print help
 ```
 
@@ -365,6 +366,7 @@ Options:
       --tools <TOOLS>           Only upgrade specific tools (comma-separated or tool@version)
       --dry-run                 Show what would be upgraded without making changes
       --force                   Force upgrade even if already at required version
+      --native                  Ignore fallback install receipts: upgrade via the native package manager and drop the tool's receipt on success
   -F, --format <OUTPUT_FORMAT>  Output format: json, pretty [default: pretty]
   -h, --help                    Print help
 ```

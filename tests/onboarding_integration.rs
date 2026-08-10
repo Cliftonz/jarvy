@@ -195,6 +195,29 @@ fn quickstart_help_shows_options() {
 // Template content tests
 // ============================================================================
 
+fn assert_template_contains_tools(template: &str, expected_tools: &[&str]) {
+    let home = TempDir::new().unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    cmd.env("JARVY_TEST_MODE", "1");
+    cmd.env("JARVY_HOME", home.path().join("jarvy-home"));
+    cmd.args(["init", "--template", template, "--stdout"]);
+
+    let output = cmd.output().expect("template command should run");
+    assert!(
+        output.status.success(),
+        "template `{template}` failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("template output must be UTF-8");
+    for tool in expected_tools {
+        let entry = format!("{tool} = \"latest\"");
+        assert!(
+            stdout.lines().any(|line| line.trim() == entry),
+            "template `{template}` must contain `{entry}`; got:\n{stdout}"
+        );
+    }
+}
+
 #[test]
 fn essential_template_contains_core_tools() {
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
@@ -253,6 +276,79 @@ fn k8s_admin_template_contains_kubernetes_tools() {
         .success()
         .stdout(predicate::str::contains("kubectl"))
         .stdout(predicate::str::contains("docker"));
+}
+
+#[test]
+fn mobile_templates_preserve_their_toolchain_contracts() {
+    assert_template_contains_tools(
+        "android-kotlin",
+        &[
+            "java",
+            "kotlin",
+            "android_command_line_tools",
+            "android_platform_tools",
+            "appium",
+        ],
+    );
+    assert_template_contains_tools(
+        "flutter",
+        &[
+            "java",
+            "android_command_line_tools",
+            "android_platform_tools",
+            "appium",
+        ],
+    );
+    assert_template_contains_tools(
+        "react-native",
+        &[
+            "java",
+            "eas_cli",
+            "android_command_line_tools",
+            "android_platform_tools",
+            "watchman",
+            "appium",
+        ],
+    );
+    assert_template_contains_tools(
+        "expo",
+        &[
+            "java",
+            "eas_cli",
+            "android_command_line_tools",
+            "android_platform_tools",
+            "watchman",
+            "appium",
+        ],
+    );
+}
+
+#[test]
+fn setup_dry_run_renders_mobile_npm_fallback_commands() {
+    use std::io::Write;
+
+    let empty_path = TempDir::new().unwrap();
+    let mut config = tempfile::NamedTempFile::new().unwrap();
+    writeln!(config, "[provisioner]").unwrap();
+    writeln!(config, "eas-cli = \"latest\"").unwrap();
+    writeln!(config, "appium = \"latest\"").unwrap();
+
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    cmd.env("JARVY_TEST_MODE", "1");
+    cmd.env("JARVY_TELEMETRY", "0");
+    cmd.env("JARVY_HOME", empty_path.path().join("jarvy-home"));
+    cmd.env("PATH", empty_path.path());
+    cmd.args(["setup", "--dry-run", "--file"]);
+    cmd.arg(config.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Would install eas-cli via fallback route: `npm install -g eas-cli`",
+        ))
+        .stdout(predicate::str::contains(
+            "Would install appium via fallback route: `npm install -g appium`",
+        ));
 }
 
 // ============================================================================

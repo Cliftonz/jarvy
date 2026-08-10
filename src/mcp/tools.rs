@@ -381,39 +381,52 @@ pub fn handle_get_tool(arguments: Option<serde_json::Value>) -> McpResult<serde_
 
     let current_platform = get_current_platform();
     let index = generate_tool_index();
-    let tool_entry = index.tools.iter().find(|t| t.name == params.name);
+    let canonical_name = spec.name.to_lowercase();
+    let tool_entry = index.tools.iter().find(|t| t.name == canonical_name);
 
-    let current_platform_info = tool_entry.and_then(|t| match current_platform.as_str() {
-        "macos" => t.macos.as_ref().map(|m| {
-            serde_json::json!({
-                "os": "macos",
-                "install_method": if m.cask.is_some() { "cask" } else { "brew" },
-                "package_name": m.cask.or(m.brew).unwrap_or("unknown"),
-                "package_manager": "homebrew"
+    let current_platform_info = tool_entry.and_then(|t| {
+        let native = match current_platform.as_str() {
+            "macos" => t.macos.as_ref().map(|m| {
+                serde_json::json!({
+                    "os": "macos",
+                    "install_method": if m.cask.is_some() { "cask" } else { "brew" },
+                    "package_name": m.cask.or(m.brew).unwrap_or("unknown"),
+                    "package_manager": "homebrew"
+                })
+            }),
+            "linux" => t.linux.as_ref().map(|l| {
+                serde_json::json!({
+                    "os": "linux",
+                    "install_method": "package_manager",
+                    "package_name": l.apt
+                        .or(l.dnf)
+                        .or(l.pacman)
+                        .or(l.apk)
+                        .or(l.brew)
+                        .unwrap_or("unknown"),
+                    "package_manager": "system"
+                })
+            }),
+            "windows" => t.windows.as_ref().map(|w| {
+                serde_json::json!({
+                    "os": "windows",
+                    "install_method": "winget",
+                    "package_name": w.winget.unwrap_or("unknown"),
+                    "package_manager": "winget"
+                })
+            }),
+            _ => None,
+        };
+        native.or_else(|| {
+            t.fallback.first().map(|route| {
+                serde_json::json!({
+                    "os": current_platform,
+                    "install_method": "ecosystem_fallback",
+                    "package_name": route.package,
+                    "package_manager": route.eco.command()
+                })
             })
-        }),
-        "linux" => t.linux.as_ref().map(|l| {
-            serde_json::json!({
-                "os": "linux",
-                "install_method": "package_manager",
-                "package_name": l.apt
-                    .or(l.dnf)
-                    .or(l.pacman)
-                    .or(l.apk)
-                    .or(l.brew)
-                    .unwrap_or("unknown"),
-                "package_manager": "system"
-            })
-        }),
-        "windows" => t.windows.as_ref().map(|w| {
-            serde_json::json!({
-                "os": "windows",
-                "install_method": "winget",
-                "package_name": w.winget.unwrap_or("unknown"),
-                "package_manager": "winget"
-            })
-        }),
-        _ => None,
+        })
     });
 
     Ok(serde_json::json!({
@@ -423,7 +436,8 @@ pub fn handle_get_tool(arguments: Option<serde_json::Value>) -> McpResult<serde_
         "all_platforms": tool_entry.map(|t| serde_json::json!({
             "macos": t.macos,
             "linux": t.linux,
-            "windows": t.windows
+            "windows": t.windows,
+            "fallback": &t.fallback
         })),
         "custom_install": tool_entry.map(|t| t.custom_install.has_custom_installer).unwrap_or(false),
     }))
@@ -668,16 +682,17 @@ fn get_current_platform() -> String {
 
 /// Check if a tool matches the platform filter
 fn matches_platform(tool: &ToolIndexEntry, filter: &str, current: &str) -> bool {
+    let universal = tool.custom_install.has_custom_installer || !tool.fallback.is_empty();
     match filter {
         "current" => match current {
-            "macos" => tool.macos.is_some() || tool.custom_install.has_custom_installer,
-            "linux" => tool.linux.is_some() || tool.custom_install.has_custom_installer,
-            "windows" => tool.windows.is_some() || tool.custom_install.has_custom_installer,
+            "macos" => tool.macos.is_some() || universal,
+            "linux" => tool.linux.is_some() || universal,
+            "windows" => tool.windows.is_some() || universal,
             _ => true,
         },
-        "macos" => tool.macos.is_some() || tool.custom_install.has_custom_installer,
-        "linux" => tool.linux.is_some() || tool.custom_install.has_custom_installer,
-        "windows" => tool.windows.is_some() || tool.custom_install.has_custom_installer,
+        "macos" => tool.macos.is_some() || universal,
+        "linux" => tool.linux.is_some() || universal,
+        "windows" => tool.windows.is_some() || universal,
         "all" => true,
         _ => true,
     }
@@ -686,13 +701,14 @@ fn matches_platform(tool: &ToolIndexEntry, filter: &str, current: &str) -> bool 
 /// Get supported platforms for a tool
 fn get_supported_platforms(tool: &ToolIndexEntry) -> Vec<String> {
     let mut platforms = Vec::new();
-    if tool.macos.is_some() || tool.custom_install.has_custom_installer {
+    let universal = tool.custom_install.has_custom_installer || !tool.fallback.is_empty();
+    if tool.macos.is_some() || universal {
         platforms.push("macos".to_string());
     }
-    if tool.linux.is_some() || tool.custom_install.has_custom_installer {
+    if tool.linux.is_some() || universal {
         platforms.push("linux".to_string());
     }
-    if tool.windows.is_some() || tool.custom_install.has_custom_installer {
+    if tool.windows.is_some() || universal {
         platforms.push("windows".to_string());
     }
     platforms
@@ -845,6 +861,36 @@ mod tests {
         assert!(result.get("tools").is_some());
         assert!(result.get("count").is_some());
         assert!(result.get("platform").is_some());
+    }
+
+    #[test]
+    fn fallback_tools_are_listed_for_the_current_platform() {
+        crate::tools::register_all();
+
+        let result = handle_list_tools(Some(serde_json::json!({"search": "eas_cli"}))).unwrap();
+        let tools = result["tools"].as_array().expect("tools must be an array");
+
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "eas_cli");
+        assert!(tools[0]["platforms"].as_array().is_some_and(|platforms| {
+            ["macos", "linux", "windows"]
+                .iter()
+                .all(|expected| platforms.iter().any(|actual| actual == expected))
+        }));
+    }
+
+    #[test]
+    fn get_tool_reports_fallback_route_for_dash_alias() {
+        crate::tools::register_all();
+
+        let result = handle_get_tool(Some(serde_json::json!({"name": "eas-cli"}))).unwrap();
+
+        assert_eq!(
+            result["current_platform"]["install_method"],
+            "ecosystem_fallback"
+        );
+        assert_eq!(result["current_platform"]["package_manager"], "npm");
+        assert_eq!(result["current_platform"]["package_name"], "eas-cli");
     }
 
     #[test]
