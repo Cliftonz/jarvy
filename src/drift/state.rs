@@ -119,7 +119,13 @@ impl EnvironmentState {
                 let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
             }
         }
-        let content = serde_json::to_string(self)?;
+        // Stamp `updated_at` once at save time (perf F3) — the per-
+        // mutation stamp was allocation churn nothing observed
+        // between mutations. Clone-to-serialize so this method stays
+        // `&self` (no lock upgrade at call sites).
+        let mut snapshot = self.clone();
+        snapshot.updated_at = current_timestamp();
+        let content = serde_json::to_string(&snapshot)?;
         // Atomic tmp+rename so a partial write can't leave state.json
         // in a half-parseable shape (concurrent readers get either
         // the old or the new payload, never a truncated one).
@@ -137,9 +143,12 @@ impl EnvironmentState {
 
     /// Add or update a tool in the state. `version` here is the
     /// **config constraint** (`"latest"`, `"^20"`, `"20.10.0"`).
-    /// Drift baseline capture should prefer `set_tool_with_installed`
-    /// so the concrete probed version is recorded and check-time
-    /// comparisons don't false-positive.
+    /// Drift baseline capture uses `set_tool_with_installed` in
+    /// production so the concrete probed version is recorded and
+    /// check-time comparisons don't false-positive; this convenience
+    /// form is retained for tests and future callers that don't have
+    /// an installed version to record.
+    #[allow(dead_code)]
     pub fn set_tool(&mut self, name: &str, version: &str, path: &Path, install_method: &str) {
         self.set_tool_with_installed(name, version, None, path, install_method);
     }
@@ -149,6 +158,13 @@ impl EnvironmentState {
     /// against `v` instead of the config constraint — this is the
     /// setup-time write path that avoids the "config says 'latest',
     /// probe returns '20.10.0'" false-positive loop.
+    ///
+    /// Does NOT update `updated_at` — that's stamped once at `save()`
+    /// time. Per-mutation timestamping caused a `format!` allocation
+    /// per tool + per file + per config hash (~30 wasted String
+    /// allocs per baseline write, immediately overwritten by the
+    /// next call — perf F3). The wire semantic is unchanged because
+    /// nothing reads `updated_at` between mutations.
     pub fn set_tool_with_installed(
         &mut self,
         name: &str,
@@ -166,26 +182,22 @@ impl EnvironmentState {
                 install_method: install_method.to_string(),
             },
         );
-        self.updated_at = current_timestamp();
     }
 
     /// Remove a tool from the state
     #[allow(dead_code)]
     pub fn remove_tool(&mut self, name: &str) {
         self.tools.remove(name);
-        self.updated_at = current_timestamp();
     }
 
     /// Add or update a tracked file hash
     pub fn set_file_hash(&mut self, path: &str, hash: &str) {
         self.files.insert(path.to_string(), hash.to_string());
-        self.updated_at = current_timestamp();
     }
 
     /// Set the config file hash
     pub fn set_config_hash(&mut self, hash: &str) {
         self.config_hash = hash.to_string();
-        self.updated_at = current_timestamp();
     }
 
     /// Get the number of tracked tools

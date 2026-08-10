@@ -213,14 +213,12 @@ pub fn run_setup(
                 .parent()
                 .unwrap_or(std::path::Path::new("."));
             if !crate::paths::state_json(project_dir).exists() {
-                let known_tools_for_baseline: Vec<(&String, &crate::config::Tool)> = tool_configs
-                    .iter()
-                    .filter(|(_, t)| tools::get_tool(&t.name).is_some())
-                    .collect();
                 capture_drift_baseline_borrowed(
                     project_dir,
                     std::path::Path::new(file),
-                    &known_tools_for_baseline,
+                    tool_configs
+                        .iter()
+                        .filter(|(_, t)| tools::get_tool(&t.name).is_some()),
                     &[],
                     /* auto = */ true,
                 );
@@ -2045,18 +2043,25 @@ fn capture_drift_baseline(
     track_files: &[String],
     auto: bool,
 ) {
-    let borrowed: Vec<(&String, &crate::config::Tool)> =
-        known_tools.iter().map(|(k, v)| (k, v)).collect();
-    capture_drift_baseline_borrowed(project_dir, config_path, &borrowed, track_files, auto)
+    // Feed the iterator directly — the previous throwaway Vec was
+    // one heap allocation + N pointer-pair writes per setup for no
+    // downstream reader (perf F2).
+    capture_drift_baseline_borrowed(
+        project_dir,
+        config_path,
+        known_tools.iter().map(|(k, v)| (k, v)),
+        track_files,
+        auto,
+    )
 }
 
 /// Borrow-based variant of `capture_drift_baseline` — lets the
 /// verify-only auto-baseline path filter `tool_configs` without
 /// deep-cloning every entry. Same on-disk output shape.
-fn capture_drift_baseline_borrowed(
+fn capture_drift_baseline_borrowed<'a>(
     project_dir: &std::path::Path,
     config_path: &std::path::Path,
-    known_tools: &[(&String, &crate::config::Tool)],
+    known_tools: impl IntoIterator<Item = (&'a String, &'a crate::config::Tool)>,
     track_files: &[String],
     auto: bool,
 ) {
