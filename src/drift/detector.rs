@@ -122,7 +122,18 @@ impl<'a> DriftDetector<'a> {
 
     /// Detect drift between expected and actual state
     pub fn detect(&self) -> Result<DriftReport, DriftError> {
-        use rayon::prelude::*;
+        self.detect_with_probe(get_tool_version)
+    }
+
+    /// Detect drift using a caller-supplied version probe. `detect()` calls
+    /// this with the production probe; tests and future callers that need
+    /// a different signal (recorded probe output, doctor-mode fixture)
+    /// call it directly. The compare loop is a pure function of
+    /// `(state, probe output)`, so the caller controls the input.
+    pub fn detect_with_probe<F>(&self, probe: F) -> Result<DriftReport, DriftError>
+    where
+        F: Fn(&str) -> Option<String> + Sync,
+    {
         let mut report = DriftReport {
             timestamp: current_timestamp(),
             status: DriftStatus::NoDrift,
@@ -151,27 +162,7 @@ impl<'a> DriftDetector<'a> {
             .keys()
             .filter(|n| !self.config.ignore_tools.contains(n))
             .collect();
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().ok();
-        let probed: std::collections::HashMap<String, Option<String>> = match pool {
-            Some(p) => p.install(|| {
-                probe_targets
-                    .par_iter()
-                    .map(|name| {
-                        let binary = crate::tools::spec::binary_for(name);
-                        ((*name).clone(), get_tool_version(binary))
-                    })
-                    .collect()
-            }),
-            // Rayon pool construction failure is exceedingly rare; the
-            // serial fallback keeps drift check functional in that case.
-            None => probe_targets
-                .iter()
-                .map(|name| {
-                    let binary = crate::tools::spec::binary_for(name);
-                    ((*name).clone(), get_tool_version(binary))
-                })
-                .collect(),
-        };
+        let probed = Self::dispatch_probes(&probe_targets, &probe);
 
         // Check each expected tool
         for (name, expected) in &self.expected_state.tools {
@@ -319,6 +310,42 @@ impl<'a> DriftDetector<'a> {
         }
 
         Ok(report)
+    }
+
+    /// Kept private so there is exactly one dispatch path; both branches
+    /// provably use the caller's `probe`, so a future refactor cannot
+    /// silently reintroduce the production probe on the fallback arm.
+    ///
+    /// n=4 matches the setup phase's parallelism convention per
+    /// CLAUDE.md. Compare/reporting stays serial in the caller so the
+    /// shared report mutation is single-threaded.
+    fn dispatch_probes<F>(
+        names: &[&String],
+        probe: &F,
+    ) -> std::collections::HashMap<String, Option<String>>
+    where
+        F: Fn(&str) -> Option<String> + Sync,
+    {
+        use rayon::prelude::*;
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().ok();
+        match pool {
+            Some(p) => p.install(|| {
+                names
+                    .par_iter()
+                    .map(|name| {
+                        let binary = crate::tools::spec::binary_for(name);
+                        ((*name).clone(), probe(binary))
+                    })
+                    .collect()
+            }),
+            None => names
+                .iter()
+                .map(|name| {
+                    let binary = crate::tools::spec::binary_for(name);
+                    ((*name).clone(), probe(binary))
+                })
+                .collect(),
+        }
     }
 }
 
@@ -470,6 +497,45 @@ mod tests {
         assert!(!is_auto_fixable("rust", "rustup"));
         assert!(!is_auto_fixable("node", "nvm"));
         assert!(!is_auto_fixable("python", "pyenv"));
+    }
+
+    /// Regression pin for parallel-review item 10: the compare loop
+    /// must be a pure function of (state, probe output). Same detector
+    /// instance, same expected state, only the probe closure differs;
+    /// flipping the probe from a mismatching version to a matching one
+    /// must flip the report from DriftDetected to NoDrift.
+    #[test]
+    fn detect_with_probe_idempotent_after_probe_flip() {
+        use super::super::config::{DriftConfig, VersionPolicy};
+        use super::super::state::{EnvironmentState, ToolState};
+
+        let mut state = EnvironmentState::new();
+        state.tools.insert(
+            "node".to_string(),
+            ToolState {
+                version: "^20".to_string(),
+                installed_version: Some("20.10.0".to_string()),
+                path: std::path::PathBuf::from("/usr/bin/node"),
+                install_method: "brew".to_string(),
+            },
+        );
+
+        let config = DriftConfig {
+            version_policy: VersionPolicy::Minor,
+            ..Default::default()
+        };
+        let tmp = tempfile::TempDir::new().unwrap();
+        let detector = DriftDetector::new(&config, &state, tmp.path());
+
+        let drifted = detector
+            .detect_with_probe(|_binary| Some("19.9.0".to_string()))
+            .unwrap();
+        assert_eq!(drifted.status, DriftStatus::DriftDetected);
+
+        let clean = detector
+            .detect_with_probe(|_binary| Some("20.10.0".to_string()))
+            .unwrap();
+        assert_eq!(clean.status, DriftStatus::NoDrift);
     }
 
     #[test]
