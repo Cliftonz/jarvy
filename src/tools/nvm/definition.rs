@@ -1,6 +1,6 @@
 #[cfg(target_os = "windows")]
 use crate::tools::common::has;
-use crate::tools::common::{InstallError, run};
+use crate::tools::common::{InstallContext, InstallError, run};
 use std::path::PathBuf;
 
 /// Shell-independent probe for an existing nvm installation.
@@ -91,7 +91,7 @@ fn install_windows() -> Result<(), InstallError> {
 }
 
 /// Registry adapter: allows tools::add("nvm", version) to dispatch here
-pub fn add_handler(min_hint: &str) -> Result<(), InstallError> {
+pub fn add_handler(min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     // nvm installation does not strictly adhere to semantic versions; installer installs latest stable.
     // We ignore provided hint for now and just ensure it's present.
     let _ = min_hint;

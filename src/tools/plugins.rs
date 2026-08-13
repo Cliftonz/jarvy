@@ -206,7 +206,10 @@ pub fn load_user_tools() -> usize {
 
 /// Stub handler that should never be invoked because `tools::add` checks the
 /// plugin registry first. Returns `Unsupported` if it ever is reached.
-fn plugin_install_handler_unreachable(_version: &str) -> Result<(), InstallError> {
+fn plugin_install_handler_unreachable(
+    _version: &str,
+    _ctx: &crate::tools::common::InstallContext,
+) -> Result<(), InstallError> {
     Err(InstallError::Parse(
         "plugin handler invoked without name dispatch (bug)",
     ))

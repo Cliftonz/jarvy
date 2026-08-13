@@ -359,7 +359,7 @@ pub fn run_ensure(config: &ShellInitConfig, force: bool, quiet: bool) -> Result<
             hint = %hint,
         );
 
-        match tools::add(name, hint) {
+        match tools::add(name, hint, &tools::common::InstallContext::none()) {
             Ok(_) => {
                 if !quiet {
                     eprintln!("jarvy ensure: {} installed", name);

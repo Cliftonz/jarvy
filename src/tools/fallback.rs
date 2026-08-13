@@ -173,7 +173,11 @@ fn ensure_toolchain(tool: &str, eco: FallbackEco) -> Result<bool, &'static str> 
         eco.command(),
         eco.toolchain_tool()
     );
-    if let Err(e) = crate::tools::registry::add(eco.toolchain_tool(), "latest") {
+    if let Err(e) = crate::tools::registry::add(
+        eco.toolchain_tool(),
+        "latest",
+        &crate::tools::common::InstallContext::none(),
+    ) {
         // Preserve the bounded root cause (`prereq_missing`,
         // `permission_required`, …) instead of flattening every
         // bootstrap failure to one opaque string.

@@ -8,9 +8,9 @@
 //! Windows, routed through `custom_install`.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 
-fn install_rust(_min_hint: &str) -> Result<(), InstallError> {
+fn install_rust(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     // Preserve the pre-migration `ensure()` acceptance: an existing
     // rustup (even with no default toolchain, so `rustc` isn't on PATH
     // and `ToolSpec::is_satisfied` returns false) means the toolchain

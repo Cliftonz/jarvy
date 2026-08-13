@@ -32,7 +32,10 @@ define_tool!(OLLAMA, {
     custom_install: install_ollama,
 });
 
-fn install_ollama(_min_hint: &str) -> Result<(), InstallError> {
+fn install_ollama(
+    _min_hint: &str,
+    _ctx: &crate::tools::common::InstallContext,
+) -> Result<(), InstallError> {
     // Check if already installed
     if has("ollama") {
         return Ok(());

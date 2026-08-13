@@ -27,6 +27,27 @@ use crate::services;
 use crate::setup::setup;
 use crate::telemetry;
 use crate::tools;
+use crate::tools::common::InstallContext;
+
+/// Build the per-invocation `InstallContext` for a tool from the
+/// project's `[provisioner]` entries. Looked up case-insensitively so
+/// mixed-case config keys still route through the same context. Falls
+/// back to `InstallContext::none()` when the caller's name doesn't
+/// match a configured tool (bootstrap paths, plugin dispatch).
+fn install_context_for(
+    name: &str,
+    tool_configs: &HashMap<String, crate::config::Tool>,
+) -> InstallContext {
+    let target = name.to_ascii_lowercase();
+    tool_configs
+        .values()
+        .find(|t| t.name.to_ascii_lowercase() == target)
+        .map(|t| InstallContext {
+            distribution: t.distribution.clone(),
+            fallback: t.fallback,
+        })
+        .unwrap_or_else(InstallContext::none)
+}
 
 /// Run the setup command
 #[allow(unsafe_code)] // SAFETY: env vars set at startup before spawning threads
@@ -168,23 +189,6 @@ pub fn run_setup(
         chatter!("Using role override: {}", role_name);
     }
     let tool_configs = config.get_tool_configs_with_role_override(role);
-
-    // Seed per-tool distribution/fallback overrides so tools whose
-    // install path is distribution-aware (today: `java`) can honor
-    // the user's selection without changing `tools::add`'s signature.
-    // Defaults (`distribution = None`, `fallback = true`) are the
-    // no-op case, so we only insert non-default entries.
-    for tool in tool_configs.values() {
-        if tool.distribution.is_some() || !tool.fallback {
-            tools::common::set_tool_override(
-                &tool.name,
-                tools::common::ToolOverride {
-                    distribution: tool.distribution.clone(),
-                    fallback: tool.fallback,
-                },
-            );
-        }
-    }
 
     // Emit full tool inventory for security audit via OTEL
     telemetry::setup_inventory(
@@ -591,7 +595,8 @@ pub fn run_setup(
                                 name, version
                             );
 
-                            match tools::add(name, version) {
+                            let ctx = install_context_for(name, &tool_configs);
+                            match tools::add(name, version, &ctx) {
                                 Ok(()) => {
                                     println!("Successfully installed {} ({})", name, version);
                                     // Round-2 obs F13: emit tool.installed
@@ -649,7 +654,8 @@ pub fn run_setup(
                         name, version
                     );
 
-                    match tools::add(name, version) {
+                    let ctx = install_context_for(name, &tool_configs);
+                    match tools::add(name, version, &ctx) {
                         Ok(()) => {
                             println!("Successfully installed {} ({})", name, version);
                             // Round-2 obs F13: same fix as the parallel path.

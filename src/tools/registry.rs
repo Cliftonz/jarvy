@@ -16,10 +16,10 @@
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 
-use crate::tools::common::InstallError;
+use crate::tools::common::{InstallContext, InstallError};
 
 /// Function signature for tool installation handlers.
-pub type ToolAdder = fn(version: &str) -> Result<(), InstallError>;
+pub type ToolAdder = fn(version: &str, ctx: &InstallContext) -> Result<(), InstallError>;
 
 /// Global registry mapping tool name -> handler.
 /// Keys are stored in lowercase for case-insensitive lookups.
@@ -91,7 +91,7 @@ pub fn registered_tool_names() -> Vec<String> {
 ///
 /// Returns `InstallError::Parse("unknown tool")` if neither has a handler.
 #[must_use = "this Result may contain an error that should be handled"]
-pub fn add(name: &str, version: &str) -> Result<(), InstallError> {
+pub fn add(name: &str, version: &str, ctx: &InstallContext) -> Result<(), InstallError> {
     // Plugins first: name-keyed dispatch is correct by construction.
     match crate::tools::plugins::install_by_name(name, version) {
         Ok(true) => return Ok(()),
@@ -104,7 +104,7 @@ pub fn add(name: &str, version: &str) -> Result<(), InstallError> {
     // this, `jarvy validate` accepts `nats-server` (alias) but
     // `jarvy setup` fails to install it.
     if let Some(handler) = get_tool(name) {
-        handler(version)
+        handler(version, ctx)
     } else {
         Err(InstallError::Parse("unknown tool"))
     }
@@ -114,7 +114,7 @@ pub fn add(name: &str, version: &str) -> Result<(), InstallError> {
 mod tests {
     use super::*;
 
-    fn dummy_handler(_version: &str) -> Result<(), InstallError> {
+    fn dummy_handler(_version: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
         Ok(())
     }
 
@@ -125,7 +125,7 @@ mod tests {
         let h = get_tool("testtool_get");
         assert!(h.is_some());
         let f = h.unwrap();
-        assert!(f("any").is_ok());
+        assert!(f("any", &InstallContext::none()).is_ok());
     }
 
     #[test]
@@ -171,8 +171,8 @@ impl Tool {
     }
 
     /// Invoke this tool's add/install logic for a given version hint
-    pub fn add(&self, version: &str) -> Result<(), InstallError> {
-        (self.handler)(version)
+    pub fn add(&self, version: &str, ctx: &InstallContext) -> Result<(), InstallError> {
+        (self.handler)(version, ctx)
     }
 }
 
@@ -195,7 +195,7 @@ pub fn get_tool_struct(name: &str) -> Option<Tool> {
 mod tests2 {
     use super::*;
 
-    fn dummy_struct_handler(_version: &str) -> Result<(), InstallError> {
+    fn dummy_struct_handler(_version: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
         Ok(())
     }
 
@@ -206,6 +206,6 @@ mod tests2 {
 
         let fetched = get_tool_struct("testtool_struct").expect("tool should be present");
         assert_eq!(fetched.name, "testtool_struct");
-        assert!(fetched.add("any").is_ok());
+        assert!(fetched.add("any", &InstallContext::none()).is_ok());
     }
 }

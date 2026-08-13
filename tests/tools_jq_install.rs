@@ -41,7 +41,7 @@ fn install_jq_only() {
     }
 
     // Attempt to install/ensure jq
-    match jarvy::tools::add("jq", "") {
+    match jarvy::tools::add("jq", "", &jarvy::tools::common::InstallContext::none()) {
         Ok(()) => {}
         Err(e) => panic!("jq install failed: {:?}", e),
     }

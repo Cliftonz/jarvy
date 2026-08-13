@@ -302,67 +302,32 @@ pub fn run_maybe_sudo_with_network(
     }
 }
 
-/// Per-tool override captured from `jarvy.toml` before the install
-/// loop runs. Only tools that opt into distribution routing (today:
-/// `java`) read this. Empty overrides fall back to the tool's
-/// declarative `[macos]/[linux]/[windows]` slots unchanged.
-#[derive(Clone, Debug)]
-pub struct ToolOverride {
+/// Runtime context threaded to each tool's install handler. Carries
+/// the per-install knobs that `Tool` collects from `jarvy.toml` but
+/// which the static `ToolSpec` cannot know at compile time.
+///
+/// Constructed once per `tools::add` call in the setup phase and
+/// passed by reference. Handlers that don't care about these fields
+/// simply ignore them.
+#[derive(Debug, Clone, Default)]
+pub struct InstallContext {
     /// Distribution / flavor selector (e.g. `"temurin"`, `"zulu"`).
-    /// `None` = no user preference; caller uses its default.
+    /// `None` = no user preference; handler uses its default.
     pub distribution: Option<String>,
     /// When `false`, refuse to fall back to the tool's default
     /// distribution if the requested one is unsupported on this OS.
-    /// Default `true` (matches `Config::Tool::fallback` default).
+    /// Default `true` via `InstallContext::none()`.
     pub fallback: bool,
 }
 
-impl ToolOverride {
-    pub const fn defaults() -> Self {
+impl InstallContext {
+    /// Default context — no distribution override, fallback enabled.
+    /// This is what plain scalar-form tools (`git = "latest"`) get.
+    pub const fn none() -> Self {
         Self {
             distribution: None,
             fallback: true,
         }
-    }
-}
-
-impl Default for ToolOverride {
-    fn default() -> Self {
-        Self::defaults()
-    }
-}
-
-fn tool_overrides() -> &'static std::sync::RwLock<std::collections::HashMap<String, ToolOverride>> {
-    static M: std::sync::OnceLock<
-        std::sync::RwLock<std::collections::HashMap<String, ToolOverride>>,
-    > = std::sync::OnceLock::new();
-    M.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
-}
-
-/// Register a per-tool override for the current process. Seeded by
-/// `setup_cmd` from `config.tools` before the install iteration begins.
-/// Names are lowercased to match `tools::registry` key semantics.
-pub fn set_tool_override(name: &str, ovr: ToolOverride) {
-    if let Ok(mut m) = tool_overrides().write() {
-        m.insert(name.to_ascii_lowercase(), ovr);
-    }
-}
-
-/// Look up the override for `name`. Returns `ToolOverride::defaults()`
-/// when nothing was registered — safe fallthrough for tools that don't
-/// use this mechanism.
-pub fn get_tool_override(name: &str) -> ToolOverride {
-    tool_overrides()
-        .read()
-        .ok()
-        .and_then(|m| m.get(&name.to_ascii_lowercase()).cloned())
-        .unwrap_or_else(ToolOverride::defaults)
-}
-
-#[cfg(test)]
-pub fn clear_tool_overrides_for_test() {
-    if let Ok(mut m) = tool_overrides().write() {
-        m.clear();
     }
 }
 

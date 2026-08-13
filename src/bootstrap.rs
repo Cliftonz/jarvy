@@ -1,11 +1,13 @@
 use crate::tools;
+use crate::tools::common::InstallContext;
 
 /// Install a configurable set of tools, registering the tool index first.
 pub fn bootstrap_tools(tasks: &[(&str, &str)]) {
     tools::register_all();
 
+    let ctx = InstallContext::none();
     for (name, hint) in tasks {
-        match tools::add(name, hint) {
+        match tools::add(name, hint, &ctx) {
             Ok(_) => println!("✅ {} is installed or now installed", name),
             Err(e) => eprintln!("⛔ {} install/ensure failed: {}", name, e),
         }

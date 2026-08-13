@@ -15,14 +15,14 @@
 //! respecting the upstream `Cargo.lock` for supply-chain integrity.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, install_via_cargo_install};
+use crate::tools::common::{InstallContext, InstallError, install_via_cargo_install};
 
 // Canonical publisher: Marco Ieni — <https://crates.io/crates/release-plz>.
 // Owner unchanged since v0.1. If a future ownership transfer lands,
 // re-verify the maintainer matches release-plz.dev before shipping
 // a bump — a hostile transfer would let a malicious binary reach
 // every Rust project whose wizard-run recommends release-plz.
-fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
+fn install_via_cargo(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     install_via_cargo_install("release-plz")
 }
 

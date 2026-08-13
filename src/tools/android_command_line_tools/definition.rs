@@ -62,7 +62,10 @@ define_tool!(ANDROID_COMMAND_LINE_TOOLS, {
     category: "mobile",
 });
 
-fn install_android_command_line_tools(_min_hint: &str) -> Result<(), InstallError> {
+fn install_android_command_line_tools(
+    _min_hint: &str,
+    _ctx: &crate::tools::common::InstallContext,
+) -> Result<(), InstallError> {
     if has("sdkmanager") {
         return Ok(());
     }

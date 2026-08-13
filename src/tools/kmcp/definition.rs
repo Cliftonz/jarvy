@@ -6,7 +6,7 @@
 //! This tool uses the ToolSpec pattern with a custom installer (no Homebrew formula).
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 use crate::tools::pinned_installer::PinnedInstaller;
 
 /// Pinned commit of `kagent-dev/kmcp`. Updating this constant is the only
@@ -27,7 +27,7 @@ define_tool!(KMCP, {
     depends_on: &["kubectl"],
 });
 
-fn install_kmcp(_min_hint: &str) -> Result<(), InstallError> {
+fn install_kmcp(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("kmcp") {
         return Ok(());
     }

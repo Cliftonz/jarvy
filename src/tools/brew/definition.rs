@@ -1,6 +1,6 @@
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::tools::common::run;
-use crate::tools::common::{InstallError, has};
+use crate::tools::common::{InstallContext, InstallError, has};
 
 /// Pinned commit of the Homebrew/install repo. Updating this constant is the
 /// only way Jarvy will pull a newer installer — no `master`/`HEAD` fetches
@@ -60,7 +60,7 @@ pub fn ensure(_min_hint: &str) -> Result<(), InstallError> {
 }
 
 /// Registry adapter: allows tools::add("brew", version) to dispatch here
-pub fn add_handler(min_hint: &str) -> Result<(), InstallError> {
+pub fn add_handler(min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     // brew does not have semantic versions for the CLI via package managers; ignore hint
     let _ = min_hint;
     ensure("")

@@ -8,14 +8,14 @@
 //! This tool requires Python and uses pip for installation.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 
 define_tool!(VLLM, {
     command: "vllm",
     custom_install: install_vllm,
 });
 
-fn install_vllm(_min_hint: &str) -> Result<(), InstallError> {
+fn install_vllm(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     // Check if already installed
     if has("vllm") {
         return Ok(());

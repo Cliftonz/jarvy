@@ -24,10 +24,10 @@
 //! };
 //! ```
 
-use super::common::{InstallError, PackageManager, cmd_satisfies, has, run};
+use super::common::{InstallContext, InstallError, PackageManager, cmd_satisfies, has, run};
 
 /// Type alias for tool handler functions registered in the registry.
-pub type ToolHandler = fn(&str) -> Result<(), InstallError>;
+pub type ToolHandler = fn(&str, &InstallContext) -> Result<(), InstallError>;
 
 /// A wrapper for tool registration data to enable inventory collection.
 /// This allows tools defined with `define_tool!` to be automatically discovered
@@ -198,7 +198,7 @@ impl BsdInstall {
 }
 
 /// Type alias for custom installation functions.
-pub type CustomInstallFn = fn(&str) -> Result<(), InstallError>;
+pub type CustomInstallFn = fn(&str, &InstallContext) -> Result<(), InstallError>;
 
 /// Default post-install hook configuration for a tool.
 ///
@@ -425,18 +425,18 @@ impl ToolSpec {
     /// This is the main entry point that replaces the boilerplate `ensure()` function
     /// in each tool file. It checks if the tool satisfies the requirement and installs
     /// if needed.
-    pub fn ensure(&self, min_hint: &str) -> Result<(), InstallError> {
+    pub fn ensure(&self, min_hint: &str, ctx: &InstallContext) -> Result<(), InstallError> {
         if self.is_satisfied(min_hint) {
             return Ok(());
         }
-        self.install(min_hint)
+        self.install(min_hint, ctx)
     }
 
     /// Install the tool using the appropriate method for the current platform.
-    fn install(&self, min_hint: &str) -> Result<(), InstallError> {
+    fn install(&self, min_hint: &str, ctx: &InstallContext) -> Result<(), InstallError> {
         // Custom installer takes precedence, then platform slots.
         let primary = if let Some(custom_fn) = self.custom_install {
-            custom_fn(min_hint)
+            custom_fn(min_hint, ctx)
         } else {
             self.install_platform()
         };
@@ -671,12 +671,15 @@ macro_rules! define_tool {
 
         #[allow(dead_code)] // Public API for tool installation
         pub fn ensure(min_hint: &str) -> Result<(), $crate::tools::common::InstallError> {
-            $name.ensure(min_hint)
+            $name.ensure(min_hint, &$crate::tools::common::InstallContext::none())
         }
 
         #[allow(dead_code)] // Used by inventory submission
-        pub fn add_handler(min_hint: &str) -> Result<(), $crate::tools::common::InstallError> {
-            $name.ensure(min_hint)
+        pub fn add_handler(
+            min_hint: &str,
+            ctx: &$crate::tools::common::InstallContext,
+        ) -> Result<(), $crate::tools::common::InstallError> {
+            $name.ensure(min_hint, ctx)
         }
 
         // Auto-register this tool with inventory (must be after handler definition)
@@ -2132,7 +2135,7 @@ mod tests {
             linux: None,
             windows: None,
             bsd: None,
-            custom_install: Some(|_| Ok(())),
+            custom_install: Some(|_, _| Ok(())),
             default_hook: None,
             depends_on: None,
             depends_on_one_of: None,

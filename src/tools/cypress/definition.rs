@@ -8,7 +8,7 @@
 //! Cypress binary itself).
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 
 define_tool!(CYPRESS, {
     command: "cypress",
@@ -17,7 +17,7 @@ define_tool!(CYPRESS, {
     category: "testing",
 });
 
-fn install_cypress(_min_hint: &str) -> Result<(), InstallError> {
+fn install_cypress(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("cypress") {
         return Ok(());
     }

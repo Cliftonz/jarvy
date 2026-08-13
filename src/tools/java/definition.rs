@@ -2,14 +2,14 @@
 //!
 //! Distribution-aware install path: honors `Tool.distribution`
 //! (`openjdk` / `temurin` / `zulu` / `corretto` / `liberica` /
-//! `microsoft-openjdk`) and `Tool.fallback` seeded by `setup_cmd` via
-//! `tools::common::set_tool_override`. On unsupported (distribution,
-//! OS) pairs the router warns and falls back to openjdk unless
-//! `fallback = false`, in which case it hard-errors via
+//! `microsoft-openjdk`) and `Tool.fallback` threaded through the
+//! `InstallContext` argument passed by `setup_cmd`. On unsupported
+//! (distribution, OS) pairs the router warns and falls back to openjdk
+//! unless `fallback = false`, in which case it hard-errors via
 //! `InstallError::Prereq`.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, get_tool_override, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 #[cfg(target_os = "linux")]
 use crate::tools::common::{PackageManager, require};
 
@@ -616,9 +616,8 @@ fn resolve_route(distro: JdkDistribution, ver: VersionSelector) -> InstallRoute 
     }
 }
 
-fn install_java(min_hint: &str) -> Result<(), InstallError> {
-    let ovr = get_tool_override("java");
-    let requested = ovr.distribution.as_deref().unwrap_or("openjdk");
+fn install_java(min_hint: &str, ctx: &InstallContext) -> Result<(), InstallError> {
+    let requested = ctx.distribution.as_deref().unwrap_or("openjdk");
 
     // Telemetry: `distribution` field is the parsed slug (bounded
     // enum) when parseable, else `openjdk` as the sentinel — matches
@@ -628,7 +627,7 @@ fn install_java(min_hint: &str) -> Result<(), InstallError> {
         .unwrap_or("openjdk");
     emit_distribution_selected(selected_slug, min_hint);
 
-    match decide(requested, min_hint, ovr.fallback) {
+    match decide(requested, min_hint, ctx.fallback) {
         Decision::RunRoute(route) => execute_route(route),
         Decision::FallbackToDefault { requested, reason } => {
             eprintln!("warn: {reason}. Falling back to openjdk.");

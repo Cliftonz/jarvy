@@ -156,6 +156,6 @@ fn add_handler_returns_a_result_without_panicking() {
         // Just call it; if it returns Ok or Err we're fine. The previous
         // assertion `is_ok() || is_err()` is provably trivially true and
         // was removed.
-        let _ = jarvy::tools::add(&name, "");
+        let _ = jarvy::tools::add(&name, "", &jarvy::tools::common::InstallContext::none());
     }
 }

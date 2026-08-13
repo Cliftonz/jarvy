@@ -9,9 +9,9 @@
 //! back to the platform slots unchanged.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, run};
+use crate::tools::common::{InstallContext, InstallError, run};
 
-fn install_node(min_hint: &str) -> Result<(), InstallError> {
+fn install_node(min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         if crate::tools::nvm::is_installed() {

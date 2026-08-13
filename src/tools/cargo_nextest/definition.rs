@@ -13,13 +13,13 @@
 //! established by `release-plz`.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, install_via_cargo_install};
+use crate::tools::common::{InstallContext, InstallError, install_via_cargo_install};
 
 // Canonical publisher: nextest-rs / Rain — <https://crates.io/crates/cargo-nextest>.
 // The nextest-rs GitHub org holds the crate; a future ownership
 // transfer would need re-verification. As of 2026-07 the crates.io
 // owner has not changed since v0.9.
-fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
+fn install_via_cargo(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     install_via_cargo_install("cargo-nextest")
 }
 

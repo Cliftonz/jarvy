@@ -142,10 +142,11 @@ impl DriftFixer {
     /// Install a tool using the tool registry
     fn install_tool(&self, tool_name: &str, version: &str) -> Result<(), String> {
         // Try to get the tool handler from the registry and run installation
+        use crate::tools::common::InstallContext;
         use crate::tools::registry::get_tool;
 
         if let Some(handler) = get_tool(tool_name) {
-            handler(version).map_err(|e| format!("{}", e))
+            handler(version, &InstallContext::none()).map_err(|e| format!("{}", e))
         } else {
             Err(format!("no handler found for tool '{}'", tool_name))
         }

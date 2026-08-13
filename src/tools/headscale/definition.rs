@@ -23,7 +23,7 @@ use crate::define_tool;
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 use crate::tools::common::run;
-use crate::tools::common::{InstallError, has};
+use crate::tools::common::{InstallContext, InstallError, has};
 #[cfg(all(
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -55,7 +55,7 @@ define_tool!(HEADSCALE, {
     category: "networking",
 });
 
-fn install_headscale(_min_hint: &str) -> Result<(), InstallError> {
+fn install_headscale(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("headscale") {
         return Ok(());
     }

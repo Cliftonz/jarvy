@@ -10,14 +10,16 @@
 //! slots don't model.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, Os, current_os, has, run, run_maybe_sudo};
+use crate::tools::common::{
+    InstallContext, InstallError, Os, current_os, has, run, run_maybe_sudo,
+};
 
 define_tool!(MICROK8S, {
     command: "microk8s",
     custom_install: install_microk8s,
 });
 
-fn install_microk8s(_min_hint: &str) -> Result<(), InstallError> {
+fn install_microk8s(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("microk8s") {
         return Ok(());
     }

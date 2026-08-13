@@ -10,7 +10,7 @@
 //! avoid a surprise multi-hundred-MB download during `jarvy setup`.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 
 define_tool!(PLAYWRIGHT, {
     command: "playwright",
@@ -19,7 +19,7 @@ define_tool!(PLAYWRIGHT, {
     category: "testing",
 });
 
-fn install_playwright(_min_hint: &str) -> Result<(), InstallError> {
+fn install_playwright(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("playwright") {
         return Ok(());
     }

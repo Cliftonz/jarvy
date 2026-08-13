@@ -9,7 +9,7 @@
 //! package; upstream distributes via https://get.k3s.io).
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, Os, current_os, has, run};
+use crate::tools::common::{InstallContext, InstallError, Os, current_os, has, run};
 use crate::tools::pinned_installer::PinnedInstaller;
 
 /// Pinned commit of `k3s-io/k3s` (tag `v1.36.2+k3s1`). Updating this constant
@@ -29,7 +29,7 @@ define_tool!(K3S, {
     custom_install: install_k3s,
 });
 
-fn install_k3s(_min_hint: &str) -> Result<(), InstallError> {
+fn install_k3s(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("k3s") {
         return Ok(());
     }

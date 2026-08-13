@@ -50,7 +50,10 @@ define_tool!(CURSOR, {
     custom_install: install_cursor,
 });
 
-fn install_cursor(_min_hint: &str) -> Result<(), InstallError> {
+fn install_cursor(
+    _min_hint: &str,
+    _ctx: &crate::tools::common::InstallContext,
+) -> Result<(), InstallError> {
     if has("cursor") {
         return Ok(());
     }

@@ -7,7 +7,7 @@
 //! This tool uses the ToolSpec pattern with a custom installer (no Homebrew formula).
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 use crate::tools::pinned_installer::PinnedInstaller;
 
 /// Pinned commit of `agentregistry-dev/agentregistry`. Updating this constant
@@ -27,7 +27,7 @@ define_tool!(ARCTL, {
     custom_install: install_arctl,
 });
 
-fn install_arctl(_min_hint: &str) -> Result<(), InstallError> {
+fn install_arctl(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("arctl") {
         return Ok(());
     }

@@ -11,14 +11,14 @@
 //! — every user has cargo by definition, so route uniformly.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, install_via_cargo_install};
+use crate::tools::common::{InstallContext, InstallError, install_via_cargo_install};
 
 // Canonical publisher: Denys Séguret / dystroy — <https://crates.io/crates/bacon>.
 // If the crates.io ownership changes upstream, revisit this pin: a
 // hostile transfer would ship a malicious binary the next time Jarvy
 // runs `cargo install --locked bacon` for a Rust project. As of
 // 2026-07 the owner is unchanged since the crate's first release.
-fn install_via_cargo(_min_hint: &str) -> Result<(), InstallError> {
+fn install_via_cargo(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     install_via_cargo_install("bacon")
 }
 

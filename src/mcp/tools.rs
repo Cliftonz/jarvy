@@ -613,7 +613,11 @@ pub fn handle_install_tool(
     let start = Instant::now();
     let version = params.version.as_deref().unwrap_or("latest");
 
-    match crate::tools::add(&params.name, version) {
+    match crate::tools::add(
+        &params.name,
+        version,
+        &crate::tools::common::InstallContext::none(),
+    ) {
         Ok(()) => {
             let duration_ms = start.elapsed().as_millis() as u64;
             let installed_version = get_installed_version(spec.command);

@@ -25,7 +25,7 @@
 //! This tool uses the ToolSpec pattern with a custom installer.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 #[cfg(target_os = "linux")]
 use crate::tools::pinned_binary_installer::TarballAppPin;
 
@@ -57,7 +57,7 @@ define_tool!(JETBRAINS_TOOLBOX, {
     custom_install: install_jetbrains_toolbox,
 });
 
-fn install_jetbrains_toolbox(_min_hint: &str) -> Result<(), InstallError> {
+fn install_jetbrains_toolbox(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     if has("jetbrains-toolbox") {
         return Ok(());
     }

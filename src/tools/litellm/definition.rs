@@ -7,14 +7,14 @@
 //! This tool requires Python and uses pip/pipx for installation.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallContext, InstallError, has, run};
 
 define_tool!(LITELLM, {
     command: "litellm",
     custom_install: install_litellm,
 });
 
-fn install_litellm(_min_hint: &str) -> Result<(), InstallError> {
+fn install_litellm(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     // Check if already installed
     if has("litellm") {
         return Ok(());
