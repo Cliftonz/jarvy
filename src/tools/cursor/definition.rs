@@ -62,7 +62,7 @@ fn install_cursor(
     {
         if !has("brew") {
             return Err(InstallError::Prereq(
-                "Homebrew not found. Install https://brew.sh and re-run.",
+                "Homebrew not found. Install https://brew.sh and re-run.".into(),
             ));
         }
         run("brew", &["install", "--cask", "cursor"])?;
@@ -93,7 +93,7 @@ fn install_cursor(
     {
         if !has("winget") {
             return Err(InstallError::Prereq(
-                "winget not found. Install Windows Package Manager, then re-run.",
+                "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
         run("winget", &["install", "-e", "--id", "Cursor.Cursor"])?;

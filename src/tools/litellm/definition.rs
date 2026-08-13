@@ -24,7 +24,7 @@ fn install_litellm(_min_hint: &str, _ctx: &InstallContext) -> Result<(), Install
     let has_python = has("python3") || has("python");
     if !has_python {
         return Err(InstallError::Prereq(
-            "Python not found. Install Python 3.9+ and re-run.",
+            "Python not found. Install Python 3.9+ and re-run.".into(),
         ));
     }
 
@@ -38,7 +38,8 @@ fn install_litellm(_min_hint: &str, _ctx: &InstallContext) -> Result<(), Install
     let pip_cmd = if has("pip3") { "pip3" } else { "pip" };
     if !has(pip_cmd) {
         return Err(InstallError::Prereq(
-            "pip not found. Install pip and re-run, or install pipx for isolated installation.",
+            "pip not found. Install pip and re-run, or install pipx for isolated installation."
+                .into(),
         ));
     }
 

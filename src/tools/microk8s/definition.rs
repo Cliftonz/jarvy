@@ -28,7 +28,7 @@ fn install_microk8s(_min_hint: &str, _ctx: &InstallContext) -> Result<(), Instal
         Os::Macos => {
             if !has("brew") {
                 return Err(InstallError::Prereq(
-                    "Homebrew not found. Install https://brew.sh and re-run.",
+                    "Homebrew not found. Install https://brew.sh and re-run.".into(),
                 ));
             }
             // Official Canonical tap (github.com/ubuntu/homebrew-microk8s).
@@ -41,7 +41,7 @@ fn install_microk8s(_min_hint: &str, _ctx: &InstallContext) -> Result<(), Instal
         Os::Linux => {
             if !has("snap") {
                 return Err(InstallError::Prereq(
-                    "snapd is required to install microk8s (https://snapcraft.io/docs/installing-snapd)",
+                    "snapd is required to install microk8s (https://snapcraft.io/docs/installing-snapd)".into(),
                 ));
             }
             let args = ["install", "microk8s", "--classic"];

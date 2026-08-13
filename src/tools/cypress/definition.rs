@@ -24,7 +24,7 @@ fn install_cypress(_min_hint: &str, _ctx: &InstallContext) -> Result<(), Install
 
     if !has("npm") {
         return Err(InstallError::Prereq(
-            "npm not found. Install Node.js (e.g. via nvm) and re-run.",
+            "npm not found. Install Node.js (e.g. via nvm) and re-run.".into(),
         ));
     }
 

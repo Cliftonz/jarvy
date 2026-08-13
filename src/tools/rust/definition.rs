@@ -35,7 +35,7 @@ fn install_rust(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallErr
     {
         if !has("winget") {
             return Err(InstallError::Prereq(
-                "winget not found. Install Windows Package Manager, then re-run.",
+                "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
         // Official rustup package ID

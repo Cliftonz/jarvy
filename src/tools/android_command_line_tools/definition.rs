@@ -78,12 +78,12 @@ fn install_android_command_line_tools(
     {
         if !has("curl") {
             return Err(InstallError::Prereq(
-                "curl is required to install Android command-line tools",
+                "curl is required to install Android command-line tools".into(),
             ));
         }
         if !has("unzip") {
             return Err(InstallError::Prereq(
-                "unzip is required to install Android command-line tools",
+                "unzip is required to install Android command-line tools".into(),
             ));
         }
         let script = unix_install_script(&url, artifact);

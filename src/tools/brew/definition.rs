@@ -102,7 +102,7 @@ fn install_linux() -> Result<(), InstallError> {
 fn install_pinned_brew() -> Result<(), InstallError> {
     if !brew_auto_install_allowed() {
         return Err(InstallError::Prereq(
-            "auto-install of brew is refused in CI; pre-install brew on the runner image",
+            "auto-install of brew is refused in CI; pre-install brew on the runner image".into(),
         ));
     }
     let script = pinned_homebrew_installer_command();

@@ -11,7 +11,7 @@ pub enum InstallError {
     #[error("unsupported platform")]
     Unsupported,
     #[error("prerequisite missing: {0}")]
-    Prereq(&'static str),
+    Prereq(std::borrow::Cow<'static, str>),
     #[error("invalid permissions: {0}")]
     InvalidPermissions(&'static str),
     #[error("command failed: {cmd} (code: {code:?})\n{stderr}")]
@@ -165,14 +165,14 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
     // Integration tests can opt-in via JARVY_FAST_TEST; unit tests default to skip unless explicitly overridden.
     if std::env::var_os("JARVY_FAST_TEST").is_some() {
         return Err(InstallError::Prereq(
-            "skipped external command in fast test mode",
+            "skipped external command in fast test mode".into(),
         ));
     }
     #[cfg(test)]
     {
         if std::env::var_os("JARVY_RUN_EXTERNAL_CMDS_IN_TEST").is_none() {
             return Err(InstallError::Prereq(
-                "external commands disabled during unit tests",
+                "external commands disabled during unit tests".into(),
             ));
         }
     }
@@ -180,7 +180,7 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
     let out = Command::new(cmd).args(args).output().map_err(|e| {
         use std::io::ErrorKind::*;
         match e.kind() {
-            NotFound => InstallError::Prereq("required command not found on PATH"),
+            NotFound => InstallError::Prereq("required command not found on PATH".into()),
             PermissionDenied => {
                 InstallError::InvalidPermissions("operation requires elevated privileges")
             }
@@ -213,14 +213,14 @@ pub fn run_with_network(
     // Fast, deterministic tests: allow skipping external command execution.
     if std::env::var_os("JARVY_FAST_TEST").is_some() {
         return Err(InstallError::Prereq(
-            "skipped external command in fast test mode",
+            "skipped external command in fast test mode".into(),
         ));
     }
     #[cfg(test)]
     {
         if std::env::var_os("JARVY_RUN_EXTERNAL_CMDS_IN_TEST").is_none() {
             return Err(InstallError::Prereq(
-                "external commands disabled during unit tests",
+                "external commands disabled during unit tests".into(),
             ));
         }
     }
@@ -236,7 +236,7 @@ pub fn run_with_network(
     let out = command.output().map_err(|e| {
         use std::io::ErrorKind::*;
         match e.kind() {
-            NotFound => InstallError::Prereq("required command not found on PATH"),
+            NotFound => InstallError::Prereq("required command not found on PATH".into()),
             PermissionDenied => {
                 InstallError::InvalidPermissions("operation requires elevated privileges")
             }
@@ -506,7 +506,7 @@ pub(crate) const RUST_TOOLCHAIN_MISSING_HINT: &str = "cargo not found — instal
 /// with any other cargo-dependent tool that adopts the helper later.
 pub fn install_via_cargo_install(crate_name: &'static str) -> Result<(), InstallError> {
     if !has("cargo") {
-        return Err(InstallError::Prereq(RUST_TOOLCHAIN_MISSING_HINT));
+        return Err(InstallError::Prereq(RUST_TOOLCHAIN_MISSING_HINT.into()));
     }
     let args = cargo_install_argv(crate_name);
     run("cargo", &args)?;
@@ -543,7 +543,7 @@ pub fn require(cmd: &str, remediation: &'static str) -> Result<(), InstallError>
     if has(cmd) {
         Ok(())
     } else {
-        Err(InstallError::Prereq(remediation))
+        Err(InstallError::Prereq(remediation.into()))
     }
 }
 
@@ -557,7 +557,7 @@ pub fn require_any<'a>(
             return Ok(*c);
         }
     }
-    Err(InstallError::Prereq(remediation))
+    Err(InstallError::Prereq(remediation.into()))
 }
 
 /// Process-wide cache of `<cmd> --version` stdout. Probing version is
@@ -762,7 +762,7 @@ mod install_error_kind_tests {
 
     #[test]
     fn prereq_is_classified_as_prereq_missing() {
-        let e = InstallError::Prereq("Homebrew not found");
+        let e = InstallError::Prereq("Homebrew not found".into());
         assert_eq!(e.kind(), "prereq_missing");
         assert!(!e.is_no_platform_installer());
     }

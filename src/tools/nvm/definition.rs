@@ -79,7 +79,7 @@ fn install_posix() -> Result<(), InstallError> {
 fn install_windows() -> Result<(), InstallError> {
     if !has("winget") {
         return Err(InstallError::Prereq(
-            "winget not found. Install Windows Package Manager, then re-run.",
+            "winget not found. Install Windows Package Manager, then re-run.".into(),
         ));
     }
     // NVM for Windows official package ID

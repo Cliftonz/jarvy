@@ -483,7 +483,7 @@ impl ToolSpec {
         if let Some(cask_name) = macos.cask {
             if !has("brew") {
                 return Err(InstallError::Prereq(
-                    "Homebrew not found. Install https://brew.sh and re-run.",
+                    "Homebrew not found. Install https://brew.sh and re-run.".into(),
                 ));
             }
             run("brew", &["install", "--cask", cask_name])?;
@@ -494,7 +494,7 @@ impl ToolSpec {
         if let Some(formula) = macos.brew {
             if !has("brew") {
                 return Err(InstallError::Prereq(
-                    "Homebrew not found. Install https://brew.sh and re-run.",
+                    "Homebrew not found. Install https://brew.sh and re-run.".into(),
                 ));
             }
             // Recent Homebrew versions refuse third-party tap formulae
@@ -544,7 +544,8 @@ impl ToolSpec {
         }
 
         Err(InstallError::Prereq(
-            "No supported Linux package manager on PATH (apt/dnf/yum/zypper/pacman/apk/brew)",
+            "No supported Linux package manager on PATH (apt/dnf/yum/zypper/pacman/apk/brew)"
+                .into(),
         ))
     }
 
@@ -571,11 +572,11 @@ impl ToolSpec {
         // Neither package manager available
         if windows.winget.is_some() {
             Err(InstallError::Prereq(
-                "winget not found. Install Windows Package Manager, then re-run.",
+                "winget not found. Install Windows Package Manager, then re-run.".into(),
             ))
         } else {
             Err(InstallError::Prereq(
-                "chocolatey not found. Install Chocolatey, then re-run.",
+                "chocolatey not found. Install Chocolatey, then re-run.".into(),
             ))
         }
     }
@@ -594,7 +595,7 @@ impl ToolSpec {
         }
 
         Err(InstallError::Prereq(
-            "No supported BSD package manager on PATH (pkg)",
+            "No supported BSD package manager on PATH (pkg)".into(),
         ))
     }
 }

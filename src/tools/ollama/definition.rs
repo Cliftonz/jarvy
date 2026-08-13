@@ -45,7 +45,7 @@ fn install_ollama(
     {
         if !has("brew") {
             return Err(InstallError::Prereq(
-                "Homebrew not found. Install https://brew.sh and re-run.",
+                "Homebrew not found. Install https://brew.sh and re-run.".into(),
             ));
         }
         run("brew", &["install", "ollama"])?;
@@ -79,7 +79,7 @@ fn install_ollama(
     {
         if !has("winget") {
             return Err(InstallError::Prereq(
-                "winget not found. Install Windows Package Manager, then re-run.",
+                "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
         run("winget", &["install", "-e", "--id", "Ollama.Ollama"])?;

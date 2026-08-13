@@ -26,7 +26,7 @@ fn install_playwright(_min_hint: &str, _ctx: &InstallContext) -> Result<(), Inst
 
     if !has("npm") {
         return Err(InstallError::Prereq(
-            "npm not found. Install Node.js (e.g. via nvm) and re-run.",
+            "npm not found. Install Node.js (e.g. via nvm) and re-run.".into(),
         ));
     }
 

@@ -25,7 +25,7 @@ fn install_vllm(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallErr
     let has_python = has("python3") || has("python");
     if !has_python {
         return Err(InstallError::Prereq(
-            "Python not found. Install Python 3.10+ and re-run.",
+            "Python not found. Install Python 3.10+ and re-run.".into(),
         ));
     }
 
@@ -33,7 +33,7 @@ fn install_vllm(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallErr
     let pip_cmd = if has("pip3") { "pip3" } else { "pip" };
     if !has(pip_cmd) {
         return Err(InstallError::Prereq(
-            "pip not found. Install pip and re-run.",
+            "pip not found. Install pip and re-run.".into(),
         ));
     }
 

@@ -421,7 +421,7 @@ fn bootstrap_apt_repo(repo: &VendorRepo) -> Result<(), InstallError> {
     let codename = codename_raw.trim();
     if !is_valid_debian_codename(codename) {
         return Err(InstallError::Prereq(
-            "lsb_release returned a codename with unexpected characters; refusing to bootstrap vendor repo",
+            "lsb_release returned a codename with unexpected characters; refusing to bootstrap vendor repo".into(),
         ));
     }
 
@@ -636,13 +636,9 @@ fn install_java(min_hint: &str, ctx: &InstallContext) -> Result<(), InstallError
         }
         Decision::Refuse { requested, reason } => {
             emit_distribution_fallback(&requested, false, &reason);
-            // `InstallError::Prereq` carries a `&'static str`; leak
-            // the owned message so the discriminant + operator-facing
-            // hint survive without inventing a new error variant.
-            let msg = format!(
+            Err(InstallError::Prereq(std::borrow::Cow::Owned(format!(
                 "Java distribution '{requested}' is not supported on this OS and fallback = false: {reason}"
-            );
-            Err(InstallError::Prereq(Box::leak(msg.into_boxed_str())))
+            ))))
         }
     }
 }
@@ -724,7 +720,7 @@ fn execute_route(route: InstallRoute) -> Result<(), InstallError> {
 fn brew_install(args: &[&str]) -> Result<(), InstallError> {
     if !has("brew") {
         return Err(InstallError::Prereq(
-            "Homebrew not found. Install https://brew.sh and re-run.",
+            "Homebrew not found. Install https://brew.sh and re-run.".into(),
         ));
     }
     run("brew", args)?;
@@ -746,7 +742,7 @@ fn dnf_install(pkg: &str) -> Result<(), InstallError> {
 fn winget_install(id: &str) -> Result<(), InstallError> {
     if !has("winget") {
         return Err(InstallError::Prereq(
-            "winget not found. Install Windows Package Manager, then re-run.",
+            "winget not found. Install Windows Package Manager, then re-run.".into(),
         ));
     }
     run("winget", &["install", "-e", "--id", id])?;
@@ -756,7 +752,7 @@ fn winget_install(id: &str) -> Result<(), InstallError> {
 fn choco_install(id: &str) -> Result<(), InstallError> {
     if !has("choco") {
         return Err(InstallError::Prereq(
-            "chocolatey not found. Install Chocolatey, then re-run.",
+            "chocolatey not found. Install Chocolatey, then re-run.".into(),
         ));
     }
     run("choco", &["install", "-y", id])?;
