@@ -169,6 +169,23 @@ pub fn run_setup(
     }
     let tool_configs = config.get_tool_configs_with_role_override(role);
 
+    // Seed per-tool distribution/fallback overrides so tools whose
+    // install path is distribution-aware (today: `java`) can honor
+    // the user's selection without changing `tools::add`'s signature.
+    // Defaults (`distribution = None`, `fallback = true`) are the
+    // no-op case, so we only insert non-default entries.
+    for (_key, tool) in &tool_configs {
+        if tool.distribution.is_some() || !tool.fallback {
+            tools::common::set_tool_override(
+                &tool.name,
+                tools::common::ToolOverride {
+                    distribution: tool.distribution.clone(),
+                    fallback: tool.fallback,
+                },
+            );
+        }
+    }
+
     // Emit full tool inventory for security audit via OTEL
     telemetry::setup_inventory(
         &tool_configs
