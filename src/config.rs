@@ -17,6 +17,21 @@ pub const DEFAULT_HOOK_TIMEOUT: u64 = 300;
 // Environment Variable Configuration
 // ============================================================================
 
+/// Where a PATH-like value is inserted relative to the existing entry.
+///
+/// Defaults to `Prepend` so a fresh `NODE_PATH = { value = "...", append = true }`
+/// keeps the historical "your value wins" precedence semantics; explicit
+/// `position = "append"` opts into POSIX-style tail insertion.
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PathPosition {
+    /// Insert before the existing value (default; shadows same-named earlier entries).
+    #[default]
+    Prepend,
+    /// Insert after the existing value (POSIX PATH append semantics).
+    Append,
+}
+
 /// Environment variable value - can be simple string or complex with options
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(untagged)]
@@ -31,6 +46,10 @@ pub enum EnvValue {
         /// Whether to append to existing PATH-like variables
         #[serde(default)]
         append: bool,
+        /// Where to insert the value in a PATH-like variable (prepend | append).
+        /// Only meaningful when `append = true`; ignored otherwise.
+        #[serde(default)]
+        position: PathPosition,
         /// Whether this is per-tool (prefixed with tool name context)
         #[serde(default)]
         per_tool: bool,
@@ -56,6 +75,56 @@ impl EnvValue {
             EnvValue::Simple(_) => false,
         }
     }
+
+    /// PATH-insertion position for this value. Returns `Prepend` for
+    /// `Simple` variants (harmless since simple values do not append).
+    #[allow(dead_code)] // Consumed by shell rc writer in a separate lane
+    pub fn position(&self) -> PathPosition {
+        match self {
+            EnvValue::Complex { position, .. } => *position,
+            EnvValue::Simple(_) => PathPosition::Prepend,
+        }
+    }
+}
+
+/// Environment variable keys that are historically colon-separated lists
+/// where `append = true` has meaning. Exact-match set; suffix rules
+/// (`*PATH`, `*PATHS`, `*DIRS`) extend it. Comparisons are case-insensitive.
+pub(crate) const PATH_LIKE_EXACT_KEYS: &[&str] =
+    &["PATH", "MANPATH", "INFOPATH", "CDPATH", "CLASSPATH"];
+
+/// Returns true when `key` names a PATH-like environment variable that
+/// supports `append = true` semantics. Case-insensitive. See
+/// [`PATH_LIKE_EXACT_KEYS`] for the exact-match set; suffix rules match
+/// `*PATH`, `*PATHS`, or `*DIRS`.
+pub(crate) fn is_path_like_key(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    if PATH_LIKE_EXACT_KEYS.iter().any(|k| *k == upper) {
+        return true;
+    }
+    upper.ends_with("PATH") || upper.ends_with("PATHS") || upper.ends_with("DIRS")
+}
+
+/// Errors surfaced by post-parse `Config` validation.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error(
+        "env var `{key}` uses append = true but is not path-like (allowed: PATH, MANPATH, INFOPATH, CDPATH, CLASSPATH, or *PATH/*PATHS/*DIRS suffix)"
+    )]
+    EnvAppendOnNonPathKey { key: String },
+}
+
+/// Refuses `append = true` on `[env.vars]` entries whose key is not
+/// PATH-like. `[env.secrets]` uses a different value type (no `append`
+/// field) and is not checked. Per-tool `[env.<tool>]` vars are also
+/// currently not checked (see doer report note).
+pub(crate) fn validate_env_append_keys(env: &EnvConfig) -> Result<(), ConfigError> {
+    for (key, value) in &env.vars {
+        if value.should_append() && !is_path_like_key(key) {
+            return Err(ConfigError::EnvAppendOnNonPathKey { key: key.clone() });
+        }
+    }
+    Ok(())
 }
 
 /// Secret variable configuration
@@ -759,6 +828,11 @@ impl Config {
 
         match merged.try_into::<Config>() {
             Ok(config) => {
+                if let Err(e) = validate_env_append_keys(&config.env) {
+                    telemetry::config_parse_error(config_path, &e.to_string());
+                    println!("Invalid config: {}", e);
+                    process::exit(crate::error_codes::CONFIG_ERROR);
+                }
                 telemetry::config_loaded(
                     config_path,
                     config.tools.len(),
@@ -852,6 +926,11 @@ impl Config {
 
         match merged.try_into::<Config>() {
             Ok(config) => {
+                if let Err(e) = validate_env_append_keys(&config.env) {
+                    telemetry::config_parse_error(config_path, &e.to_string());
+                    println!("Invalid config: {}", e);
+                    process::exit(crate::error_codes::CONFIG_ERROR);
+                }
                 tracing::info!(
                     event = "workspace.config_merged",
                     member = ctx.current_member.as_deref().unwrap_or(""),
@@ -1958,7 +2037,7 @@ start_in_ci = false
     // had zero unit-level coverage of these shapes.
     // ====================================================================
 
-    #[derive(Deserialize)]
+    #[derive(Deserialize, Debug)]
     struct EnvWrap {
         value: EnvValue,
     }
@@ -2001,6 +2080,148 @@ start_in_ci = false
             }
             EnvValue::Simple(_) => panic!("expected Complex variant"),
         }
+    }
+
+    // ====================================================================
+    // PathPosition + append-key validation (behavior spec).
+    //
+    // Locks in prepend-default semantics and refuses `append = true` on
+    // keys that are not colon-separated PATH-like lists. Adding a new
+    // exact key or suffix rule must land alongside a matching case here.
+    // ====================================================================
+
+    #[test]
+    fn env_value_default_position_is_prepend() {
+        // Arrange: append flag set, position field omitted.
+        let v = parse_env(
+            r#"
+            [value]
+            value = "/x"
+            append = true
+            "#,
+        );
+
+        // Act + Assert: default lands as Prepend.
+        assert_eq!(v.position(), PathPosition::Prepend);
+    }
+
+    #[test]
+    fn env_value_explicit_position_append() {
+        let v = parse_env(
+            r#"
+            [value]
+            value = "/x"
+            append = true
+            position = "append"
+            "#,
+        );
+
+        assert_eq!(v.position(), PathPosition::Append);
+    }
+
+    #[test]
+    fn env_value_explicit_position_prepend() {
+        let v = parse_env(
+            r#"
+            [value]
+            value = "/x"
+            append = true
+            position = "prepend"
+            "#,
+        );
+
+        assert_eq!(v.position(), PathPosition::Prepend);
+    }
+
+    #[test]
+    fn env_value_invalid_position_rejected() {
+        let toml_text = r#"
+            [value]
+            value = "/x"
+            append = true
+            position = "middle"
+            "#;
+
+        let err = toml::from_str::<EnvWrap>(toml_text)
+            .expect_err("position = \"middle\" must be refused by serde");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("middle") || msg.contains("variant") || msg.contains("unknown"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn is_path_like_key_positive() {
+        let cases: &[&str] = &[
+            "PATH",
+            "MANPATH",
+            "NODE_PATH",
+            "PYTHONPATH",
+            "LD_LIBRARY_PATH",
+            "MY_DIRS",
+            "EXTRA_PATHS",
+            "path",
+            "NodePath",
+        ];
+        for key in cases {
+            assert!(is_path_like_key(key), "expected `{key}` to be path-like");
+        }
+    }
+
+    #[test]
+    fn is_path_like_key_negative() {
+        let cases: &[&str] = &["EDITOR", "LANG", "ANDROID_HOME", "JAVA_HOME"];
+        for key in cases {
+            assert!(
+                !is_path_like_key(key),
+                "expected `{key}` to NOT be path-like"
+            );
+        }
+    }
+
+    #[test]
+    fn env_append_on_non_path_key_rejected() {
+        // Arrange: EDITOR is a single value, not a colon-list — append
+        // has no defined semantics for it.
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+
+[env.vars]
+EDITOR = { value = "vim", append = true }
+"#;
+        let config: Config =
+            toml::from_str(toml_str).expect("toml parse should succeed; validation is separate");
+
+        // Act
+        let err = validate_env_append_keys(&config.env)
+            .expect_err("validator must reject append on non-path key");
+
+        // Assert: error message names the offending key.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("EDITOR"),
+            "error message must name the offending key `EDITOR`: got {msg}"
+        );
+        assert!(matches!(
+            err,
+            ConfigError::EnvAppendOnNonPathKey { ref key } if key == "EDITOR"
+        ));
+    }
+
+    #[test]
+    fn env_append_on_path_key_accepted() {
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+
+[env.vars]
+PATH = { value = "/opt/bin", append = true }
+"#;
+        let config: Config = toml::from_str(toml_str).expect("toml parse should succeed");
+
+        validate_env_append_keys(&config.env).expect("PATH is path-like; append must be accepted");
     }
 
     #[derive(Deserialize)]
