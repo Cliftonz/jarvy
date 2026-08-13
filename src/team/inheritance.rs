@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use super::Extends;
 use super::cache::ConfigCache;
-use crate::config::{Config, EnvConfig, HooksConfig, ServicesConfig, ToolConfig, ToolHooks};
+use crate::config::{EnvConfig, HooksConfig, ServicesConfig, ToolConfig, ToolHooks};
 
 /// Maximum inheritance depth to prevent stack overflow
 pub const MAX_DEPTH: usize = 10;
@@ -136,48 +136,6 @@ impl ExtendedConfig {
             source: "<string>".to_string(),
             error: e.to_string(),
         })
-    }
-
-    /// Convert to standard Config (loses extends field)
-    pub fn into_config(self) -> Config {
-        // Create a TOML string and parse it as Config
-        // This is a workaround since Config doesn't have public constructors
-        let mut toml_content = String::new();
-
-        // Write provisioner section
-        toml_content.push_str("[provisioner]\n");
-        for (name, config) in &self.tools {
-            match config {
-                ToolConfig::Simple(v) => {
-                    toml_content.push_str(&format!("{} = \"{}\"\n", name, v));
-                }
-                ToolConfig::Detailed {
-                    version,
-                    version_manager,
-                    use_sudo,
-                    distribution,
-                    fallback,
-                } => {
-                    toml_content.push_str(&format!("{} = {{ version = \"{}\"", name, version));
-                    if let Some(vm) = version_manager {
-                        toml_content.push_str(&format!(", version_manager = {}", vm));
-                    }
-                    if let Some(sudo) = use_sudo {
-                        toml_content.push_str(&format!(", use_sudo = {}", sudo));
-                    }
-                    if let Some(dist) = distribution {
-                        toml_content.push_str(&format!(", distribution = \"{}\"", dist));
-                    }
-                    if !fallback {
-                        toml_content.push_str(", fallback = false");
-                    }
-                    toml_content.push_str(" }\n");
-                }
-            }
-        }
-
-        // For now, just parse a minimal config - hooks/env/services handled separately
-        toml::from_str(&toml_content).unwrap_or_else(|_| toml::from_str("[provisioner]\n").unwrap())
     }
 }
 
@@ -390,7 +348,22 @@ impl InheritanceResolver {
         })
     }
 
-    /// Load a remote config with caching
+    /// Load a remote config with caching.
+    ///
+    /// **Trust invariant.** Any node in the extends chain reached via
+    /// this function is remote-origin. `ExtendedConfig` does not carry
+    /// an origin field today because no code path converts it back to
+    /// a full `Config` (`ExtendedConfig::into_config` was removed as
+    /// unused + inject-unsafe). If a future change re-introduces a
+    /// bridge from `ExtendedConfig` to `Config`, that bridge MUST call
+    /// `Config::mark_remote()` whenever `trace.network_fetches` is
+    /// non-empty. Otherwise the per-subsystem trust gates
+    /// (`[ai_hooks] allow_custom_commands`, `[mcp_register]
+    /// allow_custom_servers`, `[packages] allow_remote`,
+    /// `[git_hooks] allow_remote`, `[dotfiles] allow_remote`,
+    /// `[maintenance] allow_remote`, `[git] allow_remote`) will fire
+    /// against `ConfigOrigin::Local` and a hostile remote extends
+    /// bypasses them.
     fn load_remote_config(&self, url: &str) -> Result<(String, bool)> {
         // Check cache first
         if let Some(cached) = self.cache.get(url) {

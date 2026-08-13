@@ -98,11 +98,30 @@ pub(crate) const PATH_LIKE_EXACT_KEYS: &[&str] =
 /// [`PATH_LIKE_EXACT_KEYS`] for the exact-match set; suffix rules match
 /// `*PATH`, `*PATHS`, or `*DIRS`.
 pub(crate) fn is_path_like_key(key: &str) -> bool {
-    let upper = key.to_ascii_uppercase();
-    if PATH_LIKE_EXACT_KEYS.iter().any(|k| *k == upper) {
+    // Zero-alloc: compare against the exact-key set case-insensitively
+    // and match the suffix set on the raw bytes. Previous impl allocated
+    // a String via `to_ascii_uppercase()` on every hot-path env-var read.
+    // Defense-in-depth: reject any control-byte-bearing key even though
+    // upstream env-name validation should already gate them.
+    if key.bytes().any(|b| b.is_ascii_control() || b == 0) {
+        return false;
+    }
+    if PATH_LIKE_EXACT_KEYS
+        .iter()
+        .any(|k| k.eq_ignore_ascii_case(key))
+    {
         return true;
     }
-    upper.ends_with("PATH") || upper.ends_with("PATHS") || upper.ends_with("DIRS")
+    let bytes = key.as_bytes();
+    for suffix in [b"PATH".as_slice(), b"PATHS", b"DIRS"] {
+        if bytes.len() >= suffix.len() {
+            let tail = &bytes[bytes.len() - suffix.len()..];
+            if tail.eq_ignore_ascii_case(suffix) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Errors surfaced by post-parse `Config` validation.
@@ -111,7 +130,15 @@ pub enum ConfigError {
     #[error(
         "env var `{key}` uses append = true but is not path-like (allowed: PATH, MANPATH, INFOPATH, CDPATH, CLASSPATH, or *PATH/*PATHS/*DIRS suffix)"
     )]
-    EnvAppendOnNonPathKey { key: String },
+    EnvAppendOnNonPathKey {
+        key: String,
+        /// True when the violation originated in a `[env.<tool>]`
+        /// per-tool section; false for top-level `[env.vars]`. Used by
+        /// the telemetry emit site so `config.env.append_refused`
+        /// carries a bounded `context` label without parsing the
+        /// user-authored key text.
+        per_tool: bool,
+    },
 }
 
 /// Refuses `append = true` on `[env.vars]` and `[env.<tool>]` entries
@@ -122,7 +149,10 @@ pub enum ConfigError {
 pub(crate) fn validate_env_append_keys(env: &EnvConfig) -> Result<(), ConfigError> {
     for (key, value) in &env.vars {
         if value.should_append() && !is_path_like_key(key) {
-            return Err(ConfigError::EnvAppendOnNonPathKey { key: key.clone() });
+            return Err(ConfigError::EnvAppendOnNonPathKey {
+                key: key.clone(),
+                per_tool: false,
+            });
         }
     }
     for (tool, cfg) in &env.tool_env {
@@ -130,6 +160,7 @@ pub(crate) fn validate_env_append_keys(env: &EnvConfig) -> Result<(), ConfigErro
             if value.should_append() && !is_path_like_key(key) {
                 return Err(ConfigError::EnvAppendOnNonPathKey {
                     key: format!("[env.{tool}] {key}"),
+                    per_tool: true,
                 });
             }
         }
@@ -812,6 +843,42 @@ impl Config {
         tag(&mut self.git_hooks, ConfigOrigin::Remote);
         tag(&mut self.dotfiles, ConfigOrigin::Remote);
         tag(&mut self.maintenance, ConfigOrigin::Remote);
+
+        // Security F1: remote configs cannot silently route a tool
+        // install through a specific vendor distribution (e.g. force
+        // `java` through a hostile `distribution = "vendor-x"` that
+        // ships an alternate GPG keyring). Strip `distribution` and
+        // force `fallback = true` on every `[provisioner]` entry AND
+        // every `[roles.*.tools]` detailed spec — the remote-origin
+        // config can still pin a version, but the distribution slot
+        // resolves to the tool's built-in default. `Simple(_)` forms
+        // have no distribution field, so nothing to strip.
+        for tool in self.tools.values_mut() {
+            if let ToolConfig::Detailed {
+                distribution,
+                fallback,
+                ..
+            } = tool
+            {
+                *distribution = None;
+                *fallback = true;
+            }
+        }
+        for wrapper in self.roles_config.roles.values_mut() {
+            if let Some(map) = wrapper.tool_versions_mut() {
+                for spec in map.values_mut() {
+                    if let crate::roles::definition::RoleToolSpec::Detailed {
+                        distribution,
+                        fallback,
+                        ..
+                    } = spec
+                    {
+                        *distribution = None;
+                        *fallback = Some(true);
+                    }
+                }
+            }
+        }
         // `[agents.profiles]` is stripped outright rather than tagged:
         // a hostile remote config suggesting a profile switch is a
         // credential-redirection primitive, and there is no consumer
@@ -840,7 +907,7 @@ impl Config {
             Ok(content) => content,
             Err(e) => {
                 telemetry::config_parse_error(config_path, &e.to_string());
-                println!("Failed to read config file at: {}", config_path);
+                eprintln!("Failed to read config file at: {}", config_path);
                 process::exit(crate::error_codes::CONFIG_ERROR);
             }
         };
@@ -854,7 +921,7 @@ impl Config {
             Ok(v) => v,
             Err(e) => {
                 telemetry::config_parse_error(config_path, &e.to_string());
-                println!("Failed to parse config file: {}", e);
+                eprintln!("Failed to parse config file: {}", e);
                 process::exit(crate::error_codes::CONFIG_ERROR);
             }
         };
@@ -863,8 +930,15 @@ impl Config {
         match merged.try_into::<Config>() {
             Ok(config) => {
                 if let Err(e) = validate_env_append_keys(&config.env) {
+                    if crate::observability::telemetry_gate::is_enabled() {
+                        let ConfigError::EnvAppendOnNonPathKey { per_tool, .. } = &e;
+                        tracing::warn!(
+                            event = "config.env.append_refused",
+                            context = if *per_tool { "per_tool" } else { "top_level" },
+                        );
+                    }
                     telemetry::config_parse_error(config_path, &e.to_string());
-                    println!("Invalid config: {}", e);
+                    eprintln!("Invalid config: {}", e);
                     process::exit(crate::error_codes::CONFIG_ERROR);
                 }
                 telemetry::config_loaded(
@@ -878,7 +952,7 @@ impl Config {
             }
             Err(e) => {
                 telemetry::config_parse_error(config_path, &e.to_string());
-                println!("Failed to parse config file: {}", e);
+                eprintln!("Failed to parse config file: {}", e);
                 process::exit(crate::error_codes::CONFIG_ERROR);
             }
         }
@@ -925,7 +999,7 @@ impl Config {
             Ok(s) => s,
             Err(e) => {
                 telemetry::config_parse_error(config_path, &e.to_string());
-                println!("Failed to read config file at: {}", config_path);
+                eprintln!("Failed to read config file at: {}", config_path);
                 process::exit(crate::error_codes::CONFIG_ERROR);
             }
         };
@@ -945,7 +1019,7 @@ impl Config {
             Ok(v) => v,
             Err(e) => {
                 telemetry::config_parse_error(config_path, &e.to_string());
-                println!("Failed to parse config file: {}", e);
+                eprintln!("Failed to parse config file: {}", e);
                 process::exit(crate::error_codes::CONFIG_ERROR);
             }
         };
@@ -961,8 +1035,15 @@ impl Config {
         match merged.try_into::<Config>() {
             Ok(config) => {
                 if let Err(e) = validate_env_append_keys(&config.env) {
+                    if crate::observability::telemetry_gate::is_enabled() {
+                        let ConfigError::EnvAppendOnNonPathKey { per_tool, .. } = &e;
+                        tracing::warn!(
+                            event = "config.env.append_refused",
+                            context = if *per_tool { "per_tool" } else { "top_level" },
+                        );
+                    }
                     telemetry::config_parse_error(config_path, &e.to_string());
-                    println!("Invalid config: {}", e);
+                    eprintln!("Invalid config: {}", e);
                     process::exit(crate::error_codes::CONFIG_ERROR);
                 }
                 tracing::info!(
@@ -981,7 +1062,7 @@ impl Config {
             }
             Err(e) => {
                 telemetry::config_parse_error(config_path, &e.to_string());
-                println!("Failed to parse merged workspace config: {}", e);
+                eprintln!("Failed to parse merged workspace config: {}", e);
                 process::exit(crate::error_codes::CONFIG_ERROR);
             }
         }
@@ -1106,47 +1187,6 @@ impl Config {
     /// Check if git configuration is present
     pub fn has_git(&self) -> bool {
         self.git.is_some()
-    }
-
-    /// Get tool configs with roles applied
-    /// This merges role tools with directly configured tools
-    /// Direct tools override role tools
-    #[allow(dead_code)] // Public API for role-based tool configuration
-    pub fn get_tool_configs_with_roles(&self) -> HashMap<String, Tool> {
-        use crate::roles::resolver::RoleResolver;
-
-        let mut result = HashMap::new();
-
-        // If roles are assigned, resolve and add those tools first
-        if let Some(role_assignment) = &self.role {
-            let role_names = role_assignment.as_vec();
-            if !role_names.is_empty() && self.has_roles() {
-                let mut resolver = RoleResolver::new(&self.roles_config);
-                if let Ok(resolved) = resolver.resolve_multiple(&role_names) {
-                    for (name, tool) in resolved.tools {
-                        result.insert(
-                            name.clone(),
-                            Tool {
-                                name,
-                                version: tool.version,
-                                version_manager: tool.version_manager,
-                                use_sudo: tool.use_sudo,
-                                distribution: None,
-                                fallback: true,
-                            },
-                        );
-                    }
-                }
-            }
-        }
-
-        // Direct tools override role tools - use helper for minimal cloning
-        for (name, config) in &self.tools {
-            let (key, tool) = build_tool_entry(name, config);
-            result.insert(key, tool);
-        }
-
-        result
     }
 
     /// Get tool configs with an optional CLI role override
@@ -2226,6 +2266,113 @@ start_in_ci = false
         }
     }
 
+    /// Zero-alloc byte-comparison shape (Item 14). Pins the corner
+    /// cases where the previous `to_ascii_uppercase()` implementation
+    /// would allocate: empty keys, non-ASCII keys, keys with control
+    /// bytes, trailing whitespace, and mixed-case suffixes.
+    #[test]
+    fn is_path_like_key_no_alloc_shape() {
+        // Empty key: must not underflow the suffix-length subtraction.
+        assert!(!is_path_like_key(""));
+
+        // Non-ASCII key: `eq_ignore_ascii_case` treats bytes >0x7F as
+        // literal, so `PÁTH` is NOT a case-insensitive match for `PATH`
+        // (correct — a non-ASCII key isn't a real path-like env var).
+        assert!(!is_path_like_key("PÁTH"));
+
+        // Trailing whitespace matters: a space breaks the suffix match.
+        assert!(!is_path_like_key("PATH "));
+
+        // Control bytes never match any legitimate env var name.
+        assert!(!is_path_like_key("\x1bPATH"));
+        assert!(!is_path_like_key("PATH\x00"));
+
+        // Mixed-case suffix matches the exact-key set case-insensitively.
+        assert!(is_path_like_key("my_Paths"));
+        assert!(is_path_like_key("CustomDirs"));
+        assert!(is_path_like_key("PaTh"));
+
+        // Suffix bounded by length: "PATHS" ends with "PATHS" AND "PATH"
+        // (the outer loop hits the first match and returns).
+        assert!(is_path_like_key("PATHS"));
+    }
+
+    /// Item 9 (security F1): a remote-origin config must not silently
+    /// route a tool install through a chosen vendor distribution — the
+    /// distribution slot is a GPG-keyring / package-source selector,
+    /// so a hostile `distribution = "vendor-x"` on `java` would let
+    /// the remote author swap the trusted package source without any
+    /// visible cue. `mark_remote()` strips `distribution` and forces
+    /// `fallback = true` on every `[provisioner]` entry AND every
+    /// `[roles.*.tools]` detailed spec.
+    #[test]
+    fn mark_remote_strips_role_distribution_and_forces_fallback_true() {
+        use crate::roles::definition::RoleToolSpec;
+
+        let toml_src = r#"
+[provisioner]
+java = { version = "17", distribution = "zulu", fallback = false }
+
+[roles.dev]
+
+[roles.dev.tools]
+java = { version = "17", distribution = "temurin", fallback = false }
+"#;
+        let mut cfg: Config = toml::from_str(toml_src).expect("parse");
+        cfg.mark_remote();
+
+        // Provisioner strip: distribution cleared, fallback forced true.
+        match cfg.tools.get("java").expect("java configured") {
+            ToolConfig::Detailed {
+                distribution,
+                fallback,
+                ..
+            } => {
+                assert!(
+                    distribution.is_none(),
+                    "remote config's provisioner distribution must be stripped, got {distribution:?}"
+                );
+                assert!(
+                    *fallback,
+                    "remote config's provisioner fallback must be forced true"
+                );
+            }
+            other => panic!("expected ToolConfig::Detailed, got {other:?}"),
+        }
+
+        // Roles strip: same policy applied to every RoleToolSpec::Detailed.
+        let role = cfg.roles_config.roles.get("dev").expect("role dev");
+        let map = match role {
+            crate::roles::definition::RoleDefinitionWrapper::WithTools {
+                tools: crate::roles::definition::RoleToolsSection::Versions(m),
+                ..
+            } => m,
+            other => panic!("expected WithTools::Versions, got {other:?}"),
+        };
+        let spec = map.get("java").expect("java in role");
+        match spec {
+            RoleToolSpec::Detailed {
+                distribution,
+                fallback,
+                ..
+            } => {
+                assert!(
+                    distribution.is_none(),
+                    "remote role's distribution must be stripped, got {distribution:?}"
+                );
+                assert_eq!(
+                    *fallback,
+                    Some(true),
+                    "remote role's fallback must be forced Some(true)"
+                );
+            }
+            other => panic!("expected RoleToolSpec::Detailed, got {other:?}"),
+        }
+        // Accessor form matches.
+        assert_eq!(spec.distribution(), None);
+        assert!(spec.fallback());
+    }
+
     #[test]
     fn env_append_on_non_path_key_rejected() {
         // Arrange: EDITOR is a single value, not a colon-list — append
@@ -2252,7 +2399,7 @@ EDITOR = { value = "vim", append = true }
         );
         assert!(matches!(
             err,
-            ConfigError::EnvAppendOnNonPathKey { ref key } if key == "EDITOR"
+            ConfigError::EnvAppendOnNonPathKey { ref key, per_tool: false } if key == "EDITOR"
         ));
     }
 
@@ -2288,7 +2435,10 @@ JAVA_HOME = { value = "/x", append = true }
         let err = validate_env_append_keys(&config.env)
             .expect_err("validator must reject append on non-path key in per-tool env");
 
-        // Assert: error message names BOTH the tool section and the key.
+        // Assert: error message names BOTH the tool section and the key,
+        // AND the discriminant records `per_tool = true` so the emit
+        // site can label the telemetry event's `context` field
+        // without parsing the user-authored key text.
         let msg = err.to_string();
         assert!(
             msg.contains("env.rustc"),
@@ -2298,6 +2448,10 @@ JAVA_HOME = { value = "/x", append = true }
             msg.contains("JAVA_HOME"),
             "error message must name the offending key `JAVA_HOME`: got {msg}"
         );
+        assert!(matches!(
+            err,
+            ConfigError::EnvAppendOnNonPathKey { per_tool: true, .. }
+        ));
     }
 
     #[test]

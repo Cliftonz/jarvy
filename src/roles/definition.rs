@@ -323,6 +323,30 @@ impl RoleDefinitionWrapper {
             RoleDefinitionWrapper::Simple(def) => def.get_extends(),
         }
     }
+
+    /// Mutable access to the detailed tool-version map for both variants.
+    ///
+    /// Returns `Some` when the wrapper carries `RoleToolSpec` entries
+    /// (`Simple(def)` always, `WithTools { tools: Versions, .. }`).
+    /// Returns `None` for `WithTools { tools: Names, .. }` because that
+    /// variant only holds tool names and has no `RoleToolSpec` fields
+    /// to mutate (no `distribution` / `fallback` to strip).
+    ///
+    /// Added for `Config::mark_remote()` so remote configs cannot
+    /// smuggle a `distribution = "vendor"` through `[roles.*.tools]`.
+    pub fn tool_versions_mut(&mut self) -> Option<&mut HashMap<String, RoleToolSpec>> {
+        match self {
+            RoleDefinitionWrapper::WithTools {
+                tools: RoleToolsSection::Versions(map),
+                ..
+            } => Some(map),
+            RoleDefinitionWrapper::WithTools {
+                tools: RoleToolsSection::Names(_),
+                ..
+            } => None,
+            RoleDefinitionWrapper::Simple(def) => Some(&mut def.tool_versions),
+        }
+    }
 }
 
 #[cfg(test)]
