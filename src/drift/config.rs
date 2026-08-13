@@ -63,9 +63,25 @@ impl Default for DriftConfig {
 /// containing a `..` component (naïve traversal). Callers pair this
 /// with the canonicalize-based traversal check in
 /// `state::path_is_within_project_dir` for defense in depth.
+///
+/// The refusal is deliberately cross-platform: a hostile Linux-authored
+/// config with `"/etc/shadow"` MUST be refused on Windows too, where
+/// `Path::is_absolute` returns false for the missing drive letter.
+/// Same shape in reverse for `"C:\..."` on Linux. We check the string
+/// shape ourselves so a Linux-shape absolute doesn't sneak past the
+/// per-platform `is_absolute` gate.
 pub fn track_file_is_safe(entry: &str) -> bool {
     let p = std::path::Path::new(entry);
     if p.is_absolute() {
+        return false;
+    }
+    // Cross-platform absolute-shape refusal.
+    let bytes = entry.as_bytes();
+    match bytes.first() {
+        Some(b'/') | Some(b'\\') => return false,
+        _ => {}
+    }
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
         return false;
     }
     if p.components()

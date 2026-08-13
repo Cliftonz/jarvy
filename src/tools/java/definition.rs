@@ -1092,7 +1092,7 @@ fn execute_route(route: InstallRoute) -> Result<(), InstallError> {
                 if let Some(r) = repo {
                     bootstrap_apt_repo(r)?;
                 }
-                return apt_install(&pkg);
+                apt_install(&pkg)
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -1106,7 +1106,7 @@ fn execute_route(route: InstallRoute) -> Result<(), InstallError> {
                 if let Some(r) = repo {
                     bootstrap_dnf_repo(r)?;
                 }
-                return dnf_install(&pkg);
+                dnf_install(&pkg)
             }
             #[cfg(not(target_os = "linux"))]
             {

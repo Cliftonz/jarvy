@@ -56,7 +56,7 @@ fn install_git_docker_jq_in_parallel() {
         .map(|name| {
             let n = name.to_string();
             thread::spawn(move || -> Result<(), String> {
-                match jarvy::tools::add(&n, "") {
+                match jarvy::tools::add(&n, "", &jarvy::tools::common::InstallContext::none()) {
                     Ok(()) => Ok(()),
                     Err(e) => Err(format!("{} install failed: {:?}", n, e)),
                 }
