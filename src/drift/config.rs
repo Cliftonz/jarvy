@@ -243,6 +243,69 @@ mod tests {
         assert!(!track_file_is_safe("nested/../../escape"));
     }
 
+    /// A Linux-authored hostile config MUST be refused on Windows too,
+    /// even though `Path::is_absolute("/etc/shadow")` returns false on
+    /// Windows (no drive letter). Symmetric for Windows-authored
+    /// `C:\...` on Linux. Regression: a Windows CI runner silently
+    /// treated `/etc/shadow` as a project-relative path because the
+    /// `is_absolute` gate is per-platform. See rc.4 CI failure.
+    #[test]
+    fn track_file_safety_refuses_foreign_platform_absolutes() {
+        // Unix-shape absolutes (must fail on ALL platforms, including
+        // Windows where Path::is_absolute returns false for these).
+        for entry in [
+            "/etc/shadow",
+            "/tmp/leak",
+            "/root/.ssh/id_rsa",
+            "/usr/local/bin/tool",
+            "/",
+        ] {
+            assert!(
+                !track_file_is_safe(entry),
+                "unix-shape absolute must be refused cross-platform: {entry:?}"
+            );
+        }
+
+        // Windows-shape absolutes (must fail on Linux where
+        // Path::is_absolute returns false for these).
+        for entry in [
+            "C:\\Windows\\System32\\config\\SAM",
+            "D:/data/leak.txt",
+            "c:\\lowercase\\drive",
+            "Z:/other/drive",
+        ] {
+            assert!(
+                !track_file_is_safe(entry),
+                "windows-shape absolute must be refused cross-platform: {entry:?}"
+            );
+        }
+
+        // UNC / backslash-prefix paths.
+        for entry in ["\\Windows\\System32", "\\\\server\\share\\secret"] {
+            assert!(
+                !track_file_is_safe(entry),
+                "backslash-prefix path must be refused cross-platform: {entry:?}"
+            );
+        }
+    }
+
+    /// Guard against over-broad refusal: single-letter names, colon in
+    /// the middle (not the drive position), backslashes inside a
+    /// relative path — these are legitimate on POSIX and must stay safe.
+    #[test]
+    fn track_file_safety_does_not_over_refuse_legit_relatives() {
+        // Single-char filename — no colon in position 1, so not a drive.
+        assert!(track_file_is_safe("a"));
+        assert!(track_file_is_safe("z"));
+        // Colon later in the name is a valid POSIX filename character.
+        assert!(track_file_is_safe("weird:file.txt"));
+        // Non-alpha before colon — not a drive letter.
+        assert!(track_file_is_safe("1:leading-digit.txt"));
+        // Dotfile / hidden — always safe if relative.
+        assert!(track_file_is_safe(".env"));
+        assert!(track_file_is_safe(".config/settings"));
+    }
+
     #[test]
     fn test_drift_config_parsing() {
         let toml_str = r#"
