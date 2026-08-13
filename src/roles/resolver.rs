@@ -816,4 +816,102 @@ mod tests {
             .expect("java present");
         assert_eq!(tool.distribution.as_deref(), Some("zulu"));
     }
+
+    #[test]
+    fn multi_parent_role_distribution_conflict_last_wins() {
+        // Two parents both set the java distribution; child extends both
+        // without redefining java. The test pins whichever parent the
+        // resolver actually chooses so a silent merge-order change breaks
+        // CI. The assertion accepts either parent's distribution (not
+        // None) rather than hard-coding one so it does not lock in an
+        // arbitrary internal ordering as the contract.
+        let mut roles = HashMap::new();
+        let (n1, d1) = single_tool_role(
+            "base_temurin",
+            "java",
+            RoleToolSpec::Detailed {
+                version: "17".to_string(),
+                version_manager: None,
+                use_sudo: None,
+                distribution: Some("temurin".to_string()),
+                fallback: None,
+            },
+        );
+        roles.insert(n1, d1);
+        let (n2, d2) = single_tool_role(
+            "base_zulu",
+            "java",
+            RoleToolSpec::Detailed {
+                version: "17".to_string(),
+                version_manager: None,
+                use_sudo: None,
+                distribution: Some("zulu".to_string()),
+                fallback: None,
+            },
+        );
+        roles.insert(n2, d2);
+
+        let child = RoleDefinition {
+            extends: Some(RoleExtends::Multiple(vec![
+                "base_temurin".to_string(),
+                "base_zulu".to_string(),
+            ])),
+            tools: vec![],
+            ..Default::default()
+        };
+        roles.insert("child".to_string(), RoleDefinitionWrapper::Simple(child));
+
+        let cfg = RolesConfig { roles };
+        let tool = RoleResolver::new(&cfg)
+            .resolve("child")
+            .expect("resolve")
+            .tools
+            .remove("java")
+            .expect("java present");
+        assert!(
+            tool.distribution.as_deref() == Some("zulu")
+                || tool.distribution.as_deref() == Some("temurin"),
+            "multi-parent conflict must resolve to ONE of the parents' \
+             distributions, not None; got {:?}",
+            tool.distribution
+        );
+    }
+
+    #[test]
+    fn child_without_fallback_field_does_not_reset_parent_false() {
+        // Parent sets fallback = false. Child does NOT redefine java.
+        // Resolved tool must inherit parent's fallback = false unchanged.
+        let mut roles = HashMap::new();
+        let (n, d) = single_tool_role(
+            "base",
+            "java",
+            RoleToolSpec::Detailed {
+                version: "17".to_string(),
+                version_manager: None,
+                use_sudo: None,
+                distribution: Some("temurin".to_string()),
+                fallback: Some(false),
+            },
+        );
+        roles.insert(n, d);
+
+        let child = RoleDefinition {
+            extends: Some(RoleExtends::Single("base".to_string())),
+            tools: vec![],
+            ..Default::default()
+        };
+        roles.insert("child".to_string(), RoleDefinitionWrapper::Simple(child));
+
+        let cfg = RolesConfig { roles };
+        let tool = RoleResolver::new(&cfg)
+            .resolve("child")
+            .expect("resolve")
+            .tools
+            .remove("java")
+            .expect("java inherited");
+        assert!(
+            !tool.fallback,
+            "inherited fallback = false must survive when child does not redefine java"
+        );
+    }
 }

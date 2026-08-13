@@ -1734,4 +1734,26 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn install_java_refuse_error_names_requested_and_fallback_false() {
+        // Unknown distribution is deterministic across all OSes and
+        // never touches a real installer. Pins the CLI-facing error
+        // string so a regression cannot silently reword the message.
+        let ctx = InstallContext {
+            distribution: Some("nonexistent-jdk".to_string()),
+            fallback: false,
+        };
+        let err = install_java("17", &ctx)
+            .expect_err("unknown distribution with fallback=false must refuse");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nonexistent-jdk") || msg.contains("nonexistent"),
+            "error must name the requested distribution: got {msg}"
+        );
+        assert!(
+            msg.contains("fallback") || msg.to_lowercase().contains("supported"),
+            "error must explain the fallback refusal reason: got {msg}"
+        );
+    }
 }
