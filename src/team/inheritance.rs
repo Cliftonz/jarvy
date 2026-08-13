@@ -155,6 +155,8 @@ impl ExtendedConfig {
                     version,
                     version_manager,
                     use_sudo,
+                    distribution,
+                    fallback,
                 } => {
                     toml_content.push_str(&format!("{} = {{ version = \"{}\"", name, version));
                     if let Some(vm) = version_manager {
@@ -162,6 +164,12 @@ impl ExtendedConfig {
                     }
                     if let Some(sudo) = use_sudo {
                         toml_content.push_str(&format!(", use_sudo = {}", sudo));
+                    }
+                    if let Some(dist) = distribution {
+                        toml_content.push_str(&format!(", distribution = \"{}\"", dist));
+                    }
+                    if !fallback {
+                        toml_content.push_str(", fallback = false");
                     }
                     toml_content.push_str(" }\n");
                 }

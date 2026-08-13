@@ -705,6 +705,10 @@ impl PrivilegeConfig {
     }
 }
 
+fn default_true_fallback() -> bool {
+    true
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(untagged)]
 pub enum ToolConfig {
@@ -712,6 +716,16 @@ pub enum ToolConfig {
         version: String,
         version_manager: Option<bool>,
         use_sudo: Option<bool>,
+        /// Distribution / flavor selector (e.g. "temurin", "zulu",
+        /// "corretto" for the `java` tool). Ignored by tools that don't
+        /// declare a distribution set. When None, use the tool's default.
+        #[serde(default)]
+        distribution: Option<String>,
+        /// If false, refuse the install with a hard error when the
+        /// requested (distribution, OS) pair isn't supported instead of
+        /// falling back to the tool's default distribution. Default true.
+        #[serde(default = "default_true_fallback")]
+        fallback: bool,
     },
     Simple(String),
 }
@@ -720,13 +734,21 @@ pub enum ToolConfig {
 /// This helper consolidates tool construction logic and reduces redundant clones.
 fn build_tool_entry(name: &str, config: &ToolConfig) -> (String, Tool) {
     let name_owned = name.to_string();
-    let (version, version_manager, use_sudo) = match config {
+    let (version, version_manager, use_sudo, distribution, fallback) = match config {
         ToolConfig::Detailed {
             version,
             version_manager,
             use_sudo,
-        } => (version.clone(), version_manager.unwrap_or(true), *use_sudo),
-        ToolConfig::Simple(version) => (version.clone(), true, None),
+            distribution,
+            fallback,
+        } => (
+            version.clone(),
+            version_manager.unwrap_or(true),
+            *use_sudo,
+            distribution.clone(),
+            *fallback,
+        ),
+        ToolConfig::Simple(version) => (version.clone(), true, None, None, true),
     };
 
     let tool = Tool {
@@ -734,6 +756,8 @@ fn build_tool_entry(name: &str, config: &ToolConfig) -> (String, Tool) {
         version,
         version_manager,
         use_sudo,
+        distribution,
+        fallback,
     };
 
     (name_owned, tool)
@@ -1097,6 +1121,8 @@ impl Config {
                                 version: tool.version,
                                 version_manager: tool.version_manager,
                                 use_sudo: tool.use_sudo,
+                                distribution: None,
+                                fallback: true,
                             },
                         );
                     }
@@ -1145,6 +1171,8 @@ impl Config {
                             version: tool.version,
                             version_manager: tool.version_manager,
                             use_sudo: tool.use_sudo,
+                            distribution: None,
+                            fallback: true,
                         },
                     );
                 }
@@ -1167,6 +1195,14 @@ pub struct Tool {
     pub version: String,
     pub version_manager: bool,
     pub use_sudo: Option<bool>, // carry per-tool override
+    /// Distribution / flavor selector (e.g. "temurin" / "zulu" /
+    /// "corretto" for `java`). None = tool's default. Participates in
+    /// Hash/Eq so a distribution change is a drift signal.
+    pub distribution: Option<String>,
+    /// If false, hard-fail when the requested (distribution, OS) pair
+    /// isn't supported instead of falling back to the tool's default.
+    /// Default true (scalar `tool = "17"` form and omitted-detailed form).
+    pub fallback: bool,
 }
 
 /// Env var that suppresses the `~/.jarvy/jarvy.toml` personal overlay.
@@ -2355,6 +2391,144 @@ PATH = { value = "/opt/bin", append = true }
         // Per build_tool_entry: Detailed form's version_manager
         // unwraps_or(true).
         assert!(tool.version_manager);
+    }
+
+    #[test]
+    fn tool_config_simple_scalar_still_parses() {
+        // Arrange
+        let cfg = parse_tool(r#"tool = "17""#);
+
+        // Act
+        let (_, tool) = build_tool_entry("java", &cfg);
+
+        // Assert: scalar form defaults distribution=None, fallback=true.
+        assert!(matches!(cfg, ToolConfig::Simple(_)));
+        assert_eq!(tool.version, "17");
+        assert_eq!(tool.distribution, None);
+        assert!(tool.fallback);
+    }
+
+    #[test]
+    fn tool_config_detailed_without_distribution() {
+        // Arrange + Act
+        let cfg = parse_tool(
+            r#"
+            [tool]
+            version = "17"
+            "#,
+        );
+
+        // Assert
+        match &cfg {
+            ToolConfig::Detailed {
+                distribution,
+                fallback,
+                ..
+            } => {
+                assert_eq!(*distribution, None);
+                assert!(*fallback);
+            }
+            ToolConfig::Simple(_) => panic!("expected Detailed variant"),
+        }
+    }
+
+    #[test]
+    fn tool_config_detailed_with_distribution() {
+        // Arrange + Act
+        let cfg = parse_tool(
+            r#"
+            [tool]
+            version = "17"
+            distribution = "temurin"
+            "#,
+        );
+        let (_, tool) = build_tool_entry("java", &cfg);
+
+        // Assert
+        assert_eq!(tool.distribution, Some("temurin".to_string()));
+        assert!(tool.fallback);
+    }
+
+    #[test]
+    fn tool_config_detailed_fallback_false() {
+        // Arrange + Act
+        let cfg = parse_tool(
+            r#"
+            [tool]
+            version = "17"
+            distribution = "temurin"
+            fallback = false
+            "#,
+        );
+        let (_, tool) = build_tool_entry("java", &cfg);
+
+        // Assert
+        assert_eq!(tool.distribution, Some("temurin".to_string()));
+        assert!(!tool.fallback);
+    }
+
+    #[test]
+    fn tool_config_detailed_all_fields() {
+        // Arrange
+        let src = r#"
+            [tool]
+            version = "17"
+            version_manager = true
+            use_sudo = false
+            distribution = "zulu"
+            fallback = false
+            "#;
+
+        // Act: round-trip parse -> serialize -> parse.
+        let cfg = parse_tool(src);
+        let serialized = toml::to_string(&cfg).expect("serialize ToolConfig");
+        let round_tripped: ToolConfig =
+            toml::from_str(&serialized).expect("re-parse serialized ToolConfig");
+
+        // Assert
+        match round_tripped {
+            ToolConfig::Detailed {
+                version,
+                version_manager,
+                use_sudo,
+                distribution,
+                fallback,
+            } => {
+                assert_eq!(version, "17");
+                assert_eq!(version_manager, Some(true));
+                assert_eq!(use_sudo, Some(false));
+                assert_eq!(distribution, Some("zulu".to_string()));
+                assert!(!fallback);
+            }
+            ToolConfig::Simple(_) => panic!("expected Detailed variant after round-trip"),
+        }
+    }
+
+    #[test]
+    fn tool_hash_differs_across_distribution() {
+        use std::collections::HashSet;
+
+        // Arrange: two Tools identical except distribution.
+        let temurin = Tool {
+            name: "java".to_string(),
+            version: "17".to_string(),
+            version_manager: true,
+            use_sudo: None,
+            distribution: Some("temurin".to_string()),
+            fallback: true,
+        };
+        let zulu = Tool {
+            distribution: Some("zulu".to_string()),
+            ..temurin.clone()
+        };
+
+        // Act
+        let mut set = HashSet::new();
+        set.insert(temurin);
+        set.insert(zulu);
+
+        // Assert: distinct hash slots => drift baseline sees the change.
+        assert_eq!(set.len(), 2);
     }
 
     /// Personal overlay tests: exercise `apply_personal_overlay` in
