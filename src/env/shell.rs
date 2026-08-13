@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use super::expand::{EnvContext, expand_value};
+use crate::config::{EnvValue, PathPosition};
 use crate::telemetry;
 
 /// Errors that can occur during shell rc modification
@@ -52,6 +53,68 @@ impl ShellType {
             ShellType::PowerShell => format!("$env:{}={}", key, quoted_value),
             ShellType::Nushell => format!("$env.{} = {}", key, quoted_value),
             _ => format!("export {}={}", key, quoted_value),
+        }
+    }
+
+    /// Render a single-line rc statement that PREPENDS or APPENDS `raw_value`
+    /// to the existing value of `key`, unset-var-safe (does not clobber
+    /// `PATH` when the shell hasn't set it yet). Takes RAW (unquoted) value;
+    /// per-shell quoting/escaping is applied internally.
+    ///
+    /// The separator is `;` for PowerShell and `:` for every other shell.
+    pub fn extend_line(&self, key: &str, raw_value: &str, position: PathPosition) -> String {
+        match self {
+            ShellType::Bash | ShellType::Zsh | ShellType::Sh => {
+                let esc = escape_for_double_quote(raw_value);
+                match position {
+                    PathPosition::Prepend => {
+                        format!("export {k}=\"{v}${{{k}:+:${k}}}\"", k = key, v = esc)
+                    }
+                    PathPosition::Append => {
+                        format!("export {k}=\"${{{k}:+${k}:}}{v}\"", k = key, v = esc)
+                    }
+                }
+            }
+            ShellType::Fish => {
+                let quoted = fish_single_quote(raw_value);
+                match position {
+                    PathPosition::Prepend => format!("set -gx {k} {v} ${k}", k = key, v = quoted),
+                    PathPosition::Append => format!("set -gx {k} ${k} {v}", k = key, v = quoted),
+                }
+            }
+            ShellType::Nushell => {
+                let esc = nu_double_quote(raw_value);
+                // Split existing value on the platform separator, drop empties,
+                // then either prepend or append the new value and rejoin. Uses
+                // `$env.K?` so an unset var doesn't crash the assignment.
+                match position {
+                    PathPosition::Prepend => format!(
+                        "$env.{k} = ([\"{v}\"] | append ($env.{k}? | default \"\" | split row (char esep)) | where {{|it| $it != \"\"}} | str join (char esep))",
+                        k = key,
+                        v = esc
+                    ),
+                    PathPosition::Append => format!(
+                        "$env.{k} = ([\"{v}\"] | prepend ($env.{k}? | default \"\" | split row (char esep)) | where {{|it| $it != \"\"}} | str join (char esep))",
+                        k = key,
+                        v = esc
+                    ),
+                }
+            }
+            ShellType::PowerShell => {
+                let esc = ps_double_quote(raw_value);
+                match position {
+                    PathPosition::Prepend => format!(
+                        "$env:{k} = if ($env:{k}) {{ \"{v};$env:{k}\" }} else {{ \"{v}\" }}",
+                        k = key,
+                        v = esc
+                    ),
+                    PathPosition::Append => format!(
+                        "$env:{k} = if ($env:{k}) {{ \"$env:{k};{v}\" }} else {{ \"{v}\" }}",
+                        k = key,
+                        v = esc
+                    ),
+                }
+            }
         }
     }
 
@@ -184,7 +247,7 @@ pub fn parse_shell(s: &str) -> Result<ShellType, ShellError> {
 /// Ok(path) with the path to the modified rc file, or an error
 pub fn update_shell_rc(
     shell: ShellType,
-    vars: &HashMap<String, String>,
+    vars: &HashMap<String, EnvValue>,
     ctx: &EnvContext,
     config: &ShellConfig,
 ) -> Result<PathBuf, ShellError> {
@@ -238,7 +301,7 @@ pub fn update_shell_rc(
 fn update_rc_content(
     existing: &str,
     shell: ShellType,
-    vars: &HashMap<String, String>,
+    vars: &HashMap<String, EnvValue>,
     ctx: &EnvContext,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -294,10 +357,15 @@ fn update_rc_content(
                 );
                 continue;
             }
-            let raw_value = &vars[key];
-            let expanded_value = expand_value(raw_value, ctx);
-            let quoted_value = shell_quote(&expanded_value, shell);
-            lines.push(shell.export_line(key, &quoted_value));
+            let value = &vars[key];
+            let expanded_value = expand_value(value.value(), ctx);
+            let line = if value.should_append() {
+                shell.extend_line(key, &expanded_value, value.position())
+            } else {
+                let quoted_value = shell_quote(&expanded_value, shell);
+                shell.export_line(key, &quoted_value)
+            };
+            lines.push(line);
         }
 
         lines.push(JARVY_END.to_string());
@@ -321,6 +389,63 @@ pub(crate) fn is_valid_env_var_name(name: &str) -> bool {
         return false;
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Escape a value for embedding INSIDE a POSIX double-quoted string. The
+/// guard around it (`${K:+:$K}`) must remain shell-expandable, so we only
+/// touch the four chars that would otherwise get re-interpreted by the
+/// shell inside `"..."`: backslash, double-quote, dollar, backtick.
+fn escape_for_double_quote(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '\\' | '"' | '$' | '`' => {
+                out.push('\\');
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Wrap a value in fish single quotes. Inside `'...'` fish only recognizes
+/// `\\` (literal backslash) and `\'` (literal single quote); everything
+/// else is literal.
+fn fish_single_quote(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('\'');
+    for c in value.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            _ => out.push(c),
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Escape a value for embedding INSIDE a nushell double-quoted string.
+/// Nushell double quotes escape `\\` and `\"`; `$` is literal.
+fn nu_double_quote(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Escape a value for embedding INSIDE a PowerShell double-quoted string.
+/// PowerShell double quotes use backtick as escape char: `` ` `` doubles,
+/// `` `" `` = literal `"`, `` `$ `` = literal `$`.
+fn ps_double_quote(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '`' => out.push_str("``"),
+            '"' => out.push_str("`\""),
+            '$' => out.push_str("`$"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Quote a value for shell syntax
@@ -377,7 +502,7 @@ fn shell_quote(value: &str, shell: ShellType) -> String {
 /// Preview what would be added to the shell rc file (for dry-run)
 pub fn preview_shell_rc(
     shell: ShellType,
-    vars: &HashMap<String, String>,
+    vars: &HashMap<String, EnvValue>,
     ctx: &EnvContext,
 ) -> String {
     let mut lines = Vec::new();
@@ -397,10 +522,15 @@ pub fn preview_shell_rc(
             ));
             continue;
         }
-        let raw_value = &vars[key];
-        let expanded_value = expand_value(raw_value, ctx);
-        let quoted_value = shell_quote(&expanded_value, shell);
-        lines.push(shell.export_line(key, &quoted_value));
+        let value = &vars[key];
+        let expanded_value = expand_value(value.value(), ctx);
+        let line = if value.should_append() {
+            shell.extend_line(key, &expanded_value, value.position())
+        } else {
+            let quoted_value = shell_quote(&expanded_value, shell);
+            shell.export_line(key, &quoted_value)
+        };
+        lines.push(line);
     }
 
     lines.push(JARVY_END.to_string());
@@ -516,10 +646,10 @@ mod tests {
     #[test]
     fn update_rc_content_skips_invalid_keys() {
         let mut vars = HashMap::new();
-        vars.insert("FOO".to_string(), "ok".to_string());
+        vars.insert("FOO".to_string(), EnvValue::Simple("ok".to_string()));
         vars.insert(
             "BAR=evil\nrm -rf $HOME #".to_string(),
-            "ignored".to_string(),
+            EnvValue::Simple("ignored".to_string()),
         );
         let ctx = EnvContext::new();
         let out = update_rc_content("", ShellType::Bash, &vars, &ctx);
@@ -600,7 +730,10 @@ mod tests {
     #[test]
     fn test_update_rc_content_new() {
         let mut vars = HashMap::new();
-        vars.insert("MY_VAR".to_string(), "my_value".to_string());
+        vars.insert(
+            "MY_VAR".to_string(),
+            EnvValue::Simple("my_value".to_string()),
+        );
 
         let ctx = EnvContext::new();
         let result = update_rc_content("", ShellType::Bash, &vars, &ctx);
@@ -618,7 +751,10 @@ mod tests {
         );
 
         let mut vars = HashMap::new();
-        vars.insert("NEW_VAR".to_string(), "new_value".to_string());
+        vars.insert(
+            "NEW_VAR".to_string(),
+            EnvValue::Simple("new_value".to_string()),
+        );
 
         let ctx = EnvContext::new();
         let result = update_rc_content(&existing, ShellType::Bash, &vars, &ctx);
@@ -632,9 +768,9 @@ mod tests {
     #[test]
     fn test_update_rc_content_preserve_order() {
         let mut vars = HashMap::new();
-        vars.insert("Z_VAR".to_string(), "z".to_string());
-        vars.insert("A_VAR".to_string(), "a".to_string());
-        vars.insert("M_VAR".to_string(), "m".to_string());
+        vars.insert("Z_VAR".to_string(), EnvValue::Simple("z".to_string()));
+        vars.insert("A_VAR".to_string(), EnvValue::Simple("a".to_string()));
+        vars.insert("M_VAR".to_string(), EnvValue::Simple("m".to_string()));
 
         let ctx = EnvContext::new();
         let result = update_rc_content("", ShellType::Bash, &vars, &ctx);
@@ -650,7 +786,10 @@ mod tests {
     #[test]
     fn test_update_rc_content_fish() {
         let mut vars = HashMap::new();
-        vars.insert("MY_VAR".to_string(), "my_value".to_string());
+        vars.insert(
+            "MY_VAR".to_string(),
+            EnvValue::Simple("my_value".to_string()),
+        );
 
         let ctx = EnvContext::new();
         let result = update_rc_content("", ShellType::Fish, &vars, &ctx);
@@ -663,12 +802,139 @@ mod tests {
     #[test]
     fn test_preview_shell_rc() {
         let mut vars = HashMap::new();
-        vars.insert("TEST".to_string(), "value".to_string());
+        vars.insert("TEST".to_string(), EnvValue::Simple("value".to_string()));
 
         let ctx = EnvContext::new();
         let preview = preview_shell_rc(ShellType::Bash, &vars, &ctx);
 
         assert!(preview.contains(JARVY_START));
         assert!(preview.contains("export TEST=value"));
+    }
+
+    // ------- extend_line codegen (append/position honored) -------
+
+    #[test]
+    fn extend_line_bash_prepend_path() {
+        let out = ShellType::Bash.extend_line("PATH", "/opt/x", PathPosition::Prepend);
+        assert_eq!(out, r#"export PATH="/opt/x${PATH:+:$PATH}""#);
+    }
+
+    #[test]
+    fn extend_line_bash_append_path() {
+        let out = ShellType::Bash.extend_line("PATH", "/opt/x", PathPosition::Append);
+        assert_eq!(out, r#"export PATH="${PATH:+$PATH:}/opt/x""#);
+    }
+
+    #[test]
+    fn extend_line_zsh_matches_bash() {
+        for pos in [PathPosition::Prepend, PathPosition::Append] {
+            assert_eq!(
+                ShellType::Zsh.extend_line("PATH", "/opt/x", pos),
+                ShellType::Bash.extend_line("PATH", "/opt/x", pos),
+            );
+        }
+    }
+
+    #[test]
+    fn extend_line_sh_matches_bash() {
+        for pos in [PathPosition::Prepend, PathPosition::Append] {
+            assert_eq!(
+                ShellType::Sh.extend_line("PATH", "/opt/x", pos),
+                ShellType::Bash.extend_line("PATH", "/opt/x", pos),
+            );
+        }
+    }
+
+    #[test]
+    fn extend_line_fish_prepend_path() {
+        let out = ShellType::Fish.extend_line("PATH", "/opt/x", PathPosition::Prepend);
+        assert_eq!(out, "set -gx PATH '/opt/x' $PATH");
+    }
+
+    #[test]
+    fn extend_line_fish_append_path() {
+        let out = ShellType::Fish.extend_line("PATH", "/opt/x", PathPosition::Append);
+        assert_eq!(out, "set -gx PATH $PATH '/opt/x'");
+    }
+
+    #[test]
+    fn extend_line_nushell_prepend_path() {
+        let out = ShellType::Nushell.extend_line("PATH", "/opt/x", PathPosition::Prepend);
+        // Single line, non-empty, references the target env var and the new value.
+        assert!(!out.contains('\n'), "must be a one-liner: {out}");
+        assert!(!out.is_empty());
+        assert!(out.contains("$env.PATH"));
+        assert!(out.contains("/opt/x"));
+    }
+
+    #[test]
+    fn extend_line_powershell_prepend_path() {
+        let out = ShellType::PowerShell.extend_line("PATH", "/opt/x", PathPosition::Prepend);
+        assert_eq!(
+            out,
+            r#"$env:PATH = if ($env:PATH) { "/opt/x;$env:PATH" } else { "/opt/x" }"#
+        );
+    }
+
+    #[test]
+    fn extend_line_powershell_append_path() {
+        let out = ShellType::PowerShell.extend_line("PATH", "/opt/x", PathPosition::Append);
+        assert_eq!(
+            out,
+            r#"$env:PATH = if ($env:PATH) { "$env:PATH;/opt/x" } else { "/opt/x" }"#
+        );
+    }
+
+    #[test]
+    fn extend_line_bash_escapes_double_quote() {
+        let out = ShellType::Bash.extend_line("PATH", r#"he"llo"#, PathPosition::Prepend);
+        assert!(
+            out.contains(r#"he\"llo"#),
+            "double quote must be backslash-escaped inside the value; got: {out}"
+        );
+    }
+
+    #[test]
+    fn extend_line_bash_escapes_dollar() {
+        let out = ShellType::Bash.extend_line("PATH", "$FOO", PathPosition::Prepend);
+        assert!(
+            out.contains(r"\$FOO"),
+            "literal `$FOO` must NOT be shell-expanded; got: {out}"
+        );
+        // Guard MUST remain expandable — that's the whole point of ${PATH:+:$PATH}.
+        assert!(
+            out.contains("${PATH:+:$PATH}"),
+            "PATH guard must stay live; got: {out}"
+        );
+    }
+
+    #[test]
+    fn extend_line_bash_escapes_backslash_and_backtick() {
+        let out = ShellType::Bash.extend_line("PATH", r"a\b`c", PathPosition::Prepend);
+        assert!(
+            out.contains(r"a\\b"),
+            "backslash must be escaped; got: {out}"
+        );
+        assert!(out.contains(r"\`c"), "backtick must be escaped; got: {out}");
+    }
+
+    #[test]
+    fn extend_line_powershell_escapes_backtick_and_dollar() {
+        let out = ShellType::PowerShell.extend_line("PATH", "$x`y", PathPosition::Prepend);
+        // `$` -> `` `$ ``, and `` ` `` -> `` `` `` (doubled)
+        assert!(
+            out.contains("`$x") && out.contains("``y"),
+            "PowerShell backtick/dollar escaping wrong; got: {out}"
+        );
+    }
+
+    #[test]
+    fn extend_line_fish_escapes_single_quote() {
+        let out = ShellType::Fish.extend_line("PATH", "it's", PathPosition::Prepend);
+        // fish inside `'…'` only recognizes `\'` and `\\`, so `it's` -> `'it\'s'`.
+        assert!(
+            out.contains(r"'it\'s'"),
+            "single-quote escape inside fish quotes; got: {out}"
+        );
     }
 }

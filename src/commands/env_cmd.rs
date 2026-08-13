@@ -40,7 +40,9 @@ pub fn run_env(
     // Create context for variable expansion
     let ctx = EnvContext::new();
 
-    // Collect all regular vars
+    // Collect all regular vars — String-valued for the dotenv path
+    // (unchanged), and EnvValue-typed for the shell path so append/position
+    // metadata reaches the rc-file writer.
     let vars: HashMap<String, String> = env_config
         .vars
         .iter()
@@ -49,7 +51,7 @@ pub fn run_env(
 
     // Handle --export flag (output for shell eval)
     if export {
-        let preview = preview_shell_rc(target_shell, &vars, &ctx);
+        let preview = preview_shell_rc(target_shell, &env_config.vars, &ctx);
         println!("{}", preview);
         return 0;
     }
@@ -64,7 +66,10 @@ pub fn run_env(
         }
     };
 
-    // Merge vars and secrets
+    // Merge vars and secrets for the dotenv path (shell path uses
+    // `env_config.vars` directly so append/position metadata reaches the
+    // rc-file writer — secrets stay out of the rc file, matching prior
+    // behavior).
     let secrets_count = secrets.len();
     let mut all_vars = vars.clone();
     all_vars.extend(secrets);
@@ -111,11 +116,14 @@ pub fn run_env(
         }
     }
 
-    // Update shell rc file
+    // Update shell rc file. Secrets stay out of the rc file (preserves
+    // prior behavior — the dotenv path merged secrets, the shell path did
+    // not). `env_config.vars` is already `HashMap<String, EnvValue>` so
+    // append/position metadata reaches the writer.
     if do_shell {
         if dry_run {
             println!("\n=== Shell rc preview ({}) ===", target_shell);
-            let preview = preview_shell_rc(target_shell, &vars, &ctx);
+            let preview = preview_shell_rc(target_shell, &env_config.vars, &ctx);
             println!("{}", preview);
         } else {
             let shell_config = ShellConfig {
@@ -123,7 +131,7 @@ pub fn run_env(
                 validate: false,
             };
 
-            match update_shell_rc(target_shell, &vars, &ctx, &shell_config) {
+            match update_shell_rc(target_shell, &env_config.vars, &ctx, &shell_config) {
                 Ok(path) => {
                     println!("Updated shell rc file: {}", path.display());
                     println!(

@@ -13,7 +13,7 @@ use rayon::prelude::*;
 
 use crate::chatter;
 use crate::ci;
-use crate::config::Config;
+use crate::config::{Config, EnvValue};
 use crate::env::{
     DotenvConfig, EnvContext, SecretsConfig, ShellConfig, collect_secrets, detect_shell,
     generate_dotenv, preview_dotenv, preview_shell_rc, update_shell_rc,
@@ -826,13 +826,20 @@ pub fn run_setup(
             HashMap::new()
         };
 
-        // Merge vars and secrets
+        // Merge vars and secrets for the dotenv path (flat strings).
         let mut all_vars: HashMap<String, String> = env_config
             .vars
             .iter()
             .map(|(k, v)| (k.clone(), v.value().to_string()))
             .collect();
-        all_vars.extend(secrets);
+        all_vars.extend(secrets.clone());
+
+        // Shell path keeps `EnvValue` so append/position metadata reaches
+        // the rc-file writer. Secrets are always simple strings.
+        let mut all_shell_vars: HashMap<String, EnvValue> = env_config.vars.clone();
+        for (k, v) in secrets {
+            all_shell_vars.insert(k, EnvValue::Simple(v));
+        }
 
         // Generate .env file if configured
         if env_settings.generate_dotenv {
@@ -872,10 +879,10 @@ pub fn run_setup(
                     println!("\n=== Environment Setup (dry-run) ===");
                 }
                 println!("[DRY-RUN] Would update shell rc for {}", shell);
-                let preview = preview_shell_rc(shell, &all_vars, &ctx);
+                let preview = preview_shell_rc(shell, &all_shell_vars, &ctx);
                 println!("{}", preview);
             } else {
-                match update_shell_rc(shell, &all_vars, &ctx, &shell_config) {
+                match update_shell_rc(shell, &all_shell_vars, &ctx, &shell_config) {
                     Ok(path) => println!("Updated shell rc at {}", path.display()),
                     Err(e) => eprintln!("Warning: Could not update shell rc: {}", e),
                 }
