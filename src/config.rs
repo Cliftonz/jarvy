@@ -114,14 +114,24 @@ pub enum ConfigError {
     EnvAppendOnNonPathKey { key: String },
 }
 
-/// Refuses `append = true` on `[env.vars]` entries whose key is not
-/// PATH-like. `[env.secrets]` uses a different value type (no `append`
-/// field) and is not checked. Per-tool `[env.<tool>]` vars are also
-/// currently not checked (see doer report note).
+/// Refuses `append = true` on `[env.vars]` and `[env.<tool>]` entries
+/// whose key is not PATH-like. `[env.secrets]` uses a different value
+/// type (no `append` field) and is not checked. Per-tool violations
+/// surface as `[env.<tool>] <KEY>` in the error message so users can
+/// grep their `jarvy.toml` for the exact section+key.
 pub(crate) fn validate_env_append_keys(env: &EnvConfig) -> Result<(), ConfigError> {
     for (key, value) in &env.vars {
         if value.should_append() && !is_path_like_key(key) {
             return Err(ConfigError::EnvAppendOnNonPathKey { key: key.clone() });
+        }
+    }
+    for (tool, cfg) in &env.tool_env {
+        for (key, value) in &cfg.vars {
+            if value.should_append() && !is_path_like_key(key) {
+                return Err(ConfigError::EnvAppendOnNonPathKey {
+                    key: format!("[env.{tool}] {key}"),
+                });
+            }
         }
     }
     Ok(())
@@ -1171,8 +1181,8 @@ impl Config {
                             version: tool.version,
                             version_manager: tool.version_manager,
                             use_sudo: tool.use_sudo,
-                            distribution: None,
-                            fallback: true,
+                            distribution: tool.distribution,
+                            fallback: tool.fallback,
                         },
                     );
                 }
@@ -2258,6 +2268,90 @@ PATH = { value = "/opt/bin", append = true }
         let config: Config = toml::from_str(toml_str).expect("toml parse should succeed");
 
         validate_env_append_keys(&config.env).expect("PATH is path-like; append must be accepted");
+    }
+
+    #[test]
+    fn env_append_on_non_path_key_in_tool_env_rejected() {
+        // Arrange: JAVA_HOME is a single value, not a colon-list.
+        // Per-tool `[env.rustc]` must be scanned the same way `[env.vars]` is.
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+
+[env.rustc.vars]
+JAVA_HOME = { value = "/x", append = true }
+"#;
+        let config: Config =
+            toml::from_str(toml_str).expect("toml parse should succeed; validation is separate");
+
+        // Act
+        let err = validate_env_append_keys(&config.env)
+            .expect_err("validator must reject append on non-path key in per-tool env");
+
+        // Assert: error message names BOTH the tool section and the key.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("env.rustc"),
+            "error message must name the tool section `env.rustc`: got {msg}"
+        );
+        assert!(
+            msg.contains("JAVA_HOME"),
+            "error message must name the offending key `JAVA_HOME`: got {msg}"
+        );
+    }
+
+    #[test]
+    fn env_append_on_path_key_in_tool_env_accepted() {
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+
+[env.rustc.vars]
+LD_LIBRARY_PATH = { value = "/opt/lib", append = true }
+"#;
+        let config: Config = toml::from_str(toml_str).expect("toml parse should succeed");
+
+        validate_env_append_keys(&config.env)
+            .expect("LD_LIBRARY_PATH is path-like; append must be accepted in per-tool env");
+    }
+
+    #[test]
+    fn env_append_top_level_and_tool_env_both_scanned() {
+        // Arrange: valid top-level PATH append + invalid per-tool SOMEVAR append.
+        // The top-level PATH must NOT trigger; the per-tool violation must.
+        let toml_str = r#"
+[provisioner]
+git = "latest"
+
+[env.vars]
+PATH = { value = "/opt/bin", append = true }
+
+[env.node.vars]
+SOMEVAR = { value = "x", append = true }
+"#;
+        let config: Config = toml::from_str(toml_str).expect("toml parse should succeed");
+
+        // Act
+        let err = validate_env_append_keys(&config.env)
+            .expect_err("per-tool SOMEVAR append must be rejected");
+
+        // Assert: error message mentions the per-tool section+key, not PATH.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("env.node"),
+            "error message must name the tool section `env.node`: got {msg}"
+        );
+        assert!(
+            msg.contains("SOMEVAR"),
+            "error message must name the offending key `SOMEVAR`: got {msg}"
+        );
+        // The allowed-keys list in the error message legitimately mentions
+        // PATH; assert that PATH is not the OFFENDING key by anchoring on
+        // the key-label form the validator emits.
+        assert!(
+            !msg.contains("`PATH`") && !msg.contains("] PATH "),
+            "top-level PATH is path-like and must not surface as the offending key: got {msg}"
+        );
     }
 
     #[derive(Deserialize)]
