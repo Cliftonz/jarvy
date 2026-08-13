@@ -10,6 +10,8 @@
 
 use crate::define_tool;
 use crate::tools::common::{InstallError, get_tool_override, has, run};
+#[cfg(target_os = "linux")]
+use crate::tools::common::{PackageManager, require};
 
 define_tool!(JAVA, {
     command: "java",
@@ -126,11 +128,125 @@ enum InstallRoute {
     BrewFormula(String),
     BrewCask(String),
     AptPkg(String),
+    AptPkgWithRepo(&'static VendorRepo, String),
     DnfPkg(String),
+    DnfPkgWithRepo(&'static VendorRepo, String),
     Winget(String),
     Choco(String),
     Unsupported { reason: String },
 }
+
+/// Vendor-provided apt or dnf repository description. All fields are
+/// `&'static str` and every value below is defined as a `const` — no
+/// user input reaches the shell-escaped body, so shell-metacharacter
+/// injection is bounded to the `%CODENAME%` substitution which is
+/// validated separately by `is_valid_debian_codename`.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VendorRepo {
+    /// Human-readable vendor label used in log lines.
+    vendor: &'static str,
+    /// Absolute URL to the vendor's GPG key (must be HTTPS).
+    key_url: &'static str,
+    /// Path where the dearmored key is written (must live under
+    /// `/etc/apt/keyrings` or `/usr/share/keyrings` for apt, or
+    /// `/etc/pki/rpm-gpg` for dnf).
+    key_path: &'static str,
+    /// Path where the `sources.list.d/*.list` (apt) or
+    /// `yum.repos.d/*.repo` (dnf) file is written.
+    list_path: &'static str,
+    /// Body of the `.list` / `.repo` file. `%CODENAME%` is substituted
+    /// with `lsb_release -cs` output at bootstrap time (apt only). dnf
+    /// bodies do not carry substitutions.
+    body: &'static str,
+}
+
+// ---- Adoptium Temurin ----
+#[cfg(target_os = "linux")]
+const TEMURIN_APT: VendorRepo = VendorRepo {
+    vendor: "Adoptium Temurin",
+    key_url: "https://packages.adoptium.net/artifactory/api/gpg/key/public",
+    key_path: "/etc/apt/keyrings/adoptium.gpg",
+    list_path: "/etc/apt/sources.list.d/adoptium.list",
+    body: "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %CODENAME% main\n",
+};
+
+#[cfg(target_os = "linux")]
+const TEMURIN_DNF: VendorRepo = VendorRepo {
+    vendor: "Adoptium Temurin",
+    key_url: "https://packages.adoptium.net/artifactory/api/gpg/key/public",
+    key_path: "/etc/pki/rpm-gpg/adoptium.gpg",
+    list_path: "/etc/yum.repos.d/adoptium.repo",
+    body: "[Adoptium]\nname=Adoptium\nbaseurl=https://packages.adoptium.net/artifactory/rpm/rockylinux/$releasever/$basearch\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/adoptium.gpg\n",
+};
+
+// ---- Azul Zulu ----
+#[cfg(target_os = "linux")]
+const ZULU_APT: VendorRepo = VendorRepo {
+    vendor: "Azul Zulu",
+    key_url: "https://repos.azul.com/azul-repo.key",
+    key_path: "/usr/share/keyrings/azul.gpg",
+    list_path: "/etc/apt/sources.list.d/zulu.list",
+    body: "deb [signed-by=/usr/share/keyrings/azul.gpg] https://repos.azul.com/zulu/deb stable main\n",
+};
+
+#[cfg(target_os = "linux")]
+const ZULU_DNF: VendorRepo = VendorRepo {
+    vendor: "Azul Zulu",
+    key_url: "https://repos.azul.com/azul-repo.key",
+    key_path: "/etc/pki/rpm-gpg/azul.gpg",
+    list_path: "/etc/yum.repos.d/zulu.repo",
+    body: "[zulu]\nname=zulu\nbaseurl=https://repos.azul.com/zulu/rpm\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/azul.gpg\n",
+};
+
+// ---- Amazon Corretto ----
+#[cfg(target_os = "linux")]
+const CORRETTO_APT: VendorRepo = VendorRepo {
+    vendor: "Amazon Corretto",
+    key_url: "https://apt.corretto.aws/corretto.key",
+    key_path: "/usr/share/keyrings/corretto.gpg",
+    list_path: "/etc/apt/sources.list.d/corretto.list",
+    body: "deb [signed-by=/usr/share/keyrings/corretto.gpg] https://apt.corretto.aws stable main\n",
+};
+
+#[cfg(target_os = "linux")]
+const CORRETTO_DNF: VendorRepo = VendorRepo {
+    vendor: "Amazon Corretto",
+    key_url: "https://yum.corretto.aws/corretto.key",
+    key_path: "/etc/pki/rpm-gpg/corretto.gpg",
+    list_path: "/etc/yum.repos.d/corretto.repo",
+    body: "[corretto]\nname=Amazon Corretto\nbaseurl=https://yum.corretto.aws\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/corretto.gpg\n",
+};
+
+// ---- BellSoft Liberica ----
+#[cfg(target_os = "linux")]
+const LIBERICA_APT: VendorRepo = VendorRepo {
+    vendor: "BellSoft Liberica",
+    key_url: "https://download.bell-sw.com/pki/GPG-KEY-bellsoft",
+    key_path: "/etc/apt/keyrings/bellsoft.gpg",
+    list_path: "/etc/apt/sources.list.d/bellsoft.list",
+    body: "deb [signed-by=/etc/apt/keyrings/bellsoft.gpg] https://apt.bell-sw.com/ stable main\n",
+};
+
+#[cfg(target_os = "linux")]
+const LIBERICA_DNF: VendorRepo = VendorRepo {
+    vendor: "BellSoft Liberica",
+    key_url: "https://download.bell-sw.com/pki/GPG-KEY-bellsoft",
+    key_path: "/etc/pki/rpm-gpg/bellsoft.gpg",
+    list_path: "/etc/yum.repos.d/bellsoft.repo",
+    body: "[bellsoft]\nname=BellSoft Repository\nbaseurl=https://yum.bell-sw.com\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/bellsoft.gpg\n",
+};
+
+// ---- Microsoft OpenJDK (dnf only; apt requires Ubuntu major-version
+// detection that is not modeled in v1, so apt stays Unsupported for MS.)
+#[cfg(target_os = "linux")]
+const MSOPENJDK_DNF: VendorRepo = VendorRepo {
+    vendor: "Microsoft OpenJDK",
+    key_url: "https://packages.microsoft.com/keys/microsoft.asc",
+    key_path: "/etc/pki/rpm-gpg/microsoft.gpg",
+    list_path: "/etc/yum.repos.d/microsoft-prod.repo",
+    body: "[packages-microsoft-com-prod]\nname=packages-microsoft-com-prod\nbaseurl=https://packages.microsoft.com/rhel/9/prod/\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/microsoft.gpg\n",
+};
 
 #[cfg(target_os = "macos")]
 fn resolve_macos(distro: JdkDistribution, ver: VersionSelector) -> InstallRoute {
@@ -154,43 +270,252 @@ fn resolve_macos(distro: JdkDistribution, ver: VersionSelector) -> InstallRoute 
 
 #[cfg(target_os = "linux")]
 fn resolve_linux(distro: JdkDistribution, ver: VersionSelector) -> InstallRoute {
+    resolve_linux_inner(crate::tools::common::detect_linux_pm(), distro, ver)
+}
+
+/// Pure PM-aware routing — extracted from `resolve_linux` so tests can
+/// exercise every (PM, distro, version) triple without depending on the
+/// host's actual package manager. Every version-bearing package name
+/// interpolates ONLY the `Major(n)` integer from the closed
+/// `VersionSelector` enum, so no user-controlled string reaches the
+/// package identifier.
+#[cfg(target_os = "linux")]
+fn resolve_linux_inner(
+    pm: Option<PackageManager>,
+    distro: JdkDistribution,
+    ver: VersionSelector,
+) -> InstallRoute {
     use InstallRoute::*;
     use JdkDistribution::*;
-    // Detect PM at route-resolve time; only apt/dnf carry first-party
-    // openjdk packages we're confident about. Others land in the
-    // openjdk platform-default path via `install_platform`.
-    let pm = crate::tools::common::detect_linux_pm();
-    match distro {
-        Openjdk => match (pm, ver) {
-            (Some(crate::tools::common::PackageManager::Apt), VersionSelector::Major(n)) => {
-                AptPkg(format!("openjdk-{n}-jdk"))
-            }
-            (Some(crate::tools::common::PackageManager::Apt), VersionSelector::Latest) => {
-                AptPkg("default-jdk".into())
-            }
-            (Some(crate::tools::common::PackageManager::Dnf), VersionSelector::Major(n)) => {
-                DnfPkg(format!("java-{n}-openjdk-devel"))
-            }
-            (Some(crate::tools::common::PackageManager::Dnf), VersionSelector::Latest) => {
-                DnfPkg("java-latest-openjdk-devel".into())
-            }
-            (other_pm, _) => Unsupported {
-                reason: format!(
-                    "openjdk distribution not modeled for {other_pm:?} yet - falling back to jarvy default"
-                ),
-            },
+    // Default Java major version used when the user asks for "latest"
+    // on a vendor package that requires an explicit major in the
+    // package name. 21 = current LTS as of the write of this table.
+    const DEFAULT_MAJOR: u32 = 21;
+    let n = match ver {
+        VersionSelector::Latest => DEFAULT_MAJOR,
+        VersionSelector::Major(n) => n,
+    };
+    match (distro, pm) {
+        // openjdk retains its distro-native paths.
+        (Openjdk, Some(PackageManager::Apt)) => match ver {
+            VersionSelector::Latest => AptPkg("default-jdk".into()),
+            VersionSelector::Major(n) => AptPkg(format!("openjdk-{n}-jdk")),
         },
-        // Third-party JDK vendors on Linux ship via their own apt/dnf
-        // repos (or manual tarballs). Auto-configuring vendor repos is
-        // out of scope for v1; caller either falls back to openjdk or
-        // hard-errors per `fallback` flag.
-        _ => Unsupported {
+        (Openjdk, Some(PackageManager::Dnf)) => match ver {
+            VersionSelector::Latest => DnfPkg("java-latest-openjdk-devel".into()),
+            VersionSelector::Major(n) => DnfPkg(format!("java-{n}-openjdk-devel")),
+        },
+        (Openjdk, other_pm) => Unsupported {
             reason: format!(
-                "distribution '{}' on Linux requires the vendor's third-party apt/dnf repo; jarvy v1 does not auto-configure vendor repos",
-                distro.as_slug()
+                "openjdk distribution not modeled for {other_pm:?} yet - falling back to jarvy default"
+            ),
+        },
+
+        // Temurin
+        (Temurin, Some(PackageManager::Apt)) => {
+            AptPkgWithRepo(&TEMURIN_APT, format!("temurin-{n}-jdk"))
+        }
+        (Temurin, Some(PackageManager::Dnf)) => {
+            DnfPkgWithRepo(&TEMURIN_DNF, format!("temurin-{n}-jdk"))
+        }
+
+        // Zulu
+        (Zulu, Some(PackageManager::Apt)) => {
+            AptPkgWithRepo(&ZULU_APT, format!("zulu{n}-jdk"))
+        }
+        (Zulu, Some(PackageManager::Dnf)) => {
+            DnfPkgWithRepo(&ZULU_DNF, format!("zulu{n}-jdk"))
+        }
+
+        // Corretto
+        (Corretto, Some(PackageManager::Apt)) => {
+            AptPkgWithRepo(&CORRETTO_APT, format!("java-{n}-amazon-corretto-jdk"))
+        }
+        (Corretto, Some(PackageManager::Dnf)) => {
+            DnfPkgWithRepo(&CORRETTO_DNF, format!("java-{n}-amazon-corretto-devel"))
+        }
+
+        // Liberica
+        (Liberica, Some(PackageManager::Apt)) => {
+            AptPkgWithRepo(&LIBERICA_APT, format!("bellsoft-java{n}-full"))
+        }
+        (Liberica, Some(PackageManager::Dnf)) => {
+            DnfPkgWithRepo(&LIBERICA_DNF, format!("bellsoft-java{n}-full"))
+        }
+
+        // Microsoft OpenJDK — apt intentionally unsupported until
+        // Ubuntu major-version detection is modeled; dnf works.
+        (MicrosoftOpenjdk, Some(PackageManager::Apt)) => Unsupported {
+            reason: "microsoft-openjdk apt bootstrap requires Ubuntu 20.04/22.04/24.04 detection; not yet automated - install manually per https://learn.microsoft.com/en-us/java/openjdk/install".into(),
+        },
+        (MicrosoftOpenjdk, Some(PackageManager::Dnf)) => {
+            DnfPkgWithRepo(&MSOPENJDK_DNF, format!("msopenjdk-{n}"))
+        }
+
+        // pacman / apk / zypper / yum / other PMs: no first-party
+        // vendor packaging modeled. Caller falls back to openjdk (or
+        // refuses per `fallback = false`).
+        (other_distro, other_pm) => Unsupported {
+            reason: format!(
+                "distribution '{}' on Linux with {:?} package manager has no first-party vendor repo modeled",
+                other_distro.as_slug(),
+                other_pm
             ),
         },
     }
+}
+
+/// Accepts only lowercase alnum Debian/Ubuntu codenames (`jammy`,
+/// `noble`, `bookworm`, …). Anything containing shell metacharacters,
+/// whitespace, uppercase, hyphens, dots, or non-ASCII is refused. The
+/// codename is interpolated into a shell command run under sudo, so
+/// this is a security boundary.
+#[cfg(target_os = "linux")]
+fn is_valid_debian_codename(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+}
+
+/// Idempotency: skip bootstrap if the sources.list.d/yum.repos.d file
+/// already exists AND was modified within the last 30 days. Cheap
+/// heuristic against re-fetching on every `jarvy setup`.
+#[cfg(target_os = "linux")]
+fn repo_recently_written(list_path: &str) -> bool {
+    use std::time::{Duration, SystemTime};
+    let Ok(md) = std::fs::metadata(list_path) else {
+        return false;
+    };
+    let Ok(mtime) = md.modified() else {
+        return false;
+    };
+    let Ok(age) = SystemTime::now().duration_since(mtime) else {
+        return false;
+    };
+    age < Duration::from_secs(30 * 24 * 60 * 60)
+}
+
+/// Fetch the vendor GPG key over HTTPS + dearmor it into `key_path`
+/// under sudo. Fails with `Prereq` if curl / gpg / lsb_release are
+/// missing — never auto-installs them silently.
+#[cfg(target_os = "linux")]
+fn bootstrap_apt_repo(repo: &VendorRepo) -> Result<(), InstallError> {
+    use crate::tools::common::{default_use_sudo, run, run_maybe_sudo};
+
+    if repo_recently_written(repo.list_path) {
+        return Ok(());
+    }
+
+    require("curl", "curl is required to fetch the vendor GPG key")?;
+    require("gpg", "gpg is required to dearmor the vendor GPG key")?;
+    require(
+        "lsb_release",
+        "lsb_release not found (install lsb-release) - required to detect the Debian/Ubuntu codename",
+    )?;
+
+    let use_sudo = default_use_sudo().unwrap_or(true);
+
+    // Resolve codename before doing any writes.
+    let codename_out = run("lsb_release", &["-cs"])?;
+    let codename_raw = String::from_utf8_lossy(&codename_out.stdout);
+    let codename = codename_raw.trim();
+    if !is_valid_debian_codename(codename) {
+        return Err(InstallError::Prereq(
+            "lsb_release returned a codename with unexpected characters; refusing to bootstrap vendor repo",
+        ));
+    }
+
+    // Ensure key parent dir exists (e.g. /etc/apt/keyrings on newer
+    // Debian derivatives).
+    if let Some(parent) = std::path::Path::new(repo.key_path).parent() {
+        let parent_str = parent.to_string_lossy();
+        run_maybe_sudo(use_sudo, "mkdir", &["-p", &parent_str])?;
+    }
+
+    // Fetch the key to a tmp file, then dearmor via a shell pipeline
+    // that itself runs under sudo so the resulting file lands with
+    // root ownership at `key_path`. The pipeline body uses ONLY
+    // `&'static str` inputs from `VendorRepo` and the validated
+    // codename — no user string reaches the shell.
+    let dearmor_cmd = format!(
+        "set -euo pipefail; curl -fsSL {} | gpg --dearmor --yes -o {}",
+        shell_single_quote(repo.key_url),
+        shell_single_quote(repo.key_path)
+    );
+    run_maybe_sudo(use_sudo, "sh", &["-c", &dearmor_cmd])?;
+
+    // Write the sources.list file via `sudo tee`. Body is a static
+    // const with one `%CODENAME%` substitution; the substitution has
+    // been validated above.
+    let body = repo.body.replace("%CODENAME%", codename);
+    let write_cmd = format!(
+        "printf '%s' {} | tee {} > /dev/null",
+        shell_single_quote(&body),
+        shell_single_quote(repo.list_path)
+    );
+    run_maybe_sudo(use_sudo, "sh", &["-c", &write_cmd])?;
+
+    // Refresh apt indexes so the newly-added repo is visible to the
+    // subsequent `PkgOps::install` call.
+    let apt = if has("apt") { "apt" } else { "apt-get" };
+    run_maybe_sudo(use_sudo, apt, &["update"])?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn bootstrap_dnf_repo(repo: &VendorRepo) -> Result<(), InstallError> {
+    use crate::tools::common::{default_use_sudo, run_maybe_sudo};
+
+    if repo_recently_written(repo.list_path) {
+        return Ok(());
+    }
+
+    require("curl", "curl is required to fetch the vendor GPG key")?;
+
+    let use_sudo = default_use_sudo().unwrap_or(true);
+
+    if let Some(parent) = std::path::Path::new(repo.key_path).parent() {
+        let parent_str = parent.to_string_lossy();
+        run_maybe_sudo(use_sudo, "mkdir", &["-p", &parent_str])?;
+    }
+
+    // dnf accepts ASCII-armored keys directly (gpgkey=file://…), so
+    // no dearmor step is required — just fetch to key_path under sudo.
+    let fetch_cmd = format!(
+        "set -euo pipefail; curl -fsSL {} -o {}",
+        shell_single_quote(repo.key_url),
+        shell_single_quote(repo.key_path)
+    );
+    run_maybe_sudo(use_sudo, "sh", &["-c", &fetch_cmd])?;
+
+    let write_cmd = format!(
+        "printf '%s' {} | tee {} > /dev/null",
+        shell_single_quote(repo.body),
+        shell_single_quote(repo.list_path)
+    );
+    run_maybe_sudo(use_sudo, "sh", &["-c", &write_cmd])?;
+
+    Ok(())
+}
+
+/// Wraps a string in POSIX single quotes, escaping any embedded `'`
+/// so the value is safe inside a `sh -c` pipeline. Repo bodies + URLs
+/// are `&'static str` constants and the codename is validated, but
+/// this keeps every string that reaches `sh` uniformly quoted.
+#[cfg(target_os = "linux")]
+fn shell_single_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
 }
 
 #[cfg(target_os = "windows")]
@@ -359,7 +684,31 @@ fn execute_route(route: InstallRoute) -> Result<(), InstallError> {
         InstallRoute::BrewFormula(pkg) => brew_install(&["install", &pkg]),
         InstallRoute::BrewCask(pkg) => brew_install(&["install", "--cask", &pkg]),
         InstallRoute::AptPkg(pkg) => apt_install(&pkg),
+        InstallRoute::AptPkgWithRepo(repo, pkg) => {
+            #[cfg(target_os = "linux")]
+            {
+                bootstrap_apt_repo(repo)?;
+                return apt_install(&pkg);
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = (repo, pkg);
+                Err(InstallError::Unsupported)
+            }
+        }
         InstallRoute::DnfPkg(pkg) => dnf_install(&pkg),
+        InstallRoute::DnfPkgWithRepo(repo, pkg) => {
+            #[cfg(target_os = "linux")]
+            {
+                bootstrap_dnf_repo(repo)?;
+                return dnf_install(&pkg);
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = (repo, pkg);
+                Err(InstallError::Unsupported)
+            }
+        }
         InstallRoute::Winget(id) => winget_install(&id),
         InstallRoute::Choco(id) => choco_install(&id),
         InstallRoute::Unsupported { .. } => {
@@ -568,11 +917,207 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn resolve_route_linux_temurin_17_unsupported() {
-        match resolve_route(JdkDistribution::Temurin, VersionSelector::Major(17)) {
-            InstallRoute::Unsupported { .. } => {}
-            other => panic!("expected Unsupported, got {other:?}"),
+    fn linux_temurin_apt_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Apt),
+                JdkDistribution::Temurin,
+                VersionSelector::Major(17),
+            ),
+            InstallRoute::AptPkgWithRepo(&TEMURIN_APT, "temurin-17-jdk".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_temurin_dnf_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Dnf),
+                JdkDistribution::Temurin,
+                VersionSelector::Major(21),
+            ),
+            InstallRoute::DnfPkgWithRepo(&TEMURIN_DNF, "temurin-21-jdk".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_zulu_apt_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Apt),
+                JdkDistribution::Zulu,
+                VersionSelector::Major(17),
+            ),
+            InstallRoute::AptPkgWithRepo(&ZULU_APT, "zulu17-jdk".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_zulu_dnf_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Dnf),
+                JdkDistribution::Zulu,
+                VersionSelector::Major(17),
+            ),
+            InstallRoute::DnfPkgWithRepo(&ZULU_DNF, "zulu17-jdk".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_corretto_apt_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Apt),
+                JdkDistribution::Corretto,
+                VersionSelector::Major(17),
+            ),
+            InstallRoute::AptPkgWithRepo(&CORRETTO_APT, "java-17-amazon-corretto-jdk".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_corretto_dnf_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Dnf),
+                JdkDistribution::Corretto,
+                VersionSelector::Major(17),
+            ),
+            InstallRoute::DnfPkgWithRepo(&CORRETTO_DNF, "java-17-amazon-corretto-devel".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_liberica_apt_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Apt),
+                JdkDistribution::Liberica,
+                VersionSelector::Major(17),
+            ),
+            InstallRoute::AptPkgWithRepo(&LIBERICA_APT, "bellsoft-java17-full".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_liberica_dnf_route_v1() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Dnf),
+                JdkDistribution::Liberica,
+                VersionSelector::Major(17),
+            ),
+            InstallRoute::DnfPkgWithRepo(&LIBERICA_DNF, "bellsoft-java17-full".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn microsoft_openjdk_apt_still_unsupported() {
+        match resolve_linux_inner(
+            Some(PackageManager::Apt),
+            JdkDistribution::MicrosoftOpenjdk,
+            VersionSelector::Major(21),
+        ) {
+            InstallRoute::Unsupported { reason } => {
+                assert!(
+                    reason.contains("microsoft-openjdk"),
+                    "reason should mention microsoft-openjdk: {reason}"
+                );
+            }
+            other => panic!("expected Unsupported for msopenjdk apt, got {other:?}"),
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn microsoft_openjdk_dnf_bootstraps() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Dnf),
+                JdkDistribution::MicrosoftOpenjdk,
+                VersionSelector::Major(21),
+            ),
+            InstallRoute::DnfPkgWithRepo(&MSOPENJDK_DNF, "msopenjdk-21".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_temurin_latest_uses_default_major() {
+        assert_eq!(
+            resolve_linux_inner(
+                Some(PackageManager::Apt),
+                JdkDistribution::Temurin,
+                VersionSelector::Latest,
+            ),
+            InstallRoute::AptPkgWithRepo(&TEMURIN_APT, "temurin-21-jdk".into())
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_pacman_vendor_distros_unsupported() {
+        for distro in [
+            JdkDistribution::Temurin,
+            JdkDistribution::Zulu,
+            JdkDistribution::Corretto,
+            JdkDistribution::Liberica,
+        ] {
+            match resolve_linux_inner(
+                Some(PackageManager::Pacman),
+                distro,
+                VersionSelector::Major(17),
+            ) {
+                InstallRoute::Unsupported { .. } => {}
+                other => panic!("expected Unsupported for {distro:?} on pacman, got {other:?}"),
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn codename_validate_rejects_shell_meta() {
+        for bad in [
+            "",
+            "Jammy",       // uppercase
+            "jammy; rm",   // shell metachar
+            "$( whoami )", // command substitution
+            "jammy noble", // whitespace
+            "jammy-lts",   // hyphen
+            "jammy.1",     // dot
+            "jammy`",      // backtick
+            "jammy|noble", // pipe
+            "jammy\n",     // newline
+            "jámmy",       // non-ASCII
+        ] {
+            assert!(
+                !is_valid_debian_codename(bad),
+                "codename {bad:?} should be rejected"
+            );
+        }
+        for good in ["jammy", "noble", "bookworm", "trixie", "focal", "bullseye"] {
+            assert!(
+                is_valid_debian_codename(good),
+                "codename {good:?} should be accepted"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shell_single_quote_escapes_embedded_quote() {
+        assert_eq!(shell_single_quote("hi"), "'hi'");
+        assert_eq!(shell_single_quote("it's"), "'it'\\''s'");
+        assert_eq!(shell_single_quote(""), "''");
     }
 
     #[cfg(target_os = "windows")]
@@ -608,23 +1153,22 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn decide_linux_temurin_falls_back_when_allowed() {
+    fn decide_linux_temurin_result_depends_on_host_pm() {
+        // On apt/dnf hosts, temurin now bootstraps the vendor repo
+        // (RunRoute). On pacman/apk/… hosts, it falls back (or refuses
+        // when fallback = false). Either outcome is correct per the
+        // routing table; the test just asserts the requested slug is
+        // preserved through the decision.
         match decide("temurin", "17", true) {
-            Decision::FallbackToDefault { requested, .. } => {
-                assert_eq!(requested, "temurin");
-            }
-            other => panic!("expected FallbackToDefault, got {other:?}"),
+            Decision::RunRoute(_) | Decision::FallbackToDefault { .. } => {}
+            other => panic!("expected RunRoute or FallbackToDefault, got {other:?}"),
         }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn decide_linux_temurin_refuses_when_fallback_false() {
         match decide("temurin", "17", false) {
+            Decision::RunRoute(_) => {}
             Decision::Refuse { requested, .. } => {
                 assert_eq!(requested, "temurin");
             }
-            other => panic!("expected Refuse, got {other:?}"),
+            other => panic!("expected RunRoute or Refuse, got {other:?}"),
         }
     }
 
@@ -650,7 +1194,9 @@ mod tests {
                     InstallRoute::BrewFormula(s)
                     | InstallRoute::BrewCask(s)
                     | InstallRoute::AptPkg(s)
+                    | InstallRoute::AptPkgWithRepo(_, s)
                     | InstallRoute::DnfPkg(s)
+                    | InstallRoute::DnfPkgWithRepo(_, s)
                     | InstallRoute::Winget(s)
                     | InstallRoute::Choco(s) => {
                         !s.contains(';') && !s.contains('|') && !s.contains('`')
