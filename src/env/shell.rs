@@ -65,7 +65,7 @@ impl ShellType {
     pub fn extend_line(&self, key: &str, raw_value: &str, position: PathPosition) -> String {
         match self {
             ShellType::Bash | ShellType::Zsh | ShellType::Sh => {
-                let esc = escape_for_double_quote(raw_value);
+                let esc = bash_double_quote_body(raw_value);
                 match position {
                     PathPosition::Prepend => {
                         format!("export {k}=\"{v}${{{k}:+:${k}}}\"", k = key, v = esc)
@@ -83,7 +83,7 @@ impl ShellType {
                 }
             }
             ShellType::Nushell => {
-                let esc = nu_double_quote(raw_value);
+                let esc = nu_double_quote_body(raw_value);
                 // Split existing value on the platform separator, drop empties,
                 // then either prepend or append the new value and rejoin. Uses
                 // `$env.K?` so an unset var doesn't crash the assignment.
@@ -143,6 +143,20 @@ impl ShellType {
     /// Get comment syntax
     pub fn comment_prefix(&self) -> &'static str {
         "#"
+    }
+
+    /// Bounded slug for telemetry `shell` fields. Kept separate from
+    /// `Display` so the label taxonomy is stable regardless of future UX
+    /// changes to the human-facing name.
+    pub fn as_slug(&self) -> &'static str {
+        match self {
+            ShellType::Bash => "bash",
+            ShellType::Zsh => "zsh",
+            ShellType::Fish => "fish",
+            ShellType::Sh => "sh",
+            ShellType::PowerShell => "powershell",
+            ShellType::Nushell => "nushell",
+        }
     }
 }
 
@@ -360,7 +374,21 @@ fn update_rc_content(
             let value = &vars[key];
             let expanded_value = expand_value(value.value(), ctx);
             let line = if value.should_append() {
-                shell.extend_line(key, &expanded_value, value.position())
+                let position = value.position();
+                let out = shell.extend_line(key, &expanded_value, position);
+                if crate::observability::telemetry_gate::is_enabled() {
+                    let position_label = match position {
+                        PathPosition::Prepend => "prepend",
+                        PathPosition::Append => "append",
+                    };
+                    tracing::info!(
+                        event = "env.rc.extend_emitted",
+                        shell = shell.as_slug(),
+                        position = position_label,
+                        key_class = classify_env_key(key),
+                    );
+                }
+                out
             } else {
                 let quoted_value = shell_quote(&expanded_value, shell);
                 shell.export_line(key, &quoted_value)
@@ -372,6 +400,40 @@ fn update_rc_content(
     }
 
     lines.join("\n") + "\n"
+}
+
+/// Bounded category label for path-like env var keys. Fed as the
+/// `key_class` field of `env.rc.extend_emitted` so downstream cardinality
+/// stays bounded — user-defined `*_PATH` names are NOT emitted verbatim.
+fn classify_env_key(key: &str) -> &'static str {
+    if key.eq_ignore_ascii_case("PATH") {
+        return "path";
+    }
+    if key.eq_ignore_ascii_case("MANPATH") {
+        return "manpath";
+    }
+    if key.eq_ignore_ascii_case("INFOPATH") {
+        return "infopath";
+    }
+    if key.eq_ignore_ascii_case("CDPATH") {
+        return "cdpath";
+    }
+    if key.eq_ignore_ascii_case("CLASSPATH") {
+        return "classpath";
+    }
+    let b = key.as_bytes();
+    if b.len() >= 5 && b[b.len() - 5..].eq_ignore_ascii_case(b"PATHS") {
+        return "suffix_paths";
+    }
+    if b.len() >= 4 {
+        if b[b.len() - 4..].eq_ignore_ascii_case(b"PATH") {
+            return "suffix_path";
+        }
+        if b[b.len() - 4..].eq_ignore_ascii_case(b"DIRS") {
+            return "suffix_dirs";
+        }
+    }
+    "other"
 }
 
 /// Validate an env-var name against POSIX-portable grammar:
@@ -391,11 +453,14 @@ pub(crate) fn is_valid_env_var_name(name: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Escape a value for embedding INSIDE a POSIX double-quoted string. The
-/// guard around it (`${K:+:$K}`) must remain shell-expandable, so we only
-/// touch the four chars that would otherwise get re-interpreted by the
-/// shell inside `"..."`: backslash, double-quote, dollar, backtick.
-fn escape_for_double_quote(value: &str) -> String {
+/// POSIX double-quoted-context escape: backslash, double-quote, dollar,
+/// backtick. Shared by `shell_quote` (bash/zsh/sh arms) and `extend_line`
+/// (bash/zsh/sh path) so the two codegen sites cannot drift.
+///
+/// The guard around an extend value (`${K:+:$K}`) must remain
+/// shell-expandable, so we only touch the four chars that would otherwise
+/// get re-interpreted by the shell inside `"..."`.
+fn bash_double_quote_body(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
         match c {
@@ -426,9 +491,11 @@ fn fish_single_quote(value: &str) -> String {
     out
 }
 
-/// Escape a value for embedding INSIDE a nushell double-quoted string.
-/// Nushell double quotes escape `\\` and `\"`; `$` is literal.
-fn nu_double_quote(value: &str) -> String {
+/// Nushell double-quoted-context escape: backslash and double-quote only
+/// (`$` is literal — nushell plain `"..."` doesn't interpolate and `\$`
+/// would be an invalid escape). Shared by `shell_quote` (nushell arm) and
+/// `extend_line` (nushell path) so the two codegen sites cannot drift.
+fn nu_double_quote_body(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -452,12 +519,10 @@ fn ps_double_quote(value: &str) -> String {
 fn shell_quote(value: &str, shell: ShellType) -> String {
     match shell {
         ShellType::Nushell => {
-            // Nushell double-quoted strings escape only `\` and `"`; `$`
-            // is literal (interpolation needs the `$"..."` form) and a
-            // POSIX-style `\$` would be an *invalid* escape. Always quote
-            // — bare words are commands/values with their own parse rules.
-            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("\"{}\"", escaped)
+            // Always quote — bare words in nushell are commands/values with
+            // their own parse rules. Escape via the shared helper so the
+            // extend_line arm and this arm cannot drift.
+            format!("\"{}\"", nu_double_quote_body(value))
         }
         ShellType::Fish => {
             // Fish uses different quoting rules
@@ -485,13 +550,9 @@ fn shell_quote(value: &str, shell: ShellType) -> String {
                 || value.contains('\\')
                 || value.contains('#')
             {
-                // Use double quotes and escape
-                let escaped = value
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('$', "\\$")
-                    .replace('`', "\\`");
-                format!("\"{}\"", escaped)
+                // Use double quotes; escape via the shared helper so the
+                // extend_line arm and this arm cannot drift.
+                format!("\"{}\"", bash_double_quote_body(value))
             } else {
                 value.to_string()
             }
@@ -936,5 +997,92 @@ mod tests {
             out.contains(r"'it\'s'"),
             "single-quote escape inside fish quotes; got: {out}"
         );
+    }
+
+    // ------- append=true end-to-end write (regression pin for f350433) -------
+
+    #[test]
+    fn update_rc_content_appends_path_when_flag_set() {
+        // Regression pin for f350433: the shell rc writer must honor
+        // EnvValue::Complex { append: true } and emit an extend statement
+        // (`${PATH:+:$PATH}` on POSIX shells), NOT clobber PATH.
+        let mut vars: HashMap<String, EnvValue> = HashMap::new();
+        vars.insert(
+            "PATH".into(),
+            EnvValue::Complex {
+                value: "/opt/bin".into(),
+                append: true,
+                position: PathPosition::Prepend,
+                description: None,
+                per_tool: false,
+            },
+        );
+        let ctx = EnvContext::new();
+        let out = update_rc_content("", ShellType::Bash, &vars, &ctx);
+        // Regression: the OLD broken code emitted `export PATH="/opt/bin"`.
+        assert!(
+            !out.contains(r#"export PATH="/opt/bin""#),
+            "regression: shell writer must not clobber PATH — got {out}"
+        );
+        assert!(
+            out.contains(r#"${PATH:+:$PATH}"#),
+            "expected unset-safe prepend guard in output — got {out}"
+        );
+        assert!(out.contains("/opt/bin"));
+    }
+
+    #[test]
+    fn preview_shell_rc_appends_path_when_flag_set() {
+        // Parity test — preview must match write behavior.
+        let mut vars: HashMap<String, EnvValue> = HashMap::new();
+        vars.insert(
+            "PATH".into(),
+            EnvValue::Complex {
+                value: "/opt/bin".into(),
+                append: true,
+                position: PathPosition::Append,
+                description: None,
+                per_tool: false,
+            },
+        );
+        let ctx = EnvContext::new();
+        let out = preview_shell_rc(ShellType::Bash, &vars, &ctx);
+        assert!(!out.contains(r#"export PATH="/opt/bin""#));
+        assert!(out.contains("/opt/bin"));
+        // Append position — old value on left, new on right.
+        assert!(
+            out.contains(r#"${PATH:+$PATH:}"#),
+            "expected unset-safe append guard in output — got {out}"
+        );
+    }
+
+    // ------- classify_env_key (bounded telemetry taxonomy) -------
+
+    #[test]
+    fn classify_env_key_covers_exact_and_suffix() {
+        assert_eq!(classify_env_key("PATH"), "path");
+        assert_eq!(classify_env_key("path"), "path");
+        assert_eq!(classify_env_key("MANPATH"), "manpath");
+        assert_eq!(classify_env_key("INFOPATH"), "infopath");
+        assert_eq!(classify_env_key("CDPATH"), "cdpath");
+        assert_eq!(classify_env_key("CLASSPATH"), "classpath");
+        // Suffix rules — user-defined names collapse to a bounded label,
+        // so downstream cardinality stays flat.
+        assert_eq!(classify_env_key("NODE_PATH"), "suffix_path");
+        assert_eq!(classify_env_key("PYTHONPATH"), "suffix_path");
+        assert_eq!(classify_env_key("SITE_PATHS"), "suffix_paths");
+        assert_eq!(classify_env_key("CMAKE_DIRS"), "suffix_dirs");
+        assert_eq!(classify_env_key("FOO"), "other");
+        assert_eq!(classify_env_key(""), "other");
+    }
+
+    #[test]
+    fn shell_as_slug_is_bounded() {
+        assert_eq!(ShellType::Bash.as_slug(), "bash");
+        assert_eq!(ShellType::Zsh.as_slug(), "zsh");
+        assert_eq!(ShellType::Fish.as_slug(), "fish");
+        assert_eq!(ShellType::Sh.as_slug(), "sh");
+        assert_eq!(ShellType::PowerShell.as_slug(), "powershell");
+        assert_eq!(ShellType::Nushell.as_slug(), "nushell");
     }
 }
