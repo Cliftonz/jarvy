@@ -220,7 +220,11 @@ const TEMURIN_APT: VendorRepo = VendorRepo {
     key_path: "/etc/apt/keyrings/adoptium.gpg",
     list_path: "/etc/apt/sources.list.d/adoptium.list",
     body: "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %CODENAME% main\n",
-    // Published at https://adoptium.net/installation/linux/ (Adoptium GPG key).
+    // Verified 2026-08-13 by fetching
+    // packages.adoptium.net/artifactory/api/gpg/key/public and running
+    // `gpg --show-keys --with-fingerprint --with-colons`. Primary key
+    // matches; secondary subkey 45B0F08FF61F64C1C1F61E173F4A517504A9CD61
+    // is signed by this primary and rotates independently.
     expected_fingerprint: "3B04D753C9050D9A5D343F39843C48A565F8F04B",
 };
 
@@ -231,6 +235,7 @@ const TEMURIN_DNF: VendorRepo = VendorRepo {
     key_path: "/etc/pki/rpm-gpg/adoptium.gpg",
     list_path: "/etc/yum.repos.d/adoptium.repo",
     body: "[Adoptium]\nname=Adoptium\nbaseurl=https://packages.adoptium.net/artifactory/rpm/rockylinux/$releasever/$basearch\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/adoptium.gpg\n",
+    // Same key as the apt variant — verified 2026-08-13.
     expected_fingerprint: "3B04D753C9050D9A5D343F39843C48A565F8F04B",
 };
 
@@ -242,9 +247,10 @@ const ZULU_APT: VendorRepo = VendorRepo {
     key_path: "/usr/share/keyrings/azul.gpg",
     list_path: "/etc/apt/sources.list.d/zulu.list",
     body: "deb [signed-by=/usr/share/keyrings/azul.gpg] https://repos.azul.com/zulu/deb stable main\n",
-    // TODO(security): verify against vendor docs before release
-    // (docs.azul.com references short-id 0xB1998361219BD9C9 — need full 40-char fpr).
-    expected_fingerprint: "UNVERIFIED",
+    // Verified 2026-08-13 by fetching repos.azul.com/azul-repo.key and
+    // running `gpg --show-keys --with-fingerprint --with-colons`.
+    // Matches the short-id 0xB1998361219BD9C9 published on docs.azul.com.
+    expected_fingerprint: "27BC0C8CB3D81623F59BDADCB1998361219BD9C9",
 };
 
 #[cfg(target_os = "linux")]
@@ -254,8 +260,8 @@ const ZULU_DNF: VendorRepo = VendorRepo {
     key_path: "/etc/pki/rpm-gpg/azul.gpg",
     list_path: "/etc/yum.repos.d/zulu.repo",
     body: "[zulu]\nname=zulu\nbaseurl=https://repos.azul.com/zulu/rpm\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/azul.gpg\n",
-    // TODO(security): verify against vendor docs before release.
-    expected_fingerprint: "UNVERIFIED",
+    // Same key as the apt variant — verified 2026-08-13.
+    expected_fingerprint: "27BC0C8CB3D81623F59BDADCB1998361219BD9C9",
 };
 
 // ---- Amazon Corretto ----
@@ -266,8 +272,11 @@ const CORRETTO_APT: VendorRepo = VendorRepo {
     key_path: "/usr/share/keyrings/corretto.gpg",
     list_path: "/etc/apt/sources.list.d/corretto.list",
     body: "deb [signed-by=/usr/share/keyrings/corretto.gpg] https://apt.corretto.aws stable main\n",
-    // TODO(security): verify against docs.aws.amazon.com Corretto install guide before release.
-    expected_fingerprint: "UNVERIFIED",
+    // Verified 2026-08-13 by fetching apt.corretto.aws/corretto.key and
+    // running `gpg --show-keys --with-fingerprint --with-colons`.
+    // Matches the long-id A122542AB04F24E3 published in the AWS Corretto
+    // install guide's "NO_PUBKEY" recovery hint.
+    expected_fingerprint: "6DC3636DAE534049C8B94623A122542AB04F24E3",
 };
 
 #[cfg(target_os = "linux")]
@@ -277,8 +286,8 @@ const CORRETTO_DNF: VendorRepo = VendorRepo {
     key_path: "/etc/pki/rpm-gpg/corretto.gpg",
     list_path: "/etc/yum.repos.d/corretto.repo",
     body: "[corretto]\nname=Amazon Corretto\nbaseurl=https://yum.corretto.aws\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/corretto.gpg\n",
-    // TODO(security): verify against docs.aws.amazon.com Corretto install guide before release.
-    expected_fingerprint: "UNVERIFIED",
+    // Same key as the apt variant — verified 2026-08-13.
+    expected_fingerprint: "6DC3636DAE534049C8B94623A122542AB04F24E3",
 };
 
 // ---- BellSoft Liberica ----
@@ -289,8 +298,10 @@ const LIBERICA_APT: VendorRepo = VendorRepo {
     key_path: "/etc/apt/keyrings/bellsoft.gpg",
     list_path: "/etc/apt/sources.list.d/bellsoft.list",
     body: "deb [signed-by=/etc/apt/keyrings/bellsoft.gpg] https://apt.bell-sw.com/ stable main\n",
-    // TODO(security): verify against bell-sw.com/pages/repositories/ before release.
-    expected_fingerprint: "UNVERIFIED",
+    // Verified 2026-08-13 by fetching
+    // download.bell-sw.com/pki/GPG-KEY-bellsoft and running
+    // `gpg --show-keys --with-fingerprint --with-colons`.
+    expected_fingerprint: "99A5C88E3C5B1FA8B05A19D332E9750179FCEA62",
 };
 
 #[cfg(target_os = "linux")]
@@ -300,8 +311,8 @@ const LIBERICA_DNF: VendorRepo = VendorRepo {
     key_path: "/etc/pki/rpm-gpg/bellsoft.gpg",
     list_path: "/etc/yum.repos.d/bellsoft.repo",
     body: "[bellsoft]\nname=BellSoft Repository\nbaseurl=https://yum.bell-sw.com\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/bellsoft.gpg\n",
-    // TODO(security): verify against bell-sw.com/pages/repositories/ before release.
-    expected_fingerprint: "UNVERIFIED",
+    // Same key as the apt variant — verified 2026-08-13.
+    expected_fingerprint: "99A5C88E3C5B1FA8B05A19D332E9750179FCEA62",
 };
 
 // ---- Microsoft OpenJDK (dnf only; apt requires Ubuntu major-version
@@ -313,7 +324,8 @@ const MSOPENJDK_DNF: VendorRepo = VendorRepo {
     key_path: "/etc/pki/rpm-gpg/microsoft.gpg",
     list_path: "/etc/yum.repos.d/microsoft-prod.repo",
     body: "[packages-microsoft-com-prod]\nname=packages-microsoft-com-prod\nbaseurl=https://packages.microsoft.com/rhel/9/prod/\nenabled=1\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/microsoft.gpg\n",
-    // Standard Microsoft packaging key, published at packages.microsoft.com/keys/.
+    // Verified 2026-08-13 by fetching packages.microsoft.com/keys/microsoft.asc
+    // and running `gpg --show-keys --with-fingerprint --with-colons`.
     expected_fingerprint: "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
 };
 
