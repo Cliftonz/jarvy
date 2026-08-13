@@ -81,6 +81,10 @@ pub struct ResolvedTool {
     pub use_sudo: Option<bool>,
     /// Which role this tool came from
     pub source_role: String,
+    /// Distribution / flavor selector (e.g. "temurin" for java)
+    pub distribution: Option<String>,
+    /// Whether unsupported (distribution, OS) pairs fall back to the default
+    pub fallback: bool,
 }
 
 impl ResolvedRole {
@@ -268,11 +272,18 @@ impl<'a> RoleResolver<'a> {
                 .map(|spec| spec.version().to_string())
                 .unwrap_or_else(|| "latest".to_string());
 
-            let (version_manager, use_sudo) = definition
+            let (version_manager, use_sudo, distribution, fallback) = definition
                 .tool_versions
                 .get(tool_name)
-                .map(|spec| (spec.version_manager(), spec.use_sudo()))
-                .unwrap_or((true, None));
+                .map(|spec| {
+                    (
+                        spec.version_manager(),
+                        spec.use_sudo(),
+                        spec.distribution().map(str::to_string),
+                        spec.fallback(),
+                    )
+                })
+                .unwrap_or((true, None, None, true));
 
             tools.insert(
                 tool_name.clone(),
@@ -281,6 +292,8 @@ impl<'a> RoleResolver<'a> {
                     version_manager,
                     use_sudo,
                     source_role: role_name.to_string(),
+                    distribution,
+                    fallback,
                 },
             );
         }
@@ -295,6 +308,8 @@ impl<'a> RoleResolver<'a> {
                         version_manager: spec.version_manager(),
                         use_sudo: spec.use_sudo(),
                         source_role: role_name.to_string(),
+                        distribution: spec.distribution().map(str::to_string),
+                        fallback: spec.fallback(),
                     },
                 );
             }
@@ -675,5 +690,130 @@ mod tests {
         let resolved2 = resolver.resolve("frontend").unwrap();
 
         assert_eq!(resolved1, resolved2);
+    }
+
+    fn single_tool_role(
+        role_name: &str,
+        tool: &str,
+        spec: RoleToolSpec,
+    ) -> (String, RoleDefinitionWrapper) {
+        let mut def = RoleDefinition {
+            tools: vec![tool.to_string()],
+            ..Default::default()
+        };
+        def.tool_versions.insert(tool.to_string(), spec);
+        (role_name.to_string(), RoleDefinitionWrapper::Simple(def))
+    }
+
+    #[test]
+    fn resolved_tool_from_simple_uses_defaults() {
+        let mut roles = HashMap::new();
+        let (n, d) = single_tool_role("dev", "java", RoleToolSpec::Simple("17".to_string()));
+        roles.insert(n, d);
+        let cfg = RolesConfig { roles };
+        let tool = RoleResolver::new(&cfg)
+            .resolve("dev")
+            .expect("resolve")
+            .tools
+            .remove("java")
+            .expect("java present");
+        assert_eq!(tool.distribution, None);
+        assert!(tool.fallback);
+    }
+
+    #[test]
+    fn resolved_tool_from_detailed_preserves_distribution() {
+        let mut roles = HashMap::new();
+        let (n, d) = single_tool_role(
+            "dev",
+            "java",
+            RoleToolSpec::Detailed {
+                version: "17".to_string(),
+                version_manager: None,
+                use_sudo: None,
+                distribution: Some("temurin".to_string()),
+                fallback: None,
+            },
+        );
+        roles.insert(n, d);
+        let cfg = RolesConfig { roles };
+        let tool = RoleResolver::new(&cfg)
+            .resolve("dev")
+            .expect("resolve")
+            .tools
+            .remove("java")
+            .expect("java present");
+        assert_eq!(tool.distribution.as_deref(), Some("temurin"));
+        assert!(tool.fallback);
+    }
+
+    #[test]
+    fn resolved_tool_from_detailed_fallback_false() {
+        let mut roles = HashMap::new();
+        let (n, d) = single_tool_role(
+            "dev",
+            "java",
+            RoleToolSpec::Detailed {
+                version: "17".to_string(),
+                version_manager: None,
+                use_sudo: None,
+                distribution: Some("zulu".to_string()),
+                fallback: Some(false),
+            },
+        );
+        roles.insert(n, d);
+        let cfg = RolesConfig { roles };
+        let tool = RoleResolver::new(&cfg)
+            .resolve("dev")
+            .expect("resolve")
+            .tools
+            .remove("java")
+            .expect("java present");
+        assert_eq!(tool.distribution.as_deref(), Some("zulu"));
+        assert!(!tool.fallback);
+    }
+
+    #[test]
+    fn inherited_role_child_overrides_distribution() {
+        let mut roles = HashMap::new();
+        // Parent: temurin
+        let (n, d) = single_tool_role(
+            "base",
+            "java",
+            RoleToolSpec::Detailed {
+                version: "17".to_string(),
+                version_manager: None,
+                use_sudo: None,
+                distribution: Some("temurin".to_string()),
+                fallback: None,
+            },
+        );
+        roles.insert(n, d);
+        // Child: extends base, overrides java to zulu
+        let mut child = RoleDefinition {
+            extends: Some(RoleExtends::Single("base".to_string())),
+            tools: vec!["java".to_string()],
+            ..Default::default()
+        };
+        child.tool_versions.insert(
+            "java".to_string(),
+            RoleToolSpec::Detailed {
+                version: "17".to_string(),
+                version_manager: None,
+                use_sudo: None,
+                distribution: Some("zulu".to_string()),
+                fallback: None,
+            },
+        );
+        roles.insert("child".to_string(), RoleDefinitionWrapper::Simple(child));
+        let cfg = RolesConfig { roles };
+
+        let tool = RoleResolver::new(&cfg)
+            .resolve("child")
+            .expect("resolve")
+            .tools
+            .remove("java")
+            .expect("java present");
+        assert_eq!(tool.distribution.as_deref(), Some("zulu"));
     }
 }

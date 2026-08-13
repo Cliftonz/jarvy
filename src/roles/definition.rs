@@ -109,6 +109,10 @@ pub enum RoleToolSpec {
         version_manager: Option<bool>,
         #[serde(default)]
         use_sudo: Option<bool>,
+        #[serde(default)]
+        distribution: Option<String>,
+        #[serde(default)]
+        fallback: Option<bool>,
     },
     /// Simple version string: `"latest"` or `"20"`
     Simple(String),
@@ -138,6 +142,20 @@ impl RoleToolSpec {
         match self {
             RoleToolSpec::Detailed { use_sudo, .. } => *use_sudo,
             RoleToolSpec::Simple(_) => None,
+        }
+    }
+
+    pub fn distribution(&self) -> Option<&str> {
+        match self {
+            RoleToolSpec::Detailed { distribution, .. } => distribution.as_deref(),
+            RoleToolSpec::Simple(_) => None,
+        }
+    }
+
+    pub fn fallback(&self) -> bool {
+        match self {
+            RoleToolSpec::Detailed { fallback, .. } => fallback.unwrap_or(true),
+            RoleToolSpec::Simple(_) => true,
         }
     }
 }
@@ -367,10 +385,38 @@ mod tests {
             version: "18".to_string(),
             version_manager: Some(false),
             use_sudo: Some(true),
+            distribution: None,
+            fallback: None,
         };
         assert_eq!(spec.version(), "18");
         assert!(!spec.version_manager());
         assert_eq!(spec.use_sudo(), Some(true));
+        assert_eq!(spec.distribution(), None);
+        assert!(spec.fallback());
+    }
+
+    #[test]
+    fn role_tool_spec_carries_distribution_and_fallback() {
+        let spec = RoleToolSpec::Detailed {
+            version: "17".to_string(),
+            version_manager: None,
+            use_sudo: None,
+            distribution: Some("temurin".to_string()),
+            fallback: Some(false),
+        };
+        assert_eq!(spec.distribution(), Some("temurin"));
+        assert!(!spec.fallback());
+    }
+
+    #[test]
+    fn role_tool_spec_detailed_parses_distribution_from_toml() {
+        let toml_src = r#"version = "17"
+distribution = "temurin"
+fallback = false"#;
+        let spec: RoleToolSpec = toml::from_str(toml_src).expect("parse RoleToolSpec");
+        assert_eq!(spec.version(), "17");
+        assert_eq!(spec.distribution(), Some("temurin"));
+        assert!(!spec.fallback());
     }
 
     #[test]

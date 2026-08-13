@@ -174,7 +174,7 @@ pub fn run_setup(
     // the user's selection without changing `tools::add`'s signature.
     // Defaults (`distribution = None`, `fallback = true`) are the
     // no-op case, so we only insert non-default entries.
-    for (_key, tool) in &tool_configs {
+    for tool in tool_configs.values() {
         if tool.distribution.is_some() || !tool.fallback {
             tools::common::set_tool_override(
                 &tool.name,
