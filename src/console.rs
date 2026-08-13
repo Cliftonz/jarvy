@@ -2,15 +2,17 @@
 //! narration in the setup path ("Detecting Platform is: macos",
 //! "Installing Required Tools", "Docker is already installed", …).
 //!
-//! Tracing lives in `crate::analytics`; this module governs only the
-//! non-tracing stdout narration and the console tracing cap that pairs
-//! with it. When chatter is off:
+//! Tracing lives in `crate::analytics`; this module governs the
+//! non-tracing stdout narration. When chatter is off, `chatter!`
+//! becomes a no-op.
 //!
-//! 1. `chatter!` becomes a no-op.
-//! 2. `main.rs` picks `LogLevel::WarnOnly` for the console tracing
-//!    layer (INFO `event="..."` lines never reach stderr).
-//!
-//! File + OTLP sinks are untouched — the debug artifact stays whole.
+//! The paired console tracing cap is decided separately in
+//! `analytics::init_logging`: both `LogLevel::Normal` (default) and
+//! `LogLevel::WarnOnly` cap the console at WARN, so structured
+//! `tracing::info!(event = "…")` events never spam stderr regardless
+//! of the chatter gate. `-v` on setup is what widens the console back
+//! to INFO. File + OTLP sinks stay at INFO in every case, so the
+//! debug artifact remains whole.
 //!
 //! Precedence (highest wins):
 //!

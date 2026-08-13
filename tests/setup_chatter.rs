@@ -1,11 +1,16 @@
 //! End-to-end tests for the console chatter gate.
 //!
-//! Pin the four cells of the precedence table (see `src/console.rs`):
+//! Pin the precedence table (see `src/console.rs`):
 //!   1. Non-TTY default → silent (both stdout narration AND stderr
 //!      `INFO ... event="..."` tracing suppressed).
-//!   2. `[logging] chatter = true` in `jarvy.toml` → both reappear.
-//!   3. `JARVY_CHATTER=1` env → both reappear (beats toml `false`).
-//!   4. `-v` on setup → both reappear (non-TTY doesn't defeat it).
+//!   2. `[logging] chatter = true` in `jarvy.toml` → stdout narration
+//!      reappears. INFO tracing stays capped at WARN on the console —
+//!      per commit f2828ee, tracing events exist for the file log +
+//!      OTLP bridge, not the terminal; `-v` is what restores INFO to
+//!      stderr.
+//!   3. `JARVY_CHATTER=1` env → same shape (beats toml `false`).
+//!   4. `-v` on setup → BOTH narration AND INFO tracing reappear
+//!      (non-TTY doesn't defeat it).
 //!
 //! `assert_cmd` always spawns the child with piped stdout/stderr, so
 //! `stderr.is_terminal()` is `false` inside the child — same code path
@@ -101,7 +106,7 @@ fn non_tty_default_suppresses_chatter_and_info_tracing() {
 }
 
 #[test]
-fn toml_chatter_true_reopens_narration_and_tracing() {
+fn toml_chatter_true_reopens_narration() {
     let home = TempDir::new().unwrap();
     let cfg = write_config(Some(true));
     let (stdout, stderr) = run_setup(jarvy(&home), cfg.path(), &[]);
@@ -110,14 +115,17 @@ fn toml_chatter_true_reopens_narration_and_tracing() {
         stdout.contains(CHATTER_SENTINEL),
         "[logging] chatter = true should re-enable narration; stdout:\n{stdout}"
     );
+    // Per f2828ee, the CONSOLE tracing layer stays capped at WARN even
+    // when chatter is on — `-v` is the escape hatch for INFO to stderr.
+    // (See `verbose_flag_reopens_when_non_tty` for the INFO restore case.)
     assert!(
-        stderr.contains(TRACING_SENTINEL),
-        "[logging] chatter = true should restore INFO tracing to stderr; stderr:\n{stderr}"
+        !stderr.contains(TRACING_SENTINEL),
+        "[logging] chatter = true must NOT restore INFO tracing to stderr — that's the -v job; stderr:\n{stderr}"
     );
 }
 
 #[test]
-fn env_var_beats_toml_false() {
+fn env_var_beats_toml_false_for_narration() {
     let home = TempDir::new().unwrap();
     let cfg = write_config(Some(false));
     let mut cmd = jarvy(&home);
@@ -128,9 +136,11 @@ fn env_var_beats_toml_false() {
         stdout.contains(CHATTER_SENTINEL),
         "JARVY_CHATTER=1 must beat [logging] chatter = false; stdout:\n{stdout}"
     );
+    // Same shape as toml_chatter_true_reopens_narration — chatter gates
+    // narration, not INFO tracing to stderr.
     assert!(
-        stderr.contains(TRACING_SENTINEL),
-        "JARVY_CHATTER=1 must restore INFO tracing; stderr:\n{stderr}"
+        !stderr.contains(TRACING_SENTINEL),
+        "JARVY_CHATTER=1 must NOT restore INFO tracing (that's -v's job); stderr:\n{stderr}"
     );
 }
 
