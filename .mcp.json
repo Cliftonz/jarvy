@@ -1,10 +1,1 @@
-{
-  "mcpServers": {
-    "rust-mcp": {
-      "type": "stdio",
-      "command": "/Users/zacclifton/.cargo/bin/rust-mcp-server",
-      "args": [],
-      "env": {}
-    }
-  }
-}
+{"_jarvy_managed_servers":["jarvy"],"mcpServers":{"jarvy":{"args":["mcp"],"command":"jarvy"},"rust-mcp":{"args":[],"command":"/Users/zacclifton/.cargo/bin/rust-mcp-server","env":{},"type":"stdio"}}}
