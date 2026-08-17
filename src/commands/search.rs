@@ -154,6 +154,21 @@ pub fn search_tools(query: &str, show_all: bool) -> SearchResults {
     // Emit telemetry
     telemetry::search_executed(query, count);
 
+    // When a user searched for something specific and got nothing back,
+    // that's a demand signal — fire the same event shape as diagnose/doctor
+    // so all three surfaces are queryable together by source.
+    if count == 0 && !query.is_empty() && !show_all {
+        if crate::observability::telemetry_gate::is_enabled() {
+            tracing::warn!(
+                event = "tool.unsupported",
+                tool = %query,
+                source = %telemetry::Source::Search,
+                platform = %std::env::consts::OS,
+            );
+        }
+        telemetry::tool_not_supported(query, None, telemetry::Source::Search);
+    }
+
     SearchResults {
         query: query.to_string(),
         count,
@@ -253,6 +268,13 @@ mod tests {
         // Should return all tools
         let index = generate_tool_index();
         assert_eq!(results.count, index.count);
+    }
+
+    #[test]
+    fn zero_result_search_returns_warning_exit_code() {
+        let results = search_tools("definitely-not-a-real-tool-xyz-12345", false);
+        assert_eq!(results.count, 0);
+        assert_eq!(results.exit_code(), ExitCode::Warning);
     }
 
     #[test]

@@ -17,7 +17,9 @@
 //! jarvy diagnose git --export    # Export diagnostic bundle
 //! ```
 
+use crate::observability::telemetry_gate;
 use crate::observability::Sanitizer;
+use crate::telemetry;
 use crate::tools::registry::get_tool;
 use crate::tools::spec::{ToolSpec, get_tool_spec};
 use serde::Serialize;
@@ -169,6 +171,15 @@ pub fn run_diagnose(tool: &str, fix: bool, export: bool, _scope: &str, output_fo
                     "Unknown tool: '{}'. Run 'jarvy tools' to see available tools.",
                     tool
                 );
+                if telemetry_gate::is_enabled() {
+                    tracing::warn!(
+                        event = "tool.unsupported",
+                        tool = %tool,
+                        source = %telemetry::Source::Diagnose,
+                        platform = %std::env::consts::OS,
+                    );
+                }
+                telemetry::tool_not_supported(tool, None, telemetry::Source::Diagnose);
             }
             return 1;
         }

@@ -417,33 +417,25 @@ pub fn run_doctor_filtered(
         Vec::new()
     };
 
-    // Get tools to check
-    let tools_to_check: Vec<(String, String)> = if let Some(tools) = specific_tools {
-        // Specific tools requested
-        tools
-            .iter()
-            .map(|t| (t.clone(), "latest".to_string()))
-            .collect()
-    } else if let Some(cfg) = config {
-        // From config file
-        cfg.get_tool_configs()
-            .values()
-            .map(|t| (t.name.clone(), t.version.clone()))
-            .collect()
-    } else {
-        // Default: check common tools
-        vec![
-            ("git".to_string(), "latest".to_string()),
-            ("node".to_string(), "latest".to_string()),
-            ("python".to_string(), "latest".to_string()),
-        ]
-    };
+    let tools_to_check = resolve_tools_to_check(config, specific_tools);
 
-    // Build set of tools in config for dependency checking
-    let config_tools: HashSet<String> = tools_to_check
-        .iter()
-        .map(|(name, _)| name.to_lowercase())
-        .collect();
+    // A `--tools` filter narrows probes, not the declared environment.
+    // Dependencies must be evaluated against the complete provisioner
+    // config or `doctor --tools node` incorrectly reports configured nvm
+    // as missing and blocks validated command wrappers.
+    let config_tools: HashSet<String> = config
+        .map(|cfg| {
+            cfg.get_tool_configs()
+                .into_values()
+                .map(|tool| tool.name.to_lowercase())
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            tools_to_check
+                .iter()
+                .map(|(name, _)| name.to_lowercase())
+                .collect()
+        });
 
     let tools = if wants(categories, DoctorCategory::Tools) {
         check_tool_health(&tools_to_check, &config_tools)
@@ -496,6 +488,62 @@ pub fn run_doctor_filtered(
         recommendations,
         exit_code,
     }
+}
+
+/// Resolve doctor targets while preserving configured version pins.
+/// `doctor --tools java` is a filter over the configured tool set, not a
+/// request to weaken `java = "17"` into `latest`. Unconfigured explicit
+/// tools retain the historical presence-only `latest` requirement.
+fn resolve_tools_to_check(
+    config: Option<&Config>,
+    specific_tools: Option<Vec<String>>,
+) -> Vec<(String, String)> {
+    let configured = config.map(Config::get_tool_configs);
+
+    if let Some(tools) = specific_tools {
+        return tools
+            .into_iter()
+            .map(|name| {
+                let version = configured
+                    .as_ref()
+                    .and_then(|entries| {
+                        entries
+                            .values()
+                            .find(|tool| tool.name.eq_ignore_ascii_case(&name))
+                    })
+                    .map(|tool| tool.version.clone())
+                    .unwrap_or_else(|| "latest".to_string());
+
+                if crate::tools::spec::get_tool_spec(&name).is_none()
+                    && crate::tools::registry::get_tool(&name).is_none()
+                    && crate::observability::telemetry_gate::is_enabled()
+                {
+                    tracing::warn!(
+                        event = "tool.unsupported",
+                        tool = %name,
+                        source = %crate::telemetry::Source::Doctor,
+                        platform = %std::env::consts::OS,
+                    );
+                    crate::telemetry::tool_not_supported(&name, None, crate::telemetry::Source::Doctor);
+                }
+
+                (name, version)
+            })
+            .collect();
+    }
+
+    if let Some(entries) = configured {
+        return entries
+            .into_values()
+            .map(|tool| (tool.name, tool.version))
+            .collect();
+    }
+
+    vec![
+        ("git".to_string(), "latest".to_string()),
+        ("node".to_string(), "latest".to_string()),
+        ("python".to_string(), "latest".to_string()),
+    ]
 }
 
 fn collect_system_info() -> SystemInfo {
@@ -1699,6 +1747,32 @@ mod tests {
     }
 
     #[test]
+    fn specific_tool_filter_preserves_configured_java_pin() {
+        let cfg = Config::from_toml_str(
+            r#"
+            [provisioner]
+            java = "17"
+            node = "20"
+            "#,
+        )
+        .expect("config should parse");
+
+        let tools = resolve_tools_to_check(Some(&cfg), Some(vec!["java".to_string()]));
+
+        assert_eq!(tools, vec![("java".to_string(), "17".to_string())]);
+    }
+
+    #[test]
+    fn unconfigured_specific_tool_keeps_latest_presence_check() {
+        let cfg = Config::from_toml_str("[provisioner]\ngit = \"latest\"\n")
+            .expect("config should parse");
+
+        let tools = resolve_tools_to_check(Some(&cfg), Some(vec!["java".to_string()]));
+
+        assert_eq!(tools, vec![("java".to_string(), "latest".to_string())]);
+    }
+
+    #[test]
     fn test_extract_version_via_shared_parser() {
         // doctor now delegates to tools::version::extract_version — assert
         // the shared parser covers the shapes the old local regex handled.
@@ -1789,5 +1863,16 @@ mod tests {
             ..result
         };
         assert_eq!(result_err.exit_code(), ExitCode::Error);
+    }
+
+    #[test]
+    fn unregistered_tool_in_specific_filter_still_returns_entry() {
+        // resolve_tools_to_check must still return an entry for unknown tools
+        // so the health check can report them as missing; telemetry fires as
+        // a side-effect but cannot be asserted in a unit test.
+        let result = resolve_tools_to_check(None, Some(vec!["definitely-not-a-real-tool-xyz".to_string()]));
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "definitely-not-a-real-tool-xyz");
+        assert_eq!(result[0].1, "latest");
     }
 }

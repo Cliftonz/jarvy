@@ -275,6 +275,12 @@ pub enum Source {
     /// command's whole purpose is to file a request. The GitHub issue
     /// URL printed alongside remains the canonical channel.
     Request,
+    /// User ran `jarvy diagnose <name>` for an unregistered tool.
+    Diagnose,
+    /// User ran `jarvy doctor --tools <name>` for an unregistered tool.
+    Doctor,
+    /// User ran `jarvy search <name>` and no results were returned.
+    Search,
 }
 
 impl std::fmt::Display for Source {
@@ -284,6 +290,9 @@ impl std::fmt::Display for Source {
             Source::Mcp => write!(f, "mcp"),
             Source::Cli => write!(f, "cli"),
             Source::Request => write!(f, "request"),
+            Source::Diagnose => write!(f, "diagnose"),
+            Source::Doctor => write!(f, "doctor"),
+            Source::Search => write!(f, "search"),
         }
     }
 }
@@ -1870,6 +1879,9 @@ mod tests {
         assert_eq!(Source::Mcp.to_string(), "mcp");
         assert_eq!(Source::Cli.to_string(), "cli");
         assert_eq!(Source::Request.to_string(), "request");
+        assert_eq!(Source::Diagnose.to_string(), "diagnose");
+        assert_eq!(Source::Doctor.to_string(), "doctor");
+        assert_eq!(Source::Search.to_string(), "search");
     }
 
     // ----- narrow_with_project trust-boundary tests -----------------

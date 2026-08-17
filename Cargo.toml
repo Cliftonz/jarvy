@@ -1,6 +1,6 @@
 [package]
 name = "jarvy"
-version = "0.7.1"
+version = "0.8.0-rc.1"
 license = "MIT OR Apache-2.0"
 edition = "2024"
 rust-version = "1.88"
@@ -127,8 +127,8 @@ testcontainers = { version = "0.28", features = ["blocking"] }
 [target.'cfg(unix)'.dev-dependencies]
 expectrl = "0.9"
 
-# Integration tests that exercise the `test-bypass` escape hatches
-# (`JARVY_REGISTRY_ALLOW_INSECURE_FETCH`, `JARVY_LIBRARY_ALLOW_INSECURE_FETCH`).
+# Integration tests that exercise the `test-bypass` escape hatches or
+# CI-only process-isolated workflows (including the fake-tool mobile wrapper).
 # Without `--features test-bypass`, cargo silently skips them so a local
 # `cargo test` run doesn't surface mysterious env-gated failures. CI
 # always runs with `--all-features` so the gate is implicit.
@@ -192,6 +192,11 @@ name = "wizard_e2e_repo_matrix"
 path = "tests/wizard_e2e_repo_matrix.rs"
 required-features = ["test-bypass"]
 
+[[test]]
+name = "mobile_android_wrapper_e2e"
+path = "tests/mobile_android_wrapper_e2e.rs"
+required-features = ["test-bypass"]
+
 [[bench]]
 name = "config_parsing"
 harness = false
@@ -210,6 +215,13 @@ serde_json = "1.0"
 
 [profile.dev]
 opt-level = 1
+# line-tables-only keeps file:line mappings for panic backtraces + `addr2line`
+# resolution, drops variable/type info that full debug=2 carries. ~+9% clean
+# build, ~+21% rebuild on this crate. No debugger needed for routine dev;
+# `cargo build --release` still emits full symbols via the release profile.
+# Tracked: docs/dev-build-speed.md for the nightly-only options
+# (parallel frontend threads, Cranelift backend) we'll revisit once stable.
+debug = "line-tables-only"
 
 [profile.release]
 opt-level = 3
