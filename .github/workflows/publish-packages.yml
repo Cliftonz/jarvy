@@ -153,16 +153,23 @@ jobs:
     # must not block channels that don't depend on crates.io.
     #
     # Gate twofold:
-    #   1. Skip prereleases (rc / beta / alpha) so a soak release
-    #      does not push the stable version to the Homebrew tap as
-    #      `latest`.
+    #   1. Skip rc / beta / alpha versions so a soak release does not
+    #      push the stable version to the Homebrew tap as `latest`.
+    #      Checks the version STRING (not github.event.release.prerelease),
+    #      because on workflow_dispatch the release context is null and
+    #      `!null == true` in GHA expressions — the old form silently
+    #      let rc pushes through on manual reruns. The `||` coalesces
+    #      the two possible sources: workflow_dispatch inputs.version
+    #      and release event tag_name.
     #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
     #      release (e.g. `helm-vX.Y.Z`) does not trigger CLI
-    #      publishing. workflow_dispatch (empty event.release)
-    #      remains unaffected — manual reruns still publish.
+    #      publishing. workflow_dispatch still runs when the version
+    #      input is a stable semver.
     if: >-
       ${{
-        !github.event.release.prerelease &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-rc.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-beta.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-alpha.') &&
         (github.event_name != 'release' ||
          startsWith(github.event.release.tag_name, 'v'))
       }}
@@ -246,17 +253,14 @@ jobs:
     # jarvy-bin` — the AUR push itself only writes the PKGBUILD; the
     # user-side `makepkg` is what hits the tarball URL.
     #
-    # Gate twofold:
-    #   1. Skip prereleases (rc / beta / alpha) so a soak release
-    #      does not push the stable version to AUR as the user-facing
-    #      latest.
-    #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
-    #      release (e.g. `helm-vX.Y.Z`) does not trigger CLI
-    #      publishing. workflow_dispatch (empty event.release)
-    #      remains unaffected — manual reruns still publish.
+    # Gate: see homebrew job above for the null-guard rationale.
+    # Skip rc / beta / alpha versions (string check, works on both
+    # `release` and `workflow_dispatch`) and non-CLI tags.
     if: >-
       ${{
-        !github.event.release.prerelease &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-rc.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-beta.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-alpha.') &&
         (github.event_name != 'release' ||
          startsWith(github.event.release.tag_name, 'v'))
       }}
@@ -350,13 +354,13 @@ jobs:
     # docs/release-quirks-jarvy.md for the `public-pr-guard` skill
     # carve-out covering this case.
     #
-    # Gate twofold:
-    #   1. Skip prereleases (rc / beta / alpha).
-    #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
-    #      release (e.g. `helm-vX.Y.Z`) does not trigger.
+    # Gate: see homebrew job above for the null-guard rationale.
+    # Skip rc / beta / alpha and non-CLI tags.
     if: >-
       ${{
-        !github.event.release.prerelease &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-rc.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-beta.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-alpha.') &&
         (github.event_name != 'release' ||
          startsWith(github.event.release.tag_name, 'v'))
       }}
@@ -417,13 +421,13 @@ jobs:
     # Independent of `publish-crates-io`. Chocolatey consumes the .msi
     # from the GitHub release; crates.io publish state is irrelevant.
     #
-    # Gate twofold:
-    #   1. Skip prereleases (rc / beta / alpha).
-    #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
-    #      release (e.g. `helm-vX.Y.Z`) does not trigger.
+    # Gate: see homebrew job above for the null-guard rationale.
+    # Skip rc / beta / alpha and non-CLI tags.
     if: >-
       ${{
-        !github.event.release.prerelease &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-rc.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-beta.') &&
+        !contains(github.event.inputs.version || github.event.release.tag_name, '-alpha.') &&
         (github.event_name != 'release' ||
          startsWith(github.event.release.tag_name, 'v'))
       }}
