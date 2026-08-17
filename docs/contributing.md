@@ -119,6 +119,10 @@ cargo test --verbose -- --show-output          # Run all tests
 cargo test --test cli_dispatch -- --show-output
 ```
 
+### Build Speed
+
+The dev profile uses `debug = "line-tables-only"` (see [dev-build-speed](dev-build-speed.md)) for ~9% faster clean builds and ~21% faster rebuilds at the cost of variable info in debugger sessions. Two further optimizations (parallel frontend, Cranelift backend) are nightly-only and documented for future activation.
+
 ### Test Environment Variables
 
 | Variable | Purpose |
