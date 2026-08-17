@@ -524,7 +524,11 @@ fn resolve_tools_to_check(
                         source = %crate::telemetry::Source::Doctor,
                         platform = %std::env::consts::OS,
                     );
-                    crate::telemetry::tool_not_supported(&name, None, crate::telemetry::Source::Doctor);
+                    crate::telemetry::tool_not_supported(
+                        &name,
+                        None,
+                        crate::telemetry::Source::Doctor,
+                    );
                 }
 
                 (name, version)
@@ -1870,7 +1874,10 @@ mod tests {
         // resolve_tools_to_check must still return an entry for unknown tools
         // so the health check can report them as missing; telemetry fires as
         // a side-effect but cannot be asserted in a unit test.
-        let result = resolve_tools_to_check(None, Some(vec!["definitely-not-a-real-tool-xyz".to_string()]));
+        let result = resolve_tools_to_check(
+            None,
+            Some(vec!["definitely-not-a-real-tool-xyz".to_string()]),
+        );
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "definitely-not-a-real-tool-xyz");
         assert_eq!(result[0].1, "latest");

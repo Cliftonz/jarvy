@@ -17,8 +17,8 @@
 //! jarvy diagnose git --export    # Export diagnostic bundle
 //! ```
 
-use crate::observability::telemetry_gate;
 use crate::observability::Sanitizer;
+use crate::observability::telemetry_gate;
 use crate::telemetry;
 use crate::tools::registry::get_tool;
 use crate::tools::spec::{ToolSpec, get_tool_spec};
