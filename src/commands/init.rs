@@ -291,10 +291,9 @@ fn generate_config(tools: &[&str], template_name: Option<&str>) -> String {
 /// Write config to file or stdout
 fn write_config(content: &str, options: &InitOptions) -> InitResult {
     if options.stdout {
-        print!("{}", content);
         return InitResult {
             output_path: None,
-            tool_count: content.lines().filter(|l| l.contains(" = ")).count(),
+            tool_count: count_provisioner_tools(content),
             created: true,
             content: content.to_string(),
             stdout: true,
@@ -321,7 +320,7 @@ fn write_config(content: &str, options: &InitOptions) -> InitResult {
     match fs::write(&output_path, content) {
         Ok(()) => InitResult {
             output_path: Some(output_path.display().to_string()),
-            tool_count: content.lines().filter(|l| l.contains(" = ")).count(),
+            tool_count: count_provisioner_tools(content),
             created: true,
             content: content.to_string(),
             stdout: false,
@@ -339,9 +338,37 @@ fn write_config(content: &str, options: &InitOptions) -> InitResult {
     }
 }
 
+fn count_provisioner_tools(content: &str) -> usize {
+    toml::from_str::<toml::Value>(content)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("provisioner")
+                .and_then(toml::Value::as_table)
+                .map(toml::map::Map::len)
+        })
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_count_excludes_generated_commands() {
+        let content = r#"
+            [provisioner]
+            java = "17"
+            node = "20"
+            pnpm = "latest"
+
+            [commands]
+            android = "pnpm --filter mobile android"
+            "pre:android" = "jarvy doctor --check tools"
+        "#;
+
+        assert_eq!(count_provisioner_tools(content), 3);
+    }
 
     #[test]
     fn test_stack_category_display() {

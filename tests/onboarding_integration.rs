@@ -41,14 +41,21 @@ fn init_with_template_creates_config_file() {
 
 #[test]
 fn init_with_template_stdout_outputs_to_stdout() {
+    let home = TempDir::new().unwrap();
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
     cmd.env("JARVY_TEST_MODE", "1");
+    cmd.env("JARVY_TELEMETRY", "0");
+    cmd.env("JARVY_HOME", home.path());
     cmd.args(["init", "--template", "essential", "--stdout"]);
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("[provisioner]"))
-        .stdout(predicate::str::contains("git"));
+    let output = cmd.assert().success().get_output().clone();
+    let stdout = String::from_utf8(output.stdout).expect("template output must be UTF-8");
+    let parsed: toml::Value =
+        toml::from_str(&stdout).expect("stdout must contain exactly one valid TOML document");
+    let provisioner = parsed
+        .get("provisioner")
+        .expect("generated config must contain provisioner tools");
+    assert!(provisioner.get("git").is_some());
 }
 
 #[test]
@@ -195,7 +202,7 @@ fn quickstart_help_shows_options() {
 // Template content tests
 // ============================================================================
 
-fn assert_template_contains_tools(template: &str, expected_tools: &[&str]) {
+fn assert_template_contains_tools(template: &str, expected_tools: &[(&str, &str)]) {
     let home = TempDir::new().unwrap();
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
     cmd.env("JARVY_TEST_MODE", "1");
@@ -209,8 +216,8 @@ fn assert_template_contains_tools(template: &str, expected_tools: &[&str]) {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("template output must be UTF-8");
-    for tool in expected_tools {
-        let entry = format!("{tool} = \"latest\"");
+    for (tool, version) in expected_tools {
+        let entry = format!("{tool} = \"{version}\"");
         assert!(
             stdout.lines().any(|line| line.trim() == entry),
             "template `{template}` must contain `{entry}`; got:\n{stdout}"
@@ -283,44 +290,76 @@ fn mobile_templates_preserve_their_toolchain_contracts() {
     assert_template_contains_tools(
         "android-kotlin",
         &[
-            "java",
-            "kotlin",
-            "android_command_line_tools",
-            "android_platform_tools",
-            "appium",
+            ("java", "17"),
+            ("kotlin", "latest"),
+            ("android_command_line_tools", "latest"),
+            ("android_platform_tools", "latest"),
+            ("appium", "latest"),
         ],
     );
     assert_template_contains_tools(
         "flutter",
         &[
-            "java",
-            "android_command_line_tools",
-            "android_platform_tools",
-            "appium",
+            ("java", "17"),
+            ("android_command_line_tools", "latest"),
+            ("android_platform_tools", "latest"),
+            ("appium", "latest"),
         ],
     );
     assert_template_contains_tools(
         "react-native",
         &[
-            "java",
-            "eas_cli",
-            "android_command_line_tools",
-            "android_platform_tools",
-            "watchman",
-            "appium",
+            ("nvm", "latest"),
+            ("node", "20"),
+            ("pnpm", "latest"),
+            ("java", "17"),
+            ("eas_cli", "latest"),
+            ("android_command_line_tools", "latest"),
+            ("android_platform_tools", "latest"),
+            ("watchman", "latest"),
+            ("appium", "latest"),
         ],
     );
     assert_template_contains_tools(
         "expo",
         &[
-            "java",
-            "eas_cli",
-            "android_command_line_tools",
-            "android_platform_tools",
-            "watchman",
-            "appium",
+            ("nvm", "latest"),
+            ("node", "20"),
+            ("pnpm", "latest"),
+            ("java", "17"),
+            ("eas_cli", "latest"),
+            ("android_command_line_tools", "latest"),
+            ("android_platform_tools", "latest"),
+            ("watchman", "latest"),
+            ("appium", "latest"),
         ],
     );
+}
+
+#[test]
+fn react_native_templates_route_android_through_fresh_validation() {
+    for template in ["react-native", "expo"] {
+        let home = TempDir::new().unwrap();
+        let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+        cmd.env("JARVY_TEST_MODE", "1");
+        cmd.env("JARVY_TELEMETRY", "0");
+        cmd.env("JARVY_HOME", home.path());
+        cmd.args(["init", "--template", template, "--stdout"]);
+
+        let output = cmd.output().expect("jarvy init should execute");
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("template output must be UTF-8");
+        assert!(
+            stdout.contains(
+                "\"pre:android\" = \"jarvy doctor --fresh --check tools --tools java,node,pnpm\""
+            ),
+            "template `{template}` must validate the pinned mobile toolchain; got:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("\"android\" = \"pnpm --filter mobile android\""),
+            "template `{template}` must retain the normal Android command; got:\n{stdout}"
+        );
+    }
 }
 
 #[test]
@@ -349,6 +388,36 @@ fn setup_dry_run_renders_mobile_npm_fallback_commands() {
         .stdout(predicate::str::contains(
             "Would install appium via fallback route: `npm install -g appium`",
         ));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn mobile_fresh_machine_plan_provisions_exact_jdk_node_and_pnpm() {
+    use std::io::Write;
+
+    let empty_path = TempDir::new().unwrap();
+    let mut config = tempfile::NamedTempFile::new().unwrap();
+    writeln!(config, "[provisioner]").unwrap();
+    writeln!(config, "java = \"17\"").unwrap();
+    writeln!(config, "node = \"20\"").unwrap();
+    writeln!(config, "pnpm = \"latest\"").unwrap();
+
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    cmd.env("JARVY_TEST_MODE", "1");
+    cmd.env("JARVY_TELEMETRY", "0");
+    cmd.env("JARVY_HOME", empty_path.path().join("jarvy-home"));
+    cmd.env("PATH", empty_path.path());
+    cmd.args(["setup", "--dry-run", "--file"]);
+    cmd.arg(config.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("brew install openjdk@17"))
+        .stdout(predicate::str::contains("pnpm"))
+        .stdout(predicate::str::contains(
+            "Would install node version 20 using custom installer",
+        ))
+        .stdout(predicate::str::contains("`brew install openjdk`").not());
 }
 
 // ============================================================================

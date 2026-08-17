@@ -24,6 +24,20 @@ impl BuiltinTemplate {
             tools.add(name, version);
         }
 
+        let commands = match self.name {
+            "react-native" | "expo" => HashMap::from([
+                (
+                    "pre:android".to_string(),
+                    "jarvy doctor --fresh --check tools --tools java,node,pnpm".to_string(),
+                ),
+                (
+                    "android".to_string(),
+                    "pnpm --filter mobile android".to_string(),
+                ),
+            ]),
+            _ => HashMap::new(),
+        };
+
         Template {
             template: TemplateMeta {
                 name: self.name.to_string(),
@@ -36,6 +50,7 @@ impl BuiltinTemplate {
             },
             tools,
             hooks: HashMap::new(),
+            commands,
         }
     }
 }
@@ -436,7 +451,7 @@ pub const BUILTIN_TEMPLATES: &[BuiltinTemplate] = &[
         description: "Native Android development with Kotlin and device test tooling",
         category: "Mobile",
         tools: &[
-            ("java", "latest"),
+            ("java", "17"),
             ("kotlin", "latest"),
             ("android_command_line_tools", "latest"),
             ("android_platform_tools", "latest"),
@@ -453,7 +468,7 @@ pub const BUILTIN_TEMPLATES: &[BuiltinTemplate] = &[
         description: "Flutter cross-platform development with mobile tooling",
         category: "Mobile",
         tools: &[
-            ("java", "latest"),
+            ("java", "17"),
             ("android_command_line_tools", "latest"),
             ("android_platform_tools", "latest"),
             ("appium", "latest"),
@@ -470,8 +485,10 @@ pub const BUILTIN_TEMPLATES: &[BuiltinTemplate] = &[
         description: "React Native development with Android device and build tooling",
         category: "Mobile",
         tools: &[
+            ("nvm", "latest"),
             ("node", "20"),
-            ("java", "latest"),
+            ("pnpm", "latest"),
+            ("java", "17"),
             ("eas_cli", "latest"),
             ("android_command_line_tools", "latest"),
             ("android_platform_tools", "latest"),
@@ -490,8 +507,10 @@ pub const BUILTIN_TEMPLATES: &[BuiltinTemplate] = &[
         description: "Expo and EAS development with Android device and test tooling",
         category: "Mobile",
         tools: &[
+            ("nvm", "latest"),
             ("node", "20"),
-            ("java", "latest"),
+            ("pnpm", "latest"),
+            ("java", "17"),
             ("eas_cli", "latest"),
             ("android_command_line_tools", "latest"),
             ("android_platform_tools", "latest"),

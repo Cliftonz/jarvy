@@ -18,6 +18,9 @@ pub struct Template {
     /// Optional hooks configuration
     #[serde(default)]
     pub hooks: HashMap<String, TemplateHook>,
+    /// Named project commands emitted into `[commands]`.
+    #[serde(default)]
+    pub commands: HashMap<String, String>,
 }
 
 /// Template metadata
@@ -149,6 +152,17 @@ impl Template {
             }
         }
 
+        if !self.commands.is_empty() {
+            content.push_str("\n[commands]\n");
+            let mut commands: Vec<_> = self.commands.iter().collect();
+            commands.sort_by_key(|(name, _)| *name);
+            for (name, command) in commands {
+                let name = toml::Value::String(name.clone()).to_string();
+                let command = toml::Value::String(command.clone()).to_string();
+                content.push_str(&format!("{name} = {command}\n"));
+            }
+        }
+
         content
     }
 }
@@ -195,12 +209,47 @@ node = "20"
             },
             tools,
             hooks: HashMap::new(),
+            commands: HashMap::new(),
         };
 
         let content = template.to_jarvy_toml();
         assert!(content.contains("[provisioner]"));
         assert!(content.contains("git = \"latest\""));
         assert!(content.contains("node = \"20\""));
+    }
+
+    #[test]
+    fn test_template_commands_render_quoted_lifecycle_keys() {
+        let template = Template {
+            template: TemplateMeta {
+                name: "mobile".to_string(),
+                description: "Mobile".to_string(),
+                category: "Testing".to_string(),
+                tags: vec![],
+                author: None,
+                version: None,
+                min_jarvy_version: None,
+            },
+            tools: TemplateTools::new(),
+            hooks: HashMap::new(),
+            commands: HashMap::from([
+                (
+                    "pre:android".to_string(),
+                    "jarvy doctor --check tools".to_string(),
+                ),
+                (
+                    "android".to_string(),
+                    "pnpm --filter mobile android".to_string(),
+                ),
+            ]),
+        };
+
+        let content = template.to_jarvy_toml();
+
+        assert!(content.contains("[commands]"));
+        assert!(content.contains("\"pre:android\" = \"jarvy doctor --check tools\""));
+        assert!(content.contains("\"android\" = \"pnpm --filter mobile android\""));
+        toml::from_str::<toml::Value>(&content).expect("rendered template must remain valid TOML");
     }
 
     #[test]

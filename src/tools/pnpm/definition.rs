@@ -12,7 +12,18 @@ define_tool!(PNPM, {
     macos: { brew: "pnpm" },
     linux: { brew: "pnpm" },
     windows: { winget: "pnpm.pnpm" },
+    // pnpm is a Node CLI even when its package-manager formula happens
+    // to pull Node transitively. Model the real runtime dependency so a
+    // fresh-machine plan cannot claim pnpm is complete without Node.
+    depends_on: &["node"],
 });
 
-// Registration-shape test deleted per Maint F3 — `define_tool!`
-// already type-checks the field assignments at compile time.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pnpm_declares_node_runtime_dependency() {
+        assert_eq!(PNPM.depends_on, Some(&["node"][..]));
+    }
+}
