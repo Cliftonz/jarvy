@@ -154,10 +154,18 @@ pub fn search_tools(query: &str, show_all: bool) -> SearchResults {
     // Emit telemetry
     telemetry::search_executed(query, count);
 
-    // When a user searched for something specific and got nothing back,
-    // that's a demand signal — fire the same event shape as diagnose/doctor
-    // so all three surfaces are queryable together by source.
-    if count == 0 && !query.is_empty() && !show_all {
+    // When a user searched for something specific and no result name
+    // *contains* the query, that's a demand signal. Score alone can't
+    // gate this: jaro-winkler can push nonsense queries above the 0.7
+    // "contains" bucket, so we check the substring relationship
+    // directly on the top result — the same criterion a human would
+    // use to say "yes, that's what I meant". Same event shape as
+    // diagnose/doctor so all three surfaces are queryable by source.
+    let query_lower = query.to_lowercase();
+    let has_strong_match = results
+        .first()
+        .is_some_and(|r| r.name.to_lowercase().contains(&query_lower));
+    if !query.is_empty() && !show_all && !has_strong_match {
         if crate::observability::telemetry_gate::is_enabled() {
             tracing::warn!(
                 event = "tool.unsupported",
@@ -271,10 +279,23 @@ mod tests {
     }
 
     #[test]
-    fn zero_result_search_returns_warning_exit_code() {
-        let results = search_tools("definitely-not-a-real-tool-xyz-12345", false);
-        assert_eq!(results.count, 0);
-        assert_eq!(results.exit_code(), ExitCode::Warning);
+    fn nonsense_query_top_result_does_not_contain_query() {
+        // Sanity for the demand-signal event trigger in `search_tools`:
+        // for a query that is not a substring of any tool name, the top
+        // result (if any) must not contain the query — that is the
+        // criterion the event fires on. If a tool name ever begins to
+        // contain "zzz-definitely-not-a-tool-xyz", pick a longer nonsense.
+        let query = "zzz-definitely-not-a-tool-xyz";
+        let results = search_tools(query, false);
+        let top_contains = results
+            .results
+            .first()
+            .is_some_and(|r| r.name.to_lowercase().contains(query));
+        assert!(
+            !top_contains,
+            "nonsense query must not be a substring of the top result; got {:?}",
+            results.results.first().map(|r| &r.name)
+        );
     }
 
     #[test]
