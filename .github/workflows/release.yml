@@ -59,20 +59,24 @@ jobs:
       # binary self-reports it, so a mismatch ships a release whose
       # assets and --version contradict the tag — v0.6.1 (withdrawn)
       # shipped `jarvy 0.6.0` binaries this way and broke the updater
-      # with a perpetual update loop. Pre-release tags compare against
-      # the target stable (vX.Y.Z-rc.N ↔ X.Y.Z) per the CHANGELOG
-      # policy: rc tags never carry their own Cargo version.
+      # with a perpetual update loop.
+      #
+      # Cargo.toml now carries the EXACT tag version including any
+      # prerelease suffix (0.8.0-rc.1 for rc tags, 0.8.0 for stable).
+      # Cargo semver treats -rc.N / -beta.N as valid prerelease bumps,
+      # and `cargo install jarvy` still resolves to the latest stable
+      # unless the user pins `--version X.Y.Z-rc.N` explicitly. This
+      # convention is what unlocks `cargo install` for prereleases.
       - name: Verify Cargo.toml version matches tag
         run: |
           set -euo pipefail
-          TARGET="${GITHUB_REF_NAME#v}"   # strip leading v
-          TARGET="${TARGET%%-*}"          # strip prerelease suffix (-rc.N, -beta.N)
+          TARGET="${GITHUB_REF_NAME#v}"   # strip leading v; keep -rc.N/-beta.N
           CARGO_VER=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
           if [ "$CARGO_VER" != "$TARGET" ]; then
-            echo "::error::Cargo.toml version (${CARGO_VER}) does not match tag target (${TARGET}). Bump Cargo.toml before tagging — see the v0.6.1 postmortem."
+            echo "::error::Cargo.toml version (${CARGO_VER}) does not match tag (${TARGET}). Bump Cargo.toml to the exact tag version (including any -rc.N / -beta.N suffix) before tagging."
             exit 1
           fi
-          echo "Cargo.toml version ${CARGO_VER} matches tag target ${TARGET}."
+          echo "Cargo.toml version ${CARGO_VER} matches tag ${TARGET}."
 
   # Hard gate: refuse to ship if the Test workflow (test.yml) hasn't
   # gone green for this tag's commit SHA. test.yml + release.yml both

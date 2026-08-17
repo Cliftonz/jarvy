@@ -18,25 +18,22 @@ env:
 jobs:
   publish-crates-io:
     name: Publish to crates.io
-    # Skip on prereleases — rc / beta / alpha tags should not bump
-    # crates.io (Cargo.toml carries the stable version, so publishing
-    # on prerelease tag would push the next stable to crates.io as
-    # `latest` prematurely). Empty `github.event.release` on
-    # workflow_dispatch makes the property null, and `!null` is true
-    # under GHA expression rules, so manual dispatches still run.
-    # Gate twofold:
-    #   1. Skip prereleases (rc / beta / alpha) so a soak release
-    #      does not push the stable Cargo.toml version to crates.io
-    #      as `latest`.
-    #   2. Skip tags that don't match `vX.Y.Z` shape so a chart
-    #      release (e.g. `helm-vX.Y.Z`) does not trigger CLI
-    #      publishing. workflow_dispatch (empty event.release)
-    #      remains unaffected — manual reruns still publish.
+    # Publish stable AND prerelease tags. Cargo.toml carries the exact
+    # tag version (0.8.0-rc.1 for rc, 0.8.0 for stable), so a prerelease
+    # publish uploads under the semver prerelease slot — `cargo install
+    # jarvy` still picks the latest stable, and users who want the rc
+    # pin explicitly (`cargo install jarvy --version 0.8.0-rc.1`). This
+    # replaced the old skip-prereleases gate, which was necessary when
+    # Cargo.toml held the stable base version regardless of tag suffix.
+    #
+    # Remaining gate: skip tags that don't start with `v` so chart
+    # releases (`helm-vX.Y.Z`) do not trigger CLI publishing.
+    # workflow_dispatch has empty github.event.release so falls through
+    # — manual reruns still publish.
     if: >-
       ${{
-        !github.event.release.prerelease &&
-        (github.event_name != 'release' ||
-         startsWith(github.event.release.tag_name, 'v'))
+        github.event_name != 'release' ||
+        startsWith(github.event.release.tag_name, 'v')
       }}
     runs-on: ubuntu-latest
     # Trusted Publishing: mint a short-lived crates.io token via OIDC
