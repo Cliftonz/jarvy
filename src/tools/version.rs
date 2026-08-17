@@ -18,6 +18,14 @@ use semver::{Version, VersionReq};
 static VERSION_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"v?(\d+)\.(\d+)(?:\.(\d+))?(?:-([a-zA-Z0-9.-]+))?").unwrap());
 
+/// Java feature releases can report a bare major followed by a release
+/// date (`openjdk 26 2026-03-17`). The generic semver regex would skip
+/// `26` and incorrectly parse the date as version 2026.3.17.
+static JAVA_VERSION_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?im)^(?:openjdk|java)\s+(?:version\s+)?\"?(\d+)(?:\.(\d+))?(?:\.(\d+))?"#)
+        .unwrap()
+});
+
 /// Represents an extracted version with optional prerelease tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtractedVersion {
@@ -62,6 +70,30 @@ impl std::fmt::Display for ExtractedVersion {
 /// assert_eq!(v.patch, 0);
 /// ```
 pub fn extract_version(output: &str) -> Option<ExtractedVersion> {
+    if let Some(caps) = JAVA_VERSION_REGEX.captures(output) {
+        let mut major = caps.get(1)?.as_str().parse().ok()?;
+        let mut minor = caps
+            .get(2)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
+        let patch = caps
+            .get(3)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
+        // Legacy Java reports 8 as `1.8.0`; configs use the feature
+        // version (`java = "8"`).
+        if major == 1 && minor > 0 {
+            major = minor;
+            minor = 0;
+        }
+        return Some(ExtractedVersion {
+            major,
+            minor,
+            patch,
+            prerelease: None,
+        });
+    }
+
     VERSION_REGEX.captures(output).map(|caps| ExtractedVersion {
         major: caps.get(1).unwrap().as_str().parse().unwrap_or(0),
         minor: caps.get(2).unwrap().as_str().parse().unwrap_or(0),
@@ -302,6 +334,22 @@ mod tests {
         // But not 19 or 21
         assert!(!version_satisfies("v19.0.0", "20"));
         assert!(!version_satisfies("v21.0.0", "20"));
+    }
+
+    #[test]
+    fn java_26_does_not_satisfy_jdk_17_pin() {
+        let output = "openjdk 26 2026-03-17\nOpenJDK Runtime Environment";
+
+        assert_eq!(extract_version(output).map(|v| v.major), Some(26));
+        assert!(!version_satisfies(output, "17"));
+    }
+
+    #[test]
+    fn legacy_java_8_feature_version_is_normalized() {
+        let output = r#"java version "1.8.0_402""#;
+
+        assert_eq!(extract_version(output).map(|v| v.major), Some(8));
+        assert!(version_satisfies(output, "8"));
     }
 
     #[test]

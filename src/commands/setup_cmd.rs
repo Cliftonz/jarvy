@@ -423,7 +423,15 @@ pub fn run_setup(
             );
         }
         for (name, version) in &tool_groups.custom_install {
-            if let Some((_eco, cmd)) = crate::tools::fallback::preview_route(name, version) {
+            let ctx = install_context_for(name, &tool_configs);
+            if name.eq_ignore_ascii_case("java") {
+                println!(
+                    "[DRY-RUN] Would install {} version {} via {}",
+                    name,
+                    version,
+                    crate::tools::java::preview_install(version, &ctx)
+                );
+            } else if let Some((_eco, cmd)) = crate::tools::fallback::preview_route(name, version) {
                 println!(
                     "[DRY-RUN] Would install {} via fallback route: `{}`",
                     name, cmd

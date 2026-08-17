@@ -850,11 +850,15 @@ enum Decision {
     /// Run this route.
     RunRoute(InstallRoute),
     /// Requested distro unsupported on this OS; fall back to the
-    /// tool's default platform install.
+    /// exact-version OpenJDK route.
     FallbackToDefault {
         requested: String,
         reason_kind: &'static str,
         reason: String,
+        /// Exact OpenJDK route for the originally requested version.
+        /// Keeping the resolved route in the decision prevents fallback
+        /// from silently dropping a major-version pin.
+        route: InstallRoute,
     },
     /// Requested distro unsupported AND `fallback = false`; hard-error.
     Refuse {
@@ -874,11 +878,7 @@ fn decide(requested: &str, version: &str, fallback: bool) -> Decision {
         None => {
             let reason = format!("unknown distribution '{requested}'");
             if fallback {
-                Decision::FallbackToDefault {
-                    requested: requested.to_string(),
-                    reason_kind: "unknown_distribution",
-                    reason,
-                }
+                fallback_decision(requested, "unknown_distribution", reason, ver)
             } else {
                 Decision::Refuse {
                     requested: requested.to_string(),
@@ -895,11 +895,7 @@ fn decide(requested: &str, version: &str, fallback: bool) -> Decision {
                     reason,
                 } => {
                     if fallback {
-                        Decision::FallbackToDefault {
-                            requested: requested.to_string(),
-                            reason_kind,
-                            reason,
-                        }
+                        fallback_decision(requested, reason_kind, reason, ver)
                     } else {
                         Decision::Refuse {
                             requested: requested.to_string(),
@@ -911,6 +907,33 @@ fn decide(requested: &str, version: &str, fallback: bool) -> Decision {
                 other => Decision::RunRoute(other),
             }
         }
+    }
+}
+
+/// Resolve fallback to OpenJDK without losing the requested version.
+/// If this platform cannot provision that exact OpenJDK major, refuse
+/// instead of installing an unversioned/default JDK and claiming success.
+fn fallback_decision(
+    requested: &str,
+    reason_kind: &'static str,
+    reason: String,
+    ver: VersionSelector,
+) -> Decision {
+    match resolve_route(JdkDistribution::Openjdk, ver) {
+        InstallRoute::Unsupported {
+            reason: fallback_reason,
+            ..
+        } => Decision::Refuse {
+            requested: requested.to_string(),
+            reason_kind: "exact_fallback_unavailable",
+            reason: format!("{reason}; exact OpenJDK fallback is unavailable: {fallback_reason}"),
+        },
+        route => Decision::FallbackToDefault {
+            requested: requested.to_string(),
+            reason_kind,
+            reason,
+            route,
+        },
     }
 }
 
@@ -954,10 +977,11 @@ fn install_java(min_hint: &str, ctx: &InstallContext) -> Result<(), InstallError
             requested,
             reason_kind,
             reason,
+            route,
         } => {
             eprintln!("warn: {reason}. Falling back to openjdk.");
             emit_distribution_fallback(&requested, true, reason_kind, &reason);
-            JAVA.install_platform()
+            execute_route(route)
         }
         Decision::Refuse {
             requested,
@@ -966,9 +990,35 @@ fn install_java(min_hint: &str, ctx: &InstallContext) -> Result<(), InstallError
         } => {
             emit_distribution_fallback(&requested, false, reason_kind, &reason);
             Err(InstallError::Prereq(std::borrow::Cow::Owned(format!(
-                "Java distribution '{requested}' is not supported on this OS and fallback = false: {reason}"
+                "Java distribution '{requested}' cannot be provisioned with the requested version; no safe fallback: {reason}"
             ))))
         }
+    }
+}
+
+/// Render the exact install command selected for Java without executing it.
+/// Used by `setup --dry-run` so the preview and real installer share the
+/// same version-aware decision instead of showing the static `openjdk` slot.
+pub fn preview_install(min_hint: &str, ctx: &InstallContext) -> String {
+    let requested = ctx.distribution.as_deref().unwrap_or("openjdk");
+    match decide(requested, min_hint, ctx.fallback) {
+        Decision::RunRoute(route) => format!("`{}`", route_command(&route)),
+        Decision::FallbackToDefault { reason, route, .. } => {
+            format!("`{}` (OpenJDK fallback: {})", route_command(&route), reason)
+        }
+        Decision::Refuse { reason, .. } => format!("REFUSED ({reason})"),
+    }
+}
+
+fn route_command(route: &InstallRoute) -> String {
+    match route {
+        InstallRoute::BrewFormula(pkg) => format!("brew install {pkg}"),
+        InstallRoute::BrewCask(pkg) => format!("brew install --cask {pkg}"),
+        InstallRoute::AptPkg { pkg, .. } => format!("apt-get install -y {pkg}"),
+        InstallRoute::DnfPkg { pkg, .. } => format!("dnf install -y {pkg}"),
+        InstallRoute::Winget(id) => format!("winget install -e --id {id}"),
+        InstallRoute::Choco(id) => format!("choco install -y {id}"),
+        InstallRoute::Unsupported { reason, .. } => format!("unsupported: {reason}"),
     }
 }
 
@@ -1608,13 +1658,32 @@ mod tests {
                 requested,
                 reason_kind,
                 reason,
+                route,
             } => {
                 assert_eq!(requested, "bogus-jdk");
                 assert_eq!(reason_kind, "unknown_distribution");
                 assert!(reason.contains("unknown distribution"));
+                assert!(
+                    route_command(&route).contains("17"),
+                    "fallback must preserve the requested major: {route:?}"
+                );
             }
             other => panic!("expected FallbackToDefault, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn java_17_preview_names_exact_versioned_package() {
+        let preview = preview_install("17", &InstallContext::none());
+
+        assert!(
+            preview.contains("17"),
+            "preview must expose an exact JDK 17 route: {preview}"
+        );
+        #[cfg(target_os = "macos")]
+        assert_eq!(preview, "`brew install openjdk@17`");
+        #[cfg(target_os = "windows")]
+        assert_eq!(preview, "`winget install -e --id Microsoft.OpenJDK.17`");
     }
 
     #[test]
