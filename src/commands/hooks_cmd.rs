@@ -42,7 +42,8 @@ fn install_action(config: &GitHooksConfig, project_dir: &Path) -> i32 {
             spinner.finish_skipped("nothing configured");
             println!(
                 "  No hook framework detected and none pinned in [git_hooks]. \
-                 Add a `.pre-commit-config.yaml` or set `framework = \"pre-commit\"`."
+                 Add `[git_hooks.native] dir = \"scripts/hooks\"` (or `hooks.<stage> = ...`) \
+                 to install hooks straight into `.git/hooks/`."
             );
             0
         }
@@ -140,31 +141,39 @@ fn run_action(
 }
 
 fn uninstall_action(project_dir: &Path) -> i32 {
-    // `pre-commit uninstall` is the only uninstall path supported today.
-    // Bypass the handler abstraction — `update_hooks` etc. require a
-    // framework decision but uninstall doesn't need one.
-    use std::process::Command;
-    let status = Command::new("pre-commit")
-        .arg("uninstall")
-        .current_dir(project_dir)
-        .status();
-    match status {
-        Ok(s) if s.success() => {
-            println!("pre-commit hooks uninstalled");
-            0
-        }
-        Ok(s) => {
-            eprintln!(
-                "pre-commit uninstall exited with {}",
-                s.code().unwrap_or(-1)
-            );
-            crate::error_codes::HOOK_FAILED
+    // Delete every file under `.git/hooks/` that carries jarvy's
+    // native-handler marker. Hand-authored hooks (no marker) are
+    // preserved — same safety rule as `install` refusing to overwrite
+    // unmarked files.
+    let hooks_dir = project_dir.join(".git").join("hooks");
+    if !hooks_dir.is_dir() {
+        eprintln!("Not inside a git repository (no `.git/hooks/`)");
+        return crate::error_codes::HOOK_FAILED;
+    }
+    let marker = "# managed by jarvy — [git_hooks.native]";
+    let mut removed = 0usize;
+    match std::fs::read_dir(&hooks_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                if let Ok(content) = std::fs::read_to_string(&path)
+                    && content.contains(marker)
+                    && std::fs::remove_file(&path).is_ok()
+                {
+                    removed += 1;
+                }
+            }
         }
         Err(e) => {
-            eprintln!("Failed to invoke `pre-commit uninstall`: {e}");
-            crate::error_codes::HOOK_FAILED
+            eprintln!("Failed to read `.git/hooks/`: {e}");
+            return crate::error_codes::HOOK_FAILED;
         }
     }
+    println!("removed {removed} jarvy-managed hook file(s)");
+    0
 }
 
 #[cfg(test)]
@@ -179,28 +188,27 @@ mod tests {
     use crate::git_hooks::{GitHooksConfig, HookFramework};
     use tempfile::tempdir;
 
-    fn cfg_local_pre_commit() -> GitHooksConfig {
+    fn cfg_local_native() -> GitHooksConfig {
         GitHooksConfig {
             enabled: true,
-            framework: Some(HookFramework::PreCommit),
+            framework: Some(HookFramework::Native),
             auto_install: true,
             auto_update: false,
             run_after_install: false,
             allow_remote: false,
-            pre_commit: None,
             native: None,
             origin: ConfigOrigin::Local,
         }
     }
 
     fn cfg_disabled() -> GitHooksConfig {
-        let mut c = cfg_local_pre_commit();
+        let mut c = cfg_local_native();
         c.enabled = false;
         c
     }
 
     fn cfg_remote_without_opt_in() -> GitHooksConfig {
-        let mut c = cfg_local_pre_commit();
+        let mut c = cfg_local_native();
         c.origin = ConfigOrigin::Remote;
         c
     }
@@ -222,7 +230,7 @@ mod tests {
     fn install_action_returns_hook_failed_when_not_a_git_repo() {
         let tmp = tempdir().unwrap();
         // No .git directory created.
-        let exit = install_action(&cfg_local_pre_commit(), tmp.path());
+        let exit = install_action(&cfg_local_native(), tmp.path());
         assert_eq!(exit, crate::error_codes::HOOK_FAILED);
     }
 
@@ -260,7 +268,7 @@ mod tests {
     #[test]
     fn status_action_returns_zero_on_empty_dir() {
         let tmp = tempdir().unwrap();
-        let exit = status_action(&cfg_local_pre_commit(), tmp.path());
+        let exit = status_action(&cfg_local_native(), tmp.path());
         assert_eq!(exit, 0);
     }
 
@@ -269,7 +277,7 @@ mod tests {
     #[test]
     fn list_action_returns_zero_when_no_framework_detected() {
         let tmp = tempdir().unwrap();
-        let mut cfg = cfg_local_pre_commit();
+        let mut cfg = cfg_local_native();
         cfg.framework = None;
         let exit = list_action(&cfg, tmp.path());
         assert_eq!(exit, 0);
@@ -281,7 +289,7 @@ mod tests {
     #[test]
     fn list_action_returns_zero_when_config_file_missing() {
         let tmp = tempdir().unwrap();
-        let exit = list_action(&cfg_local_pre_commit(), tmp.path());
+        let exit = list_action(&cfg_local_native(), tmp.path());
         assert_eq!(exit, 0);
     }
 

@@ -1,10 +1,11 @@
-//! Git hook framework installation (PRD-048)
+//! Git hook management (PRD-048)
 //!
-//! Installs and manages Git pre-commit hooks driven by `jarvy.toml`'s
-//! `[git_hooks]` block. Today only the `pre-commit` framework
-//! (<https://pre-commit.com>) is supported; the architecture leaves room
-//! for `husky` and `lefthook` handlers behind the same `HookFramework`
-//! enum without changing the CLI surface.
+//! Installs and manages Git hooks driven by `jarvy.toml`'s
+//! `[git_hooks]` block. The **native** handler writes hook scripts
+//! directly into `.git/hooks/<stage>` — no third-party framework in
+//! the loop — with sources from inline TOML bodies, project-local
+//! files, or scanned folders. Husky and Lefthook are stubbed for
+//! auto-detection but not yet installed.
 //!
 //! # Why `[git_hooks]` and not `[hooks]`
 //!
@@ -13,36 +14,29 @@
 //! `git_hooks = true` knob into that existing block would entangle two
 //! unrelated lifecycles. Using a new top-level `[git_hooks]` keeps
 //! their semantics independent and lets users mix-and-match (no setup
-//! hooks but yes pre-commit, or vice versa).
+//! hooks but yes git hooks, or vice versa).
 //!
 //! # Trust boundary
 //!
-//! Pre-commit configs (`.pre-commit-config.yaml`) reference hook repos
-//! by URL + revision. `jarvy hooks install` will fetch and execute
-//! arbitrary code from those repos at commit time — same trust model as
-//! `pre-commit install` itself. Jarvy does NOT add an additional gate
-//! here because (a) the user must already trust the repo they're
-//! working in, and (b) pre-commit's own `--hook-impl` sandboxing is
-//! upstream's responsibility. Remote configs fetched via
-//! `jarvy setup --from <url>` are blocked from auto-installing hooks
-//! unless `[git_hooks] allow_remote = true` is set in the SOURCE config
-//! (mirrors `[packages] allow_remote`).
+//! Native hook scripts execute on `git commit` / `git push` / etc. —
+//! the user must already trust their own repo. Remote configs fetched
+//! via `jarvy setup --from <url>` are blocked from auto-installing
+//! hooks unless `[git_hooks] allow_remote = true` is set in the
+//! source config (mirrors `[packages] allow_remote`). File-reference
+//! and folder-scan sources refuse absolute paths, `..` traversal, and
+//! symlink escape via `resolve_project_path`.
 
 pub mod config;
 pub mod detection;
 pub mod husky;
 pub mod lefthook;
 pub mod native;
-pub mod precommit;
 
 use std::path::Path;
 use thiserror::Error;
 
-#[allow(unused_imports)] // Public re-export for downstream consumers
-pub use config::PreCommitConfig;
 pub use config::{GitHooksConfig, HookFramework};
 pub use detection::detect_framework;
-pub use precommit::PreCommitHandler;
 
 /// Errors produced by hook installation / management.
 #[derive(Debug, Error)]
@@ -188,14 +182,6 @@ fn install_hooks_inner(config: &GitHooksConfig, project_dir: &Path) -> Result<bo
     };
 
     match framework {
-        HookFramework::PreCommit => {
-            let handler = PreCommitHandler::new(
-                config.pre_commit.clone().unwrap_or_default(),
-                project_dir.to_path_buf(),
-            );
-            handler.install()?;
-            Ok(true)
-        }
         HookFramework::Husky => {
             let handler = husky::HuskyHandler::new(project_dir.to_path_buf());
             handler.install()?;
@@ -261,14 +247,6 @@ fn update_hooks_inner(config: &GitHooksConfig, project_dir: &Path) -> Result<boo
         None => return Ok(false),
     };
     match framework {
-        HookFramework::PreCommit => {
-            let handler = PreCommitHandler::new(
-                config.pre_commit.clone().unwrap_or_default(),
-                project_dir.to_path_buf(),
-            );
-            handler.update()?;
-            Ok(true)
-        }
         HookFramework::Husky => {
             let handler = husky::HuskyHandler::new(project_dir.to_path_buf());
             handler.update()?;
@@ -290,20 +268,13 @@ fn update_hooks_inner(config: &GitHooksConfig, project_dir: &Path) -> Result<boo
     }
 }
 
-/// List installed hooks (currently: parse `.pre-commit-config.yaml`).
+/// List installed hooks by walking whichever handler is active.
 pub fn list_hooks(config: &GitHooksConfig, project_dir: &Path) -> Result<Vec<HookInfo>, HookError> {
     let framework = match config.framework.or_else(|| detect_framework(project_dir)) {
         Some(f) => f,
         None => return Ok(Vec::new()),
     };
     match framework {
-        HookFramework::PreCommit => {
-            let handler = PreCommitHandler::new(
-                config.pre_commit.clone().unwrap_or_default(),
-                project_dir.to_path_buf(),
-            );
-            handler.list()
-        }
         HookFramework::Husky => {
             let handler = husky::HuskyHandler::new(project_dir.to_path_buf());
             handler.list()
@@ -322,8 +293,8 @@ pub fn list_hooks(config: &GitHooksConfig, project_dir: &Path) -> Result<Vec<Hoo
     }
 }
 
-/// Run hooks once. `all_files = true` mirrors `pre-commit run
-/// --all-files`. `hook_id = Some("black")` runs a single hook.
+/// Run hooks once. `all_files = true` runs every configured hook
+/// against the whole tree; `hook_id = Some("...")` runs a single stage.
 pub fn run_hooks(
     config: &GitHooksConfig,
     project_dir: &Path,
@@ -340,13 +311,6 @@ pub fn run_hooks(
         }
     };
     match framework {
-        HookFramework::PreCommit => {
-            let handler = PreCommitHandler::new(
-                config.pre_commit.clone().unwrap_or_default(),
-                project_dir.to_path_buf(),
-            );
-            handler.run(all_files, hook_id)
-        }
         HookFramework::Husky => {
             let handler = husky::HuskyHandler::new(project_dir.to_path_buf());
             handler.run(all_files, hook_id)
@@ -374,38 +338,23 @@ pub struct HookStatus {
     pub hook_count: usize,
 }
 
-/// Probe current status: framework detected? installed in `.git/hooks/`?
+/// Probe current status: framework detected? any hook in `.git/hooks/`?
 pub fn hook_status(config: &GitHooksConfig, project_dir: &Path) -> HookStatus {
     let framework = config.framework.or_else(|| detect_framework(project_dir));
-    let installed = project_dir
-        .join(".git")
-        .join("hooks")
-        .join("pre-commit")
-        .exists();
-    let (config_path, hook_count) = match framework {
-        Some(HookFramework::PreCommit) => {
-            let path = config
-                .pre_commit
-                .as_ref()
-                .map(|c| c.config.clone())
-                .unwrap_or_else(|| ".pre-commit-config.yaml".to_string());
-            let count = if project_dir.join(&path).exists() {
-                let handler = PreCommitHandler::new(
-                    config.pre_commit.clone().unwrap_or_default(),
-                    project_dir.to_path_buf(),
-                );
-                handler.list().map(|h| h.len()).unwrap_or(0)
-            } else {
-                0
-            };
-            (Some(path), count)
-        }
-        _ => (None, 0),
-    };
+    // Presence of ANY managed hook file in `.git/hooks/` counts as
+    // installed — pre-commit's hardcoded probe was a leftover from
+    // when it was the only framework.
+    let hooks_dir = project_dir.join(".git").join("hooks");
+    let installed = list_hooks(config, project_dir)
+        .map(|list| list.iter().any(|h| hooks_dir.join(&h.id).exists()))
+        .unwrap_or(false);
+    let hook_count = list_hooks(config, project_dir)
+        .map(|h| h.len())
+        .unwrap_or(0);
     HookStatus {
         framework,
         installed,
-        config_path,
+        config_path: None,
         hook_count,
     }
 }
@@ -437,15 +386,13 @@ mod tests {
     fn install_hooks_refuses_remote_without_allow_remote_opt_in() {
         let tmp = tempdir().unwrap();
         std::fs::create_dir(tmp.path().join(".git")).unwrap();
-        std::fs::write(tmp.path().join(".pre-commit-config.yaml"), "repos: []").unwrap();
         let cfg = GitHooksConfig {
             enabled: true,
-            framework: Some(HookFramework::PreCommit),
+            framework: Some(HookFramework::Native),
             auto_install: true,
             auto_update: false,
             run_after_install: false,
             allow_remote: false,
-            pre_commit: None,
             native: None,
             origin: ConfigOrigin::Remote,
         };
@@ -459,12 +406,11 @@ mod tests {
         std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let cfg = GitHooksConfig {
             enabled: true,
-            framework: Some(HookFramework::PreCommit),
+            framework: Some(HookFramework::Native),
             auto_install: true,
             auto_update: false,
             run_after_install: false,
             allow_remote: false,
-            pre_commit: None,
             native: None,
             origin: ConfigOrigin::Remote,
         };
@@ -478,12 +424,11 @@ mod tests {
         std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let cfg = GitHooksConfig {
             enabled: true,
-            framework: Some(HookFramework::PreCommit),
+            framework: Some(HookFramework::Native),
             auto_install: true,
             auto_update: false,
             run_after_install: false,
             allow_remote: false,
-            pre_commit: None,
             native: None,
             origin: ConfigOrigin::Remote,
         };
@@ -500,12 +445,11 @@ mod tests {
         // gate check passes. That proves the gate didn't fire.
         let cfg = GitHooksConfig {
             enabled: true,
-            framework: Some(HookFramework::PreCommit),
+            framework: Some(HookFramework::Native),
             auto_install: true,
             auto_update: false,
             run_after_install: false,
             allow_remote: true,
-            pre_commit: None,
             native: None,
             origin: ConfigOrigin::Remote,
         };
@@ -524,12 +468,11 @@ mod tests {
         let tmp = tempdir().unwrap();
         let cfg = GitHooksConfig {
             enabled: true,
-            framework: Some(HookFramework::PreCommit),
+            framework: Some(HookFramework::Native),
             auto_install: true,
             auto_update: false,
             run_after_install: false,
             allow_remote: false,
-            pre_commit: None,
             native: None,
             origin: ConfigOrigin::Local, // default
         };

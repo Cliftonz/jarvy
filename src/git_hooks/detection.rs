@@ -7,15 +7,11 @@ use std::path::Path;
 /// `None` if nothing matches — caller treats that as "no hook
 /// integration for this project."
 ///
-/// Detection order is intentional: `.pre-commit-config.yaml` wins over
-/// husky / lefthook because it's a stronger signal (file vs. directory
-/// or dep-list reference) and is the most common in mixed-language
-/// projects.
+/// Order: husky (`.husky/` or `"husky"` in `package.json`) → lefthook
+/// (`lefthook.yml`/`.yaml`). Native has no auto-detection signal — a
+/// team using the native handler always declares it explicitly via
+/// `[git_hooks.native]` in `jarvy.toml`.
 pub fn detect_framework(project_dir: &Path) -> Option<HookFramework> {
-    if project_dir.join(".pre-commit-config.yaml").exists() {
-        return Some(HookFramework::PreCommit);
-    }
-
     if project_dir.join(".husky").is_dir() {
         return Some(HookFramework::Husky);
     }
@@ -51,13 +47,6 @@ mod tests {
     }
 
     #[test]
-    fn pre_commit_config_detected() {
-        let tmp = tempdir().unwrap();
-        fs::write(tmp.path().join(".pre-commit-config.yaml"), "repos: []").unwrap();
-        assert_eq!(detect_framework(tmp.path()), Some(HookFramework::PreCommit));
-    }
-
-    #[test]
     fn husky_directory_detected() {
         let tmp = tempdir().unwrap();
         fs::create_dir(tmp.path().join(".husky")).unwrap();
@@ -83,10 +72,13 @@ mod tests {
     }
 
     #[test]
-    fn pre_commit_wins_over_husky() {
+    fn pre_commit_config_no_longer_detected_as_framework() {
+        // Pre-commit framework support was removed in v0.8. A project
+        // with a `.pre-commit-config.yaml` sitting in the tree should
+        // NOT trigger jarvy to try to install pre-commit — the user
+        // opts into native hooks via `[git_hooks.native]` explicitly.
         let tmp = tempdir().unwrap();
         fs::write(tmp.path().join(".pre-commit-config.yaml"), "repos: []").unwrap();
-        fs::create_dir(tmp.path().join(".husky")).unwrap();
-        assert_eq!(detect_framework(tmp.path()), Some(HookFramework::PreCommit));
+        assert_eq!(detect_framework(tmp.path()), None);
     }
 }
