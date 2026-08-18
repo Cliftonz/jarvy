@@ -1004,9 +1004,18 @@ pub fn preview_install(min_hint: &str, ctx: &InstallContext) -> String {
     match decide(requested, min_hint, ctx.fallback) {
         Decision::RunRoute(route) => format!("`{}`", route_command(&route)),
         Decision::FallbackToDefault { reason, route, .. } => {
-            format!("`{}` (OpenJDK fallback: {})", route_command(&route), reason)
+            // `reason` embeds the raw user-supplied `distribution` field
+            // (via `format!("unknown distribution '{requested}'")` in
+            // decide()). A hostile local jarvy.toml with ANSI escapes in
+            // `distribution` would clear the operator's terminal on
+            // `setup --dry-run`. Launder through the shared sanitizer.
+            let safe = crate::tools::unsupported::sanitize_for_display(&reason);
+            format!("`{}` (OpenJDK fallback: {})", route_command(&route), safe)
         }
-        Decision::Refuse { reason, .. } => format!("REFUSED ({reason})"),
+        Decision::Refuse { reason, .. } => {
+            let safe = crate::tools::unsupported::sanitize_for_display(&reason);
+            format!("REFUSED ({safe})")
+        }
     }
 }
 
@@ -1814,6 +1823,63 @@ mod tests {
                 repo.vendor, fpr
             );
         }
+    }
+
+    #[test]
+    fn preview_refuses_when_openjdk_route_unsupported_and_fallback_false() {
+        // `preview_install` must render the Refuse arm literally, not
+        // silently produce an empty backtick pair — the dry-run preview
+        // is the operator's last chance to see what setup will do.
+        let ctx = InstallContext {
+            distribution: Some("bogus-jdk".to_string()),
+            fallback: false,
+        };
+        let preview = preview_install("17", &ctx);
+        assert!(
+            preview.starts_with("REFUSED"),
+            "preview must render Refuse explicitly: {preview}"
+        );
+        assert!(
+            preview.contains("bogus-jdk") || preview.contains("unknown"),
+            "preview must name the refusal reason: {preview}"
+        );
+    }
+
+    #[test]
+    fn preview_fallback_arm_names_openjdk_and_target_route() {
+        // When fallback = true, preview must show BOTH the fallback
+        // marker and the exact OpenJDK route that will run — otherwise
+        // dry-run and apply disagree on the resolved package.
+        let ctx = InstallContext {
+            distribution: Some("bogus-jdk".to_string()),
+            fallback: true,
+        };
+        let preview = preview_install("17", &ctx);
+        assert!(
+            preview.contains("OpenJDK fallback"),
+            "preview must announce fallback: {preview}"
+        );
+        assert!(
+            preview.contains("17"),
+            "preview must preserve the requested major version: {preview}"
+        );
+    }
+
+    #[test]
+    fn preview_sanitizes_ansi_escapes_in_distribution_reason() {
+        // A hostile local jarvy.toml with ANSI in the distribution field
+        // must not clear the operator's terminal when dry-run prints
+        // the preview. `sanitize_for_display` replaces control bytes
+        // with `?` — verify no ESC (0x1b) survives to the output.
+        let ctx = InstallContext {
+            distribution: Some("\x1b[2Jbogus".to_string()),
+            fallback: false,
+        };
+        let preview = preview_install("17", &ctx);
+        assert!(
+            !preview.contains('\x1b'),
+            "preview must strip ESC bytes from user-supplied distribution: {preview:?}"
+        );
     }
 
     #[test]

@@ -21,9 +21,31 @@ define_tool!(PNPM, {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::spec::order_tools_by_dependencies;
 
     #[test]
     fn pnpm_declares_node_runtime_dependency() {
         assert_eq!(PNPM.depends_on, Some(&["node"][..]));
+    }
+
+    #[test]
+    fn pnpm_installs_after_node_regardless_of_config_order() {
+        // Behavioral guard — shape-only test (above) doesn't catch a
+        // topo-sort regression. Feed the tools in reverse order and
+        // verify the ordering primitive schedules node first.
+        let inputs: Vec<(&str, &str)> = vec![("pnpm", "latest"), ("node", "20")];
+        let ordered = order_tools_by_dependencies(inputs.into_iter());
+        let node_i = ordered
+            .iter()
+            .position(|(n, _)| n == "node")
+            .expect("node scheduled");
+        let pnpm_i = ordered
+            .iter()
+            .position(|(n, _)| n == "pnpm")
+            .expect("pnpm scheduled");
+        assert!(
+            node_i < pnpm_i,
+            "node must install before pnpm; got order {ordered:?}"
+        );
     }
 }
