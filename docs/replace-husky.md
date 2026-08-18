@@ -1,27 +1,23 @@
 # Replacing Husky with Jarvy
 
-If your repo uses [Husky](https://typicode.github.io/husky/) today,
-you have three paths forward, depending on how much migration friction
-you want to absorb.
+If your repo uses [Husky](https://typicode.github.io/husky/) today, you have two paths forward — depending on whether you want to keep npm in the hook loop.
 
 ## TL;DR
 
 | Path | Husky stays | New dependency | When to pick it |
 |---|---|---|---|
-| **Wrap (zero migration)** | Yes | None — Jarvy just installs Husky for you | You like Husky and want a one-command bootstrap for new contributors |
-| **Switch to `pre-commit`** | No | `pre-commit` (Python) | Polyglot repo, Husky's per-language friction has cost you |
-| **Switch to lefthook** | No | `lefthook` (single Go binary) | You want the fastest hooks + parallel execution, no language runtime |
+| **Wrap Husky (zero migration)** | Yes | None — Jarvy just installs Husky for you | You like Husky and want a one-command bootstrap for new contributors |
+| **Switch to Jarvy native** | No | None (jarvy manages hooks directly) | You want to drop the npm dependency for hooks, or your repo isn't a Node project |
 
 The rest of this doc walks through each path.
+
+> **Note:** Pre-commit framework support was removed in v0.8. Earlier versions of this doc included a "switch to pre-commit" path — use the native handler instead, which achieves the same goal (jarvy manages hooks, no npm/husky dependency) without pulling in a third-party framework.
 
 ---
 
 ## Path 1 — Wrap Husky (zero migration)
 
-Jarvy can drive Husky as a first-class framework. Your `.husky/`
-directory and existing hooks stay exactly where they are; the only
-change is that `jarvy setup` (and `jarvy hooks install`) now bootstrap
-Husky on a fresh clone for you.
+Jarvy can drive Husky as a first-class framework. Your `.husky/` directory and existing hooks stay exactly where they are; the only change is that `jarvy setup` (and `jarvy hooks install`) now bootstraps Husky on a fresh clone for you.
 
 ### Setup
 
@@ -32,8 +28,7 @@ framework = "husky"     # explicit; otherwise auto-detected from .husky/
 auto_install = true     # run `npx husky install` during `jarvy setup`
 ```
 
-That's it. Existing hooks under `.husky/pre-commit`, `.husky/commit-msg`,
-etc. are unchanged. A fresh clone now runs:
+That's it. Existing hooks under `.husky/pre-commit`, `.husky/commit-msg`, etc. are unchanged. A fresh clone now runs:
 
 ```bash
 jarvy setup
@@ -56,169 +51,95 @@ jarvy setup
 
 ### Caveats
 
-- **`package.json` is required.** Husky lives in npm dependencies;
-  if you don't have a `package.json`, you can't use this path.
-  Use path 2 or 3 instead.
-- **`npx` must be on PATH.** Surfaced as `HookError::FrameworkNotInstalled`
-  if missing. Add Node to `[provisioner]` if your `jarvy.toml` doesn't
-  already have it.
-- **No autoupdate.** Husky doesn't have a `husky autoupdate` like
-  `pre-commit` does — `jarvy hooks update` runs
-  `npm install --save-dev husky@latest` and re-installs. Hook scripts
-  themselves are your code; Jarvy doesn't touch them.
+- **`package.json` is required.** Husky lives in npm dependencies; if you don't have a `package.json`, you can't use this path.
+- **`npx` runs every commit.** Husky's overhead is real (~50-200ms per commit). If that matters, look at Path 2.
 
 ---
 
-## Path 2 — Switch to `pre-commit`
+## Path 2 — Switch to Jarvy native
 
-`pre-commit` is the de-facto polyglot hook framework. It supports
-language-specific tooling (rustfmt, black, prettier, …) out of the
-box via a YAML config, and the hook implementations live in third-
-party repos pinned by `rev`.
+Move your hook scripts out of `.husky/` and into a folder (or a shared git repo) that jarvy scans directly. No npm, no husky, no third-party framework — jarvy writes the scripts straight into `.git/hooks/<stage>`.
 
-### Migration steps
+### Setup
 
-1. **Add `pre-commit` to `jarvy.toml`:**
-
-   ```toml
-   [provisioner]
-   pre-commit = "latest"
-
-   [git_hooks]
-   framework = "pre-commit"
-   auto_install = true
-   pre_commit.config = ".pre-commit-config.yaml"
-   pre_commit.install_hooks = true
-   ```
-
-2. **Translate `.husky/<hook-name>` → `.pre-commit-config.yaml`:**
-
-   ```yaml
-   # .pre-commit-config.yaml
-   repos:
-     - repo: https://github.com/pre-commit/pre-commit-hooks
-       rev: v4.6.0
-       hooks:
-         - id: trailing-whitespace
-         - id: end-of-file-fixer
-         - id: check-yaml
-
-     # Equivalent of `.husky/pre-commit` running `npm run lint`:
-     - repo: local
-       hooks:
-         - id: npm-lint
-           name: npm run lint
-           entry: npm run lint
-           language: system
-           pass_filenames: false
-   ```
-
-   The `local` repo pattern is the direct replacement for a `.husky/`
-   shell script — same intent, just declared in YAML instead of as
-   a shell file.
-
-3. **Remove Husky:**
-
-   ```bash
-   npm uninstall husky
-   rm -rf .husky
-   git config --unset core.hooksPath || true   # husky set this; pre-commit doesn't need it
-   ```
-
-4. **Bootstrap on fresh clones:**
-
-   ```bash
-   jarvy setup
-   # → installs pre-commit
-   # → runs `pre-commit install --install-hooks`
-   ```
-
-### When this wins
-
-- Polyglot repos (`black` + `rustfmt` + `prettier` in the same hook
-  pipeline) — `pre-commit`'s pinned-by-rev model handles cross-language
-  tooling far better than Husky-as-shell-runner.
-- Teams who don't want to require Node on every contributor's machine
-  for hook execution.
-- CI integration — `pre-commit run --all-files` is the standard
-  "verify everything" command across thousands of repos.
-
-### When it doesn't
-
-- JS-heavy monorepos where every contributor already has Node — the
-  win from removing Husky is small.
-- Repos with lots of custom shell logic in hooks that don't map cleanly
-  to the `pre-commit` `local` repo shape.
-
----
-
-## Path 3 — Switch to `lefthook`
-
-[lefthook](https://github.com/evilmartians/lefthook) is a single Go
-binary — no Python, no Node, no language runtime. Hooks are declared
-in `lefthook.yml`. Parallel execution by default. Jarvy auto-detects
-the `lefthook.yml` marker file but the handler isn't shipped in
-this milestone — track [issue #TODO] for the lefthook implementation.
-
-For now, treat lefthook as a path 2 lookalike: install `lefthook` via
-your package manager, point `[git_hooks]` at it, and migrate your
-`.husky/<name>` scripts into `lefthook.yml`'s `commands` blocks.
-
----
-
-## Decision tree
+Move your existing `.husky/*` scripts into `scripts/hooks/` (or wherever you like — the folder name doesn't matter):
 
 ```
-Are your hooks shell scripts with project-local logic?
-├── Yes
-│   ├── Polyglot repo? → Path 2 (pre-commit)
-│   └── JS-only?       → Path 1 (wrap Husky) — least friction
-└── No, hooks are mostly "run npm/cargo/etc. commands"
-    ├── Want zero language-runtime deps in hooks? → Path 3 (lefthook)
-    └── Otherwise                                  → Path 2 (pre-commit)
+your-repo/
+├── jarvy.toml
+├── package.json                # keep or delete, doesn't affect hooks anymore
+└── scripts/
+    └── hooks/
+        ├── pre-commit          # was .husky/pre-commit
+        ├── pre-push            # was .husky/pre-push
+        └── commit-msg          # was .husky/commit-msg
 ```
-
-## Verifying the migration
-
-After migrating, confirm the hooks still fire:
-
-```bash
-# Should fire your hooks and exit non-zero on failure.
-jarvy hooks run
-
-# Should list every configured hook.
-jarvy hooks list
-
-# Status check — useful in CI to assert the framework is wired up.
-jarvy hooks status
-```
-
-If `jarvy hooks status` reports `installed: no`, run `jarvy hooks install`
-once and check `.git/hooks/pre-commit` (or `core.hooksPath`) ends up
-pointing where you expect.
-
----
-
-## Quick reference
 
 ```toml
-# Path 1 (Husky)
-[git_hooks]
-framework = "husky"
-auto_install = true
-
-# Path 2 (pre-commit)
-[git_hooks]
-framework = "pre-commit"
-auto_install = true
-pre_commit.install_hooks = true
-
-# Path 3 (lefthook — not yet shipped)
-[git_hooks]
-framework = "lefthook"
-auto_install = true
+# jarvy.toml
+[git_hooks.native]
+dir = "scripts/hooks"
 ```
 
-All three honor the standard `[git_hooks] allow_remote` trust gate —
-a remote config (`jarvy setup --from <url>`) cannot land any of these
-without explicit opt-in.
+Then:
+
+```bash
+jarvy hooks install
+# → writes scripts/hooks/pre-commit → .git/hooks/pre-commit
+# → same for pre-push, commit-msg
+# → each stamped with a "# managed by jarvy" marker
+# → chmod +x
+```
+
+Remove the `.husky/` directory and the husky devDependency from `package.json` (or delete the whole package.json if it existed only for husky).
+
+### Sharing hooks across many repos
+
+If your organization has one hooks library used across many repos, publish it as a git repo and point at it:
+
+```toml
+[git_hooks.native]
+repo = "github:your-org/team-hooks"
+ref  = "v1.0.0"                # required — tag or SHA
+```
+
+Jarvy clones once, caches at `~/.jarvy/git_hooks_cache/<hash>/`, and refreshes idempotently on subsequent runs. See [Git hooks](git-hooks.md) for the full config surface (subpath, mixing with local `dir` / inline overrides, etc.).
+
+### What changes vs. running Husky
+
+| Thing | Husky | Jarvy native |
+|---|---|---|
+| Hook location | `.husky/<stage>` | `scripts/hooks/<stage>` (or wherever `dir` points) |
+| `.git/hooks/` path | `.husky/_` via `core.hooksPath` | Native `.git/hooks/<stage>` |
+| Per-commit overhead | ~50-200ms (spawns node) | None (git invokes the script directly) |
+| npm dependency | Yes (`husky` in devDependencies) | No |
+| Fresh-clone install | `npm install` (via `prepare` script) | `jarvy setup` (or `jarvy hooks install`) |
+| Cross-repo hook sharing | Copy scripts, or an npm package | `[git_hooks.native] repo = "..."` |
+| Overwrite protection | Husky manages `.husky/_` | Marker check; refuses to clobber hand-authored `.git/hooks/*` |
+
+### Caveats
+
+- **Contributors on a fresh clone must run `jarvy setup` or `jarvy hooks install` explicitly.** Husky's `npm install` hook is convenient because `npm install` was going to run anyway. With native hooks, the setup step is a separate command. The [bootstrap script](../scripts/bootstrap.sh) handles this — copy it into your repo's `scripts/` folder and contributors run one command.
+- **No `--hook-stage` semantics.** Native hooks run whatever git's hook mechanism dispatches them to. If you were using Husky's stage grouping, split into separate stage files.
+
+---
+
+## Path 3 — Switch to lefthook
+
+Not yet supported — the lefthook framework has a stub in jarvy today but the handler isn't wired. Track under `prd/048-pre-commit-hook-installation.md`. In the meantime, run lefthook directly (`lefthook install`) and set `[git_hooks] enabled = false` in `jarvy.toml`.
+
+---
+
+## Which one should you pick?
+
+- **Node monorepo with a mature Husky setup already:** Path 1 (wrap it, zero migration).
+- **Polyglot repo, want fewer moving parts, don't care about the migration cost:** Path 2 (native).
+- **Small script-heavy repo where the hook is just "run cargo fmt --check":** Path 2 (inline body in `[git_hooks.native.hooks]`, no scripts folder at all).
+- **Team hooks library shared across 10+ repos:** Path 2 with `repo = "..."`.
+
+All paths honor the standard `[git_hooks] allow_remote` trust gate — a remote config (`jarvy setup --from <url>`) cannot land any of these without explicit opt-in.
+
+## Related
+
+- [Git hooks](git-hooks.md) — full reference for `[git_hooks]` including all `[git_hooks.native]` source shapes
+- [Configuration reference](configuration.md) — schema

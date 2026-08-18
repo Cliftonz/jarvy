@@ -19,7 +19,7 @@
 - **235+ tools supported** -- From git and docker to terraform, kubectl, and language runtimes
 - **Six language ecosystems** -- `[npm]`, `[pip]`, `[cargo]`, `[nuget]`, `[gem]`, `[go]` install language-specific packages alongside CLI tools
 - **AI agent integration** -- Distribute guardrails (`[ai_hooks]`), MCP servers (`[mcp_register]`), and AI skills (`[skills]`) across Claude Code / Cursor / Codex / Windsurf / Cline / Continue from one config
-- **Git pre-commit hooks** -- `[git_hooks]` installs the framework during `jarvy setup` so teammates ship with the same lint gates
+- **Git hooks** -- `[git_hooks.native]` writes scripts directly into `.git/hooks/` from an inline body, a local folder, or a shared team git repo — no third-party framework required
 - **Library registry** -- Publish reusable AI hooks, MCP servers, and skills at any HTTPS URL; consumers reference by `use = "name"` (PRD-054)
 
 ## Contributor Onboarding (Clean Laptop)
@@ -208,7 +208,7 @@ run = "npm start"
 test = "npm test"
 ```
 
-See [Configuration Reference](docs/configuration.md) for all options including environment variables, secrets, services, drift detection, network/proxy settings, git configuration, language packages (`[npm]/[pip]/[cargo]/[nuget]/[gem]/[go]`), AI hooks (`[ai_hooks]`), MCP registration (`[mcp_register]`), git pre-commit hooks (`[git_hooks]`), AI agent skills (`[skills]`), and the library registry (`library_sources`) pattern.
+See [Configuration Reference](docs/configuration.md) for all options including environment variables, secrets, services, drift detection, network/proxy settings, git configuration, language packages (`[npm]/[pip]/[cargo]/[nuget]/[gem]/[go]`), AI hooks (`[ai_hooks]`), MCP registration (`[mcp_register]`), git hooks (`[git_hooks]`), Windows setup knobs (`[windows]`), AI agent skills (`[skills]`), and the library registry (`library_sources`) pattern.
 
 ## Shell Completions
 
@@ -302,7 +302,8 @@ For AI agents and LLMs, see [llms.txt](llms.txt) for a structured reference opti
 - [Configuration Reference](docs/configuration.md)
 - [CLI Reference](docs/cli.md)
 - [Hooks](docs/hooks.md)
-- [Git pre-commit hooks](docs/git-hooks.md)
+- [Git hooks](docs/git-hooks.md)
+- [Windows setup](docs/windows.md)
 - [Adding Tools](docs/adding-tools.md)
 - [Language Packages](docs/packages.md)
 - [AI Hooks](docs/ai-hooks.md)

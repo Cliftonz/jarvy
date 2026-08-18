@@ -366,24 +366,48 @@ env = { LINEAR_API_KEY = "${LINEAR_API_KEY}" }
 
 ## Git Hooks (`[git_hooks]`)
 
-Install pre-commit framework hooks during `jarvy setup`. See [git-hooks](git-hooks.md).
+Install git hooks directly into `.git/hooks/` during `jarvy setup` — no third-party framework. See [git-hooks](git-hooks.md).
 
 ```toml
 [git_hooks]
 enabled = true                              # default true; block presence is the opt-in
-framework = "pre-commit"                    # pre-commit (today) | husky / lefthook (stubbed)
+framework = "native"                        # native (default) | husky / lefthook (stubbed)
 auto_install = true                         # install during jarvy setup (default true)
-auto_update = false                         # run pre-commit autoupdate after install
+auto_update = false                         # (reserved — no-op for native today)
 run_after_install = false                   # run hooks once against the whole tree
 allow_remote = false                        # remote-config trust gate (default false)
 
-[git_hooks.pre_commit]
-version = "3.6.0"                           # pin framework version
-config = ".pre-commit-config.yaml"          # path to framework config (default)
-install_hooks = true                        # --install-hooks (warm envs eagerly)
+# Native handler. Four source shapes, listed in precedence order
+# (later sources override earlier for the same stage).
+[git_hooks.native]
+repo = "github:acme/team-hooks"             # remote — clone into ~/.jarvy/git_hooks_cache
+ref  = "v1.2.0"                             # REQUIRED for repo; SHAs & v-tags treated pinned
+subpath = "hooks"                           # optional folder within the repo
+dir = "scripts/hooks"                       # local folder scan
+# Per-stage entries — inline body OR file reference. Wins over dir/repo.
+[git_hooks.native.hooks]
+commit-msg = "#!/bin/sh\ngrep -qE '^(feat|fix|chore): ' \"$1\""
+pre-push   = { file = "ci/pre-push.sh" }
 ```
 
-Auto-detects framework from `.pre-commit-config.yaml` / `.husky/` / `lefthook.yml` when `framework` is unset. Husky / lefthook are recognized but their handlers are stubbed today.
+Auto-detects husky / lefthook from `.husky/` / `lefthook.yml` when `framework` is unset. Both are stubbed today — the CLI reports a clear "not yet supported" error. Pre-commit framework integration was removed in v0.8 — use the native handler (see [Migrating from pre-commit](git-hooks.md#migrating-from-pre-commit)).
+
+---
+
+## Windows (`[windows]`)
+
+Windows-only setup knobs — fixes "why does my `.sh` script open in Notepad" via per-user PATHEXT and file-association writes. Parses on every OS; the phase is a no-op on non-Windows targets. See [windows](windows.md).
+
+```toml
+[windows]
+enabled = true                              # default true; block presence is the opt-in
+sh_pathext = true                           # add .SH to HKCU PATHEXT (default false)
+sh_association = "open"                     # off | open — route .sh "open" verb to bash (default "off")
+bash_path_override = "D:\\tools\\git\\bin\\bash.exe"  # optional; auto-detects Git for Windows
+allow_remote = false                        # remote-config trust gate (default false)
+```
+
+Both writes are HKCU-scoped (no admin needed, no impact on other Windows accounts) and idempotent. Trust gate mirrors `[git_hooks]` / `[dotfiles]` / `[packages]`.
 
 ---
 

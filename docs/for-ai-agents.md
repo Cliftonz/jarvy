@@ -534,12 +534,20 @@ Remote-fetched configs (`jarvy setup --from <url>`) CANNOT declare
 `library_sources`. The URL must live in the user's own local
 `jarvy.toml` or `~/.jarvy/config.toml`. See [library registry](library-registry.md) for the manifest format.
 
-**Install pre-commit hooks during setup:**
+**Install git hooks during setup:**
 
 ```toml
-[git_hooks]
-# Block presence is the opt-in. Auto-detects from .pre-commit-config.yaml.
+[git_hooks.native]
+# Point at a folder of hook scripts (any file whose name matches a
+# git hook stage gets installed into .git/hooks/):
+dir = "scripts/hooks"
+
+# Or point at a shared team hooks repo:
+# repo = "github:your-org/team-hooks"
+# ref  = "v1.0.0"
 ```
+
+Native handler; no third-party framework required. Pre-commit framework support was removed in v0.8 — see [git-hooks](git-hooks.md) for the four source shapes and the migration path.
 
 ### When a tool isn't supported
 

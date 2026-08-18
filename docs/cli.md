@@ -395,17 +395,17 @@ jarvy skills agents                  # which AI agents are detected on disk
 
 ### `jarvy hooks`
 
-Manage git pre-commit framework hooks. See the [Git Hooks guide](git-hooks.md). PRD-048.
+Manage git hooks driven by `[git_hooks]`. Native handler writes scripts directly into `.git/hooks/<stage>` — see the [Git Hooks guide](git-hooks.md). Pre-commit framework support was removed in v0.8. PRD-048.
 
 ```bash
-jarvy hooks install                  # install framework into .git/hooks/
-jarvy hooks update                   # pre-commit autoupdate + reinstall
+jarvy hooks install                  # write configured scripts into .git/hooks/
+jarvy hooks update                   # re-run install (no separate update semantics for native)
 jarvy hooks status                   # framework + installed?  + hook count
-jarvy hooks list                     # configured hooks from .pre-commit-config.yaml
-jarvy hooks run                      # run hooks against staged changes
+jarvy hooks list                     # configured hooks from repo + dir + hooks map
+jarvy hooks run                      # run every configured hook
 jarvy hooks run --all-files          # run against entire tree
-jarvy hooks run --hook black         # run a single hook by id
-jarvy hooks uninstall                # pre-commit uninstall
+jarvy hooks run --hook pre-push      # run a single stage by name
+jarvy hooks uninstall                # remove jarvy-marker-bearing files from .git/hooks/
 ```
 
 ---

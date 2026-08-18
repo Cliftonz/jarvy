@@ -75,7 +75,7 @@ Commands:
   schema         Output the JSON Schema for jarvy.toml (for editor autocomplete)
   ai-hooks       Manage AI agent hooks (Claude Code / Cursor / Codex / Windsurf / Cline / Continue)
   mcp-register   Register the Jarvy MCP server with terminal AI agents
-  hooks          Manage git hook frameworks (pre-commit, husky, lefthook)
+  hooks          Manage git hooks (native handler; husky / lefthook stubs)
   skills         Install and manage AI agent skills from library_sources (PRD-049 + PRD-054)
   agents         Manage AI agent profiles (PRD-058): snapshot and switch whole per-agent config dirs (credentials, settings, skills, MCP)
   wizard         Agent-driven setup: hand the project to your local AI agent (Claude Code, Codex, Cursor, etc.) to analyze and configure (PRD-056). Falls back to `jarvy quickstart` when no agent is installed
@@ -825,17 +825,17 @@ Options:
 ### `jarvy hooks`
 
 ```text
-Manage git hook frameworks (pre-commit, husky, lefthook)
+Manage git hooks (native handler; husky / lefthook stubs)
 
 Usage: jarvy hooks [OPTIONS] <COMMAND>
 
 Commands:
-  install    Install the configured git hook framework into `.git/hooks/`
-  update     Run `pre-commit autoupdate` then reinstall hooks
+  install    Install configured git hooks into `.git/hooks/`
+  update     Re-run install (no separate update semantics for native)
   status     Show framework + installation status
-  list       List configured hooks from `.pre-commit-config.yaml`
+  list       List configured hooks (from `[git_hooks.native]` repo + dir + hooks map)
   run        Run hooks once (defaults to changed files; `--all-files` for whole tree)
-  uninstall  Remove jarvy-installed hooks (calls `pre-commit uninstall`)
+  uninstall  Remove jarvy-marker-bearing files from `.git/hooks/`
   help       Print this message or the help of the given subcommand(s)
 
 Options:
