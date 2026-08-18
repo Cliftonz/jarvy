@@ -264,14 +264,39 @@ jobs:
         if: matrix.cross && matrix.sysroot != ''
         run: echo "PKG_CONFIG_SYSROOT_DIR=${{ matrix.sysroot }}" >> "$GITHUB_ENV"
 
-      - name: Install app dependencies
-        # Prebuilt binaries via taiki-e/install-action drop the install step
-        # from ~3 min of source compile per matrix slot to ~5 s of download.
-        # Side benefits: silences the core2-yanked warning that came from
-        # `cargo install --locked`, and removes ~/.cargo/bin cache pressure.
+      # Fast path: prebuilt binaries via taiki-e/install-action drop the
+      # install step from ~3 min of source compile per matrix slot to
+      # ~5 s of download. Side benefits: silences the core2-yanked
+      # warning that came from `cargo install --locked`, and removes
+      # ~/.cargo/bin cache pressure.
+      #
+      # `continue-on-error: true` + `id:` lets the next step probe
+      # `.outcome` and fall through to `cargo install` when the fast
+      # path breaks. Upstream flake context: actions/partner-runner-images#169
+      # (bash-startup regression on Linux + Windows runners that blocks
+      # taiki-e/install-action's own installer script), first observed
+      # v0.8.0-rc.2. Fallback kept the release matrix shipping through
+      # multiple rc cuts while the upstream fix was pending.
+      - name: Install app dependencies (prebuilt)
+        id: install_prebuilt
+        continue-on-error: true
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-packager,cargo-generate-rpm
+
+      # Fallback: compile from source. Only runs when the prebuilt
+      # path failed. Adds ~2-3 min per matrix slot; still ships.
+      # `--locked` pins to the tool's own Cargo.lock so the yanked-
+      # dependency warning doesn't fail the build. No explicit version
+      # pin — the prebuilt path also picks latest, so drift-alignment
+      # matters more than reproducibility for an emergency-only path.
+      - name: Install app dependencies (cargo install fallback)
+        if: steps.install_prebuilt.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::warning::taiki-e/install-action failed; falling back to \`cargo install\`. Track: https://github.com/actions/partner-runner-images/issues/169"
+          cargo install --locked cargo-packager
+          cargo install --locked cargo-generate-rpm
 
       # JARVY_BUILD_TAG bakes the exact release tag (sans leading v)
       # into the binary at compile time via option_env! — so an rc
