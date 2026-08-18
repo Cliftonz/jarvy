@@ -938,6 +938,15 @@ pub fn run_setup(
     profiler.start_phase("dotfiles");
     run_dotfiles_phase(&config, dry_run);
 
+    // Windows phase — .SH PATHEXT + file association (fixes "why does
+    // my bash script open in Notepad"). No-op on non-Windows targets;
+    // safe to always call. Skipped on dry_run so previews don't touch
+    // the registry.
+    profiler.start_phase("windows");
+    if !dry_run {
+        run_windows_phase(&config);
+    }
+
     // Adoption denominator for agent profiles (PRD-058): emit a
     // debug event when no profiles.json exists so the feature-reach
     // funnel has a baseline. Mirrors dotfiles.phase_absent. Best-
@@ -1990,6 +1999,34 @@ fn run_agent_profile_hint_phase(config: &Config) {
             mismatched_count = check.mismatched.len(),
             unmanaged_count = check.unmanaged.len(),
         );
+    }
+}
+
+/// Apply the `[windows]` phase (`.SH` PATHEXT + file association).
+/// Advisory — never fails `jarvy setup`. No-op on non-Windows targets
+/// (the module short-circuits internally with `windows.phase_skipped`).
+fn run_windows_phase(config: &Config) {
+    let outcome = crate::windows::run_windows_phase(config.windows.as_ref());
+    match outcome {
+        Ok(crate::windows::WindowsPhaseOutcome::Applied {
+            pathext,
+            association,
+        }) => {
+            if let Some(kind) = pathext {
+                println!("  Windows PATHEXT (.SH): {}", kind);
+            }
+            if let Some(kind) = association {
+                println!("  Windows .sh association: {}", kind);
+            }
+        }
+        Ok(crate::windows::WindowsPhaseOutcome::Skipped(_)) => {
+            // Silent — the module emits the phase_skipped event with
+            // the reason label. No user-facing line needed for the
+            // non-Windows / disabled / nothing-to-do cases.
+        }
+        Err(err) => {
+            eprintln!("Warning: windows phase: {err}");
+        }
     }
 }
 

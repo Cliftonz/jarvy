@@ -447,6 +447,13 @@ pub struct Config {
     /// Remote-config trust gate via `allow_remote`.
     #[serde(default)]
     pub dotfiles: Option<crate::dotfiles::DotfilesConfig>,
+    /// `[windows]` block — Windows-only setup knobs (`.sh` PATHEXT +
+    /// file association). Parses on every OS; the setup phase
+    /// short-circuits on non-Windows targets so cross-platform teams
+    /// commit one jarvy.toml. Remote-config trust gate via
+    /// `allow_remote`. See `src/windows/`.
+    #[serde(default)]
+    pub windows: Option<crate::windows::WindowsConfig>,
     /// Telemetry/OTEL configuration (project-level override for security audit)
     #[serde(default)]
     pub telemetry: Option<crate::telemetry::TelemetryConfig>,
@@ -603,6 +610,7 @@ pub const TOP_LEVEL_SECTIONS: &[&str] = &[
     "mcp_register",
     "discover",
     "dotfiles",
+    "windows",
     "logging",
 ];
 
@@ -843,6 +851,7 @@ impl Config {
         tag(&mut self.git_hooks, ConfigOrigin::Remote);
         tag(&mut self.dotfiles, ConfigOrigin::Remote);
         tag(&mut self.maintenance, ConfigOrigin::Remote);
+        tag(&mut self.windows, ConfigOrigin::Remote);
 
         // Security F1: remote configs cannot silently route a tool
         // install through a specific vendor distribution (e.g. force
@@ -1653,6 +1662,7 @@ chatter = false
                 mcp_register: _,
                 discover: _,
                 dotfiles: _,
+                windows: _,
                 logging: _,
                 packages: _,
                 origin: _,
@@ -1692,6 +1702,7 @@ chatter = false
             "ai_hooks",
             "mcp_register",
             "dotfiles",
+            "windows",
             "logging",
         ];
         for s in config_sections {
@@ -1733,6 +1744,9 @@ repo = "github:zac/dotfiles"
 
 [maintenance]
 check_updates = true
+
+[windows]
+sh_pathext = true
 "#;
         let mut cfg: Config = toml::from_str(toml_str).unwrap();
         // Baseline: every sub-config defaults to Local.
@@ -1759,6 +1773,10 @@ check_updates = true
         );
         assert_eq!(
             cfg.maintenance.as_ref().unwrap().origin,
+            crate::ai_hooks::ConfigOrigin::Local
+        );
+        assert_eq!(
+            cfg.windows.as_ref().unwrap().origin,
             crate::ai_hooks::ConfigOrigin::Local
         );
 
@@ -1791,6 +1809,10 @@ check_updates = true
         );
         assert_eq!(
             cfg.maintenance.as_ref().unwrap().origin,
+            crate::ai_hooks::ConfigOrigin::Remote
+        );
+        assert_eq!(
+            cfg.windows.as_ref().unwrap().origin,
             crate::ai_hooks::ConfigOrigin::Remote
         );
     }

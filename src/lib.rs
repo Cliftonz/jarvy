@@ -31,6 +31,7 @@ pub mod ticket;
 pub mod tools;
 pub mod update;
 pub mod version;
+pub mod windows;
 pub mod wizard;
 pub mod workspace;
 

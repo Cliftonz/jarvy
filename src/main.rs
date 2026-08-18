@@ -61,6 +61,7 @@ mod templates;
 pub mod ticket;
 mod tools;
 mod update;
+mod windows;
 mod wizard;
 mod workspace;
 
