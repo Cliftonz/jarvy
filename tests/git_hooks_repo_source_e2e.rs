@@ -74,6 +74,13 @@ fn run_git(args: &[&str], cwd: &Path) {
 /// only sound pattern. JARVY_TEST_HOME needs to be per-test though —
 /// each test has its own tempdir — so it's set at call time and
 /// left set (subsequent tests overwrite it before they use the cache).
+///
+/// SAFETY: env::set_var is unsafe as of Rust 1.90 because it mutates
+/// process-global state. Every test in this file is `#[serial]`, so no
+/// sibling reads JARVY_TEST_HOME concurrently. JARVY_LIBRARY_ALLOW_INSECURE_GIT
+/// is set exactly once via `Once` — no set/read race even without
+/// serialization.
+#[allow(unsafe_code)]
 fn scoped_env(tmp: &Path) -> ScopedEnv {
     use std::sync::Once;
     static INIT: Once = Once::new();

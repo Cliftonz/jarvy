@@ -363,11 +363,15 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn resolve_refuses_git_file_without_env_var() {
         // Without JARVY_LIBRARY_ALLOW_INSECURE_GIT set, git+file:// is
         // refused as an unsupported scheme. e2e tests explicitly set
-        // the env var.
-        // Test in isolation from other tests to keep the env-var check honest.
+        // the env var; this unit test lives in the bin-test binary so
+        // it does not race with the integration e2e (separate process).
+        // SAFETY: env::remove_var is unsafe as of Rust 1.90 because it
+        // mutates process-global state; safe here because no sibling
+        // test in this binary consumes JARVY_LIBRARY_ALLOW_INSECURE_GIT.
         unsafe {
             std::env::remove_var("JARVY_LIBRARY_ALLOW_INSECURE_GIT");
         }
