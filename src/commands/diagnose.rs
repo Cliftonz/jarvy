@@ -1134,7 +1134,10 @@ mod tests {
         );
         assert_eq!(code, 1);
         let fires = probe_test_sentinel::take(Source::Diagnose);
-        assert!(fires >= 1, "diagnose unknown-tool must fire probe event; got {fires}");
+        assert!(
+            fires >= 1,
+            "diagnose unknown-tool must fire probe event; got {fires}"
+        );
     }
 
     #[test]

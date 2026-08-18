@@ -1899,9 +1899,18 @@ mod tests {
         let _ = probe_test_sentinel::take(Source::Doctor);
         let before = probe_test_sentinel::take(Source::Doctor);
         let resolved = vec![
-            ("nonexistent-doctor-dedup-xyz".to_string(), "latest".to_string()),
-            ("nonexistent-doctor-dedup-xyz".to_string(), "latest".to_string()),
-            ("nonexistent-doctor-dedup-xyz".to_string(), "latest".to_string()),
+            (
+                "nonexistent-doctor-dedup-xyz".to_string(),
+                "latest".to_string(),
+            ),
+            (
+                "nonexistent-doctor-dedup-xyz".to_string(),
+                "latest".to_string(),
+            ),
+            (
+                "nonexistent-doctor-dedup-xyz".to_string(),
+                "latest".to_string(),
+            ),
         ];
         probe_unregistered_tools(&resolved);
         let fires = probe_test_sentinel::take(Source::Doctor);
@@ -1912,7 +1921,10 @@ mod tests {
             fires >= 1 && before == 0,
             "expected at least 1 probe fire for dedup input; got {fires}"
         );
-        assert!(fires < 3, "dedup must collapse 3 identical inputs; got {fires}");
+        assert!(
+            fires < 3,
+            "dedup must collapse 3 identical inputs; got {fires}"
+        );
     }
 
     #[test]
