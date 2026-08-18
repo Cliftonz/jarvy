@@ -93,30 +93,68 @@ impl crate::ai_hooks::HasOrigin for GitHooksConfig {
 }
 
 /// `[git_hooks.native]` block — write hook scripts directly into
-/// `.git/hooks/<name>` with no framework process in the loop. Each
-/// entry is a hook stage name → inline shell body. Jarvy stamps a
-/// `# managed by jarvy` marker into the file so a future run can
-/// recognize / overwrite its own output without clobbering hooks the
-/// user wrote by hand.
+/// `.git/hooks/<name>` with no framework process in the loop.
 ///
-/// The most useful failure mode: if the existing `.git/hooks/<name>`
-/// has DIFFERENT content and lacks the Jarvy marker, install refuses
-/// with `HookError::InstallFailed` so we never silently overwrite
-/// hand-rolled hooks.
+/// Three shapes teams can mix:
+/// 1. **Inline bodies** — `hooks.pre-commit = "..."` — shell body
+///    pasted into `jarvy.toml`.
+/// 2. **File references** — `hooks.pre-commit = { file = "..." }` —
+///    path relative to the project root, refused if it traverses
+///    outside the repo.
+/// 3. **Folder scan** — `dir = "scripts/hooks"` — every file whose
+///    name matches a known git hook stage (`pre-commit`, `pre-push`,
+///    …) gets installed. Files with unknown names are ignored.
+///
+/// Explicit `hooks` entries WIN over `dir` for the same stage, so a
+/// team can point at a shared folder and override one specific hook
+/// inline. Jarvy stamps a `# managed by jarvy` marker into every
+/// installed file so subsequent runs can safely rewrite its own
+/// output — install refuses to overwrite an existing hook that lacks
+/// the marker (protects a hand-authored `.git/hooks/pre-commit`).
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct NativeConfig {
-    /// Map of `<hook-stage>` → inline shell body. Example:
+    /// Optional folder (relative to project root) to scan for hook
+    /// scripts. Every file inside whose bare name matches a known git
+    /// hook stage gets installed. Unknown filenames are ignored so a
+    /// `scripts/hooks/README.md` sitting alongside real hooks doesn't
+    /// error. See [`NativeConfig::hooks`] for per-stage overrides.
+    #[serde(default)]
+    pub dir: Option<String>,
+
+    /// Map of `<hook-stage>` → hook source (inline body OR file path).
+    /// Wins over [`NativeConfig::dir`] when both target the same stage.
     ///
     /// ```toml
     /// [git_hooks.native]
-    /// hooks.pre-commit = """
-    /// #!/bin/sh
-    /// cargo fmt --check || exit 1
-    /// """
-    /// hooks.commit-msg = "..."
+    /// dir = "scripts/hooks"                        # scan folder
+    /// hooks.commit-msg = "#!/bin/sh\n…"           # inline override
+    /// hooks.pre-push = { file = "ci/pre-push.sh" } # file override
     /// ```
     #[serde(default)]
-    pub hooks: std::collections::BTreeMap<String, String>,
+    pub hooks: std::collections::BTreeMap<String, HookSource>,
+}
+
+/// A single hook's body. Deserialized untagged — the same TOML key
+/// accepts either a string (inline body, backward compatible with the
+/// old shape) or a `{ file = "..." }` table (path relative to the
+/// project root).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum HookSource {
+    /// Inline shell body. Backward-compat shape.
+    Inline(String),
+    /// Path to a hook script, relative to the project root. Absolute
+    /// paths and `..` traversal are refused at resolve time.
+    File { file: String },
+}
+
+impl HookSource {
+    /// Convenience for the tests — build an inline entry without
+    /// naming the variant.
+    #[cfg(test)]
+    pub fn inline(s: impl Into<String>) -> Self {
+        Self::Inline(s.into())
+    }
 }
 
 fn default_true() -> bool {
@@ -328,5 +366,70 @@ hook_types = ["pre-commit", "pre-push"]
             validate_hook_types(&["pre-push-typo".into()]),
             Err("pre-push-typo".to_string())
         );
+    }
+
+    #[test]
+    fn native_parses_inline_body_backward_compat() {
+        let toml_str = r#"
+[native.hooks]
+pre-commit = "cargo fmt --check\n"
+"#;
+        let cfg: GitHooksConfig = toml::from_str(toml_str).unwrap();
+        let n = cfg.native.expect("native block parsed");
+        assert_eq!(
+            n.hooks.get("pre-commit"),
+            Some(&HookSource::Inline("cargo fmt --check\n".to_string()))
+        );
+    }
+
+    #[test]
+    fn native_parses_file_reference() {
+        let toml_str = r#"
+[native.hooks]
+pre-push = { file = "scripts/hooks/pre-push.sh" }
+"#;
+        let cfg: GitHooksConfig = toml::from_str(toml_str).unwrap();
+        let n = cfg.native.expect("native block parsed");
+        assert_eq!(
+            n.hooks.get("pre-push"),
+            Some(&HookSource::File {
+                file: "scripts/hooks/pre-push.sh".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn native_parses_dir_scan() {
+        let toml_str = r#"
+[native]
+dir = "scripts/hooks"
+"#;
+        let cfg: GitHooksConfig = toml::from_str(toml_str).unwrap();
+        let n = cfg.native.expect("native block parsed");
+        assert_eq!(n.dir.as_deref(), Some("scripts/hooks"));
+        assert!(n.hooks.is_empty());
+    }
+
+    #[test]
+    fn native_parses_dir_plus_overrides() {
+        let toml_str = r##"
+[native]
+dir = "scripts/hooks"
+
+[native.hooks]
+commit-msg = "#!/bin/sh\ninline body"
+pre-push = { file = "ci/pre-push.sh" }
+"##;
+        let cfg: GitHooksConfig = toml::from_str(toml_str).unwrap();
+        let n = cfg.native.expect("native block parsed");
+        assert_eq!(n.dir.as_deref(), Some("scripts/hooks"));
+        assert!(matches!(
+            n.hooks.get("commit-msg"),
+            Some(HookSource::Inline(_))
+        ));
+        assert!(matches!(
+            n.hooks.get("pre-push"),
+            Some(HookSource::File { .. })
+        ));
     }
 }

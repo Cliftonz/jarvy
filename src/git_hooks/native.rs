@@ -13,9 +13,10 @@
 //! No `update` path — Jarvy doesn't manage your hook bodies' versions.
 //! Re-run `install` after editing `[git_hooks.native.hooks]`.
 
-use super::config::NativeConfig;
+use super::config::{HookSource, NativeConfig};
 use super::{HookError, HookInfo};
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 const JARVY_MARKER: &str = "# managed by jarvy — [git_hooks.native]";
 
@@ -32,18 +33,82 @@ impl NativeHandler {
         }
     }
 
+    /// Resolve the effective hook bodies from ALL three sources:
+    /// scanned `dir` + explicit `hooks` (inline OR file reference).
+    /// Explicit entries win over dir-scanned ones for the same stage.
+    ///
+    /// Returns `Err` if any file path is unsafe or unreadable, or if
+    /// an explicit `hooks` key isn't a known git hook stage.
+    ///
+    /// This is the single choke point for "where does the hook body
+    /// come from" — install / run / list all consult it so their key
+    /// sets agree.
+    fn resolve_bodies(&self) -> Result<BTreeMap<String, String>, HookError> {
+        let mut resolved: BTreeMap<String, String> = BTreeMap::new();
+
+        // 1. Scan `dir` first — the explicit hooks map may override.
+        if let Some(dir_rel) = &self.config.dir {
+            let dir_abs = resolve_project_path(&self.project_dir, dir_rel)?;
+            if !dir_abs.is_dir() {
+                return Err(HookError::Config(format!(
+                    "[git_hooks.native] dir `{}` is not a directory",
+                    dir_abs.display()
+                )));
+            }
+            for entry in std::fs::read_dir(&dir_abs).map_err(HookError::Io)? {
+                let entry = entry.map_err(HookError::Io)?;
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                if !is_stage_name(name) {
+                    // Ignore README, .gitkeep, misspelled hook names.
+                    // Not an error — dir-scan is intentionally lenient
+                    // so a hooks folder can host adjacent files.
+                    continue;
+                }
+                let body = std::fs::read_to_string(&path).map_err(HookError::Io)?;
+                resolved.insert(name.to_string(), body);
+            }
+        }
+
+        // 2. Explicit hooks map — validates stage name, overrides dir.
+        for (stage, source) in &self.config.hooks {
+            if !is_stage_name(stage) {
+                return Err(HookError::Config(format!(
+                    "[git_hooks.native.hooks] key '{stage}' is not a known git hook stage"
+                )));
+            }
+            let body = match source {
+                HookSource::Inline(s) => s.clone(),
+                HookSource::File { file } => {
+                    let abs = resolve_project_path(&self.project_dir, file)?;
+                    std::fs::read_to_string(&abs).map_err(|e| {
+                        HookError::Config(format!(
+                            "[git_hooks.native.hooks.{stage}] file `{}` unreadable: {e}",
+                            abs.display()
+                        ))
+                    })?
+                }
+            };
+            resolved.insert(stage.clone(), body);
+        }
+
+        Ok(resolved)
+    }
+
     pub fn install(&self) -> Result<(), HookError> {
         let hooks_dir = self.project_dir.join(".git").join("hooks");
         if !hooks_dir.is_dir() {
             return Err(HookError::NotAGitRepo);
         }
 
-        for (stage, body) in &self.config.hooks {
-            if !is_stage_name(stage) {
-                return Err(HookError::Config(format!(
-                    "[git_hooks.native.hooks] key '{stage}' is not a known git hook stage"
-                )));
-            }
+        let resolved = self.resolve_bodies()?;
+
+        for (stage, body) in &resolved {
             let target = hooks_dir.join(stage);
             if let Ok(existing) = std::fs::read_to_string(&target)
                 && !existing.contains(JARVY_MARKER)
@@ -84,7 +149,9 @@ impl NativeHandler {
             tracing::info!(
                 event = "git_hooks.installed",
                 framework = "native",
-                count = self.config.hooks.len() as u64,
+                count = resolved.len() as u64,
+                scanned_dir = self.config.dir.is_some(),
+                explicit_count = self.config.hooks.len() as u64,
             );
         }
         Ok(())
@@ -101,21 +168,22 @@ impl NativeHandler {
     }
 
     /// Execute the configured native hook script for `hook_id`, or
-    /// every hook in `[git_hooks.native.hooks]` if none is supplied.
-    /// `all_files` is accepted for API parity but ignored — native
-    /// hooks decide what to scan on their own.
+    /// every configured hook if none is supplied. `all_files` is
+    /// accepted for API parity but ignored — native hooks decide what
+    /// to scan on their own.
     pub fn run(&self, _all_files: bool, hook_id: Option<&str>) -> Result<(), HookError> {
+        let resolved = self.resolve_bodies()?;
         let hooks_dir = self.project_dir.join(".git").join("hooks");
         let to_run: Vec<&String> = match hook_id {
             Some(id) => {
-                if !self.config.hooks.contains_key(id) {
+                if !resolved.contains_key(id) {
                     return Err(HookError::RunFailed(format!(
-                        "no native hook named `{id}` declared in [git_hooks.native.hooks]"
+                        "no native hook named `{id}` declared (checked [git_hooks.native.hooks] and dir scan)"
                     )));
                 }
-                vec![self.config.hooks.keys().find(|k| *k == id).unwrap()]
+                vec![resolved.keys().find(|k| *k == id).unwrap()]
             }
-            None => self.config.hooks.keys().collect(),
+            None => resolved.keys().collect(),
         };
 
         if to_run.is_empty() {
@@ -152,9 +220,11 @@ impl NativeHandler {
     }
 
     pub fn list(&self) -> Result<Vec<HookInfo>, HookError> {
-        let mut out: Vec<HookInfo> = self
-            .config
-            .hooks
+        // list must include dir-scanned hooks + explicit overrides so
+        // `jarvy hooks list` matches what install would actually write.
+        // Errors on unsafe file references bubble up rather than lie.
+        let resolved = self.resolve_bodies()?;
+        let mut out: Vec<HookInfo> = resolved
             .keys()
             .map(|stage| HookInfo {
                 id: stage.clone(),
@@ -166,6 +236,44 @@ impl NativeHandler {
         out.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(out)
     }
+}
+
+/// Resolve a config-supplied path (relative or absolute) against the
+/// project root, refusing anything that would escape the repo.
+///
+/// Refusals: absolute paths, `..` components (even after joining),
+/// canonical path outside `project_dir`. Symlinks are resolved by
+/// `canonicalize()`, so a symlink under `scripts/hooks/pre-push` that
+/// targets `/etc/passwd` fails the containment check.
+fn resolve_project_path(project_dir: &Path, rel: &str) -> Result<PathBuf, HookError> {
+    let candidate = Path::new(rel);
+    if candidate.is_absolute() {
+        return Err(HookError::Config(format!(
+            "[git_hooks.native] path `{rel}` is absolute; use a repo-relative path"
+        )));
+    }
+    if candidate
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(HookError::Config(format!(
+            "[git_hooks.native] path `{rel}` contains `..`; hooks must live inside the project"
+        )));
+    }
+    let joined = project_dir.join(candidate);
+    // Canonicalize when the path exists so symlink traversal is
+    // detected. If it doesn't exist yet, fall back to a lexical
+    // containment check against the joined path.
+    let (canonical, base) = match (joined.canonicalize(), project_dir.canonicalize()) {
+        (Ok(c), Ok(b)) => (c, b),
+        _ => (joined.clone(), project_dir.to_path_buf()),
+    };
+    if !canonical.starts_with(&base) {
+        return Err(HookError::Config(format!(
+            "[git_hooks.native] path `{rel}` resolves outside the project root"
+        )));
+    }
+    Ok(joined)
 }
 
 fn is_stage_name(s: &str) -> bool {
@@ -232,9 +340,10 @@ mod tests {
 
     fn cfg_with(hooks: Vec<(&str, &str)>) -> NativeConfig {
         NativeConfig {
+            dir: None,
             hooks: hooks
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .map(|(k, v)| (k.to_string(), HookSource::inline(v)))
                 .collect::<BTreeMap<_, _>>(),
         }
     }
@@ -346,5 +455,156 @@ mod tests {
         );
         let err = handler.install().expect_err("must error");
         assert!(matches!(err, HookError::NotAGitRepo), "got {err:?}");
+    }
+
+    #[test]
+    fn install_reads_file_reference_from_disk() {
+        let tmp = tempdir().unwrap();
+        make_repo(tmp.path());
+        fs::create_dir_all(tmp.path().join("scripts/hooks")).unwrap();
+        fs::write(
+            tmp.path().join("scripts/hooks/pre-push.sh"),
+            "#!/bin/sh\necho pushing\n",
+        )
+        .unwrap();
+
+        let mut hooks = BTreeMap::new();
+        hooks.insert(
+            "pre-push".to_string(),
+            HookSource::File {
+                file: "scripts/hooks/pre-push.sh".to_string(),
+            },
+        );
+        let cfg = NativeConfig { dir: None, hooks };
+        NativeHandler::new(cfg, tmp.path().to_path_buf())
+            .install()
+            .unwrap();
+
+        let content = fs::read_to_string(tmp.path().join(".git/hooks/pre-push")).unwrap();
+        assert!(content.starts_with("#!/bin/sh\n"));
+        assert!(content.contains(JARVY_MARKER));
+        assert!(content.contains("echo pushing"));
+    }
+
+    #[test]
+    fn install_scans_dir_for_stage_named_files() {
+        let tmp = tempdir().unwrap();
+        make_repo(tmp.path());
+        let hooks_src = tmp.path().join("scripts/hooks");
+        fs::create_dir_all(&hooks_src).unwrap();
+        fs::write(hooks_src.join("pre-commit"), "cargo fmt --check\n").unwrap();
+        fs::write(hooks_src.join("pre-push"), "cargo test\n").unwrap();
+        // README + .gitkeep must be ignored, not error.
+        fs::write(hooks_src.join("README.md"), "hooks live here").unwrap();
+        fs::write(hooks_src.join(".gitkeep"), "").unwrap();
+
+        let cfg = NativeConfig {
+            dir: Some("scripts/hooks".to_string()),
+            hooks: BTreeMap::new(),
+        };
+        NativeHandler::new(cfg, tmp.path().to_path_buf())
+            .install()
+            .unwrap();
+
+        assert!(tmp.path().join(".git/hooks/pre-commit").exists());
+        assert!(tmp.path().join(".git/hooks/pre-push").exists());
+        // README should NOT be installed as a hook.
+        assert!(!tmp.path().join(".git/hooks/README.md").exists());
+    }
+
+    #[test]
+    fn explicit_hook_overrides_dir_scanned_entry() {
+        let tmp = tempdir().unwrap();
+        make_repo(tmp.path());
+        let hooks_src = tmp.path().join("scripts/hooks");
+        fs::create_dir_all(&hooks_src).unwrap();
+        fs::write(hooks_src.join("pre-commit"), "from-dir\n").unwrap();
+
+        let mut hooks = BTreeMap::new();
+        hooks.insert(
+            "pre-commit".to_string(),
+            HookSource::inline("from-explicit\n"),
+        );
+        let cfg = NativeConfig {
+            dir: Some("scripts/hooks".to_string()),
+            hooks,
+        };
+        NativeHandler::new(cfg, tmp.path().to_path_buf())
+            .install()
+            .unwrap();
+
+        let content = fs::read_to_string(tmp.path().join(".git/hooks/pre-commit")).unwrap();
+        assert!(
+            content.contains("from-explicit"),
+            "explicit hooks map must win over dir scan; got:\n{content}"
+        );
+        assert!(!content.contains("from-dir"));
+    }
+
+    #[test]
+    fn file_reference_refuses_absolute_path() {
+        let tmp = tempdir().unwrap();
+        make_repo(tmp.path());
+        let mut hooks = BTreeMap::new();
+        hooks.insert(
+            "pre-commit".to_string(),
+            HookSource::File {
+                file: "/etc/passwd".to_string(),
+            },
+        );
+        let err = NativeHandler::new(NativeConfig { dir: None, hooks }, tmp.path().to_path_buf())
+            .install()
+            .expect_err("must refuse absolute path");
+        assert!(matches!(err, HookError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn file_reference_refuses_parent_traversal() {
+        let tmp = tempdir().unwrap();
+        make_repo(tmp.path());
+        let mut hooks = BTreeMap::new();
+        hooks.insert(
+            "pre-commit".to_string(),
+            HookSource::File {
+                file: "../../../etc/passwd".to_string(),
+            },
+        );
+        let err = NativeHandler::new(NativeConfig { dir: None, hooks }, tmp.path().to_path_buf())
+            .install()
+            .expect_err("must refuse traversal");
+        assert!(matches!(err, HookError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn dir_refuses_absolute_path() {
+        let tmp = tempdir().unwrap();
+        make_repo(tmp.path());
+        let cfg = NativeConfig {
+            dir: Some("/tmp/evil-hooks".to_string()),
+            hooks: BTreeMap::new(),
+        };
+        let err = NativeHandler::new(cfg, tmp.path().to_path_buf())
+            .install()
+            .expect_err("must refuse absolute dir");
+        assert!(matches!(err, HookError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn list_includes_dir_scanned_hooks() {
+        let tmp = tempdir().unwrap();
+        let hooks_src = tmp.path().join("scripts/hooks");
+        fs::create_dir_all(&hooks_src).unwrap();
+        fs::write(hooks_src.join("pre-commit"), "x").unwrap();
+        fs::write(hooks_src.join("commit-msg"), "y").unwrap();
+
+        let cfg = NativeConfig {
+            dir: Some("scripts/hooks".to_string()),
+            hooks: BTreeMap::new(),
+        };
+        let hooks = NativeHandler::new(cfg, tmp.path().to_path_buf())
+            .list()
+            .unwrap();
+        let ids: Vec<&str> = hooks.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, vec!["commit-msg", "pre-commit"]);
     }
 }
