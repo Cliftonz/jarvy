@@ -31,6 +31,7 @@ pub mod detection;
 pub mod husky;
 pub mod lefthook;
 pub mod native;
+pub mod repo;
 
 use std::path::Path;
 use thiserror::Error;

@@ -116,8 +116,51 @@ pub struct NativeConfig {
     #[serde(default)]
     pub dir: Option<String>,
 
+    /// Optional git repository to clone/update and scan for hook
+    /// scripts. Same stage-name matching as `dir` — filenames like
+    /// `pre-commit`, `pre-push`, etc. inside the repo (or [`subpath`]
+    /// within it) get installed. Enables a team to publish one canonical
+    /// hooks repo and consume it from every project without copying
+    /// scripts around.
+    ///
+    /// Supported URL shapes:
+    /// - `github:owner/repo` — shorthand → `https://github.com/owner/repo.git`
+    /// - `https://host/path/repo.git` — plain HTTPS clone
+    /// - `git+https://host/path/repo.git` — accepted for parity with
+    ///   `library_sources`
+    ///
+    /// [`ref_`] is REQUIRED — unpinned URLs are refused at parse time
+    /// so a publisher can't silently rev the hook body a consumer runs.
+    ///
+    /// Trust: remote-fetched configs need `[git_hooks] allow_remote = true`
+    /// to consume ANY `repo` source (mirrors `dir` — the gate is on the
+    /// enclosing block, not per-field).
+    ///
+    /// [`subpath`]: NativeConfig::subpath
+    /// [`ref_`]: NativeConfig::git_ref
+    #[serde(default)]
+    pub repo: Option<String>,
+
+    /// Git ref (tag/branch/commit SHA) to check out. Required when
+    /// [`repo`] is set. SHAs and `v`-prefixed tags are treated as
+    /// immutable; branch names emit a `git_hooks.mutable_ref` warning
+    /// event so operators see the risk.
+    ///
+    /// [`repo`]: NativeConfig::repo
+    #[serde(default, rename = "ref")]
+    pub git_ref: Option<String>,
+
+    /// Optional subdirectory inside the cloned repo to scan. When
+    /// unset, scans the repo root. Refused if it starts with `/` or
+    /// contains `..` segments (same rules as [`dir`]).
+    ///
+    /// [`dir`]: NativeConfig::dir
+    #[serde(default)]
+    pub subpath: Option<String>,
+
     /// Map of `<hook-stage>` → hook source (inline body OR file path).
-    /// Wins over [`NativeConfig::dir`] when both target the same stage.
+    /// Wins over [`NativeConfig::dir`] AND [`NativeConfig::repo`] when
+    /// they target the same stage.
     ///
     /// ```toml
     /// [git_hooks.native]

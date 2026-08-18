@@ -33,12 +33,15 @@ impl NativeHandler {
         }
     }
 
-    /// Resolve the effective hook bodies from ALL three sources:
-    /// scanned `dir` + explicit `hooks` (inline OR file reference).
-    /// Explicit entries win over dir-scanned ones for the same stage.
+    /// Resolve the effective hook bodies from ALL FOUR sources:
+    /// remote `repo` clone → local `dir` scan → explicit `hooks` map
+    /// (inline OR file reference). Later sources override earlier ones
+    /// for the same stage, so the map-of-overrides wins over the
+    /// folder-of-defaults which wins over the repo-of-shared-defaults.
     ///
-    /// Returns `Err` if any file path is unsafe or unreadable, or if
-    /// an explicit `hooks` key isn't a known git hook stage.
+    /// Returns `Err` if any file path is unsafe or unreadable, if a
+    /// repo URL is unpinned or wrong-scheme, or if an explicit `hooks`
+    /// key isn't a known git hook stage.
     ///
     /// This is the single choke point for "where does the hook body
     /// come from" — install / run / list all consult it so their key
@@ -46,7 +49,31 @@ impl NativeHandler {
     fn resolve_bodies(&self) -> Result<BTreeMap<String, String>, HookError> {
         let mut resolved: BTreeMap<String, String> = BTreeMap::new();
 
-        // 1. Scan `dir` first — the explicit hooks map may override.
+        // 1. Remote repo — cloned + checked out into the per-URL cache
+        //    dir under ~/.jarvy/git_hooks_cache/<hash>/, optionally
+        //    narrowed to `subpath`. Scanned with the same is_stage_name
+        //    filter as `dir`.
+        if let Some(repo_url) = &self.config.repo {
+            let resolved_repo = super::repo::resolve(
+                repo_url,
+                self.config.git_ref.as_deref(),
+                self.config.subpath.as_deref(),
+            )?;
+            if super::repo::is_mutable_ref(&resolved_repo.git_ref)
+                && crate::observability::telemetry_gate::is_enabled()
+            {
+                tracing::warn!(
+                    event = "git_hooks.mutable_ref",
+                    git_ref = %resolved_repo.git_ref,
+                    "hooks repo pinned to a branch — publisher can rev silently; prefer a tag or SHA",
+                );
+            }
+            let scan_root = super::repo::ensure_cloned(&resolved_repo)?;
+            scan_stage_dir(&scan_root, &mut resolved)?;
+        }
+
+        // 2. Local `dir` — overrides repo-scanned entries for the
+        //    same stage.
         if let Some(dir_rel) = &self.config.dir {
             let dir_abs = resolve_project_path(&self.project_dir, dir_rel)?;
             if !dir_abs.is_dir() {
@@ -55,27 +82,11 @@ impl NativeHandler {
                     dir_abs.display()
                 )));
             }
-            for entry in std::fs::read_dir(&dir_abs).map_err(HookError::Io)? {
-                let entry = entry.map_err(HookError::Io)?;
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-                let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                    continue;
-                };
-                if !is_stage_name(name) {
-                    // Ignore README, .gitkeep, misspelled hook names.
-                    // Not an error — dir-scan is intentionally lenient
-                    // so a hooks folder can host adjacent files.
-                    continue;
-                }
-                let body = std::fs::read_to_string(&path).map_err(HookError::Io)?;
-                resolved.insert(name.to_string(), body);
-            }
+            scan_stage_dir(&dir_abs, &mut resolved)?;
         }
 
-        // 2. Explicit hooks map — validates stage name, overrides dir.
+        // 3. Explicit hooks map — validates stage name, overrides both
+        //    repo and dir.
         for (stage, source) in &self.config.hooks {
             if !is_stage_name(stage) {
                 return Err(HookError::Config(format!(
@@ -151,6 +162,7 @@ impl NativeHandler {
                 framework = "native",
                 count = resolved.len() as u64,
                 scanned_dir = self.config.dir.is_some(),
+                scanned_repo = self.config.repo.is_some(),
                 explicit_count = self.config.hooks.len() as u64,
             );
         }
@@ -236,6 +248,30 @@ impl NativeHandler {
         out.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(out)
     }
+}
+
+/// Walk a directory installing every file whose bare name matches a
+/// known git hook stage. Non-stage files (README, .gitkeep,
+/// misspellings) are ignored so a hooks folder can host adjacent
+/// files without erroring. Shared between the local `dir` scan and
+/// the remote-repo scan so their semantics stay identical.
+fn scan_stage_dir(dir: &Path, resolved: &mut BTreeMap<String, String>) -> Result<(), HookError> {
+    for entry in std::fs::read_dir(dir).map_err(HookError::Io)? {
+        let entry = entry.map_err(HookError::Io)?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !is_stage_name(name) {
+            continue;
+        }
+        let body = std::fs::read_to_string(&path).map_err(HookError::Io)?;
+        resolved.insert(name.to_string(), body);
+    }
+    Ok(())
 }
 
 /// Resolve a config-supplied path (relative or absolute) against the
@@ -340,11 +376,11 @@ mod tests {
 
     fn cfg_with(hooks: Vec<(&str, &str)>) -> NativeConfig {
         NativeConfig {
-            dir: None,
             hooks: hooks
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), HookSource::inline(v)))
                 .collect::<BTreeMap<_, _>>(),
+            ..Default::default()
         }
     }
 
@@ -475,7 +511,11 @@ mod tests {
                 file: "scripts/hooks/pre-push.sh".to_string(),
             },
         );
-        let cfg = NativeConfig { dir: None, hooks };
+        let cfg = NativeConfig {
+            dir: None,
+            hooks,
+            ..Default::default()
+        };
         NativeHandler::new(cfg, tmp.path().to_path_buf())
             .install()
             .unwrap();
@@ -501,6 +541,7 @@ mod tests {
         let cfg = NativeConfig {
             dir: Some("scripts/hooks".to_string()),
             hooks: BTreeMap::new(),
+            ..Default::default()
         };
         NativeHandler::new(cfg, tmp.path().to_path_buf())
             .install()
@@ -528,6 +569,7 @@ mod tests {
         let cfg = NativeConfig {
             dir: Some("scripts/hooks".to_string()),
             hooks,
+            ..Default::default()
         };
         NativeHandler::new(cfg, tmp.path().to_path_buf())
             .install()
@@ -552,9 +594,16 @@ mod tests {
                 file: "/etc/passwd".to_string(),
             },
         );
-        let err = NativeHandler::new(NativeConfig { dir: None, hooks }, tmp.path().to_path_buf())
-            .install()
-            .expect_err("must refuse absolute path");
+        let err = NativeHandler::new(
+            NativeConfig {
+                dir: None,
+                hooks,
+                ..Default::default()
+            },
+            tmp.path().to_path_buf(),
+        )
+        .install()
+        .expect_err("must refuse absolute path");
         assert!(matches!(err, HookError::Config(_)), "got {err:?}");
     }
 
@@ -569,9 +618,16 @@ mod tests {
                 file: "../../../etc/passwd".to_string(),
             },
         );
-        let err = NativeHandler::new(NativeConfig { dir: None, hooks }, tmp.path().to_path_buf())
-            .install()
-            .expect_err("must refuse traversal");
+        let err = NativeHandler::new(
+            NativeConfig {
+                dir: None,
+                hooks,
+                ..Default::default()
+            },
+            tmp.path().to_path_buf(),
+        )
+        .install()
+        .expect_err("must refuse traversal");
         assert!(matches!(err, HookError::Config(_)), "got {err:?}");
     }
 
@@ -582,6 +638,7 @@ mod tests {
         let cfg = NativeConfig {
             dir: Some("/tmp/evil-hooks".to_string()),
             hooks: BTreeMap::new(),
+            ..Default::default()
         };
         let err = NativeHandler::new(cfg, tmp.path().to_path_buf())
             .install()
@@ -600,6 +657,7 @@ mod tests {
         let cfg = NativeConfig {
             dir: Some("scripts/hooks".to_string()),
             hooks: BTreeMap::new(),
+            ..Default::default()
         };
         let hooks = NativeHandler::new(cfg, tmp.path().to_path_buf())
             .list()
