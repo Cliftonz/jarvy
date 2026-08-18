@@ -165,6 +165,19 @@ pub struct PreCommitConfig {
     /// than the extra install-time cost.
     #[serde(default = "default_true")]
     pub install_hooks: bool,
+
+    /// Which git-hook stages to wire up via `pre-commit install -t <type>`.
+    /// Default `["pre-commit"]` — matches bare `pre-commit install`.
+    /// Set to `["pre-commit", "pre-push"]` to also run hooks on push
+    /// (typical for slow tests that shouldn't gate every commit but
+    /// must gate what leaves the machine).
+    ///
+    /// Values are validated against the bounded set enumerated by
+    /// [`SUPPORTED_HOOK_TYPES`] — unknown values would flow to
+    /// `pre-commit install -t <arbitrary>` as CLI flags, so unknown
+    /// entries are refused at config-load rather than shell time.
+    #[serde(default = "default_hook_types")]
+    pub hook_types: Vec<String>,
 }
 
 impl Default for PreCommitConfig {
@@ -173,12 +186,49 @@ impl Default for PreCommitConfig {
             version: None,
             config: default_precommit_config(),
             install_hooks: true,
+            hook_types: default_hook_types(),
         }
     }
 }
 
 fn default_precommit_config() -> String {
     ".pre-commit-config.yaml".to_string()
+}
+
+fn default_hook_types() -> Vec<String> {
+    vec!["pre-commit".to_string()]
+}
+
+/// Bounded set of hook stages the pre-commit framework knows about.
+/// Values sourced from <https://pre-commit.com/#confining-hooks-to-run-at-certain-stages>
+/// — kept in sync with the `pre-commit install --hook-type` CLI accepts.
+///
+/// Refusing unknown values at config-load prevents an attacker-authored
+/// jarvy.toml (or a typo) from smuggling `--foo` past `install -t` as
+/// an arbitrary flag.
+pub const SUPPORTED_HOOK_TYPES: &[&str] = &[
+    "pre-commit",
+    "pre-merge-commit",
+    "pre-push",
+    "prepare-commit-msg",
+    "commit-msg",
+    "post-commit",
+    "post-checkout",
+    "post-merge",
+    "post-rewrite",
+    "pre-rebase",
+];
+
+/// Validate that every entry in `hook_types` is a known pre-commit hook
+/// stage. Returns the offending value on first miss so callers can
+/// surface it in the error.
+pub fn validate_hook_types(hook_types: &[String]) -> Result<(), String> {
+    for value in hook_types {
+        if !SUPPORTED_HOOK_TYPES.contains(&value.as_str()) {
+            return Err(value.clone());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -236,5 +286,47 @@ version = "3.6.0"
     fn origin_defaults_to_local() {
         let cfg: GitHooksConfig = toml::from_str("").unwrap();
         assert_eq!(cfg.origin, crate::ai_hooks::ConfigOrigin::Local);
+    }
+
+    #[test]
+    fn default_hook_types_is_pre_commit_only() {
+        let cfg = PreCommitConfig::default();
+        assert_eq!(cfg.hook_types, vec!["pre-commit".to_string()]);
+    }
+
+    #[test]
+    fn parses_pre_push_hook_type() {
+        let toml_str = r#"
+[pre_commit]
+hook_types = ["pre-commit", "pre-push"]
+"#;
+        let cfg: GitHooksConfig = toml::from_str(toml_str).unwrap();
+        let pc = cfg.pre_commit.expect("pre_commit block parsed");
+        assert_eq!(
+            pc.hook_types,
+            vec!["pre-commit".to_string(), "pre-push".to_string()]
+        );
+    }
+
+    #[test]
+    fn validate_accepts_known_types() {
+        assert!(
+            validate_hook_types(&["pre-commit".into(), "pre-push".into(), "commit-msg".into()])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_refuses_unknown_type() {
+        let bad = vec!["pre-commit".into(), "--evil-flag".into()];
+        assert_eq!(validate_hook_types(&bad), Err("--evil-flag".to_string()));
+    }
+
+    #[test]
+    fn validate_refuses_typo() {
+        assert_eq!(
+            validate_hook_types(&["pre-push-typo".into()]),
+            Err("pre-push-typo".to_string())
+        );
     }
 }

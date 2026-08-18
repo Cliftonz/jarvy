@@ -5,7 +5,7 @@
 //! `list` command so we don't need to invoke the framework to discover
 //! what hooks are configured.
 
-use super::config::PreCommitConfig;
+use super::config::{PreCommitConfig, validate_hook_types};
 use super::{HookError, HookInfo};
 use std::path::PathBuf;
 use std::process::Command;
@@ -50,10 +50,30 @@ impl PreCommitHandler {
             )));
         }
 
+        // Validate hook types against the bounded pre-commit stage set
+        // BEFORE building argv — a rogue value would otherwise land as
+        // a `-t <flag>` and the pre-commit CLI would treat it as an
+        // arbitrary --option.
+        if let Err(bad) = validate_hook_types(&self.config.hook_types) {
+            return Err(HookError::Config(format!(
+                "[git_hooks.pre_commit] hook_types contains unsupported value `{bad}`; \
+                 valid values: {}",
+                super::config::SUPPORTED_HOOK_TYPES.join(", ")
+            )));
+        }
+
         let mut cmd = Command::new("pre-commit");
         cmd.arg("install");
         if self.config.install_hooks {
             cmd.arg("--install-hooks");
+        }
+        // Every declared hook stage becomes its own `-t <type>` pair.
+        // `pre-commit install -t pre-commit -t pre-push` wires both
+        // stages; without any `-t`, pre-commit installs only the
+        // default `pre-commit` stage (matches the old jarvy behavior
+        // when hook_types was absent from the config).
+        for hook_type in &self.config.hook_types {
+            cmd.arg("-t").arg(hook_type);
         }
         cmd.current_dir(&self.project_dir);
 
@@ -70,6 +90,7 @@ impl PreCommitHandler {
                 event = "git_hooks.installed",
                 framework = "pre-commit",
                 install_hooks = self.config.install_hooks,
+                hook_types = %self.config.hook_types.join(","),
             );
         }
 
