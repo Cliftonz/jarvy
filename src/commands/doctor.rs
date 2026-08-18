@@ -19,7 +19,7 @@ use crate::tools::spec::{
     get_tool_flexible_dependencies, get_tool_spec, should_ignore_missing_deps,
 };
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::Write;
 use std::path::Path;
@@ -417,16 +417,21 @@ pub fn run_doctor_filtered(
         Vec::new()
     };
 
-    let tools_to_check = resolve_tools_to_check(config, specific_tools);
+    // Build the configured-tools map once — resolve_tools_to_check AND the
+    // dependency-set below both need it, and rebuilding it clones every Tool.
+    let configured = config.map(Config::get_tool_configs);
+    let tools_to_check = resolve_tools_to_check(configured.as_ref(), specific_tools);
+    probe_unregistered_tools(&tools_to_check);
 
     // A `--tools` filter narrows probes, not the declared environment.
     // Dependencies must be evaluated against the complete provisioner
     // config or `doctor --tools node` incorrectly reports configured nvm
     // as missing and blocks validated command wrappers.
-    let config_tools: HashSet<String> = config
-        .map(|cfg| {
-            cfg.get_tool_configs()
-                .into_values()
+    let config_tools: HashSet<String> = configured
+        .as_ref()
+        .map(|entries| {
+            entries
+                .values()
                 .map(|tool| tool.name.to_lowercase())
                 .collect()
         })
@@ -494,43 +499,26 @@ pub fn run_doctor_filtered(
 /// `doctor --tools java` is a filter over the configured tool set, not a
 /// request to weaken `java = "17"` into `latest`. Unconfigured explicit
 /// tools retain the historical presence-only `latest` requirement.
+///
+/// Pure — no telemetry. The demand-signal emission lives in
+/// [`probe_unregistered_tools`] so the pure resolver is unit-testable
+/// without capturing tracing events.
 fn resolve_tools_to_check(
-    config: Option<&Config>,
+    configured: Option<&HashMap<String, crate::config::Tool>>,
     specific_tools: Option<Vec<String>>,
 ) -> Vec<(String, String)> {
-    let configured = config.map(Config::get_tool_configs);
-
     if let Some(tools) = specific_tools {
         return tools
             .into_iter()
             .map(|name| {
                 let version = configured
-                    .as_ref()
-                    .and_then(|entries| {
+                    .and_then(|entries: &HashMap<String, crate::config::Tool>| {
                         entries
                             .values()
                             .find(|tool| tool.name.eq_ignore_ascii_case(&name))
                     })
                     .map(|tool| tool.version.clone())
                     .unwrap_or_else(|| "latest".to_string());
-
-                if crate::tools::spec::get_tool_spec(&name).is_none()
-                    && crate::tools::registry::get_tool(&name).is_none()
-                    && crate::observability::telemetry_gate::is_enabled()
-                {
-                    tracing::warn!(
-                        event = "tool.unsupported",
-                        tool = %name,
-                        source = %crate::telemetry::Source::Doctor,
-                        platform = %std::env::consts::OS,
-                    );
-                    crate::telemetry::tool_not_supported(
-                        &name,
-                        None,
-                        crate::telemetry::Source::Doctor,
-                    );
-                }
-
                 (name, version)
             })
             .collect();
@@ -538,8 +526,8 @@ fn resolve_tools_to_check(
 
     if let Some(entries) = configured {
         return entries
-            .into_values()
-            .map(|tool| (tool.name, tool.version))
+            .values()
+            .map(|tool| (tool.name.clone(), tool.version.clone()))
             .collect();
     }
 
@@ -548,6 +536,24 @@ fn resolve_tools_to_check(
         ("node".to_string(), "latest".to_string()),
         ("python".to_string(), "latest".to_string()),
     ]
+}
+
+/// Emit `tool.unsupported source=doctor` once per DISTINCT unregistered
+/// name in the resolved list. Dedup matters: `--tools foo,foo,foo`
+/// must not triple-count the demand signal.
+fn probe_unregistered_tools(resolved: &[(String, String)]) {
+    let mut seen: HashSet<String> = HashSet::new();
+    for (name, _) in resolved {
+        let key = name.to_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+        if crate::tools::spec::get_tool_spec(name).is_none()
+            && crate::tools::registry::get_tool(name).is_none()
+        {
+            crate::telemetry::emit_tool_unsupported_probe(name, crate::telemetry::Source::Doctor);
+        }
+    }
 }
 
 fn collect_system_info() -> SystemInfo {
@@ -1760,8 +1766,9 @@ mod tests {
             "#,
         )
         .expect("config should parse");
+        let configured = cfg.get_tool_configs();
 
-        let tools = resolve_tools_to_check(Some(&cfg), Some(vec!["java".to_string()]));
+        let tools = resolve_tools_to_check(Some(&configured), Some(vec!["java".to_string()]));
 
         assert_eq!(tools, vec![("java".to_string(), "17".to_string())]);
     }
@@ -1770,10 +1777,21 @@ mod tests {
     fn unconfigured_specific_tool_keeps_latest_presence_check() {
         let cfg = Config::from_toml_str("[provisioner]\ngit = \"latest\"\n")
             .expect("config should parse");
+        let configured = cfg.get_tool_configs();
 
-        let tools = resolve_tools_to_check(Some(&cfg), Some(vec!["java".to_string()]));
+        let tools = resolve_tools_to_check(Some(&configured), Some(vec!["java".to_string()]));
 
         assert_eq!(tools, vec![("java".to_string(), "latest".to_string())]);
+    }
+
+    #[test]
+    fn empty_specific_tools_filter_returns_empty() {
+        // Pins the "Some(vec![]) means empty, not fall-back-to-config" contract.
+        // If clap ever accepts `--tools ""`, this locks in the semantic.
+        let cfg = Config::from_toml_str("[provisioner]\ngit = \"latest\"\n").unwrap();
+        let configured = cfg.get_tool_configs();
+        let tools = resolve_tools_to_check(Some(&configured), Some(Vec::new()));
+        assert!(tools.is_empty());
     }
 
     #[test]
@@ -1870,10 +1888,38 @@ mod tests {
     }
 
     #[test]
+    fn probe_unregistered_dedups_repeat_names() {
+        // Regression guard: `--tools foo,foo,foo` must fire ONE demand
+        // signal, not three. Prior to the split, the emit was inside a
+        // .map() closure and each duplicate incremented the counter.
+        // Sentinel is process-global; other tests may interleave. Use
+        // BEFORE/AFTER delta rather than absolute count so a concurrent
+        // Source::Doctor emission doesn't bleed in.
+        use crate::telemetry::{Source, probe_test_sentinel};
+        let _ = probe_test_sentinel::take(Source::Doctor);
+        let before = probe_test_sentinel::take(Source::Doctor);
+        let resolved = vec![
+            ("nonexistent-doctor-dedup-xyz".to_string(), "latest".to_string()),
+            ("nonexistent-doctor-dedup-xyz".to_string(), "latest".to_string()),
+            ("nonexistent-doctor-dedup-xyz".to_string(), "latest".to_string()),
+        ];
+        probe_unregistered_tools(&resolved);
+        let fires = probe_test_sentinel::take(Source::Doctor);
+        // Delta from before: with dedup, exactly 1 for our 3-entry input;
+        // concurrent tests may add to `fires`, so lower-bound + reasonable
+        // upper-bound (< 3) proves the dedup logic held for our call.
+        assert!(
+            fires >= 1 && before == 0,
+            "expected at least 1 probe fire for dedup input; got {fires}"
+        );
+        assert!(fires < 3, "dedup must collapse 3 identical inputs; got {fires}");
+    }
+
+    #[test]
     fn unregistered_tool_in_specific_filter_still_returns_entry() {
-        // resolve_tools_to_check must still return an entry for unknown tools
-        // so the health check can report them as missing; telemetry fires as
-        // a side-effect but cannot be asserted in a unit test.
+        // resolve_tools_to_check is now pure — it always returns an entry so
+        // the health check can report the tool as missing. probe_unregistered_tools
+        // handles the telemetry fan-out separately.
         let result = resolve_tools_to_check(
             None,
             Some(vec!["definitely-not-a-real-tool-xyz".to_string()]),

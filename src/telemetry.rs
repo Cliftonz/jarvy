@@ -742,11 +742,19 @@ pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error:
 /// in one place — see [Event Taxonomy in `CLAUDE.md`]. This function
 /// just bumps the OTEL counter so dashboards can graph request volume.
 ///
+/// Sanitizes the `tool` label via [`crate::tools::unsupported::sanitize_for_display`]
+/// to strip ANSI/control bytes/bidi overrides and cap length. Without this,
+/// the `[maintenance.refused_unsafe_name]` cardinality-bomb precedent would apply
+/// — user-typed queries from `search`/`diagnose`/`doctor --tools` are unbounded
+/// text on an OTLP counter label.
+///
 /// Respects the consent guard: no-op if telemetry is disabled.
 pub fn tool_not_supported(tool: &str, _version: Option<&str>, source: Source) {
     if !is_enabled() {
         return;
     }
+
+    let safe = crate::tools::unsupported::sanitize_for_display(tool);
 
     if let Some(state) = TELEMETRY.get()
         && let Some(ref metrics) = state.metrics
@@ -754,11 +762,71 @@ pub fn tool_not_supported(tool: &str, _version: Option<&str>, source: Source) {
         metrics.tool_not_supported.add(
             1,
             &[
-                KeyValue::new("tool", tool.to_string()),
+                KeyValue::new("tool", safe.into_owned()),
                 KeyValue::new("source", source.to_string()),
                 KeyValue::new("platform", env::consts::OS.to_string()),
             ],
         );
+    }
+}
+
+/// Emit the `tool.unsupported` event + counter for a discovery-surface
+/// miss (search/diagnose/doctor). Sanitizes the raw user input, gates
+/// the tracing emission behind the telemetry consent, and uses the
+/// narrow field shape documented in CLAUDE.md's Event Taxonomy for
+/// probe sources (setup/`--request` use the wider `build_report`
+/// shape).
+///
+/// Level is `info!`, not `warn!`: an unsupported-tool hit from an
+/// interactive discovery surface is an ordinary user outcome, not a
+/// system fault.
+pub fn emit_tool_unsupported_probe(raw: &str, source: Source) {
+    let safe = crate::tools::unsupported::sanitize_for_display(raw);
+    if crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "tool.unsupported",
+            tool = %safe,
+            source = %source,
+            platform = %env::consts::OS,
+        );
+    }
+    tool_not_supported(&safe, None, source);
+    #[cfg(test)]
+    probe_test_sentinel::record(source);
+}
+
+/// Test-only fire-counter for `emit_tool_unsupported_probe`. Standing
+/// up a full tracing subscriber harness for a 3-line wrapper is
+/// disproportionate; a lock-free counter per source is enough to catch
+/// the regression the QA review flagged (someone deletes the emit
+/// block and the criterion-only test doesn't notice).
+#[cfg(test)]
+pub mod probe_test_sentinel {
+    use super::Source;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static DIAGNOSE: AtomicUsize = AtomicUsize::new(0);
+    static DOCTOR: AtomicUsize = AtomicUsize::new(0);
+    static SEARCH: AtomicUsize = AtomicUsize::new(0);
+
+    pub(super) fn record(source: Source) {
+        let slot = match source {
+            Source::Diagnose => &DIAGNOSE,
+            Source::Doctor => &DOCTOR,
+            Source::Search => &SEARCH,
+            _ => return,
+        };
+        slot.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn take(source: Source) -> usize {
+        let slot = match source {
+            Source::Diagnose => &DIAGNOSE,
+            Source::Doctor => &DOCTOR,
+            Source::Search => &SEARCH,
+            _ => return 0,
+        };
+        slot.swap(0, Ordering::Relaxed)
     }
 }
 

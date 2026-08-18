@@ -18,7 +18,6 @@
 //! ```
 
 use crate::observability::Sanitizer;
-use crate::observability::telemetry_gate;
 use crate::telemetry;
 use crate::tools::registry::get_tool;
 use crate::tools::spec::{ToolSpec, get_tool_spec};
@@ -171,15 +170,7 @@ pub fn run_diagnose(tool: &str, fix: bool, export: bool, _scope: &str, output_fo
                     "Unknown tool: '{}'. Run 'jarvy tools' to see available tools.",
                     tool
                 );
-                if telemetry_gate::is_enabled() {
-                    tracing::warn!(
-                        event = "tool.unsupported",
-                        tool = %tool,
-                        source = %telemetry::Source::Diagnose,
-                        platform = %std::env::consts::OS,
-                    );
-                }
-                telemetry::tool_not_supported(tool, None, telemetry::Source::Diagnose);
+                telemetry::emit_tool_unsupported_probe(tool, telemetry::Source::Diagnose);
             }
             return 1;
         }
@@ -1124,6 +1115,27 @@ fn chrono_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnose_unknown_tool_fires_unsupported_probe() {
+        // Deleting the emit in the "Unknown tool" branch must fail this.
+        // Sentinel is process-global; assert lower-bound to tolerate
+        // concurrent test races on the same source.
+        use crate::telemetry::{Source, probe_test_sentinel};
+        let _ = probe_test_sentinel::take(Source::Diagnose);
+        // json format keeps the test output quiet; exit-code and
+        // telemetry side-effect are what we care about.
+        let code = run_diagnose(
+            "definitely-not-a-real-tool-xyz-diagnose",
+            false,
+            false,
+            "",
+            "json",
+        );
+        assert_eq!(code, 1);
+        let fires = probe_test_sentinel::take(Source::Diagnose);
+        assert!(fires >= 1, "diagnose unknown-tool must fire probe event; got {fires}");
+    }
 
     #[test]
     fn test_format_permissions() {

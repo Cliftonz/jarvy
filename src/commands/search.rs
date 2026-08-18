@@ -159,22 +159,15 @@ pub fn search_tools(query: &str, show_all: bool) -> SearchResults {
     // gate this: jaro-winkler can push nonsense queries above the 0.7
     // "contains" bucket, so we check the substring relationship
     // directly on the top result — the same criterion a human would
-    // use to say "yes, that's what I meant". Same event shape as
-    // diagnose/doctor so all three surfaces are queryable by source.
+    // use to say "yes, that's what I meant". The helper sanitizes the
+    // raw query (control bytes / cardinality bomb) before it reaches
+    // either the log file or the OTLP counter.
     let query_lower = query.to_lowercase();
     let has_strong_match = results
         .first()
         .is_some_and(|r| r.name.to_lowercase().contains(&query_lower));
     if !query.is_empty() && !show_all && !has_strong_match {
-        if crate::observability::telemetry_gate::is_enabled() {
-            tracing::warn!(
-                event = "tool.unsupported",
-                tool = %query,
-                source = %telemetry::Source::Search,
-                platform = %std::env::consts::OS,
-            );
-        }
-        telemetry::tool_not_supported(query, None, telemetry::Source::Search);
+        telemetry::emit_tool_unsupported_probe(query, telemetry::Source::Search);
     }
 
     SearchResults {
@@ -297,6 +290,22 @@ mod tests {
             results.results.first().map(|r| &r.name)
         );
     }
+
+    #[test]
+    fn nonsense_query_fires_tool_unsupported_probe() {
+        // Deleting the emit block in `search_tools` must fail this test.
+        // Sentinel counter is process-global; other cargo-test workers
+        // running search-related tests concurrently can race into it, so
+        // assert lower-bound rather than exact count.
+        let _ = telemetry::probe_test_sentinel::take(telemetry::Source::Search);
+        let _ = search_tools("zzz-definitely-not-a-tool-xyz-emit-check", false);
+        let fires = telemetry::probe_test_sentinel::take(telemetry::Source::Search);
+        assert!(fires >= 1, "search miss must fire probe event; got {fires}");
+    }
+
+    // Note: no companion `strong_match_does_not_fire` test — the
+    // sentinel is process-global and other concurrent tests fire
+    // search-source events, so any negative assertion races.
 
     #[test]
     fn test_search_poor_match() {
