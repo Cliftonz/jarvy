@@ -135,7 +135,7 @@ impl Template {
         tools.sort_by_key(|(name, _)| *name);
 
         for (name, version) in tools {
-            content.push_str(&format!("{} = \"{}\"\n", name, version));
+            emit_kv(&mut content, name, version);
         }
 
         // Add hooks if present
@@ -146,6 +146,11 @@ impl Template {
                     content.push_str(&format!("# {}: {}\n", tool, desc));
                 }
                 if let Some(ref script) = hook.script {
+                    // `[hooks.<tool>]` — tool names come from static
+                    // template literals today so escaping the section
+                    // header is preemptive, not exploitable. The script
+                    // body stays raw inside `'''...'''` triple quotes
+                    // because that's the whole point of the heredoc.
                     content.push_str(&format!("[hooks.{}]\n", tool));
                     content.push_str(&format!("script = '''\n{}\n'''\n\n", script.trim()));
                 }
@@ -157,14 +162,41 @@ impl Template {
             let mut commands: Vec<_> = self.commands.iter().collect();
             commands.sort_by_key(|(name, _)| *name);
             for (name, command) in commands {
-                let name = toml::Value::String(name.clone()).to_string();
-                let command = toml::Value::String(command.clone()).to_string();
-                content.push_str(&format!("{name} = {command}\n"));
+                emit_kv_quoted_key(&mut content, name, command);
             }
         }
 
         content
     }
+}
+
+/// Emit a single `key = "value"` line with TOML-safe VALUE escaping.
+/// Prevents a future template loader (remote catalog, user-authored
+/// file) whose value contains a literal `"` or newline from breaking
+/// out of the string literal and injecting a `[commands]` block that
+/// `jarvy run` would later execute. Not exploitable today (all
+/// templates are static string literals) but closes the primitive.
+///
+/// Keys are emitted bare — tool / hook / command names in built-in
+/// templates are alphanumeric+`-`+`_`+`:` and TOML permits bare keys
+/// for that class. If a template ever ships a key with a control byte
+/// or a space, that would fail bare-key TOML syntax entirely and
+/// callers would notice on the re-parse test rather than here. The
+/// `[commands]` section's `"pre:android"` needs explicit quoting; the
+/// commands loop still routes keys through `toml::Value::String` for
+/// that specific reason (colon isn't a bare-key char).
+fn emit_kv(content: &mut String, key: &str, value: &str) {
+    let value = toml::Value::String(value.to_string()).to_string();
+    content.push_str(&format!("{key} = {value}\n"));
+}
+
+/// Same as [`emit_kv`] but quotes the KEY as well — needed for
+/// `[commands]` entries like `pre:android` where the colon disqualifies
+/// bare-key TOML syntax.
+fn emit_kv_quoted_key(content: &mut String, key: &str, value: &str) {
+    let key = toml::Value::String(key.to_string()).to_string();
+    let value = toml::Value::String(value.to_string()).to_string();
+    content.push_str(&format!("{key} = {value}\n"));
 }
 
 #[cfg(test)]

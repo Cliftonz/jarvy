@@ -202,7 +202,26 @@ fn run_init_with_template(template_name: &str, options: &InitOptions) -> InitRes
     let full_template = template.to_template();
     let content = full_template.to_jarvy_toml();
 
-    write_config(&content, options)
+    let result = write_config(&content, options);
+
+    // Emit the adoption event under `template.materialized` (same event
+    // as `templates use`) with `source = "init"` so the two entry points
+    // for the same underlying template are queryable together but the
+    // init-adoption cohort is time-sliceable — matters for the mobile
+    // template overhaul, whose whole product bet is the `jarvy init
+    // --template react-native` flow.
+    if result.created && crate::observability::telemetry_gate::is_enabled() {
+        tracing::info!(
+            event = "template.materialized",
+            template = %full_template.template.name,
+            category = %full_template.template.category,
+            tool_count = result.tool_count,
+            source = "init",
+            output_path = %result.output_path.as_deref().unwrap_or("<stdout>"),
+        );
+    }
+
+    result
 }
 
 /// Run interactive wizard
@@ -338,6 +357,12 @@ fn write_config(content: &str, options: &InitOptions) -> InitResult {
     }
 }
 
+/// Count LEAF tool entries under `[provisioner]`. Subtables like
+/// `[provisioner.overrides]` are metadata about tool groups, not
+/// themselves tools — filtering them out keeps the "N tools installed"
+/// output honest as templates grow. Malformed TOML returns 0 rather
+/// than panicking (init's other errors surface before this counter is
+/// consulted).
 fn count_provisioner_tools(content: &str) -> usize {
     toml::from_str::<toml::Value>(content)
         .ok()
@@ -345,7 +370,7 @@ fn count_provisioner_tools(content: &str) -> usize {
             value
                 .get("provisioner")
                 .and_then(toml::Value::as_table)
-                .map(toml::map::Map::len)
+                .map(|table| table.values().filter(|v| !v.is_table()).count())
         })
         .unwrap_or(0)
 }
@@ -368,6 +393,34 @@ mod tests {
         "#;
 
         assert_eq!(count_provisioner_tools(content), 3);
+    }
+
+    #[test]
+    fn tool_count_ignores_provisioner_subtables() {
+        // `[provisioner.overrides]` is metadata about tool groups, not
+        // itself a tool. Counting it would silently inflate the
+        // user-facing "N tools installed" claim as templates grow.
+        let content = r#"
+            [provisioner]
+            java = "17"
+
+            [provisioner.overrides]
+            foo = "bar"
+        "#;
+        assert_eq!(count_provisioner_tools(content), 1);
+    }
+
+    #[test]
+    fn tool_count_returns_zero_on_malformed_toml() {
+        // Init's other error paths surface before this counter is
+        // consulted, so silent 0 is the right fallback. Regression
+        // guard against a future refactor swapping in `.unwrap()`.
+        assert_eq!(count_provisioner_tools("[provisioner\ngarbage"), 0);
+    }
+
+    #[test]
+    fn tool_count_zero_for_empty_provisioner() {
+        assert_eq!(count_provisioner_tools("[provisioner]\n"), 0);
     }
 
     #[test]

@@ -120,7 +120,7 @@ pub fn run_run(file: &str, name: Option<&str>, extra_args: &[String], output_for
     // after a successful main — the first non-zero exit anywhere is the
     // process exit code.
     if let Some((pre_name, pre_cmd)) = resolve_hook(&cfg, "pre", name) {
-        let code = execute_one(&pre_name, pre_cmd, &[], workdir);
+        let code = execute_one(&pre_name, pre_cmd, &[], workdir, "pre_hook");
         if code != 0 {
             eprintln!(
                 "`{}` failed (exit {}); not running `{}`",
@@ -132,13 +132,13 @@ pub fn run_run(file: &str, name: Option<&str>, extra_args: &[String], output_for
         }
     }
 
-    let code = execute_one(name, cmd, extra_args, workdir);
+    let code = execute_one(name, cmd, extra_args, workdir, "main");
     if code != 0 {
         return code;
     }
 
     if let Some((post_name, post_cmd)) = resolve_hook(&cfg, "post", name) {
-        let post_code = execute_one(&post_name, post_cmd, &[], workdir);
+        let post_code = execute_one(&post_name, post_cmd, &[], workdir, "post_hook");
         if post_code != 0 {
             return post_code;
         }
@@ -173,7 +173,17 @@ fn resolve_hook<'a>(cfg: &'a CommandsConfig, kind: &str, name: &str) -> Option<(
 /// Execute one `[commands]` entry: NUL guard, telemetry start/complete/
 /// failed under its own label, `> cmd` echo, spawn, exit-code mapping.
 /// Shared by the main command and its pre/post lifecycle hooks.
-fn execute_one(name: &str, cmd: &str, extra_args: &[String], workdir: Option<&Path>) -> i32 {
+///
+/// `role` is bounded (`"main" | "pre_hook" | "post_hook"`) and lands
+/// on `run.command.start` / `.complete` / `.failed` so hook success/
+/// failure funnels can be graphed separately from main-command runs.
+fn execute_one(
+    name: &str,
+    cmd: &str,
+    extra_args: &[String],
+    workdir: Option<&Path>,
+    role: &'static str,
+) -> i32 {
     let label = sanitize_for_display(name);
     let full_cmd = append_args(cmd, extra_args);
     if full_cmd.contains('\0') {
@@ -203,6 +213,7 @@ fn execute_one(name: &str, cmd: &str, extra_args: &[String], workdir: Option<&Pa
             label = %label,
             cmd_hash = %hash,
             well_known,
+            role,
             extra_args_count = extra_args.len(),
         );
     }
@@ -220,6 +231,7 @@ fn execute_one(name: &str, cmd: &str, extra_args: &[String], workdir: Option<&Pa
                     event = "run.command.complete",
                     label = %label,
                     cmd_hash = %hash,
+                    role,
                     exit_code = telemetry_code,
                     duration_ms = start.elapsed().as_millis() as u64,
                 );
@@ -235,6 +247,7 @@ fn execute_one(name: &str, cmd: &str, extra_args: &[String], workdir: Option<&Pa
                     event = "run.command.failed",
                     label = %label,
                     cmd_hash = %hash,
+                    role,
                     error = %e,
                 );
             }
