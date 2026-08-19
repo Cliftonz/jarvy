@@ -440,10 +440,26 @@ jobs:
           # build-tag env consistent so a rebuild doesn't silently drop
           # the rc suffix from --version.
           export JARVY_BUILD_TAG="${VERSION#v}"
+          # Windows-specific pre-release skip on the MSI format: MSI's
+          # ProductVersion field is strictly MAJOR.MINOR.PATCH.BUILD
+          # where BUILD is a uint16 (max 65535). Semver pre-release
+          # suffixes like `-rc.4` don't fit, and cargo-packager exits
+          # with "Optional build metadata in app version must be
+          # numeric-only and cannot be greater than 65535 for msi
+          # target". Same class of issue as RPM's dash-refusal (see
+          # Package RPM step above). Windows RC users get the .zip
+          # + setup.exe (nsis) artifacts and can `cargo install jarvy
+          # --version <rc>`; MSI is a stable-only artifact.
+          WINDOWS_FORMATS=""
+          if [ "${{ matrix.platform }}" = "windows-latest" ] && [[ "${{ github.ref_name }}" == *-* ]]; then
+            WINDOWS_FORMATS="--formats=nsis"
+          fi
           if [ "${{ matrix.cross }}" = "true" ] && [ "${{ matrix.sysroot }}" != "" ]; then
             cargo packager --target=${{ matrix.rust_target }} --formats=deb --release --verbose
           elif [ "${{ matrix.cross }}" = "true" ] && [ -z "${{ matrix.sysroot }}" ]; then
             cargo packager --target=${{ matrix.rust_target }} --release --verbose
+          elif [ -n "$WINDOWS_FORMATS" ]; then
+            cargo packager $WINDOWS_FORMATS --release --verbose
           else
             cargo packager --release --verbose
           fi
