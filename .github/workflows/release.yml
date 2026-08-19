@@ -346,39 +346,19 @@ jobs:
         if: matrix.cross && matrix.sysroot != ''
         run: echo "PKG_CONFIG_SYSROOT_DIR=${{ matrix.sysroot }}" >> "$GITHUB_ENV"
 
-      # Fast path: prebuilt binaries via taiki-e/install-action drop the
-      # install step from ~3 min of source compile per matrix slot to
-      # ~5 s of download. Side benefits: silences the core2-yanked
-      # warning that came from `cargo install --locked`, and removes
-      # ~/.cargo/bin cache pressure.
-      #
-      # `continue-on-error: true` + `id:` lets the next step probe
-      # `.outcome` and fall through to `cargo install` when the fast
-      # path breaks. Upstream flake context: actions/partner-runner-images#169
-      # (bash-startup regression on Linux + Windows runners that blocks
-      # taiki-e/install-action's own installer script), first observed
-      # v0.8.0-rc.2. Fallback kept the release matrix shipping through
-      # multiple rc cuts while the upstream fix was pending.
-      - name: Install app dependencies (prebuilt)
-        id: install_prebuilt
-        continue-on-error: true
+      - name: Install app dependencies
+        # Prebuilt binaries via taiki-e/install-action drop the install step
+        # from ~3 min of source compile per matrix slot to ~5 s of download.
+        # taiki-e/install-action internally uses cargo-binstall when it
+        # doesn't ship its own prebuilt for a tool (cargo-packager and
+        # cargo-generate-rpm are in that bucket); binstall is robust
+        # against the ongoing actions/partner-runner-images#169 flake,
+        # so no fallback needed. Side benefits: silences the core2-yanked
+        # warning that came from `cargo install --locked`, and removes
+        # ~/.cargo/bin cache pressure.
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-packager,cargo-generate-rpm
-
-      # Fallback: compile from source. Only runs when the prebuilt
-      # path failed. Adds ~2-3 min per matrix slot; still ships.
-      # `--locked` pins to the tool's own Cargo.lock so the yanked-
-      # dependency warning doesn't fail the build. No explicit version
-      # pin — the prebuilt path also picks latest, so drift-alignment
-      # matters more than reproducibility for an emergency-only path.
-      - name: Install app dependencies (cargo install fallback)
-        if: steps.install_prebuilt.outcome == 'failure'
-        shell: bash
-        run: |
-          echo "::warning::taiki-e/install-action failed; falling back to \`cargo install\`. Track: https://github.com/actions/partner-runner-images/issues/169"
-          cargo install --locked cargo-packager
-          cargo install --locked cargo-generate-rpm
 
       # JARVY_BUILD_TAG bakes the exact release tag (sans leading v)
       # into the binary at compile time via option_env! — so an rc
@@ -467,8 +447,23 @@ jobs:
           else
             cargo packager --release --verbose
           fi
+      # RPM's version grammar refuses `-`, so semver pre-release tags
+      # (`0.8.0-rc.4`, `0.8.0-beta.1`) fail cargo-generate-rpm with
+      # `invalid character (allowed: alphanumeric, '.', '_', '+', '%',
+      # '{', '}', '~', '^')`. Skip RPM packaging on pre-release cuts —
+      # RC users install via `cargo install`, `curl | sh`, or the .deb
+      # / .tar.gz artifacts; RPM is a stable-only artifact. Real fix
+      # for stable rebuilds landing on RC-shaped versions would be a
+      # `-` → `~` transform in Cargo.toml, but that would ALSO break
+      # the release verify_tag exact-match gate — cleaner to skip.
+      #
+      # Detects pre-release via `contains(github.ref_name, '-')` — the
+      # ref is always `v<semver>` on tag push, so any dash means a
+      # pre-release suffix. workflow_dispatch runs without a matching
+      # ref shape; skip there too so operator overrides don't
+      # accidentally trip the RPM step on an unrelated ref.
       - name: Package RPM
-        if: matrix.platform == 'ubuntu-latest'
+        if: matrix.platform == 'ubuntu-latest' && !contains(github.ref_name, '-')
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
             cargo generate-rpm --target=${{ matrix.rust_target }}
@@ -480,6 +475,12 @@ jobs:
         with:
           name: ${{ matrix.platform }}${{ matrix.cross && format('-{0}', matrix.pkg_arch) || '' }}-release-artifacts
           path: ${{ matrix.artifact_paths }}
+          # Pre-release tags skip RPM packaging (see Package RPM step
+          # above), so the *.rpm glob in artifact_paths matches
+          # nothing on those cuts. `warn` keeps upload from failing
+          # while still surfacing the missing file in the log for
+          # stable cuts (where missing = actual bug).
+          if-no-files-found: warn
 
   # Generate Software Bill of Materials (SBOM)
   generate_sbom:
