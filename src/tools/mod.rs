@@ -91,6 +91,7 @@ pub mod git;
 pub mod git_cliff;
 pub mod git_lfs;
 pub mod git_secrets;
+pub mod git_town;
 pub mod gitleaks;
 pub mod gitversion;
 pub mod glab;
