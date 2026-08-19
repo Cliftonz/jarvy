@@ -119,7 +119,7 @@ Jarvy clones once, caches at `~/.jarvy/git_hooks_cache/<hash>/`, and refreshes i
 
 ### Caveats
 
-- **Contributors on a fresh clone must run `jarvy setup` or `jarvy hooks install` explicitly.** Husky's `npm install` hook is convenient because `npm install` was going to run anyway. With native hooks, the setup step is a separate command. The [bootstrap script](../scripts/bootstrap.sh) handles this — copy it into your repo's `scripts/` folder and contributors run one command.
+- **Contributors on a fresh clone must run `jarvy setup` or `jarvy hooks install` explicitly.** Husky's `npm install` hook is convenient because `npm install` was going to run anyway. With native hooks, the setup step is a separate command. The [bootstrap script](https://github.com/Cliftonz/jarvy/blob/main/scripts/bootstrap.sh) handles this — copy it into your repo's `scripts/` folder and contributors run one command.
 - **No `--hook-stage` semantics.** Native hooks run whatever git's hook mechanism dispatches them to. If you were using Husky's stage grouping, split into separate stage files.
 
 ---
