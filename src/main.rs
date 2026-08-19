@@ -256,7 +256,23 @@ fn main() {
             Some(observability::ObservabilityConfig::startup_quiet())
         }
     } else {
-        None
+        // Default for every OTHER command (hooks, doctor, search, run,
+        // diagnose, tools, drift, …): cap the console at WARN so the
+        // structured `event="…"` INFO lines from telemetry / config
+        // loading / plugin registry don't leak to the terminal above
+        // the actual command output. The file log at ~/.jarvy/logs/
+        // and the OTLP bridge still receive full INFO — this is a
+        // console-only cap, not a signal cut.
+        //
+        // Setup is exempt (its own arm above) because setup users
+        // want progress lines. Startup one-shots handled just above.
+        // Any command hitting this branch either doesn't have -q/-v
+        // flags of its own (so the default IS the whole story) or
+        // explicitly wanted default behavior. If a future command
+        // needs INFO on the console by default, add it to
+        // `is_startup_oneshot()` with a matching `startup_verbose()`
+        // hook.
+        Some(observability::ObservabilityConfig::startup_quiet())
     };
 
     init_logging(&telemetry_config, obs_config.as_ref());
