@@ -27,6 +27,118 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.8.0] — native git hooks, ecosystem fallback installers, multi-distribution Java (2026-08-19)
+
+**Breaking:**
+
+- `[git_hooks]` no longer shells out to the `pre-commit` framework; the
+  native handler is the only execution path. Projects that relied on
+  jarvy running `pre-commit install` should migrate their hooks to
+  `[git_hooks.native]`. Husky and lefthook are still auto-detected but
+  their handlers now return `UnsupportedFramework`.
+
+**Features — native git hooks (`[git_hooks.native]`, PRD-059):**
+
+- Hooks write directly into `.git/hooks/<stage>` and cover all 23 git
+  hook stages (`pre-commit`, `pre-push`, `commit-msg`, `post-checkout`,
+  `pre-rebase`, ...), with no third-party framework dependency.
+- Four source shapes teams can mix, later shapes overriding earlier for
+  the same stage: a shared remote hooks repo
+  (`repo = "github:org/team-hooks"` with a required pinned `ref` and
+  optional `subpath`), a scanned local folder (`dir = "scripts/hooks"`),
+  a file reference, or an inline script body.
+- Remote hook repos cache under `~/.jarvy/git_hooks_cache/` and refresh
+  idempotently on rerun; branch refs warn as mutable; absolute paths,
+  `..` traversal, and symlink escapes are refused.
+- Every installed hook carries a managed-by-jarvy marker: reruns
+  overwrite only jarvy's own output, hand-authored `.git/hooks/*` files
+  are never clobbered, and `jarvy hooks uninstall` removes only
+  marker-bearing files.
+
+**Features — ecosystem fallback installers (PRD-060):**
+
+- Tools without a first-party platform package can declare
+  `fallback: { go|npm|cargo|uv: "<pkg>" }`; jarvy routes the install
+  through that ecosystem's package manager and auto-bootstraps a missing
+  toolchain through its own registry (never curl-pipe). 15 existing
+  tools migrated to fallback routes; 11 new tool definitions added.
+- Fallback installs write receipts to `~/.jarvy/install-receipts.json`:
+  `jarvy check-updates` probes the receipt's ecosystem so freshness
+  reflects how the tool was actually installed, and `jarvy upgrade`
+  upgrades through the same route (`--native` reroutes to the platform
+  manager and clears the receipt).
+- `tool.installed` / `tool.failed` telemetry carry `install_route`, so
+  "brew broke" and "npm fallback broke" are distinguishable.
+
+**Features — multi-distribution Java:**
+
+- `java = { version = "21", distribution = "temurin" }` in
+  `[provisioner]` routes across openjdk, temurin, zulu, corretto,
+  liberica, and microsoft-openjdk, with per-OS support matrices and a
+  declared fallback chain; role inheritance propagates distribution and
+  fallback to member configs.
+- Linux installs bootstrap the vendor apt/dnf repositories (Temurin,
+  Zulu, Corretto, Liberica, Microsoft) with GPG key fingerprint
+  verification and a 30-day idempotency window.
+
+**Features — Windows quality of life:**
+
+- New `[windows]` block fixes ".sh opens in Notepad": `sh_pathext`
+  appends `.SH` to HKCU PATHEXT and `sh_association = "open"` routes the
+  Explorer "open" verb for `.sh` files to bash.exe while leaving "edit"
+  alone. Per-user registry only (no admin); remote configs refused
+  without `allow_remote = true`.
+
+**Features — templates, tools, env:**
+
+- Mobile template overhaul: Android, React Native, and Expo templates
+  ship `[commands]` lifecycle wiring (`pre:android` hooks and friends)
+  through an escape-safe TOML writer.
+- New tools: git-town, kubeconform plus 6 more Kubernetes-ecosystem
+  CLIs, kubent, vcluster, crossplane, git-cliff, zellij, difftastic,
+  6 Grafana ecosystem CLIs, and a mobile-dev toolset (Android SDK
+  tooling, Appium, EAS CLI, Watchman).
+- `[env]` values support `append = true` with PATH-position handling
+  end-to-end through the shell rc writer; `append` on a non-PATH-like
+  key is refused at config load.
+- Opt-in `block-unmanaged-installs` hook added to the AI-hook library.
+
+**Performance:**
+
+- `jarvy doctor` gains a disk-backed version-probe cache (~33s cold to
+  ~2s warm); validity is stat-based, so upgrading a tool invalidates its
+  entry instantly.
+- Drift detection runs version probes in bounded parallel.
+
+**Fixes:**
+
+- Console output capped at WARN for every non-Setup command; routine
+  commands no longer spray INFO chatter (`-v` restores it).
+- Explicit `jarvy update check` bypasses the sandbox auto-disable.
+- Java fallback preserves the requested version, and dry-run previews
+  match the apply path.
+- `jarvy search` demand signal uses substring matching instead of fuzzy
+  score, so near-miss suggestions no longer mask unmet demand.
+
+**Security:**
+
+- Drift subsystem hardened: trust gates, path-traversal refusals,
+  permission checks, and install-method rederivation.
+- Remote-config trust boundary tightened across config loading; package
+  validators hardened.
+- `tool.unsupported` probe surfaces sanitized (ANSI, control bytes, bidi
+  overrides stripped), telemetry-gated, and cardinality-bounded.
+- Azul, Corretto, and BellSoft GPG key fingerprints verified against
+  vendor docs and pinned.
+
+**Internal:**
+
+- Pre-release tags (`-rc`/`-beta`/`-alpha`) now publish to crates.io for
+  the beta channel; RPM and MSI packaging skip on pre-release tags; docs
+  build (mkdocs strict + link check) is a hard release gate.
+- PTY-driven E2E coverage for the interactive menu, consent prompts, and
+  refusal paths.
+
 ## [v0.7.0] — agent profile switcher (PRD-058) + tool freshness advisory (PRD-057) (2026-07-31)
 
 **Features — agent profile switcher (PRD-058 v1):**
@@ -3266,7 +3378,8 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.7.0
 [v0.5.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.2
 [v0.5.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.1
