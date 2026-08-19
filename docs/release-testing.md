@@ -77,30 +77,45 @@ time-based to **signal-based**: elevated `setup.failure` /
 `tool.install.failure` rates in the first hours after publish
 auto-trigger the withdrawal banner. Gate on evidence, never the calendar.
 
-## CI gate (automatic — runs on every tag push)
+## CI gates (automatic — run on every tag push)
 
-`release.yml` will not build, sign, or publish artifacts unless the
-`Test` workflow (`test.yml`) reports `conclusion = success` for the
-same commit SHA the tag points at. The gate is enforced by a
-`wait_for_tests` job in `release.yml` that polls
-`gh run list --workflow=test.yml --commit=<sha>` every 30 s for up
-to 15 minutes:
+`release.yml` will not build, sign, or publish artifacts unless BOTH
+of these gates are green for the tag's commit SHA:
 
-- All matrix entries (Linux + macOS + Windows + lint + doctests) must
-  be `success`. Any `failure` / `cancelled` / `timed_out` fails the
-  gate immediately — the artifact build does NOT run.
-- The 15-minute budget is usually shorter than the artifact build
-  itself, so the gate rarely extends the release critical path.
-- Skipped on `workflow_dispatch`: a manual operator-triggered release
-  is an explicit override (the same shape as `verify_tag`'s
-  signed-tag bypass for `workflow_dispatch`).
+1. **`wait_for_tests`** — polls `gh run list --workflow=test.yml --commit=<sha>`.
+   All matrix entries (Linux + macOS + Windows + lint + doctests) must
+   report `conclusion = success`. Any `failure` / `cancelled` /
+   `timed_out` fails the gate immediately.
 
-This means **the cross-OS test matrix is now part of the release
-gate**, not just a parallel sanity check. The validation checklist
-below is what runs ON TOP of CI — operator-driven validation for
-soak-worthy changes. The CI gate alone is sufficient for trivial
-patch releases; the checklist applies when the trigger matrix
-(below) says it does.
+2. **`wait_for_docs`** — polls `gh run list --workflow=docs.yml --commit=<sha>`.
+   The docs workflow runs `mkdocs build --strict`, which catches
+   broken cross-links, missing pages, and other mkdocs-strict drift.
+   Without this gate, a doc regression ships as silent jarvy.dev
+   staleness — the release binaries succeed, users install them,
+   then jarvy.dev is missing (or lying about) the new features.
+
+Both gates poll every 30 s for up to 40 minutes. Skipped on
+`workflow_dispatch` — a manual operator-triggered release is an
+explicit override (same shape as `verify_tag`'s signed-tag bypass).
+
+**Local pre-tag check.** To catch doc regressions BEFORE tagging (and
+avoid retagging when `wait_for_docs` fires post-push), run:
+
+```bash
+./scripts/check-docs.sh
+```
+
+Runs the same `mkdocs build --strict` gate the CI workflow enforces.
+Requires `mkdocs-material[imaging]` on your Python; the script builds
+the jarvy binary if it's missing (needed for auto-gen pages via
+`scripts/gen-docs.sh`).
+
+This means **the cross-OS test matrix AND the strict docs build are
+part of the release gate**, not just parallel sanity checks. The
+validation checklist below is what runs ON TOP of CI — operator-driven
+validation for soak-worthy changes. The CI gate alone is sufficient
+for trivial patch releases; the checklist applies when the trigger
+matrix (below) says it does.
 
 ## Validation Checklist
 

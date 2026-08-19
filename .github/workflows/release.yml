@@ -172,17 +172,99 @@ jobs:
           echo "::error::Timed out waiting for Test workflow (40 min budget). Re-run after tests complete."
           exit 1
 
+  # Hard gate: refuse to ship if the Docs workflow (docs.yml) hasn't
+  # gone green for this tag's commit SHA. Same shape as wait_for_tests
+  # — the release commit ALWAYS lands on main first (that push triggers
+  # docs.yml), then the tag is pushed (this workflow). So by the time
+  # release.yml runs, docs.yml should already be complete or in flight
+  # for the same commit.
+  #
+  # Why: docs.yml runs `mkdocs build --strict`, which catches broken
+  # cross-links, missing pages, and other doc-shape drift. Without
+  # this gate, doc regressions like a `../scripts/bootstrap.sh` link
+  # that mkdocs-strict refuses ship as silent doc-site staleness —
+  # the release binaries succeed, users install them, then jarvy.dev
+  # is missing (or lying about) the new features that shipped.
+  #
+  # Same 40 min budget as wait_for_tests. Skipped on workflow_dispatch
+  # (operator override).
+  wait_for_docs:
+    name: Wait for Docs workflow (green required)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [verify_tag]
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Poll docs.yml status for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          DEADLINE=$(( SECONDS + 40 * 60 ))
+          ATTEMPT=0
+
+          echo "Waiting for Docs workflow on commit ${COMMIT_SHA}..."
+          while [ $SECONDS -lt $DEADLINE ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            RESULT=$(gh run list \
+              --repo "$REPO" \
+              --workflow=docs.yml \
+              --commit="$COMMIT_SHA" \
+              --limit 5 \
+              --json status,conclusion,name,databaseId \
+              || echo '[]')
+
+            CONCLUSIONS=$(echo "$RESULT" | jq -r '.[].conclusion // "pending"')
+            STATUSES=$(echo "$RESULT" | jq -r '.[].status // "pending"')
+
+            if [ -z "$STATUSES" ]; then
+              echo "[$ATTEMPT] No docs.yml runs found yet for $COMMIT_SHA; sleeping 30s..."
+              sleep 30
+              continue
+            fi
+
+            if echo "$CONCLUSIONS" | grep -E -q '^(failure|cancelled|timed_out|action_required|stale)$'; then
+              echo "::error::Docs workflow reported failure for $COMMIT_SHA. Refusing to release — a doc-shape regression would ship as stale jarvy.dev."
+              echo "$RESULT" | jq -r '.[] | "  \(.name) → status=\(.status) conclusion=\(.conclusion) (run \(.databaseId))"'
+              exit 1
+            fi
+
+            if echo "$STATUSES" | grep -qv "completed"; then
+              echo "[$ATTEMPT] Docs runs still in flight; sleeping 30s..."
+              echo "$RESULT" | jq -r '.[] | "  \(.name) → status=\(.status)"'
+              sleep 30
+              continue
+            fi
+
+            if echo "$CONCLUSIONS" | grep -qv "success"; then
+              echo "::error::Docs workflow completed with non-success conclusion for $COMMIT_SHA."
+              echo "$RESULT" | jq -r '.[] | "  \(.name) → conclusion=\(.conclusion)"'
+              exit 1
+            fi
+
+            echo "Docs workflow green for $COMMIT_SHA. Proceeding with release."
+            exit 0
+          done
+
+          echo "::error::Timed out waiting for Docs workflow (40 min budget). Re-run after docs complete."
+          exit 1
+
   build_and_package:
     name: Build & Package
     runs-on: ${{ matrix.platform }}
-    needs: [verify_tag, wait_for_tests]
-    # Both gates are skipped on workflow_dispatch; allow either skip
-    # OR success to count as green. A failure on either explicitly
+    needs: [verify_tag, wait_for_tests, wait_for_docs]
+    # All three gates are skipped on workflow_dispatch; allow either
+    # skip OR success to count as green. A failure on any explicitly
     # blocks release.
     if: |
       always()
       && (needs.verify_tag.result == 'success' || needs.verify_tag.result == 'skipped')
       && (needs.wait_for_tests.result == 'success' || needs.wait_for_tests.result == 'skipped')
+      && (needs.wait_for_docs.result == 'success' || needs.wait_for_docs.result == 'skipped')
     permissions:
       contents: read
     strategy:
