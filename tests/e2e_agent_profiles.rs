@@ -17,9 +17,18 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn jarvy_bin() -> PathBuf {
-    match std::env::var("JARVY_BIN") {
+    let raw = match std::env::var("JARVY_BIN") {
         Ok(bin) => PathBuf::from(bin),
         Err(_) => assert_cmd::cargo::cargo_bin!("jarvy").to_path_buf(),
+    };
+    // Several tests spawn jarvy with `current_dir(<tempdir>)`; a relative
+    // `JARVY_BIN` (e.g. CI's `target/release/jarvy`) then resolves against
+    // the tempdir and misses the actual binary. Anchor to an absolute path
+    // once so every spawn sees the same file regardless of cwd.
+    if raw.is_absolute() {
+        raw
+    } else {
+        std::env::current_dir().expect("current_dir").join(raw)
     }
 }
 
