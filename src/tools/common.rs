@@ -1455,7 +1455,13 @@ mod version_probe_tests {
         path.to_string_lossy().into_owned()
     }
 
+    // Serialized with `install_via_cargo_install_prereq_when_cargo_absent`
+    // (below in this module tree) — that test empties $PATH globally for
+    // its duration, which races with the fake-CLI spawn here under
+    // parallel test runners and made this test flake reliably in the
+    // main.rs `[[bin]]` unittest binary under `cargo llvm-cov`.
     #[test]
+    #[serial_test::serial]
     fn nonzero_exit_version_output_still_parses() {
         let dir = tempfile::tempdir().unwrap();
         // argocd-style: prints version, exits non-zero (server unreachable)
@@ -1467,6 +1473,7 @@ mod version_probe_tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn version_subcommand_only_cli_is_probed() {
         let dir = tempfile::tempdir().unwrap();
         // cue-style: --version / -V fail, only `version` subcommand answers
