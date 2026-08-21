@@ -132,6 +132,66 @@ Same shape as `[git_hooks] allow_remote` — a remote `jarvy.toml` fetched via `
 
 ---
 
+## `[windows.wsl]` — WSL2 bridge
+
+For POSIX-only tools (`tmux`, `htop`, `zsh`, `yadm`, `goaccess`, `tilt`) that have no first-party winget/choco package on Windows, the `[windows.wsl]` sub-block bootstraps a named WSL2 distro and (optionally) delegates the whole `jarvy setup` into it. The Linux-side jarvy is the install backend for those tools.
+
+```toml
+[windows.wsl]
+enabled = false                 # opt-in gate; the tool is inert until true
+distro = "Ubuntu"               # v1 supports "Ubuntu" and "Debian"
+# name = "jarvy-ubuntu"         # defaults to `distro` verbatim; set for isolation
+auto_bootstrap = false          # if WSL / distro missing, prints exact `wsl --install` command
+install_location = "auto"       # "auto" -> %LOCALAPPDATA%\jarvy\wsl\<name>
+install_jarvy = true            # curl-pipe jarvy inside the distro (skipped if already installed)
+jarvy_channel = "stable"        # stable / beta / nightly
+run_setup = false               # true = delegate the outer `jarvy setup` into the distro
+```
+
+### Flow
+
+1. `jarvy setup` reads `[windows.wsl]`. If `enabled = false`, nothing happens.
+2. Probes `wsl --version` (Store-WSL check) and `wsl -l -q` (installed distros).
+3. If Store-WSL is missing OR the named distro is missing:
+   - `auto_bootstrap = false` → refuses with the exact `wsl --install -d <distro> --name <name>` command for the user to run in an elevated PowerShell. **Jarvy never triggers UAC.**
+   - `auto_bootstrap = true` AND the process is elevated → runs the install (prefers `wsl --install --name`; falls back to `wsl --import` with a cached rootfs when the flag is unsupported).
+4. If `install_jarvy = true` and jarvy is not already on PATH inside the distro, jarvy runs `wsl -d <name> -u root -- bash -lc "curl -fsSL <install-url> | sh"`.
+5. If `run_setup = true` and the outer invocation is `jarvy setup`, the outer setup re-execs `wsl -d <name> -- bash -lc "cd '/mnt/c/...' && jarvy setup"` on the translated project path. The inner jarvy loads the same `jarvy.toml`, installs the actual project tools via apt/dnf, and returns its exit code.
+
+### Trust
+
+- Inherits `[windows] allow_remote`. A remote `jarvy setup --from <url>` where the remote config sets `[windows.wsl] enabled = true` is refused unless the local `[windows] allow_remote = true` is explicit. WSL install is system-wide and persistent; a remote config alone must not trigger it.
+- Distro instance name refuses `docker-desktop` / `docker-desktop-data` at config load — those are Docker Desktop's WSL distros and jarvy will not overwrite them.
+- Install location must be absolute, non-UNC, no NUL / quotes / newlines. Rejected at config load.
+
+### Legacy WSL
+
+Jarvy refuses to touch DISM. If `wsl --version` returns nothing (pre-Store WSL: Windows 10 <21H2), the tool refuses with the manual `wsl --install --no-launch` command for the user to run in an elevated PowerShell + reboot. Once Store-WSL is present, re-run `jarvy setup`.
+
+### Uninstall
+
+`wsl --unregister <name>` wipes the distro's rootfs including any user files. Jarvy refuses to run this automatically. Running `jarvy tools --remove wsl` emits the `wsl.remove_refused` event and prints the exact `wsl --unregister <name>` command to stderr for you to run manually (exit code 1). The effective name comes from `[windows.wsl] name` if set, else from `distro`.
+
+```
+$ jarvy tools --remove wsl
+[wsl] Removing WSL is destructive; jarvy will not `wsl --unregister` your distro.
+Run manually if you're sure (this wipes the distro's rootfs including any user data):
+    wsl --unregister Ubuntu
+```
+
+### Telemetry
+
+- `wsl.probe_completed` — `store_based`, `distros_installed`, `target_distro_present`, `jarvy_in_distro`. Instance name NOT emitted (unbounded cardinality).
+- `wsl.bootstrap_refused` — bounded `reason` label (`not_opted_in` / `not_store_wsl` / `no_wsl_command` / `auto_bootstrap_off` / `not_elevated` / `reserved_name`).
+- `wsl.bootstrap_started` / `wsl.bootstrap_completed` / `wsl.bootstrap_failed` — `base_distro` (bounded: `Ubuntu` / `Debian`), `method` (`wsl_install` / `wsl_import`), `duration_ms`.
+- `wsl.jarvy_install_started` / `wsl.jarvy_install_completed` / `wsl.jarvy_install_failed` — `base_distro`, `channel`, `duration_ms`.
+- `wsl.setup_delegated` — `base_distro`, `exit_code`, `duration_ms`. Fires from the delegation short-circuit.
+- `wsl.path_refused` — `reason = "unc" | "invalid_chars" | "remote_refused"`. Path itself NOT emitted (may carry the account name).
+
+All gated behind the standard telemetry consent gate.
+
+---
+
 ## Related
 
 - [Git hooks](git-hooks.md) — related trust-gated setup phase with the same `allow_remote` shape

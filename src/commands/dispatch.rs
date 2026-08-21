@@ -118,6 +118,7 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             default_hooks,
             request,
             open,
+            remove,
             output_format,
             output,
         }) => commands::run_tools(
@@ -125,6 +126,7 @@ pub fn run(cli: &Cli, global_config: &init::CliConfig) -> i32 {
             *default_hooks,
             request.as_deref(),
             *open,
+            remove.as_deref(),
             *output_format,
             output.as_deref(),
         ),
