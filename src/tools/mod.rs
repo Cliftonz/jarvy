@@ -164,6 +164,7 @@ pub mod kubeseal;
 pub mod kustomize;
 pub mod lazydocker;
 pub mod lazygit;
+pub mod lens;
 pub mod linkerd;
 pub mod litecli;
 pub mod litellm;
