@@ -16,7 +16,13 @@ pub mod config;
 pub mod pathext;
 pub mod sh_association;
 
-pub use config::{ShAssociationMode, WindowsConfig, validate_bash_path};
+#[allow(unused_imports)]
+// WSL helpers are consumed by cross-platform integration tests + Windows exec
+pub use config::{
+    PathTranslateError, ShAssociationMode, WindowsConfig, WslConfig, translate_win_path,
+    validate_bash_path, validate_channel, validate_distro_name, validate_distro_slug,
+    validate_install_location,
+};
 
 /// Reason the Windows phase was skipped without applying anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

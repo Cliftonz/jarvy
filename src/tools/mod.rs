@@ -315,6 +315,7 @@ pub mod watchman;
 pub mod wget;
 pub mod wireguard_tools;
 pub mod wrangler;
+pub mod wsl;
 pub mod xk6;
 pub mod xz;
 pub mod yadm;

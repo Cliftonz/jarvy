@@ -183,6 +183,14 @@ pub enum Commands {
         /// default browser instead of just printing the URL.
         #[clap(long, requires = "request")]
         open: bool,
+        /// Remove a jarvy-managed tool. Currently only `wsl` is
+        /// recognized — the `wsl` case emits a refusal with the
+        /// exact `wsl --unregister <name>` command for the user
+        /// to run manually (destructive-action policy: jarvy never
+        /// wipes a WSL distro on its own). Any other tool name
+        /// returns exit 1 with an "unsupported operation" message.
+        #[clap(long, value_name = "TOOL", conflicts_with_all = &["index", "default_hooks", "request"])]
+        remove: Option<String>,
         /// Output format: json, yaml, toml, pretty (for --index)
         #[clap(short = 'F', long = "format", value_enum, default_value = "pretty")]
         output_format: OutputFormat,

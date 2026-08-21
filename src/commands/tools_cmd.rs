@@ -18,11 +18,19 @@ pub fn run_tools(
     default_hooks: bool,
     request: Option<&str>,
     open: bool,
+    remove: Option<&str>,
     output_format: OutputFormat,
     output: Option<&str>,
 ) -> i32 {
-    // --request short-circuits all other modes: it's a "how do I ask for
-    // this tool?" helper, not a listing command.
+    // --remove short-circuits all other modes. Today only `wsl` has a
+    // handler (an explicit destructive-action refusal); other tool
+    // names get a not-yet-supported message with a non-zero exit.
+    if let Some(name) = remove {
+        return run_remove(name);
+    }
+
+    // --request short-circuits the rest: "how do I ask for this tool?"
+    // helper, not a listing command.
     if let Some(name) = request {
         return run_request(name, open, output_format, output);
     }
@@ -163,6 +171,39 @@ pub fn run_tools(
         println!("{}", content);
     }
     error_codes::EXIT_SUCCESS
+}
+
+/// Handle `jarvy tools --remove <name>`.
+///
+/// Today only `wsl` is recognized: the destructive-action policy
+/// refuses to run `wsl --unregister <name>` automatically (that
+/// wipes the distro's rootfs, including any user data). The refusal
+/// message prints the exact manual command for the user to run.
+///
+/// Other tool names return exit 1 with an "unsupported operation"
+/// message — a stub until the broader tool-removal surface lands.
+fn run_remove(name: &str) -> i32 {
+    let normalized = name.trim().to_ascii_lowercase();
+    if normalized == "wsl" {
+        // Pull the active config if setup populated it, else fall back
+        // to defaults. The refusal message uses `effective_name` so a
+        // user with `[windows.wsl] name = "jarvy-ubuntu"` sees the
+        // right `wsl --unregister jarvy-ubuntu` in the output.
+        let cfg = crate::tools::wsl::bootstrap::active_config().unwrap_or_default();
+        crate::tools::wsl::bootstrap::emit_remove_refused();
+        eprintln!(
+            "{}",
+            crate::tools::wsl::bootstrap::render_remove_refusal(&cfg)
+        );
+        // Exit 1: the requested operation did not happen. Distinct
+        // from CONFIG_ERROR (which is a jarvy.toml parse failure) and
+        // from 0 (which would falsely signal success).
+        return 1;
+    }
+    eprintln!(
+        "jarvy tools --remove: not yet supported for \"{name}\". Only `wsl` has a handler today (a destructive-action refusal). Uninstall the tool via its native package manager."
+    );
+    1
 }
 
 /// Handle `jarvy tools --request <name> [--open]`.

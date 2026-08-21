@@ -6,7 +6,15 @@
 //! Git for Windows is installed (`bash.exe` under `C:\Program Files\
 //! Git\bin\`); teams that use WSL exclusively don't need this block.
 
+// WSL sub-block helpers (translator, validators, effective_*) are
+// consumed by the Windows exec code and by cross-platform integration
+// tests. On non-Windows builds without the integration tests compiled
+// in, rustc would flag them as dead. Every WSL helper has test
+// coverage in `tests/wsl_tool_integration.rs`.
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// `[windows]` block. Windows-only in behavior; parses on every OS so a
 /// cross-platform team can commit one jarvy.toml. The setup phase
@@ -58,8 +66,19 @@ pub struct WindowsConfig {
     /// cannot silently change a user's PATHEXT or file associations
     /// without an explicit opt-in in the source config. Mirrors the
     /// `[git_hooks] allow_remote` trust gate.
+    ///
+    /// The same gate governs `[windows.wsl]`; a remote config carrying
+    /// the WSL sub-block still requires `allow_remote = true` here.
     #[serde(default)]
     pub allow_remote: bool,
+
+    /// `[windows.wsl]` sub-block — bootstraps a named WSL2 distro,
+    /// optionally installs jarvy inside it, and (when `run_setup =
+    /// true`) delegates the outer `jarvy setup` into the distro on the
+    /// translated project path. Opt-in; the tool is inert until
+    /// `enabled = true`. See `src/tools/wsl/`.
+    #[serde(default)]
+    pub wsl: Option<WslConfig>,
 
     /// Origin tag set by `Config::mark_remote`; not serialized. Handlers
     /// consult this to enforce `allow_remote`. Mirrors `GitHooksConfig`.
@@ -75,6 +94,7 @@ impl Default for WindowsConfig {
             sh_association: ShAssociationMode::Off,
             bash_path_override: None,
             allow_remote: false,
+            wsl: None,
             origin: crate::ai_hooks::ConfigOrigin::Local,
         }
     }
@@ -107,6 +127,316 @@ fn default_true() -> bool {
 
 fn default_sh_association() -> ShAssociationMode {
     ShAssociationMode::Off
+}
+
+/// `[windows.wsl]` sub-block. Bootstraps a named WSL2 distro on
+/// Windows, optionally installs jarvy inside it, and optionally
+/// delegates the outer `jarvy setup` into the distro on the translated
+/// project path.
+///
+/// Parses on every OS so a cross-platform team can commit one
+/// jarvy.toml; the tool short-circuits on non-Windows. Opt-in via
+/// `enabled = true`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WslConfig {
+    /// Opt-in gate. Default `false` — the tool is inert until this is
+    /// explicitly true. Even when true, `auto_bootstrap = false` still
+    /// refuses to run `wsl --install` and prints the manual command.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Base image slug. v1 supports `"Ubuntu"` and `"Debian"`; other
+    /// slugs are refused at config-load with a clear error.
+    #[serde(default = "default_distro")]
+    pub distro: String,
+
+    /// Instance name (`wsl -l -q` shows this). Defaults to `distro`
+    /// verbatim, which will collide with any existing bare Ubuntu /
+    /// Debian on the machine — a feature for users who want jarvy to
+    /// adopt their existing distro, a bug for users who want isolation.
+    /// Set explicitly (e.g. `"jarvy-ubuntu"`) for isolation.
+    ///
+    /// Validated against `validate_distro_name` at load: bounded
+    /// charset, length cap, refuses Docker Desktop's reserved names.
+    #[serde(default)]
+    pub name: Option<String>,
+
+    /// If `true` and Store-WSL + the named distro are both absent,
+    /// jarvy prints the exact elevated `wsl --install` command for the
+    /// user to run. Jarvy NEVER triggers UAC itself. When `true` AND
+    /// the process is already elevated, jarvy runs the install.
+    #[serde(default)]
+    pub auto_bootstrap: bool,
+
+    /// Where the distro rootfs vhd lives on disk. `"auto"` resolves
+    /// to `%LOCALAPPDATA%\jarvy\wsl\<name>`. Explicit paths must be
+    /// absolute (no UNC, no relative, no NUL / quotes / newlines).
+    #[serde(default = "default_install_location")]
+    pub install_location: String,
+
+    /// After the distro is present, curl-pipe the jarvy install script
+    /// inside it (skipped if `jarvy` is already on PATH inside). Default
+    /// `true` — teams opting into the WSL bridge almost always want the
+    /// inner jarvy to install the actual project tools.
+    #[serde(default = "default_true")]
+    pub install_jarvy: bool,
+
+    /// Channel passed to the inner install script. Bounded: `"stable"`
+    /// / `"beta"` / `"nightly"`. Unknown channels are refused at load.
+    #[serde(default = "default_channel")]
+    pub jarvy_channel: String,
+
+    /// When the outer invocation is `jarvy setup`, re-exec
+    /// `wsl -d <name> -- bash -lc "cd '/mnt/c/...' && jarvy setup"` in
+    /// the translated project path after bootstrap. Opt-in because it
+    /// radically changes the outer setup's behavior (tools install
+    /// inside the distro, not on Windows).
+    #[serde(default)]
+    pub run_setup: bool,
+}
+
+impl Default for WslConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            distro: default_distro(),
+            name: None,
+            auto_bootstrap: false,
+            install_location: default_install_location(),
+            install_jarvy: true,
+            jarvy_channel: default_channel(),
+            run_setup: false,
+        }
+    }
+}
+
+impl WslConfig {
+    /// Effective instance name: user's `name` if set, else `distro`.
+    pub fn effective_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.distro)
+    }
+
+    /// Effective on-disk install location, resolving `"auto"` to
+    /// `%LOCALAPPDATA%\jarvy\wsl\<name>` when the LocalAppData env
+    /// resolver is available. On non-Windows or when `%LOCALAPPDATA%`
+    /// is unset, returns `~/.jarvy/wsl/<name>` as a portable fallback
+    /// (used by tests; the executor is Windows-only).
+    pub fn effective_install_location(&self) -> PathBuf {
+        if self.install_location != "auto" {
+            return PathBuf::from(&self.install_location);
+        }
+        let name = self.effective_name();
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let mut p = PathBuf::from(local);
+            p.push("jarvy");
+            p.push("wsl");
+            p.push(name);
+            return p;
+        }
+        if let Some(mut p) = dirs::home_dir() {
+            p.push(".jarvy");
+            p.push("wsl");
+            p.push(name);
+            return p;
+        }
+        PathBuf::from(name)
+    }
+
+    /// Validate the whole block at config-load time. Called after
+    /// serde deserialization from the [`WindowsConfig`] parent so users
+    /// get a clean parse error on any invalid value.
+    pub fn validate(&self) -> Result<(), String> {
+        validate_distro_slug(&self.distro)?;
+        if let Some(name) = self.name.as_deref() {
+            validate_distro_name(name)?;
+        } else {
+            // Default `name = distro` still has to pass reserved-name /
+            // charset checks — a distro slug is user-supplied via TOML
+            // even before it becomes an instance name.
+            validate_distro_name(&self.distro)?;
+        }
+        validate_install_location(&self.install_location)?;
+        validate_channel(&self.jarvy_channel)?;
+        Ok(())
+    }
+}
+
+/// v1 base-distro allowlist. Every entry has a stable rootfs URL that
+/// `wsl --import` can consume when the caller's Store-WSL doesn't yet
+/// support `wsl --install --name`.
+const SUPPORTED_BASE_DISTROS: &[&str] = &["Ubuntu", "Debian"];
+
+/// Instance names collision-refused at load: `docker-desktop` and
+/// `docker-desktop-data` are the WSL distros Docker Desktop registers
+/// for its own runtime; overwriting either would break Docker Desktop
+/// on the machine.
+const RESERVED_DISTRO_NAMES: &[&str] = &["docker-desktop", "docker-desktop-data"];
+
+const BOUNDED_JARVY_CHANNELS: &[&str] = &["stable", "beta", "nightly"];
+
+fn default_distro() -> String {
+    "Ubuntu".to_string()
+}
+
+fn default_install_location() -> String {
+    "auto".to_string()
+}
+
+fn default_channel() -> String {
+    "stable".to_string()
+}
+
+/// Reject unsupported base-distro slugs at config load. v1 supports
+/// only `"Ubuntu"` and `"Debian"`; adding more requires a pinned
+/// rootfs URL in `src/tools/wsl/rootfs.rs`.
+pub fn validate_distro_slug(slug: &str) -> Result<(), String> {
+    if SUPPORTED_BASE_DISTROS
+        .iter()
+        .any(|s| s.eq_ignore_ascii_case(slug))
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "[windows.wsl] distro = \"{slug}\" is not supported in v1. Supported: {}",
+            SUPPORTED_BASE_DISTROS.join(", ")
+        ))
+    }
+}
+
+/// Distro instance-name validator. Applied to both `name` (when set)
+/// and to the default (which is `distro`) so a reserved-slug base
+/// distro can never be silently promoted to the instance name.
+///
+/// Rules: non-empty, len <= 64, `[A-Za-z0-9._-]` only, no shell
+/// metacharacters, refuses Docker Desktop's reserved names.
+pub fn validate_distro_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("[windows.wsl] name is empty".to_string());
+    }
+    if name.len() > 64 {
+        return Err(format!(
+            "[windows.wsl] name is longer than 64 characters ({} bytes)",
+            name.len()
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "[windows.wsl] name = \"{name}\" contains disallowed characters (only ASCII letters, digits, `.`, `_`, `-` are allowed)"
+        ));
+    }
+    if RESERVED_DISTRO_NAMES
+        .iter()
+        .any(|r| r.eq_ignore_ascii_case(name))
+    {
+        return Err(format!(
+            "[windows.wsl] name = \"{name}\" is reserved by Docker Desktop; pick a different name (e.g. \"jarvy-ubuntu\")"
+        ));
+    }
+    Ok(())
+}
+
+/// Install-location validator. Accepts `"auto"` verbatim; anything
+/// else must be an absolute Windows path with no UNC prefix, no
+/// NUL / quotes / newlines. Path existence is NOT checked here —
+/// bootstrap creates the directory.
+pub fn validate_install_location(loc: &str) -> Result<(), String> {
+    if loc == "auto" {
+        return Ok(());
+    }
+    if loc.is_empty() {
+        return Err("[windows.wsl] install_location is empty".to_string());
+    }
+    if loc.starts_with("\\\\") || loc.starts_with("//") {
+        return Err(format!(
+            "[windows.wsl] install_location = \"{loc}\" is a UNC path; WSL cannot import to a network location"
+        ));
+    }
+    if loc.contains('\0') {
+        return Err("[windows.wsl] install_location contains a NUL byte".to_string());
+    }
+    if loc.contains('"') {
+        return Err("[windows.wsl] install_location contains a double-quote".to_string());
+    }
+    if loc.contains('\n') || loc.contains('\r') {
+        return Err("[windows.wsl] install_location contains a newline".to_string());
+    }
+    if !is_absolute_windows_path(loc) {
+        return Err(format!(
+            "[windows.wsl] install_location = \"{loc}\" is not an absolute Windows path (expected e.g. `C:\\wsl\\jarvy`)"
+        ));
+    }
+    Ok(())
+}
+
+fn is_absolute_windows_path(loc: &str) -> bool {
+    // Rejects relative + drive-relative paths (`foo`, `\foo`, `C:foo`)
+    // while accepting `C:\foo`, `D:/bar`, and the `%LOCALAPPDATA%\...`
+    // form (env vars are expanded by the executor, not here).
+    if loc.starts_with('%') {
+        return true;
+    }
+    let bytes = loc.as_bytes();
+    if bytes.len() < 3 {
+        return false;
+    }
+    if !bytes[0].is_ascii_alphabetic() {
+        return false;
+    }
+    if bytes[1] != b':' {
+        return false;
+    }
+    matches!(bytes[2], b'\\' | b'/')
+}
+
+pub fn validate_channel(channel: &str) -> Result<(), String> {
+    if BOUNDED_JARVY_CHANNELS
+        .iter()
+        .any(|c| c.eq_ignore_ascii_case(channel))
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "[windows.wsl] jarvy_channel = \"{channel}\" is not bounded. Supported: {}",
+            BOUNDED_JARVY_CHANNELS.join(", ")
+        ))
+    }
+}
+
+/// Errors returned by [`translate_win_path`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum PathTranslateError {
+    Unc,
+    NotAbsolute,
+    InvalidChars,
+}
+
+/// Translate a Windows path to its `/mnt/<drive>/...` WSL equivalent.
+/// Pure logic, cross-platform testable. UNC paths and paths with
+/// NUL / quotes / newlines are refused.
+pub fn translate_win_path(path: &Path) -> Result<String, PathTranslateError> {
+    let s = path.to_str().ok_or(PathTranslateError::InvalidChars)?;
+    if s.starts_with("\\\\") || s.starts_with("//") {
+        return Err(PathTranslateError::Unc);
+    }
+    if s.contains('\0') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        return Err(PathTranslateError::InvalidChars);
+    }
+    let bytes = s.as_bytes();
+    if bytes.len() < 3 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' {
+        return Err(PathTranslateError::NotAbsolute);
+    }
+    if !matches!(bytes[2], b'\\' | b'/') {
+        return Err(PathTranslateError::NotAbsolute);
+    }
+    let drive = (bytes[0] as char).to_ascii_lowercase();
+    let rest: String = s[2..]
+        .chars()
+        .map(|c| if c == '\\' { '/' } else { c })
+        .collect();
+    Ok(format!("/mnt/{drive}{rest}"))
 }
 
 /// Validate a user-supplied `bash.exe` path before it flows into a
@@ -206,5 +536,214 @@ sh_association = "open"
     fn origin_defaults_to_local() {
         let cfg: WindowsConfig = toml::from_str("").unwrap();
         assert_eq!(cfg.origin, crate::ai_hooks::ConfigOrigin::Local);
+    }
+
+    #[test]
+    fn wsl_absent_by_default() {
+        let cfg: WindowsConfig = toml::from_str("").unwrap();
+        assert!(cfg.wsl.is_none());
+    }
+
+    #[test]
+    fn wsl_defaults_are_opt_in() {
+        let cfg = WslConfig::default();
+        assert!(!cfg.enabled);
+        assert!(!cfg.auto_bootstrap);
+        assert!(!cfg.run_setup);
+        assert!(cfg.install_jarvy, "install_jarvy defaults on when enabled");
+        assert_eq!(cfg.distro, "Ubuntu");
+        assert_eq!(cfg.jarvy_channel, "stable");
+        assert_eq!(cfg.install_location, "auto");
+        assert!(cfg.name.is_none());
+    }
+
+    #[test]
+    fn wsl_parses_full_block() {
+        let toml_str = r#"
+[wsl]
+enabled = true
+distro = "Debian"
+name = "jarvy-debian"
+auto_bootstrap = true
+install_location = "C:\\wsl\\jarvy"
+install_jarvy = true
+jarvy_channel = "beta"
+run_setup = true
+"#;
+        let cfg: WindowsConfig = toml::from_str(toml_str).unwrap();
+        let wsl = cfg.wsl.expect("wsl block present");
+        assert!(wsl.enabled);
+        assert_eq!(wsl.distro, "Debian");
+        assert_eq!(wsl.name.as_deref(), Some("jarvy-debian"));
+        assert!(wsl.auto_bootstrap);
+        assert_eq!(wsl.install_location, "C:\\wsl\\jarvy");
+        assert!(wsl.install_jarvy);
+        assert_eq!(wsl.jarvy_channel, "beta");
+        assert!(wsl.run_setup);
+        assert!(wsl.validate().is_ok());
+    }
+
+    #[test]
+    fn effective_name_defaults_to_distro() {
+        let cfg = WslConfig {
+            distro: "Ubuntu".to_string(),
+            name: None,
+            ..Default::default()
+        };
+        assert_eq!(cfg.effective_name(), "Ubuntu");
+    }
+
+    #[test]
+    fn effective_name_uses_override() {
+        let cfg = WslConfig {
+            distro: "Ubuntu".to_string(),
+            name: Some("jarvy-ubuntu".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.effective_name(), "jarvy-ubuntu");
+    }
+
+    #[test]
+    fn distro_slug_accepts_supported() {
+        assert!(validate_distro_slug("Ubuntu").is_ok());
+        assert!(validate_distro_slug("Debian").is_ok());
+        assert!(validate_distro_slug("ubuntu").is_ok(), "case-insensitive");
+    }
+
+    #[test]
+    fn distro_slug_rejects_unsupported() {
+        assert!(validate_distro_slug("Fedora").is_err());
+        assert!(validate_distro_slug("Kali").is_err());
+        assert!(validate_distro_slug("Alpine").is_err());
+    }
+
+    #[test]
+    fn distro_name_accepts_typical() {
+        assert!(validate_distro_name("Ubuntu").is_ok());
+        assert!(validate_distro_name("jarvy-ubuntu").is_ok());
+        assert!(validate_distro_name("Jarvy_2").is_ok());
+        assert!(validate_distro_name("proj.dev").is_ok());
+    }
+
+    #[test]
+    fn distro_name_rejects_shell_metachars() {
+        assert!(validate_distro_name("foo; rm").is_err());
+        assert!(validate_distro_name("foo --arg").is_err());
+        assert!(validate_distro_name("foo\0evil").is_err());
+        assert!(validate_distro_name("foo\"bar").is_err());
+        assert!(validate_distro_name("foo bar").is_err());
+        assert!(validate_distro_name("foo|bar").is_err());
+    }
+
+    #[test]
+    fn distro_name_rejects_empty_and_oversize() {
+        assert!(validate_distro_name("").is_err());
+        let long = "a".repeat(65);
+        assert!(validate_distro_name(&long).is_err());
+    }
+
+    #[test]
+    fn distro_name_refuses_docker_desktop() {
+        assert!(validate_distro_name("docker-desktop").is_err());
+        assert!(validate_distro_name("docker-desktop-data").is_err());
+        assert!(
+            validate_distro_name("Docker-Desktop").is_err(),
+            "case-insensitive"
+        );
+    }
+
+    #[test]
+    fn install_location_accepts_absolute_and_auto() {
+        assert!(validate_install_location("auto").is_ok());
+        assert!(validate_install_location("C:\\wsl\\jarvy").is_ok());
+        assert!(validate_install_location("D:/tools/wsl").is_ok());
+        assert!(
+            validate_install_location("%LOCALAPPDATA%\\jarvy\\wsl").is_ok(),
+            "env-var-prefixed paths are expanded by the executor"
+        );
+    }
+
+    #[test]
+    fn install_location_rejects_unc() {
+        assert!(validate_install_location("\\\\server\\share").is_err());
+        assert!(validate_install_location("//server/share").is_err());
+    }
+
+    #[test]
+    fn install_location_rejects_relative() {
+        assert!(validate_install_location("wsl").is_err());
+        assert!(validate_install_location("./wsl").is_err());
+        assert!(validate_install_location("\\foo").is_err());
+    }
+
+    #[test]
+    fn install_location_rejects_bad_chars() {
+        assert!(validate_install_location("C:\\wsl\0evil").is_err());
+        assert!(validate_install_location("C:\\wsl\"bad").is_err());
+        assert!(validate_install_location("C:\\wsl\nrm -rf").is_err());
+    }
+
+    #[test]
+    fn channel_bounded() {
+        assert!(validate_channel("stable").is_ok());
+        assert!(validate_channel("beta").is_ok());
+        assert!(validate_channel("nightly").is_ok());
+        assert!(validate_channel("STABLE").is_ok(), "case-insensitive");
+        assert!(validate_channel("edge").is_err());
+        assert!(validate_channel("").is_err());
+    }
+
+    #[test]
+    fn wsl_validate_refuses_unsupported_distro() {
+        let cfg = WslConfig {
+            distro: "Fedora".to_string(),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn wsl_validate_refuses_reserved_name() {
+        let cfg = WslConfig {
+            name: Some("docker-desktop".to_string()),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn path_translate_c_drive() {
+        let out = translate_win_path(Path::new(r"C:\Users\me\proj")).unwrap();
+        assert_eq!(out, "/mnt/c/Users/me/proj");
+    }
+
+    #[test]
+    fn path_translate_lowercases_drive() {
+        let out = translate_win_path(Path::new(r"D:\Projects\jarvy")).unwrap();
+        assert_eq!(out, "/mnt/d/Projects/jarvy");
+    }
+
+    #[test]
+    fn path_translate_forward_slash_input() {
+        let out = translate_win_path(Path::new("E:/tools/foo")).unwrap();
+        assert_eq!(out, "/mnt/e/tools/foo");
+    }
+
+    #[test]
+    fn path_translate_refuses_unc() {
+        let err = translate_win_path(Path::new(r"\\server\share\proj")).unwrap_err();
+        assert_eq!(err, PathTranslateError::Unc);
+    }
+
+    #[test]
+    fn path_translate_refuses_relative() {
+        let err = translate_win_path(Path::new(r"proj\foo")).unwrap_err();
+        assert_eq!(err, PathTranslateError::NotAbsolute);
+    }
+
+    #[test]
+    fn path_translate_refuses_bad_chars() {
+        let err = translate_win_path(Path::new("C:\\proj\0evil")).unwrap_err();
+        assert_eq!(err, PathTranslateError::InvalidChars);
     }
 }

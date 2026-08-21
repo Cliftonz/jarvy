@@ -160,6 +160,43 @@ pub fn run_setup(
     if from.is_some() {
         config.mark_remote();
     }
+
+    // Populate the process-global WSL config for the `wsl` tool. This
+    // must run BEFORE the tool loop so a `[tools] wsl = "latest"`
+    // entry can read the [windows.wsl] sub-block. Trust-gated: remote
+    // origin needs [windows] allow_remote = true.
+    if let Some(win) = config.windows.as_ref()
+        && let Some(wsl) = win.wsl.as_ref()
+    {
+        let remote_ok = win.origin != crate::ai_hooks::ConfigOrigin::Remote || win.allow_remote;
+        if remote_ok {
+            if let Err(e) = wsl.validate() {
+                eprintln!("[windows.wsl] config invalid: {e}");
+                return error_codes::CONFIG_ERROR;
+            }
+            crate::tools::wsl::bootstrap::set_active_config(wsl.clone());
+
+            // Delegation short-circuit: when run_setup = true, the
+            // outer setup bootstraps WSL and re-execs `jarvy setup`
+            // inside the distro on the translated project path.
+            // Skip on dry_run so previews don't touch WSL.
+            if wsl.enabled && wsl.run_setup && !dry_run {
+                let cwd = std::path::Path::new(file)
+                    .parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or_else(|| {
+                        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    });
+                return run_wsl_delegated_setup(wsl, &cwd, from);
+            }
+        } else if wsl.enabled {
+            crate::tools::wsl::bootstrap::emit_path_refused("remote_refused");
+            eprintln!(
+                "[windows.wsl] refused: remote config sets `enabled = true` but `[windows] allow_remote` is not true."
+            );
+        }
+    }
+
     let hooks_config = config.get_hooks();
     let hook_settings = HookConfig::from(&hooks_config.config);
 
@@ -945,6 +982,12 @@ pub fn run_setup(
     profiler.start_phase("windows");
     if !dry_run {
         run_windows_phase(&config);
+        // WSL sub-phase: when `[windows.wsl] enabled = true` and the
+        // delegation short-circuit did NOT fire (run_setup = false),
+        // bootstrap WSL2 + the named distro and optionally install
+        // jarvy inside. Runs after the .SH phase so the Windows-side
+        // ergonomics land first. Non-Windows targets no-op.
+        run_wsl_bootstrap_phase(&config);
     }
 
     // Adoption denominator for agent profiles (PRD-058): emit a
@@ -1999,6 +2042,129 @@ fn run_agent_profile_hint_phase(config: &Config) {
             mismatched_count = check.mismatched.len(),
             unmanaged_count = check.unmanaged.len(),
         );
+    }
+}
+
+/// Run the WSL bootstrap as a setup phase when the delegation short-
+/// circuit did not fire. Advisory — refusals are printed and setup
+/// keeps going (matches the `[windows]` phase convention). Skipped
+/// when the block is absent, when `enabled = false`, when `run_setup
+/// = true` (delegation path already ran), or when the trust gate
+/// refused the block earlier.
+fn run_wsl_bootstrap_phase(config: &Config) {
+    let Some(win) = config.windows.as_ref() else {
+        return;
+    };
+    let Some(wsl) = win.wsl.as_ref() else {
+        return;
+    };
+    if !wsl.enabled || wsl.run_setup {
+        return;
+    }
+    if win.origin == crate::ai_hooks::ConfigOrigin::Remote && !win.allow_remote {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        match crate::tools::wsl::bootstrap::bootstrap(wsl) {
+            Ok(crate::tools::wsl::bootstrap::BootstrapOutcome::NoOp) => {
+                println!("  WSL distro \"{}\": already present", wsl.effective_name());
+                if wsl.install_jarvy {
+                    if let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(wsl) {
+                        eprintln!(
+                            "[wsl] jarvy install inside \"{}\" failed: {e}",
+                            wsl.effective_name()
+                        );
+                    }
+                }
+            }
+            Ok(crate::tools::wsl::bootstrap::BootstrapOutcome::Installed { method }) => {
+                println!(
+                    "  WSL distro \"{}\": installed via {}",
+                    wsl.effective_name(),
+                    method.as_label()
+                );
+                if wsl.install_jarvy {
+                    if let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(wsl) {
+                        eprintln!(
+                            "[wsl] jarvy install inside \"{}\" failed: {e}",
+                            wsl.effective_name()
+                        );
+                    }
+                }
+            }
+            Err(reason) => {
+                eprintln!(
+                    "{}",
+                    crate::tools::wsl::bootstrap::render_refusal(wsl, reason)
+                );
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Non-Windows targets never bootstrap WSL. The block parses so
+        // cross-platform teams commit one jarvy.toml; the phase silently
+        // no-ops here.
+        let _ = wsl;
+    }
+}
+
+/// Bootstrap WSL and re-exec `jarvy setup` inside the named distro on
+/// the translated project path. Called from the early-setup short-
+/// circuit when `[windows.wsl] run_setup = true`. Non-Windows targets
+/// print an advisory and return CONFIG_ERROR so the operator knows the
+/// delegation was requested but cannot fire here.
+fn run_wsl_delegated_setup(
+    cfg: &crate::windows::WslConfig,
+    cwd: &std::path::Path,
+    from: Option<&str>,
+) -> i32 {
+    #[cfg(target_os = "windows")]
+    {
+        match crate::tools::wsl::bootstrap::bootstrap(cfg) {
+            Ok(_) => {
+                if cfg.install_jarvy {
+                    if let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(cfg) {
+                        eprintln!(
+                            "[wsl] jarvy install inside \"{}\" failed: {e}",
+                            cfg.effective_name()
+                        );
+                        return error_codes::HOOK_FAILED;
+                    }
+                }
+                match crate::tools::wsl::bootstrap::delegate_setup(cfg, cwd, from) {
+                    Ok(code) => code,
+                    Err(e) => {
+                        if let Some(reason) = e.path_reason_label() {
+                            crate::tools::wsl::bootstrap::emit_path_refused(reason);
+                            eprintln!(
+                                "[wsl] cwd \"{}\" refused: {reason}. Move the project to a local drive and re-run.",
+                                cwd.display()
+                            );
+                        } else {
+                            eprintln!("[wsl] delegated setup failed: {e}");
+                        }
+                        error_codes::HOOK_FAILED
+                    }
+                }
+            }
+            Err(reason) => {
+                eprintln!(
+                    "{}",
+                    crate::tools::wsl::bootstrap::render_refusal(cfg, reason)
+                );
+                error_codes::CONFIG_ERROR
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (cfg, cwd, from);
+        eprintln!(
+            "[wsl] run_setup = true requested but the outer jarvy is not running on Windows. Skipping delegation."
+        );
+        0
     }
 }
 
