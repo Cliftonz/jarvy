@@ -5,7 +5,10 @@
 //! Debian/Ubuntu boxes work.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+use crate::tools::common::{InstallError, has};
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
 use crate::tools::browser_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
