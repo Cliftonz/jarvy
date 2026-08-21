@@ -28,9 +28,7 @@ fn jarvy_bin() -> PathBuf {
     if raw.is_absolute() {
         raw
     } else {
-        std::env::current_dir()
-            .expect("current_dir")
-            .join(raw)
+        std::env::current_dir().expect("current_dir").join(raw)
     }
 }
 
