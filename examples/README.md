@@ -58,6 +58,9 @@ cp examples/<template>/jarvy.toml /path/to/your/project/
 | Template | Stack |
 |----------|-------|
 | [`personal-workstation/`](personal-workstation/jarvy.toml) | Solo-dev laptop bootstrap: shell, editor, CLI upgrades, git identity, runtimes. Live in your dotfiles repo. See [cookbook recipe](../docs/cookbook/personal-workstation.md). |
+| [`personal-workstation-macos/`](personal-workstation-macos/jarvy.toml) | macOS work-machine bootstrap: Homebrew stack, k8s + platform CLIs, bash hooks, `osxkeychain` credential helper, brew-cask GUI-app installer. |
+| [`personal-workstation-linux/`](personal-workstation-linux/jarvy.toml) | Linux work-machine bootstrap: apt/dnf/pacman auto-route with go/npm/cargo fallbacks, k8s + platform CLIs, `libsecret` credential helper, flatpak GUI-app installer. |
+| [`personal-workstation-windows/`](personal-workstation-windows/jarvy.toml) | Windows work-machine bootstrap: winget/Choco/Scoop stack, k8s + platform CLIs, PowerShell hooks, `autocrlf = "input"`, winget GUI-app installer. |
 
 ## Each Template Includes
 
