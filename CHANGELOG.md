@@ -27,6 +27,49 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.8.1] — WSL2 bridge, 16 new tools, per-OS example templates (2026-08-22)
+
+**Features — WSL2 bridge (`[windows.wsl]`):**
+
+- Ship a `wsl` tool that installs Store-WSL2 plus a named distro
+  instance on Windows, optionally curl-pipes jarvy inside the distro,
+  and (when `run_setup = true`) delegates the outer `jarvy setup` into
+  the distro on the translated project path (`C:\...` → `/mnt/c/...`).
+  Every POSIX tool that already works on Linux (tmux, htop, zsh, yadm,
+  goaccess, tilt, ...) becomes installable on Windows without a new
+  install backend — the Linux-side jarvy is the install backend.
+- Opt-in via `[windows.wsl] enabled = true`. Jarvy never triggers UAC;
+  when elevation is required jarvy prints the exact
+  `wsl --install -d <distro> --name <name>` command for the user to
+  run themselves. Refuses to touch DISM on legacy pre-Store WSL.
+- v1 supports base distros `Ubuntu` and `Debian`. Instance name
+  defaults to `distro` verbatim; refuses `docker-desktop` /
+  `docker-desktop-data` at config load. Config inherits
+  `[windows] allow_remote` for remote-origin trust.
+- `jarvy tools --remove wsl` refuses (destructive-action policy) and
+  prints the exact `wsl --unregister <name>` command instead of
+  running it.
+- New `wsl.*` telemetry domain covering probe, bootstrap, in-distro
+  jarvy install, delegation, path refusal, and remove refusal — all
+  gated, all bounded labels only (instance name never emitted).
+
+**Features — tools:**
+
+- Add 10 web browsers: Chrome, Firefox, Brave, Edge, Arc, Opera,
+  Vivaldi, Zen, Blisk, Helium. Plus a `browser_repos` helper that
+  bootstraps vendor apt/dnf repos on Linux where publishers ship them.
+- Add 5 file managers: Files (Windows), OneCommander, Directory Opus,
+  Total Commander, Double Commander.
+- Add `lens` — Mirantis Kubernetes IDE (cask on macOS, winget on
+  Windows).
+
+**Docs:**
+
+- Add per-OS `personal-workstation-{macos,linux,windows}` example
+  templates with a realistic `jarvy.toml` per platform.
+- Document `[windows.wsl]` in `docs/windows.md` with the full
+  bootstrap-and-delegate flow, refusal messages, and telemetry rows.
+
 ## [v0.8.0] — native git hooks, ecosystem fallback installers, multi-distribution Java (2026-08-19)
 
 **Breaking:**
@@ -3378,7 +3421,8 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.8.1...HEAD
+[v0.8.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.1
 [v0.8.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.7.0
 [v0.5.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.5.2
