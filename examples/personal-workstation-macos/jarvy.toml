@@ -36,13 +36,12 @@ talosctl  = "latest"
 omnictl   = "latest"
 crossplane = "latest"
 nats      = "latest"
-cockroach = "latest"
-clickhouse = "latest"
+# cockroach / clickhouse are not yet in the jarvy tool registry — install
+# manually from upstream for now.
 cosign    = "latest"
 
-# Audio / websocket utilities
-ffmpeg    = "latest"
-websocat  = "latest"
+# Audio / websocket utilities — ffmpeg / websocat are not yet in the
+# jarvy tool registry either.
 
 # Shell quality-of-life on macOS
 starship  = "latest"
