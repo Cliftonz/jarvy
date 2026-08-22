@@ -1,0 +1,168 @@
+# jarvy.toml
+# Personal workstation bootstrap; macOS work machine
+# Bootstrap Jarvy itself first (it cannot provision itself):
+#   curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash
+# Then: jarvy validate && jarvy setup --dry-run, then jarvy setup
+
+# ---------------------------------------------------------------------------
+# Tools
+# Direct entries; installed via Homebrew on macOS
+# ---------------------------------------------------------------------------
+[provisioner]
+# Core
+git       = "latest"
+gh        = "latest"
+jq        = "latest"
+docker    = "latest"
+
+# Language toolchains; pinned majors, version managers where available
+node      = { version = "22", version_manager = true }
+python    = { version = "3.12", version_manager = true }
+go        = "latest"
+rust      = "latest"
+
+# Kubernetes / platform stack (IR, RMX, homelab)
+kubectl   = "latest"
+helm      = "latest"
+k9s       = "latest"
+kind      = "latest"
+kustomize = "latest"
+stern     = "latest"
+dive      = "latest"
+terraform = "^1.9"
+awscli    = "latest"
+argocd    = "latest"
+talosctl  = "latest"
+omnictl   = "latest"
+crossplane = "latest"
+nats      = "latest"
+cockroach = "latest"
+clickhouse = "latest"
+cosign    = "latest"
+
+# Audio / websocket utilities
+ffmpeg    = "latest"
+websocat  = "latest"
+
+# Shell quality-of-life on macOS
+starship  = "latest"
+fzf       = "latest"
+zoxide    = "latest"
+
+# ---------------------------------------------------------------------------
+# Language packages
+# ---------------------------------------------------------------------------
+[cargo]
+cargo-watch   = "latest"
+cargo-nextest = "latest"
+
+[npm]
+typescript = "^5.0"
+"@anthropic-ai/claude-code" = "latest"
+
+[pip]
+venv = ".venv"
+create_venv = false
+
+# ---------------------------------------------------------------------------
+# Hooks
+# ---------------------------------------------------------------------------
+[hooks.config]
+shell = "bash"
+timeout = 600
+continue_on_error = false
+
+[hooks.node]
+post_install = "corepack enable"
+
+# GUI desktop apps via brew cask; idempotent — skips anything present.
+# Jarvy keeps itself current via its own updater; the check runs last.
+[hooks]
+post_setup = '''
+set -euo pipefail
+casks=(
+  jetbrains-toolbox
+  claude
+  visual-studio-code
+  chatgpt
+  raycast
+  rectangle
+)
+for cask in "${casks[@]}"; do
+  if brew list --cask "$cask" >/dev/null 2>&1; then
+    echo "skip: $cask already installed"
+  else
+    brew install --cask "$cask"
+  fi
+done
+kubectl version --client
+helm version
+jarvy update check
+'''
+
+# ---------------------------------------------------------------------------
+# Git configuration
+# Email comes from an env var so this file stays shareable across machines
+# ---------------------------------------------------------------------------
+[git]
+user_name = "Zac Clifton"
+user_email = { env = "GIT_EMAIL" }
+
+default_branch = "main"
+pull_rebase = true
+auto_stash = true
+push_autosetup = true
+
+# macOS: default filesystem is case-insensitive; keep LF, no conversion
+autocrlf = "input"
+eol = "lf"
+
+credential_helper = "osxkeychain"
+scope = "global"
+
+[git.aliases]
+co = "checkout"
+br = "branch"
+ci = "commit"
+st = "status"
+lg = "log --oneline --graph --decorate"
+
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+[env.vars]
+EDITOR = "code --wait"
+KUBE_EDITOR = "code --wait"
+
+[env.config]
+update_rc = false
+generate_dotenv = false
+
+# ---------------------------------------------------------------------------
+# Drift detection
+# ---------------------------------------------------------------------------
+[drift]
+enabled = true
+version_policy = "minor"
+allow_upgrades = true
+
+# ---------------------------------------------------------------------------
+# Corporate network
+# Uncomment if traffic routes through a proxy or TLS inspection;
+# Jarvy propagates these to curl, node, pip, and git
+# ---------------------------------------------------------------------------
+# [network]
+# https_proxy = "http://proxy.irco.com:8080"
+# no_proxy = ["localhost", "127.0.0.1", ".irco.com"]
+#
+# [network.tls]
+# ca_bundle = "/etc/ssl/certs/ir-corporate-ca.crt"
+
+# ---------------------------------------------------------------------------
+# Convenience commands (jarvy run)
+# ---------------------------------------------------------------------------
+[commands]
+setup = "jarvy setup"
+doctor = "jarvy doctor --extended"
+drift = "jarvy drift check"
+update = "jarvy update"
