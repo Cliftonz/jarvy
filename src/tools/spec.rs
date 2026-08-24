@@ -2674,8 +2674,10 @@ mod tests {
     fn test_tool_has_dependencies() {
         // Unknown tools have no dependencies
         assert!(!tool_has_dependencies("nonexistent"));
-        // Most standard tools have no dependencies
-        assert!(!tool_has_dependencies("git"));
+        // jq has no deps on any OS (git carries a Windows-scoped vcredist
+        // dep, so it would report true on Windows and false elsewhere,
+        // which is the opposite of what this test is trying to check).
+        assert!(!tool_has_dependencies("jq"));
     }
 
     #[test]
@@ -2756,8 +2758,9 @@ mod tests {
     fn test_tool_has_any_dependencies() {
         // Unknown tools have no dependencies
         assert!(!tool_has_any_dependencies("nonexistent"));
-        // Standard tools without deps
-        assert!(!tool_has_any_dependencies("git"));
+        // jq has no deps on any OS (git carries a Windows-scoped vcredist
+        // dep so it isn't a valid "no deps" fixture anymore).
+        assert!(!tool_has_any_dependencies("jq"));
     }
 
     #[test]
@@ -2808,8 +2811,10 @@ mod tests {
         let config_tools = HashSet::new();
         let installed_tools = HashSet::new();
 
-        // git has no dependencies
-        let result = check_tool_dependencies("git", &config_tools, &installed_tools);
+        // jq has no dependencies on any OS. (git carries a Windows-scoped
+        // vcredist dep, so the old fixture returned MissingRequired on
+        // Windows CI.)
+        let result = check_tool_dependencies("jq", &config_tools, &installed_tools);
         assert_eq!(result, DependencyCheckResult::Satisfied);
     }
 
