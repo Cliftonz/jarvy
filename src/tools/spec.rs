@@ -575,23 +575,23 @@ impl ToolSpec {
             }
         }
 
-        // Fallback to chocolatey
+        // Fallback to Chocolatey — bootstrap it first if this machine
+        // doesn't have it yet. A growing set of Windows tools (syft,
+        // grype, ansible, dbmate, ...) ship no first-party winget
+        // manifest and rely solely on Chocolatey.
         if let Some(choco_pkg) = windows.choco {
-            if has("choco") {
-                run("choco", &["install", "-y", choco_pkg])?;
-                return Ok(());
-            }
+            crate::tools::chocolatey::ensure_installed()?;
+            run("choco", &["install", "-y", choco_pkg])?;
+            return Ok(());
         }
 
-        // Neither package manager available
+        // Neither package manager applies to this tool
         if windows.winget.is_some() {
             Err(InstallError::Prereq(
                 "winget not found. Install Windows Package Manager, then re-run.".into(),
             ))
         } else {
-            Err(InstallError::Prereq(
-                "chocolatey not found. Install Chocolatey, then re-run.".into(),
-            ))
+            Err(InstallError::Unsupported)
         }
     }
 

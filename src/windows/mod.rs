@@ -13,6 +13,7 @@
 //! event so a cross-platform team can commit one jarvy.toml.
 
 pub mod config;
+pub mod env_refresh;
 pub mod pathext;
 pub mod sh_association;
 

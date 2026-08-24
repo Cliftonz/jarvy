@@ -1,6 +1,12 @@
 //! Hook execution module for running shell scripts before/after tool installation.
 //!
-//! Supports bash, zsh, sh on Unix and PowerShell on Windows.
+//! Supports bash, zsh, sh on Unix. On Windows, hooks default to Git
+//! Bash when it's present — every built-in `default_hook` script in the
+//! tool registry (`src/tools/*/definition.rs`) is written in POSIX/bash
+//! syntax (`if [ -f ... ] && ! grep ...`), and feeding that to
+//! `powershell.exe -Command` is a guaranteed parse error. PowerShell
+//! remains the fallback for machines without Git Bash, and
+//! `[hooks.config] shell = "powershell"` still opts out explicitly.
 //! Includes timeout support and environment variable injection.
 
 use std::collections::HashMap;
@@ -80,6 +86,34 @@ const ALLOWED_SHELL_DIRS: &[&str] = &[
     // are matched by basename below, not by an absolute-path prefix here.
 ];
 
+/// Directory allowlist for absolute Windows shell paths (case-insensitive
+/// prefix match against the lower-cased shell string). Needed once
+/// `detect_shell` can resolve to a full `bash.exe` path on Windows — a
+/// hostile `[hooks.config] shell = "C:\\temp\\evil\\bash.exe"` must still
+/// be refused even though its basename passes [`ALLOWED_SHELL_NAMES`].
+const WINDOWS_ALLOWED_SHELL_DIRS: &[&str] = &[
+    "c:\\program files\\git\\bin\\",
+    "c:\\program files (x86)\\git\\bin\\",
+    "c:\\windows\\system32\\",
+];
+
+/// True for a Windows-style absolute path (`C:\...` or `C:/...`).
+fn is_windows_absolute_path(lowered: &str) -> bool {
+    let b = lowered.as_bytes();
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/')
+}
+
+/// Basename of `path`, treating both `/` and `\` as separators
+/// regardless of host OS. `std::path::Path` only treats `\` as a
+/// separator when *compiled for* Windows — using it here made this
+/// function's behavior on a Windows-style string depend on which OS
+/// jarvy's own test suite happened to run on, rather than on the
+/// string's content (a `[hooks.config] shell` value can be a Windows
+/// path even when validated by a `cargo test` run on Linux/macOS CI).
+fn shell_basename(path: &str) -> &str {
+    path.rsplit(['\\', '/']).next().unwrap_or(path)
+}
+
 /// Returns true if `shell` is acceptable as a hook executor. The check is
 /// applied at execution time so a malicious `[hooks.config] shell` field
 /// surfaces as a refusal rather than running an attacker binary.
@@ -88,21 +122,25 @@ pub(crate) fn is_allowed_shell(shell: &str) -> bool {
         return false;
     }
     let lowered = shell.to_lowercase();
-    let basename = std::path::Path::new(&lowered)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&lowered)
-        .to_string();
+    let basename = shell_basename(&lowered);
+    // Windows executables carry a `.exe` suffix that ALLOWED_SHELL_NAMES
+    // (deliberately) doesn't enumerate separately from the bare name.
+    let basename = basename.strip_suffix(".exe").unwrap_or(basename);
 
-    if !ALLOWED_SHELL_NAMES.contains(&basename.as_str()) {
+    if !ALLOWED_SHELL_NAMES.contains(&basename) {
         return false;
     }
 
     if shell.starts_with('/') {
-        // Absolute path must live under an allowed directory.
+        // Unix absolute path must live under an allowed directory.
         return ALLOWED_SHELL_DIRS
             .iter()
             .any(|dir| shell.starts_with(&format!("{dir}/")));
+    }
+    if is_windows_absolute_path(&lowered) {
+        return WINDOWS_ALLOWED_SHELL_DIRS
+            .iter()
+            .any(|dir| lowered.starts_with(*dir));
     }
     // Bare name resolved via PATH or platform fallback in `build_shell_command`
     // is fine — the basename check covers it.
@@ -273,6 +311,14 @@ impl Hook {
     pub fn execute(&self) -> HookResult<String> {
         println!("  Running hook: {}", self.description);
 
+        // A tool installed earlier in this same `jarvy setup` run (Node,
+        // Chocolatey, ...) writes its PATH entry to the registry, but
+        // this process keeps the PATH it inherited at launch — so a
+        // hook that depends on that tool (e.g. node's `corepack enable`)
+        // fails with "not recognized" even though a fresh shell would
+        // see it immediately. No-op off Windows.
+        crate::windows::env_refresh::refresh_current_process_path();
+
         // Determine hook type for telemetry
         let hook_type = self.determine_hook_type();
         let tool = self.env.tool.as_deref();
@@ -426,11 +472,48 @@ impl Hook {
     }
 }
 
+/// Candidate Git-for-Windows bash install paths, checked when `bash`
+/// isn't resolvable via PATH. Mirrors
+/// `windows::sh_association::DEFAULT_BASH_PATHS` — kept as a separate
+/// constant here because hook shell resolution has no dependency on the
+/// `[windows]` config module.
+///
+/// Only read from the `#[cfg(windows)]` arm of `detect_shell` and from
+/// unit tests; a non-Windows, non-test build (Linux/macOS CI) sees zero
+/// callers, hence the `allow` — same false positive `windows::pathext`
+/// documents for its own cross-platform-testable pure functions.
+#[allow(dead_code)]
+const WINDOWS_GIT_BASH_PATHS: &[&str] = &[
+    "C:\\Program Files\\Git\\bin\\bash.exe",
+    "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+];
+
+/// Pure decision: which shell should Windows hooks default to. Bash
+/// (Git for Windows) wins when present; PowerShell is the fallback for
+/// machines without it. Kept free of `#[cfg(windows)]` so it's
+/// unit-testable on any host — see the module doc comment for why bash
+/// is preferred at all. (Same dead-code caveat as
+/// `WINDOWS_GIT_BASH_PATHS` above on non-Windows, non-test builds.)
+#[allow(dead_code)]
+fn resolve_windows_hook_shell(bash_on_path: bool, bash_exists: &dyn Fn(&str) -> bool) -> String {
+    if bash_on_path {
+        return "bash".to_string();
+    }
+    WINDOWS_GIT_BASH_PATHS
+        .iter()
+        .copied()
+        .find(|p| bash_exists(p))
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| "powershell".to_string())
+}
+
 /// Detect the default shell for the current platform
 pub fn detect_shell() -> String {
     #[cfg(windows)]
     {
-        "powershell".to_string()
+        resolve_windows_hook_shell(crate::tools::common::has("bash"), &|p| {
+            std::path::Path::new(p).exists()
+        })
     }
     #[cfg(not(windows))]
     {
@@ -546,14 +629,42 @@ mod tests {
     fn test_detect_shell() {
         let shell = detect_shell();
         assert!(!shell.is_empty());
+        // Windows: git-bash when found, else powershell — see
+        // `resolve_windows_hook_shell` tests for the decision itself.
         #[cfg(windows)]
-        assert_eq!(shell, "powershell");
+        assert!(
+            shell == "powershell" || shell.to_lowercase().contains("bash"),
+            "windows hook shell must be git-bash when available, else powershell, got {shell}"
+        );
         // Unix: deterministic POSIX shell, never the user's $SHELL (#60).
         #[cfg(not(windows))]
         assert!(
             shell == "bash" || shell == "/bin/sh",
             "hook shell must default to bash/sh, got {shell}"
         );
+    }
+
+    #[test]
+    fn resolve_windows_hook_shell_prefers_path_bash() {
+        // bash on PATH wins even if a Git-for-Windows install also exists.
+        assert_eq!(resolve_windows_hook_shell(true, &|_| true), "bash");
+    }
+
+    #[test]
+    fn resolve_windows_hook_shell_finds_git_bash_install() {
+        let shell = resolve_windows_hook_shell(false, &|p| p == WINDOWS_GIT_BASH_PATHS[0]);
+        assert_eq!(shell, WINDOWS_GIT_BASH_PATHS[0]);
+    }
+
+    #[test]
+    fn resolve_windows_hook_shell_checks_x86_fallback() {
+        let shell = resolve_windows_hook_shell(false, &|p| p == WINDOWS_GIT_BASH_PATHS[1]);
+        assert_eq!(shell, WINDOWS_GIT_BASH_PATHS[1]);
+    }
+
+    #[test]
+    fn resolve_windows_hook_shell_falls_back_to_powershell() {
+        assert_eq!(resolve_windows_hook_shell(false, &|_| false), "powershell");
     }
 
     #[test]
@@ -744,5 +855,29 @@ mod tests {
     fn build_shell_command_refuses_untrusted_shell() {
         let err = build_shell_command("/tmp/evil-shell", "echo x").unwrap_err();
         assert!(matches!(err, HookError::RefusedShell(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn allowed_shell_accepts_trusted_windows_bash_paths() {
+        for ok in WINDOWS_GIT_BASH_PATHS.iter().copied() {
+            assert!(is_allowed_shell(ok), "expected {ok:?} to be allowed");
+        }
+    }
+
+    #[test]
+    fn allowed_shell_rejects_untrusted_windows_bash_path() {
+        for bad in [
+            "C:\\temp\\evil\\bash.exe",
+            "C:\\Users\\attacker\\AppData\\bash.exe",
+        ] {
+            assert!(!is_allowed_shell(bad), "expected {bad:?} to be refused");
+        }
+    }
+
+    #[test]
+    fn build_shell_command_windows_bash_path_is_used_verbatim() {
+        let (shell, args) = build_shell_command(WINDOWS_GIT_BASH_PATHS[0], "echo hello").unwrap();
+        assert_eq!(shell, WINDOWS_GIT_BASH_PATHS[0]);
+        assert_eq!(args, vec!["-c", "echo hello"]);
     }
 }

@@ -41,6 +41,7 @@ pub mod cargo_tarpaulin;
 pub mod cfn_lint;
 pub mod checkov;
 pub mod chezmoi;
+pub mod chocolatey;
 pub mod choose;
 pub mod chrome;
 pub mod cilium;
