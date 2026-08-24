@@ -1607,10 +1607,16 @@ where
 /// `depends_on` with `depends_on_by_os` entries that match the CURRENT OS.
 /// Returns an empty `Vec` if the tool has no dependencies or is not found.
 pub fn get_tool_dependencies(tool_name: &str) -> Vec<&'static str> {
+    get_tool_dependencies_for_os(tool_name, current_os())
+}
+
+/// OS-parameterized form of [`get_tool_dependencies`]. Exposed for tests
+/// so the OS-scoping logic can be exercised across every `Os` variant on
+/// the same host.
+pub fn get_tool_dependencies_for_os(tool_name: &str, os: Os) -> Vec<&'static str> {
     let Some(spec) = get_tool_spec(tool_name) else {
         return Vec::new();
     };
-    let os = current_os();
     let base = spec.depends_on.unwrap_or(&[]).iter().copied();
     let scoped = spec
         .depends_on_by_os
@@ -1690,6 +1696,18 @@ pub fn check_tool_dependencies(
     config_tools: &std::collections::HashSet<String>,
     installed_tools: &std::collections::HashSet<String>,
 ) -> DependencyCheckResult {
+    check_tool_dependencies_for_os(tool_name, config_tools, installed_tools, current_os())
+}
+
+/// OS-parameterized form of [`check_tool_dependencies`]. Exposed for
+/// tests so a `depends_on_by_os` prereq's absence on unsupported OSes
+/// can be verified across every `Os` variant on the same host.
+pub fn check_tool_dependencies_for_os(
+    tool_name: &str,
+    config_tools: &std::collections::HashSet<String>,
+    installed_tools: &std::collections::HashSet<String>,
+    os: Os,
+) -> DependencyCheckResult {
     let spec = match get_tool_spec(tool_name) {
         Some(s) => s,
         None => return DependencyCheckResult::Satisfied, // Unknown tool, no deps to check
@@ -1699,7 +1717,7 @@ pub fn check_tool_dependencies(
     // Merges cross-platform `depends_on` with `depends_on_by_os` entries for
     // the current OS so a Windows-only prereq like vcredist doesn't fire on
     // macOS or Linux.
-    let strict_deps = get_tool_dependencies(tool_name);
+    let strict_deps = get_tool_dependencies_for_os(tool_name, os);
     if !strict_deps.is_empty() {
         let missing: Vec<String> = strict_deps
             .iter()
@@ -2531,6 +2549,125 @@ mod tests {
         } else {
             assert!(git_deps.is_empty());
         }
+    }
+
+    // Portable coverage of the OS filter: exercise every `Os` variant on
+    // the same host so CI running on Linux still catches a regression
+    // that only misfires on Windows or BSD.
+    #[test]
+    fn test_get_tool_dependencies_for_os_filters_by_variant() {
+        // git: cross-platform depends_on is empty; vcredist is Windows-only.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert!(
+                get_tool_dependencies_for_os("git", os).is_empty(),
+                "git must not report vcredist on {:?}",
+                os
+            );
+        }
+        assert_eq!(
+            get_tool_dependencies_for_os("git", Os::Windows),
+            vec!["vcredist"]
+        );
+
+        // python: pyenv scoped to macOS/Linux/BSD, absent on Windows.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert_eq!(
+                get_tool_dependencies_for_os("python", os),
+                vec!["pyenv"],
+                "python must require pyenv on {:?}",
+                os
+            );
+        }
+        assert!(get_tool_dependencies_for_os("python", Os::Windows).is_empty());
+
+        // ruby: rbenv scoped to macOS/Linux/BSD, absent on Windows.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert_eq!(
+                get_tool_dependencies_for_os("ruby", os),
+                vec!["rbenv"],
+                "ruby must require rbenv on {:?}",
+                os
+            );
+        }
+        assert!(get_tool_dependencies_for_os("ruby", Os::Windows).is_empty());
+
+        // node: nvm scoped to macOS/Linux/Windows, absent on BSD.
+        for os in [Os::Macos, Os::Linux, Os::Windows] {
+            assert_eq!(
+                get_tool_dependencies_for_os("node", os),
+                vec!["nvm"],
+                "node must require nvm on {:?}",
+                os
+            );
+        }
+        assert!(get_tool_dependencies_for_os("node", Os::Bsd).is_empty());
+    }
+
+    // The whole point of OS-scoped deps: on an unsupported OS, the
+    // check must return Satisfied even when the config and installed
+    // sets are empty. Otherwise doctor / diff / validate would nag
+    // users to install a prereq their OS cannot install.
+    #[test]
+    fn test_check_tool_dependencies_stays_quiet_on_unsupported_os() {
+        use std::collections::HashSet;
+        let empty: HashSet<String> = HashSet::new();
+
+        // git on macOS/Linux/BSD: vcredist scoped to Windows only, so
+        // the check must NOT flag it as missing on any of the three.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert_eq!(
+                check_tool_dependencies_for_os("git", &empty, &empty, os),
+                DependencyCheckResult::Satisfied,
+                "git dep check must stay quiet on {:?}",
+                os
+            );
+        }
+
+        // python / ruby on Windows: their pyenv / rbenv deps are Unix-
+        // family scoped, so an empty config on Windows must not flag
+        // them as missing.
+        assert_eq!(
+            check_tool_dependencies_for_os("python", &empty, &empty, Os::Windows),
+            DependencyCheckResult::Satisfied,
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("ruby", &empty, &empty, Os::Windows),
+            DependencyCheckResult::Satisfied,
+        );
+
+        // node on BSD: nvm is scoped to macOS/Linux/Windows, so an
+        // empty config on BSD must not flag nvm as missing.
+        assert_eq!(
+            check_tool_dependencies_for_os("node", &empty, &empty, Os::Bsd),
+            DependencyCheckResult::Satisfied,
+        );
+    }
+
+    // Positive control: on a SUPPORTED OS, the same empty config MUST
+    // return MissingRequired. Without this, the negative test above
+    // could pass even if the filter accidentally suppressed every dep
+    // on every OS.
+    #[test]
+    fn test_check_tool_dependencies_fires_on_supported_os() {
+        use std::collections::HashSet;
+        let empty: HashSet<String> = HashSet::new();
+
+        assert_eq!(
+            check_tool_dependencies_for_os("git", &empty, &empty, Os::Windows),
+            DependencyCheckResult::MissingRequired(vec!["vcredist".to_string()]),
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("python", &empty, &empty, Os::Macos),
+            DependencyCheckResult::MissingRequired(vec!["pyenv".to_string()]),
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("ruby", &empty, &empty, Os::Linux),
+            DependencyCheckResult::MissingRequired(vec!["rbenv".to_string()]),
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("node", &empty, &empty, Os::Windows),
+            DependencyCheckResult::MissingRequired(vec!["nvm".to_string()]),
+        );
     }
 
     #[test]
