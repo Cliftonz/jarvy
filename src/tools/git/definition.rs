@@ -3,6 +3,7 @@
 //! This tool uses the ToolSpec pattern for declarative installation.
 
 use crate::define_tool;
+use crate::tools::common::Os;
 
 define_tool!(GIT, {
     command: "git",
@@ -40,6 +41,7 @@ if ! git config --global --get pull.rebase >/dev/null 2>&1; then
 fi
 "#
     },
+    depends_on_by_os: &[(Os::Windows, "vcredist")],
 });
 
 #[cfg(test)]
@@ -56,6 +58,14 @@ mod tests {
         assert_eq!(mac.brew, Some("git"));
         let win = GIT.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Git.Git"));
+    }
+
+    // Windows Git-for-Windows install requires the VC++ Redistributable
+    // runtime; the OS-scoped dep must fire on Windows only.
+    #[test]
+    fn git_declares_windows_only_vcredist_dep() {
+        assert_eq!(GIT.depends_on_by_os, &[(Os::Windows, "vcredist")]);
+        assert!(GIT.depends_on.is_none());
     }
 
     // Platform-specific expectations for Git installer behavior.

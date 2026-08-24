@@ -24,7 +24,9 @@
 //! };
 //! ```
 
-use super::common::{InstallContext, InstallError, PackageManager, cmd_satisfies, has, run};
+use super::common::{
+    InstallContext, InstallError, Os, PackageManager, cmd_satisfies, current_os, has, run,
+};
 
 /// Type alias for tool handler functions registered in the registry.
 pub type ToolHandler = fn(&str, &InstallContext) -> Result<(), InstallError>;
@@ -341,6 +343,10 @@ fn fallback_is_empty(routes: &&'static [FallbackRoute]) -> bool {
     routes.is_empty()
 }
 
+fn os_deps_is_empty(deps: &&'static [(Os, &'static str)]) -> bool {
+    deps.is_empty()
+}
+
 /// Declarative tool specification that eliminates boilerplate.
 ///
 /// A `ToolSpec` defines everything needed to check for and install a tool
@@ -379,8 +385,16 @@ pub struct ToolSpec {
     /// Optional list of tool names that must be installed before this tool.
     /// Used for dependency ordering (e.g., node depends on nvm, python depends on pyenv).
     /// This is a STRICT dependency - ALL listed tools must be available.
+    /// Applies on every platform. For OS-scoped deps, use `depends_on_by_os`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on: Option<&'static [&'static str]>,
+
+    /// OS-scoped strict dependencies: `(os, tool_name)` pairs that apply only
+    /// when the current OS matches. Merged with `depends_on` on the current
+    /// platform. Example: `&[(Os::Windows, "vcredist")]` makes vcredist a
+    /// prereq of this tool on Windows only.
+    #[serde(skip_serializing_if = "os_deps_is_empty")]
+    pub depends_on_by_os: &'static [(Os, &'static str)],
 
     /// Optional list of tool names where AT LEAST ONE must be available.
     /// Used for flexible dependencies where multiple tools can satisfy the requirement.
@@ -647,6 +661,7 @@ macro_rules! define_tool {
         $(default_hook: { description: $hook_desc:expr, script: $hook_script:expr $(, platform: $hook_platform:expr)? },)?
         $(default_hook_shell_init: ($shell_tool:literal, $shell_verb:literal),)?
         $(depends_on: $deps:expr,)?
+        $(depends_on_by_os: $os_deps:expr,)?
         $(depends_on_one_of: $flex_deps:expr,)?
         $(category: $category:expr,)?
     }) => {
@@ -665,6 +680,7 @@ macro_rules! define_tool {
                 $(($shell_tool, $shell_verb))?
             ),
             depends_on: define_tool!(@depends_on $($deps)?),
+            depends_on_by_os: define_tool!(@depends_on_by_os $($os_deps)?),
             depends_on_one_of: define_tool!(@depends_on_one_of $($flex_deps)?),
             category: define_tool!(@category $($category)?),
             fallback: define_tool!(@fallback $($($fb_key: $fb_val),*)?),
@@ -850,6 +866,10 @@ macro_rules! define_tool {
     (@depends_on) => { None };
     (@depends_on $deps:expr) => { Some($deps) };
 
+    // OS-scoped strict dependency helpers
+    (@depends_on_by_os) => { &[] };
+    (@depends_on_by_os $deps:expr) => { $deps };
+
     // Flexible dependency helpers (one-of)
     (@depends_on_one_of) => { None };
     (@depends_on_one_of $deps:expr) => { Some($deps) };
@@ -945,9 +965,14 @@ pub struct ToolIndexEntry {
     /// Tool category for filtering (e.g., "devops", "language", "editor")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
-    /// Strict dependencies — ALL must be installed before this tool
+    /// Strict dependencies — ALL must be installed before this tool.
+    /// Applies on every platform. See `depends_on_by_os` for scoped deps.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on: Option<Vec<String>>,
+    /// OS-scoped strict dependencies: `(os, tool_name)` pairs that apply
+    /// only on the matching OS. Merged with `depends_on` at install time.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub depends_on_by_os: Vec<(Os, String)>,
     /// Flexible dependencies — at least ONE must be available
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on_one_of: Option<Vec<String>>,
@@ -974,6 +999,11 @@ impl From<&ToolSpec> for ToolIndexEntry {
             depends_on: spec
                 .depends_on
                 .map(|d| d.iter().map(|s| s.to_string()).collect()),
+            depends_on_by_os: spec
+                .depends_on_by_os
+                .iter()
+                .map(|(os, name)| (*os, (*name).to_string()))
+                .collect(),
             depends_on_one_of: spec
                 .depends_on_one_of
                 .map(|d| d.iter().map(|s| s.to_string()).collect()),
@@ -1039,6 +1069,7 @@ pub fn generate_tool_index() -> ToolIndex {
             fallback: Vec::new(),
             category: None,
             depends_on: None,
+            depends_on_by_os: Vec::new(),
             depends_on_one_of: None,
             default_hook: None,
         });
@@ -1572,12 +1603,21 @@ where
 // Dependency Ordering
 // ============================================================================
 
-/// Get the strict dependencies of a tool by name.
-/// Returns an empty slice if the tool has no dependencies or is not found.
-pub fn get_tool_dependencies(tool_name: &str) -> &'static [&'static str] {
-    get_tool_spec(tool_name)
-        .and_then(|spec| spec.depends_on)
-        .unwrap_or(&[])
+/// Get the strict dependencies of a tool by name, merging cross-platform
+/// `depends_on` with `depends_on_by_os` entries that match the CURRENT OS.
+/// Returns an empty `Vec` if the tool has no dependencies or is not found.
+pub fn get_tool_dependencies(tool_name: &str) -> Vec<&'static str> {
+    let Some(spec) = get_tool_spec(tool_name) else {
+        return Vec::new();
+    };
+    let os = current_os();
+    let base = spec.depends_on.unwrap_or(&[]).iter().copied();
+    let scoped = spec
+        .depends_on_by_os
+        .iter()
+        .filter(move |(dep_os, _)| *dep_os == os)
+        .map(|(_, name)| *name);
+    base.chain(scoped).collect()
 }
 
 /// Get the flexible dependencies (one-of) of a tool by name.
@@ -1655,8 +1695,12 @@ pub fn check_tool_dependencies(
         None => return DependencyCheckResult::Satisfied, // Unknown tool, no deps to check
     };
 
-    // Check strict dependencies first (ALL must be present)
-    if let Some(strict_deps) = spec.depends_on {
+    // Check strict dependencies first (ALL must be present).
+    // Merges cross-platform `depends_on` with `depends_on_by_os` entries for
+    // the current OS so a Windows-only prereq like vcredist doesn't fire on
+    // macOS or Linux.
+    let strict_deps = get_tool_dependencies(tool_name);
+    if !strict_deps.is_empty() {
         let missing: Vec<String> = strict_deps
             .iter()
             .filter(|dep| {
@@ -2012,6 +2056,7 @@ mod tests {
         custom_install: None,
         default_hook: None,
         depends_on: None,
+        depends_on_by_os: &[],
         depends_on_one_of: None,
         category: None,
         fallback: &[],
@@ -2031,6 +2076,7 @@ mod tests {
             "echo 'test hook executed'",
         )),
         depends_on: None,
+        depends_on_by_os: &[],
         depends_on_one_of: None,
         category: None,
         fallback: &[],
@@ -2104,6 +2150,7 @@ mod tests {
             custom_install: None,
             default_hook: None,
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: &[],
@@ -2139,6 +2186,7 @@ mod tests {
             custom_install: Some(|_, _| Ok(())),
             default_hook: None,
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: &[],
@@ -2163,6 +2211,7 @@ mod tests {
             custom_install: None,
             default_hook: None,
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: ROUTES,
@@ -2373,6 +2422,7 @@ mod tests {
                 "windows",
             )),
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: &[],
@@ -2467,6 +2517,20 @@ mod tests {
         // Tools without dependencies should return empty slice
         let deps = get_tool_dependencies("nonexistent");
         assert!(deps.is_empty());
+    }
+
+    // Verify get_tool_dependencies merges cross-platform `depends_on` with
+    // `depends_on_by_os` entries for the CURRENT OS only. Git declares no
+    // cross-platform strict deps and a Windows-only `vcredist` dep, so the
+    // merged list is `["vcredist"]` on Windows and empty everywhere else.
+    #[test]
+    fn test_get_tool_dependencies_merges_current_os() {
+        let git_deps = get_tool_dependencies("git");
+        if current_os() == Os::Windows {
+            assert_eq!(git_deps, vec!["vcredist"]);
+        } else {
+            assert!(git_deps.is_empty());
+        }
     }
 
     #[test]
