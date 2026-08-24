@@ -9,7 +9,7 @@
 //! back to the platform slots unchanged.
 
 use crate::define_tool;
-use crate::tools::common::{InstallContext, InstallError, run};
+use crate::tools::common::{InstallContext, InstallError, Os, run};
 
 fn install_node(min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -94,7 +94,14 @@ fi
     // Install nvm before node when both are in the config — a real
     // provisioning edge now that install_node routes pinned versions
     // through nvm (previously it only ordered two unrelated installers).
-    depends_on: &["nvm"],
+    // nvm has no BSD route (the nvm tool omits the bsd slot), so scoping
+    // to the three supported OSes keeps `node = "latest"` from spuriously
+    // reporting nvm as a missing prereq on FreeBSD.
+    depends_on_by_os: &[
+        (Os::Macos, "nvm"),
+        (Os::Linux, "nvm"),
+        (Os::Windows, "nvm"),
+    ],
 });
 
 #[cfg(test)]
@@ -109,6 +116,18 @@ mod tests {
         let win = NODE.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("OpenJS.NodeJS.LTS"));
         assert!(NODE.custom_install.is_some(), "nvm routing installer");
+    }
+
+    // nvm supports macOS/Linux/Windows (nvm-windows) but not BSD. Scope
+    // the prereq to the three supported OSes so `node = "latest"` on
+    // FreeBSD doesn't false-report a missing dep.
+    #[test]
+    fn node_scopes_nvm_dep_away_from_bsd() {
+        assert!(NODE.depends_on.is_none());
+        assert_eq!(
+            NODE.depends_on_by_os,
+            &[(Os::Macos, "nvm"), (Os::Linux, "nvm"), (Os::Windows, "nvm"),]
+        );
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
