@@ -1046,7 +1046,7 @@ impl PkgOps {
                 Ok(())
             }
             PackageManager::Choco => {
-                require("choco", "Chocolatey is required to install packages")?;
+                crate::tools::chocolatey::ensure_installed()?;
                 let mut args = vec!["install", "-y"];
                 args.extend(packages);
                 run("choco", &args)?;
@@ -1133,7 +1133,7 @@ impl PkgOps {
             });
         }
 
-        require("choco", "Chocolatey is required to install packages")?;
+        crate::tools::chocolatey::ensure_installed()?;
 
         let mut args = vec!["install", "-y"];
         args.extend(packages);
@@ -1407,7 +1407,7 @@ impl PkgOps {
                 run("winget", &["install", "-e", "--id", pkg])?;
             }
             PackageManager::Choco => {
-                require("choco", "Chocolatey is required to install packages")?;
+                crate::tools::chocolatey::ensure_installed()?;
                 run("choco", &["install", "-y", pkg])?;
             }
             PackageManager::Pkg => {

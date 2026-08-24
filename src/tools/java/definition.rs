@@ -1227,11 +1227,7 @@ fn winget_install(id: &str) -> Result<(), InstallError> {
 }
 
 fn choco_install(id: &str) -> Result<(), InstallError> {
-    if !has("choco") {
-        return Err(InstallError::Prereq(
-            "chocolatey not found. Install Chocolatey, then re-run.".into(),
-        ));
-    }
+    crate::tools::chocolatey::ensure_installed()?;
     run("choco", &["install", "-y", id])?;
     Ok(())
 }
