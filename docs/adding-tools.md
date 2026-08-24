@@ -86,7 +86,8 @@ define_tool!(NAME, {
     windows: { ... },              // Optional: Windows install options
     custom_install: Some(fn),      // Optional: custom install function
     default_hook: { ... },         // Optional: post-install hook
-    depends_on: &[...],            // Optional: strict dependencies (ALL required)
+    depends_on: &[...],            // Optional: strict dependencies (ALL required, every OS)
+    depends_on_by_os: &[...],      // Optional: strict dependencies scoped by (Os, name)
     depends_on_one_of: &[...],     // Optional: flexible dependencies (ONE OF required)
 });
 ```
@@ -273,6 +274,73 @@ define_tool!(LAZYDOCKER, {
 - ALL listed dependencies must be available (installed or in config)
 - If any dependency is missing from config, a warning is shown
 - Dependencies are installed before the dependent tool (topological sort)
+
+### OS-Scoped Strict Dependencies (`depends_on_by_os`)
+
+Use `depends_on_by_os` when a prerequisite is only required on some
+OSes. Common cases: a Windows runtime library (VC++ Redistributable), a
+Unix-only version manager (pyenv, rbenv), or a POSIX-only shell tool.
+Entries are `(Os, tool_name)` pairs; jarvy filters by `current_os()`
+before merging with any cross-platform `depends_on`.
+
+```rust
+//! git - version control system. On Windows, Git-for-Windows (installed
+//! via winget as Git.Git) dynamically links against the Microsoft
+//! Visual C++ Redistributable. Fresh Windows boxes without it fail on
+//! the first `git` invocation with a missing-DLL error.
+
+use crate::define_tool;
+use crate::tools::common::Os;
+
+define_tool!(GIT, {
+    command: "git",
+    macos: { brew: "git" },
+    linux: { uniform: "git" },
+    windows: { winget: "Git.Git" },
+    bsd: { pkg: "git" },
+    // vcredist is required only on Windows; macOS/Linux/BSD boxes
+    // must not see a "missing vcredist" report.
+    depends_on_by_os: &[(Os::Windows, "vcredist")],
+});
+```
+
+**When to use `depends_on_by_os`:**
+
+- The prereq tool has no install route on some OSes (pyenv / rbenv have
+  no Windows route; nvm has no BSD route). Cross-platform `depends_on`
+  would surface as "missing required dep" on OSes where the user has
+  no way to install the prereq.
+- The prereq is genuinely only needed on one OS (VC++ Redistributable
+  on Windows). Declaring it cross-platform would nag macOS/Linux users
+  about a runtime that doesn't apply.
+
+**Behavior:**
+
+- Only pairs matching the current OS are considered. Entries for other
+  OSes are dropped before the missing-dep check runs.
+- The filtered list is merged with cross-platform `depends_on` so a
+  tool can declare both an always-required prereq (e.g., `git` for
+  every `git-*` helper) and an OS-scoped one (e.g., `vcredist` on
+  Windows only).
+- Topological sort honors the merged list, so a Windows-only prereq
+  still installs before its dependent when both are in config.
+
+**Combined example:**
+
+```rust
+define_tool!(SOME_GIT_HELPER, {
+    command: "some-git-helper",
+    // ...
+    depends_on: &["git"],                        // always needed
+    depends_on_by_os: &[
+        (Os::Windows, "vcredist"),               // Windows only
+        (Os::Linux, "libssl3"),                  // Linux only
+    ],
+});
+```
+
+On macOS, the effective dep list is `["git"]`. On Windows,
+`["git", "vcredist"]`. On Linux, `["git", "libssl3"]`.
 
 ### Flexible Dependencies (`depends_on_one_of`)
 
