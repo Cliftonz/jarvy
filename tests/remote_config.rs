@@ -12,13 +12,19 @@ use common::jarvy_fast_cmd;
 
 fn make_valid_config() -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
+    // jq is used as the canonical zero-deps tool. git was here originally
+    // but grew a Windows-scoped vcredist dep (validate emits a warning on
+    // Windows for a `git`-only config, and Warning is exit code 1, so the
+    // .success() assertions in validate_valid_config_succeeds /
+    // validate_json_format_output failed on windows-latest CI). jq has
+    // no depends_on / depends_on_by_os on any OS.
     writeln!(
         f,
         r#"[privileges]
 use_sudo = false
 
 [provisioner]
-git = "2.0"
+jq = "latest"
 "#
     )
     .unwrap();
