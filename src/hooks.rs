@@ -586,12 +586,17 @@ fn build_shell_command(shell: &str, script: &str) -> HookResult<(String, Vec<Str
                 .unwrap_or_else(|| shell.to_string())
         };
 
+        // TOML preserves literal `\r\n` in multi-line strings (unlike a Rust
+        // source literal), so a script saved by a Windows editor reaches
+        // here CRLF-laden and corrupts POSIX shell parsing.
+        let script = script.replace("\r\n", "\n");
+
         // Fish has different syntax
         if shell_lower == "fish" {
-            (shell_path, vec!["-c".to_string(), script.to_string()])
+            (shell_path, vec!["-c".to_string(), script])
         } else {
             // bash, zsh, sh, etc.
-            (shell_path, vec!["-c".to_string(), script.to_string()])
+            (shell_path, vec!["-c".to_string(), script])
         }
     };
 
@@ -713,6 +718,17 @@ mod tests {
         let (shell, args) = build_shell_command("/bin/sh", "echo hello").unwrap();
         assert_eq!(shell, "/bin/sh");
         assert_eq!(args, vec!["-c", "echo hello"]);
+    }
+
+    #[test]
+    fn build_shell_command_strips_crlf_for_posix_shells() {
+        let (_, args) = build_shell_command("bash", "echo one\r\ncd foo\r\necho two\r\n").unwrap();
+        assert!(
+            !args[1].contains('\r'),
+            "script still contains CR: {:?}",
+            args[1]
+        );
+        assert_eq!(args[1], "echo one\ncd foo\necho two\n");
     }
 
     #[test]
