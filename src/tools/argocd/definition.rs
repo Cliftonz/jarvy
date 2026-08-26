@@ -30,8 +30,10 @@ if [ -f "$HOME/.zshrc" ]; then
 fi
 "#
     },
-    // GitOps tool needs kubectl for cluster management
-    depends_on_one_of: &["kubectl"],
+    // GitOps tool needs kubectl for cluster management. Strict dep —
+    // single-element flexible was semantically equivalent and the
+    // strict form matches the registry pattern.
+    depends_on: &["kubectl"],
 });
 
 #[cfg(test)]

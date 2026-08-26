@@ -16,8 +16,9 @@ define_tool!(LINKERD, {
     linux: { brew: "linkerd" },
     // No first-party winget manifest as of 2026-07; download release
     // from https://github.com/linkerd/linkerd2/releases.
-    // Mesh CLI needs kubectl to talk to a cluster.
-    depends_on_one_of: &["kubectl"],
+    // Mesh CLI needs kubectl to talk to a cluster. Strict dep —
+    // single-element flexible was semantically equivalent.
+    depends_on: &["kubectl"],
 });
 
 #[cfg(test)]
@@ -32,6 +33,7 @@ mod tests {
         let linux = LINKERD.linux.expect("must support Linux");
         assert_eq!(linux.brew, Some("linkerd"));
         assert!(LINKERD.windows.is_none(), "no first-party winget manifest");
-        assert_eq!(LINKERD.depends_on_one_of, Some(&["kubectl"][..]));
+        assert_eq!(LINKERD.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(LINKERD.depends_on_one_of.is_none());
     }
 }

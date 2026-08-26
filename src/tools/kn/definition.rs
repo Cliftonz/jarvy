@@ -17,7 +17,9 @@ define_tool!(KN, {
     linux: { brew: "kn" },
     // No first-party winget manifest; download release from
     // https://github.com/knative/client/releases.
-    depends_on_one_of: &["kubectl"],
+    // Knative CLI needs kubectl to reach the cluster. Strict dep —
+    // single-element flexible was semantically equivalent.
+    depends_on: &["kubectl"],
     category: "workflow",
 });
 

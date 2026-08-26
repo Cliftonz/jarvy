@@ -23,8 +23,9 @@ fi
 helm repo update 2>/dev/null || true
 "#
     },
-    // Helm needs kubectl/kubeconfig to deploy to a cluster
-    depends_on_one_of: &["kubectl"],
+    // Helm needs kubectl/kubeconfig to deploy to a cluster. Strict
+    // dep — single-element flexible was semantically equivalent.
+    depends_on: &["kubectl"],
 });
 
 #[cfg(test)]

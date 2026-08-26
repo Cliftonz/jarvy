@@ -30,8 +30,9 @@ if [ -f "$HOME/.zshrc" ] && ! grep -q '.krew/bin' "$HOME/.zshrc"; then
 fi
 "#
     },
-    // kubectl plugin manager needs kubectl
-    depends_on_one_of: &["kubectl"],
+    // kubectl plugin manager needs kubectl. Strict dep —
+    // single-element flexible was semantically equivalent.
+    depends_on: &["kubectl"],
 });
 
 #[cfg(test)]
