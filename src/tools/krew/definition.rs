@@ -45,4 +45,10 @@ mod tests {
         let mac = KREW.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("krew"));
     }
+
+    #[test]
+    fn krew_requires_kubectl() {
+        assert_eq!(KREW.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(KREW.depends_on_one_of.is_none());
+    }
 }

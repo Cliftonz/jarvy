@@ -48,4 +48,10 @@ mod tests {
             "github.com/argoproj/argo-workflows/v4/cmd/argo"
         );
     }
+
+    #[test]
+    fn argo_requires_kubectl() {
+        assert_eq!(ARGO.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(ARGO.depends_on_one_of.is_none());
+    }
 }

@@ -40,4 +40,10 @@ mod tests {
         let win = HELM.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Helm.Helm"));
     }
+
+    #[test]
+    fn helm_requires_kubectl() {
+        assert_eq!(HELM.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(HELM.depends_on_one_of.is_none());
+    }
 }

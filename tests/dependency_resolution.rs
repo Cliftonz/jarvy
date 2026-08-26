@@ -54,11 +54,9 @@ lazydocker = "latest"
 /// Create a minimal config without dependency issues
 fn make_simple_config() -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
-    // Both tools carry no depends_on / depends_on_by_os on any OS.
-    // git was here originally but grew a Windows-scoped vcredist dep,
-    // which turned this "no dependency issues" fixture into a failing
-    // "requires vcredist" warning on Windows CI. jq is the drop-in
-    // replacement: pure declarative install, zero deps everywhere.
+    // Both tools are declared zero-deps on every OS. See the "Fixture
+    // tool selection rationale" section in `tests/common/mod.rs` for
+    // why `jq` (not `git`) is the canonical no-deps fixture.
     writeln!(
         f,
         r#"[privileges]

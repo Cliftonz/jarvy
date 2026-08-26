@@ -37,4 +37,10 @@ mod tests {
         assert_eq!(linux.brew, Some("kn"));
         assert!(KN.windows.is_none(), "no first-party winget manifest");
     }
+
+    #[test]
+    fn kn_requires_kubectl() {
+        assert_eq!(KN.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(KN.depends_on_one_of.is_none());
+    }
 }

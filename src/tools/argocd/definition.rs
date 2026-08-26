@@ -48,4 +48,10 @@ mod tests {
         let win = ARGOCD.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Argoproj.ArgoCD"));
     }
+
+    #[test]
+    fn argocd_requires_kubectl() {
+        assert_eq!(ARGOCD.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(ARGOCD.depends_on_one_of.is_none());
+    }
 }

@@ -43,4 +43,10 @@ mod tests {
         let win = K9S.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Derailed.k9s"));
     }
+
+    #[test]
+    fn k9s_requires_kubectl() {
+        assert_eq!(K9S.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(K9S.depends_on_one_of.is_none());
+    }
 }
