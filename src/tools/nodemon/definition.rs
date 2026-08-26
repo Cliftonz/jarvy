@@ -13,6 +13,8 @@ define_tool!(NODEMON, {
     // The fallback runtime bootstraps node through jarvy's own
     // registry when it's missing (verified 2026-08).
     fallback: { npm: "nodemon" },
+    // Watches and restarts a Node.js process — needs node at runtime.
+    depends_on_one_of: &["node", "nvm"],
 });
 
 #[cfg(test)]
@@ -33,5 +35,10 @@ mod tests {
             crate::tools::spec::FallbackEco::Npm
         );
         assert_eq!(NODEMON.fallback[0].package, "nodemon");
+    }
+
+    #[test]
+    fn nodemon_needs_node_runtime() {
+        assert_eq!(NODEMON.depends_on_one_of, Some(&["node", "nvm"] as &[&str]));
     }
 }

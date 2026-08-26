@@ -13,6 +13,8 @@ define_tool!(PM2, {
     // The fallback runtime bootstraps node through jarvy's own
     // registry when it's missing (verified 2026-08).
     fallback: { npm: "pm2" },
+    // Node.js process manager — daemonizes Node apps at runtime.
+    depends_on_one_of: &["node", "nvm"],
 });
 
 #[cfg(test)]
@@ -30,5 +32,10 @@ mod tests {
         assert_eq!(PM2.fallback.len(), 1);
         assert_eq!(PM2.fallback[0].eco, crate::tools::spec::FallbackEco::Npm);
         assert_eq!(PM2.fallback[0].package, "pm2");
+    }
+
+    #[test]
+    fn pm2_needs_node_runtime() {
+        assert_eq!(PM2.depends_on_one_of, Some(&["node", "nvm"] as &[&str]));
     }
 }
