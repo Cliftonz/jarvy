@@ -325,6 +325,9 @@ impl Hook {
 
         // Emit hook started telemetry
         telemetry::hook_started(&self.description, &hook_type, tool);
+        if self.script.contains('\r') {
+            telemetry::hook_crlf_normalized(&self.description, &hook_type);
+        }
         let start = Instant::now();
 
         let (shell, args) = build_shell_command(&self.config.shell, &self.script)?;
@@ -586,12 +589,17 @@ fn build_shell_command(shell: &str, script: &str) -> HookResult<(String, Vec<Str
                 .unwrap_or_else(|| shell.to_string())
         };
 
+        // TOML preserves literal `\r\n` in multi-line strings (unlike a Rust
+        // source literal), so a script saved by a Windows editor reaches
+        // here CRLF-laden and corrupts POSIX shell parsing.
+        let script = script.replace("\r\n", "\n").replace('\r', "\n");
+
         // Fish has different syntax
         if shell_lower == "fish" {
-            (shell_path, vec!["-c".to_string(), script.to_string()])
+            (shell_path, vec!["-c".to_string(), script])
         } else {
             // bash, zsh, sh, etc.
-            (shell_path, vec!["-c".to_string(), script.to_string()])
+            (shell_path, vec!["-c".to_string(), script])
         }
     };
 
@@ -713,6 +721,41 @@ mod tests {
         let (shell, args) = build_shell_command("/bin/sh", "echo hello").unwrap();
         assert_eq!(shell, "/bin/sh");
         assert_eq!(args, vec!["-c", "echo hello"]);
+    }
+
+    #[test]
+    fn build_shell_command_strips_crlf_for_posix_shells() {
+        let (_, args) = build_shell_command("bash", "echo one\r\ncd foo\r\necho two\r\n").unwrap();
+        assert!(
+            !args[1].contains('\r'),
+            "script still contains CR: {:?}",
+            args[1]
+        );
+        assert_eq!(args[1], "echo one\ncd foo\necho two\n");
+    }
+
+    #[test]
+    fn build_shell_command_strips_lone_cr_for_posix_shells() {
+        let (_, args) = build_shell_command("bash", "echo one\rcd foo\recho two\r").unwrap();
+        assert!(
+            !args[1].contains('\r'),
+            "script still contains CR: {:?}",
+            args[1]
+        );
+        assert_eq!(args[1], "echo one\ncd foo\necho two\n");
+    }
+
+    #[test]
+    fn build_shell_command_strips_crlf_for_windows_git_bash_path() {
+        let (shell, args) =
+            build_shell_command(WINDOWS_GIT_BASH_PATHS[0], "echo one\r\ncd foo\r\n").unwrap();
+        assert_eq!(shell, WINDOWS_GIT_BASH_PATHS[0]);
+        assert!(
+            !args[1].contains('\r'),
+            "script still contains CR: {:?}",
+            args[1]
+        );
+        assert_eq!(args[1], "echo one\ncd foo\n");
     }
 
     #[test]

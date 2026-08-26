@@ -96,6 +96,35 @@ pub fn current_os() -> Os {
     }
 }
 
+/// True when `proc_version` (the contents of Linux's `/proc/version`) indicates
+/// a WSL kernel. Both WSL1 and WSL2 embed "microsoft" case-insensitively
+/// (e.g. "5.15.153.1-microsoft-standard-WSL2" or the older "4.4.0-43-Microsoft").
+pub(crate) fn proc_version_indicates_wsl(proc_version: &str) -> bool {
+    proc_version.to_lowercase().contains("microsoft")
+}
+
+// Memoized result of the WSL detection below — stable for the process lifetime.
+static IS_WSL: OnceLock<bool> = OnceLock::new();
+
+/// Runtime detection of WSL (1 or 2), distinct from `current_os()`'s
+/// compile-time OS check — a Linux-target jarvy binary reports `Os::Linux`
+/// whether it's on bare-metal Linux or inside a WSL distro; this tells
+/// those apart. Always false when not compiled for Linux.
+pub fn is_wsl() -> bool {
+    *IS_WSL.get_or_init(|| {
+        #[cfg(target_os = "linux")]
+        {
+            std::fs::read_to_string("/proc/version")
+                .map(|v| proc_version_indicates_wsl(&v))
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    })
+}
+
 // Global default for whether to use sudo on POSIX installs. Can be set from Config in main.
 // None means: auto-detect per operation (try without sudo, then with if available).
 static USE_SUDO_DEFAULT: OnceLock<Option<bool>> = OnceLock::new();
@@ -848,6 +877,50 @@ mod install_error_kind_tests {
             format!("prerequisite missing: {RUST_TOOLCHAIN_MISSING_HINT}"),
             "Prereq message must be the canonical hint"
         );
+    }
+}
+
+#[cfg(test)]
+mod wsl_detect_tests {
+    use super::{is_wsl, proc_version_indicates_wsl};
+
+    #[test]
+    fn is_wsl_does_not_panic_and_respects_platform_gate() {
+        // Smoke test — real is_wsl() must not panic, and on any non-Linux
+        // target it must be unconditionally false (mirrors hooks.rs's
+        // test_detect_shell pattern for the same class of OS-detection wrapper).
+        let result = is_wsl();
+        let _ = result; // just confirming no panic above
+        #[cfg(not(target_os = "linux"))]
+        assert!(!result, "is_wsl() must be false on non-Linux targets");
+    }
+
+    #[test]
+    fn proc_version_indicates_wsl_detects_wsl2() {
+        assert!(proc_version_indicates_wsl(
+            "Linux version 5.15.153.1-microsoft-standard-WSL2 (root@0c9e6c\
+             a0be04) (gcc (GCC) 11.2.0, GNU ld (GNU Binutils) 2.37) #1 SMP \
+             Fri Mar 29 15:34:35 UTC 2024"
+        ));
+    }
+
+    #[test]
+    fn proc_version_indicates_wsl_detects_wsl1() {
+        assert!(proc_version_indicates_wsl(
+            "Linux version 4.4.0-43-Microsoft (Microsoft@Microsoft.com) \
+             (gcc version 5.4.0 (GCC) ) #1-Microsoft Wed Dec 31 14:42:53 \
+             PST 2014"
+        ));
+    }
+
+    #[test]
+    fn proc_version_indicates_wsl_rejects_bare_linux() {
+        assert!(!proc_version_indicates_wsl(
+            "Linux version 5.15.0-91-generic (buildd@lcy02-amd64-119) \
+             (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU \
+             Binutils for Ubuntu) 2.38) #101-Ubuntu SMP Tue Nov 14 \
+             13:30:08 UTC 2023"
+        ));
     }
 }
 
