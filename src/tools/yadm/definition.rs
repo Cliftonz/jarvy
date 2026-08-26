@@ -14,6 +14,10 @@ define_tool!(YADM, {
     command: "yadm",
     macos: { brew: "yadm" },
     linux: { apt: "yadm", dnf: "yadm", pacman: "yadm", apk: "yadm" },
+    // yadm is a git wrapper — every operation dispatches to `git`
+    // against the bare repo at `~/.local/share/yadm/repo.git`. Cannot
+    // function without git on any OS.
+    depends_on: &["git"],
 });
 
 #[cfg(test)]
@@ -25,5 +29,10 @@ mod tests {
         assert_eq!(YADM.command, "yadm");
         let mac = YADM.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("yadm"));
+    }
+
+    #[test]
+    fn yadm_requires_git() {
+        assert_eq!(YADM.depends_on, Some(&["git"] as &[&str]));
     }
 }
