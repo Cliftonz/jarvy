@@ -103,21 +103,26 @@ pub(crate) fn proc_version_indicates_wsl(proc_version: &str) -> bool {
     proc_version.to_lowercase().contains("microsoft")
 }
 
+// Memoized result of the WSL detection below — stable for the process lifetime.
+static IS_WSL: OnceLock<bool> = OnceLock::new();
+
 /// Runtime detection of WSL (1 or 2), distinct from `current_os()`'s
 /// compile-time OS check — a Linux-target jarvy binary reports `Os::Linux`
 /// whether it's on bare-metal Linux or inside a WSL distro; this tells
 /// those apart. Always false when not compiled for Linux.
 pub fn is_wsl() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::fs::read_to_string("/proc/version")
-            .map(|v| proc_version_indicates_wsl(&v))
-            .unwrap_or(false)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
+    *IS_WSL.get_or_init(|| {
+        #[cfg(target_os = "linux")]
+        {
+            std::fs::read_to_string("/proc/version")
+                .map(|v| proc_version_indicates_wsl(&v))
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    })
 }
 
 // Global default for whether to use sudo on POSIX installs. Can be set from Config in main.
@@ -877,7 +882,18 @@ mod install_error_kind_tests {
 
 #[cfg(test)]
 mod wsl_detect_tests {
-    use super::proc_version_indicates_wsl;
+    use super::{is_wsl, proc_version_indicates_wsl};
+
+    #[test]
+    fn is_wsl_does_not_panic_and_respects_platform_gate() {
+        // Smoke test — real is_wsl() must not panic, and on any non-Linux
+        // target it must be unconditionally false (mirrors hooks.rs's
+        // test_detect_shell pattern for the same class of OS-detection wrapper).
+        let result = is_wsl();
+        let _ = result; // just confirming no panic above
+        #[cfg(not(target_os = "linux"))]
+        assert!(!result, "is_wsl() must be false on non-Linux targets");
+    }
 
     #[test]
     fn proc_version_indicates_wsl_detects_wsl2() {
