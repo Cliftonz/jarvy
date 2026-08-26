@@ -21,7 +21,10 @@ define_tool!(ARGO, {
     // 2026-08 at v4.0.8, no replace directives in go.mod — the v3
     // module had them, v4 dropped them).
     fallback: { go: "github.com/argoproj/argo-workflows/v4/cmd/argo" },
-    depends_on_one_of: &["kubectl"],
+    // Single-element flexible was semantically equivalent to strict;
+    // switched to strict `depends_on` to match the registry pattern
+    // (flexible is for genuine alternatives like docker/podman).
+    depends_on: &["kubectl"],
     category: "workflow",
 });
 
@@ -44,5 +47,11 @@ mod tests {
             ARGO.fallback[0].package,
             "github.com/argoproj/argo-workflows/v4/cmd/argo"
         );
+    }
+
+    #[test]
+    fn argo_requires_kubectl() {
+        assert_eq!(ARGO.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(ARGO.depends_on_one_of.is_none());
     }
 }

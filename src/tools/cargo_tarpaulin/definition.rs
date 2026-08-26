@@ -14,12 +14,21 @@ define_tool!(CARGO_TARPAULIN, {
     // runtime bootstraps rustup/cargo through jarvy's own registry
     // when missing (verified 2026-08).
     fallback: { cargo: "cargo-tarpaulin" },
+    // cargo subcommand — runs as `cargo tarpaulin ...`, needs the rust
+    // toolchain at runtime. Matches the sibling cargo tools
+    // (cargo_nextest, bacon, release_plz) which all declare this.
+    depends_on: &["rust"],
     category: "testing",
 });
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cargo_tarpaulin_requires_rust() {
+        assert_eq!(CARGO_TARPAULIN.depends_on, Some(&["rust"] as &[&str]));
+    }
 
     #[test]
     fn cargo_tarpaulin_registration_shape() {

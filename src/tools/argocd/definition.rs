@@ -30,8 +30,10 @@ if [ -f "$HOME/.zshrc" ]; then
 fi
 "#
     },
-    // GitOps tool needs kubectl for cluster management
-    depends_on_one_of: &["kubectl"],
+    // GitOps tool needs kubectl for cluster management. Strict dep —
+    // single-element flexible was semantically equivalent and the
+    // strict form matches the registry pattern.
+    depends_on: &["kubectl"],
 });
 
 #[cfg(test)]
@@ -45,5 +47,11 @@ mod tests {
         assert_eq!(mac.brew, Some("argocd"));
         let win = ARGOCD.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Argoproj.ArgoCD"));
+    }
+
+    #[test]
+    fn argocd_requires_kubectl() {
+        assert_eq!(ARGOCD.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(ARGOCD.depends_on_one_of.is_none());
     }
 }

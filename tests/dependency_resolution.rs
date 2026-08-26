@@ -54,14 +54,17 @@ lazydocker = "latest"
 /// Create a minimal config without dependency issues
 fn make_simple_config() -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
+    // Both tools are declared zero-deps on every OS. See the "Fixture
+    // tool selection rationale" section in `tests/common/mod.rs` for
+    // why `jq` (not `git`) is the canonical no-deps fixture.
     writeln!(
         f,
         r#"[privileges]
 use_sudo = false
 
 [provisioner]
-git = "latest"
 curl = "latest"
+jq = "latest"
 "#
     )
     .unwrap();

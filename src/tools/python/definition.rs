@@ -3,6 +3,7 @@
 //! This tool uses the ToolSpec pattern for declarative installation.
 
 use crate::define_tool;
+use crate::tools::common::Os;
 
 define_tool!(PYTHON, {
     command: "python3",
@@ -32,8 +33,15 @@ if [ -n "$USER_SITE" ] && [ -f "$HOME/.zshrc" ] && ! grep -q 'python.*user-base'
 fi
 "#
     },
-    // Install pyenv before python if both are in the config
-    depends_on: &["pyenv"],
+    // Install pyenv before python if both are in the config. pyenv has no
+    // Windows route (the pyenv tool omits the windows slot), so scoping
+    // the dep keeps `python = "latest"` on Windows from spuriously
+    // reporting pyenv as a missing prereq.
+    depends_on_by_os: &[
+        (Os::Macos, "pyenv"),
+        (Os::Linux, "pyenv"),
+        (Os::Bsd, "pyenv"),
+    ],
 });
 
 #[cfg(test)]
@@ -47,5 +55,21 @@ mod tests {
         assert_eq!(mac.brew, Some("python"));
         let win = PYTHON.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Python.Python.3"));
+    }
+
+    // pyenv has no Windows route; the pyenv prereq must be scoped to the
+    // Unix-family OSes so `python = "latest"` on Windows doesn't false-
+    // report a missing dep.
+    #[test]
+    fn python_scopes_pyenv_dep_to_unix_only() {
+        assert!(PYTHON.depends_on.is_none());
+        assert_eq!(
+            PYTHON.depends_on_by_os,
+            &[
+                (Os::Macos, "pyenv"),
+                (Os::Linux, "pyenv"),
+                (Os::Bsd, "pyenv"),
+            ]
+        );
     }
 }

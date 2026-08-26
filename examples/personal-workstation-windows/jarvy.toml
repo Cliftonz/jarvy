@@ -10,6 +10,13 @@
 # ---------------------------------------------------------------------------
 [provisioner]
 # Core
+# vcredist is the Microsoft Visual C++ 2015-2022 Redistributable. Fresh
+# Windows boxes frequently ship without it, and Git-for-Windows (installed
+# by winget as Git.Git) will fail with a missing-DLL error at first
+# `git` invocation. Listed before `git` so jarvy's topo sort installs it
+# first. Safe to remove if the box already has it — winget no-ops on
+# reinstall.
+vcredist  = "latest"
 git       = "latest"
 gh        = "latest"
 jq        = "latest"

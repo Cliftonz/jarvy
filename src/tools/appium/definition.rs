@@ -13,6 +13,9 @@ define_tool!(APPIUM, {
         description: "Install Appium mobile drivers and plugins",
         script: "appium setup mobile"
     },
+    // Node.js server at runtime. Matches the cypress / playwright
+    // pattern — either the runtime itself or nvm satisfies the check.
+    depends_on_one_of: &["node", "nvm"],
     category: "mobile",
 });
 
@@ -36,5 +39,10 @@ mod tests {
             "Install Appium mobile drivers and plugins"
         );
         assert_eq!(hook.script, "appium setup mobile");
+    }
+
+    #[test]
+    fn appium_needs_node_runtime() {
+        assert_eq!(APPIUM.depends_on_one_of, Some(&["node", "nvm"] as &[&str]));
     }
 }

@@ -3,6 +3,29 @@
 // actionable. This is the conventional pattern for tests/common/.
 #![allow(dead_code)]
 
+//! ## Fixture tool selection rationale
+//!
+//! Integration test configs that need a "no-op tool" (i.e., they want
+//! `jarvy validate` / `jarvy setup --dry-run` to succeed without dep
+//! warnings) MUST use `jq = "latest"` — NOT `git = "latest"`.
+//!
+//! `git` carries a Windows-scoped `depends_on_by_os` prereq on
+//! `vcredist` (see `src/tools/git/definition.rs`). Any config listing
+//! `git` alone will emit `[WARN] Tool 'git' requires 'vcredist'` on
+//! Windows CI, and `jarvy validate` returns `ExitCode::Warning = 1`
+//! (see `src/output/mod.rs`). Any `.success()` assertion against a
+//! git-only config will fail on `windows-latest` runners.
+//!
+//! `jq` is a leaf tool with no `depends_on` / `depends_on_by_os` on
+//! any OS. See `tests/dependency_resolution.rs::make_simple_config`
+//! and `tests/remote_config.rs::make_valid_config` for the canonical
+//! fixture shape.
+//!
+//! History: git was used originally. Session 2026-08-24 (commit
+//! `45f26ff`, PR #95) added the vcredist scoping and broke six
+//! Windows CI tests until the fixtures were swapped to jq in
+//! `e7818e8`.
+
 pub mod registry;
 
 use std::path::{Path, PathBuf};

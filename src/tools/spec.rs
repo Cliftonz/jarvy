@@ -24,7 +24,9 @@
 //! };
 //! ```
 
-use super::common::{InstallContext, InstallError, PackageManager, cmd_satisfies, has, run};
+use super::common::{
+    InstallContext, InstallError, Os, PackageManager, cmd_satisfies, current_os, has, run,
+};
 
 /// Type alias for tool handler functions registered in the registry.
 pub type ToolHandler = fn(&str, &InstallContext) -> Result<(), InstallError>;
@@ -341,6 +343,10 @@ fn fallback_is_empty(routes: &&'static [FallbackRoute]) -> bool {
     routes.is_empty()
 }
 
+fn os_deps_is_empty(deps: &&'static [(Os, &'static str)]) -> bool {
+    deps.is_empty()
+}
+
 /// Declarative tool specification that eliminates boilerplate.
 ///
 /// A `ToolSpec` defines everything needed to check for and install a tool
@@ -379,8 +385,16 @@ pub struct ToolSpec {
     /// Optional list of tool names that must be installed before this tool.
     /// Used for dependency ordering (e.g., node depends on nvm, python depends on pyenv).
     /// This is a STRICT dependency - ALL listed tools must be available.
+    /// Applies on every platform. For OS-scoped deps, use `depends_on_by_os`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on: Option<&'static [&'static str]>,
+
+    /// OS-scoped strict dependencies: `(os, tool_name)` pairs that apply only
+    /// when the current OS matches. Merged with `depends_on` on the current
+    /// platform. Example: `&[(Os::Windows, "vcredist")]` makes vcredist a
+    /// prereq of this tool on Windows only.
+    #[serde(skip_serializing_if = "os_deps_is_empty")]
+    pub depends_on_by_os: &'static [(Os, &'static str)],
 
     /// Optional list of tool names where AT LEAST ONE must be available.
     /// Used for flexible dependencies where multiple tools can satisfy the requirement.
@@ -647,6 +661,7 @@ macro_rules! define_tool {
         $(default_hook: { description: $hook_desc:expr, script: $hook_script:expr $(, platform: $hook_platform:expr)? },)?
         $(default_hook_shell_init: ($shell_tool:literal, $shell_verb:literal),)?
         $(depends_on: $deps:expr,)?
+        $(depends_on_by_os: $os_deps:expr,)?
         $(depends_on_one_of: $flex_deps:expr,)?
         $(category: $category:expr,)?
     }) => {
@@ -665,6 +680,7 @@ macro_rules! define_tool {
                 $(($shell_tool, $shell_verb))?
             ),
             depends_on: define_tool!(@depends_on $($deps)?),
+            depends_on_by_os: define_tool!(@depends_on_by_os $($os_deps)?),
             depends_on_one_of: define_tool!(@depends_on_one_of $($flex_deps)?),
             category: define_tool!(@category $($category)?),
             fallback: define_tool!(@fallback $($($fb_key: $fb_val),*)?),
@@ -850,6 +866,10 @@ macro_rules! define_tool {
     (@depends_on) => { None };
     (@depends_on $deps:expr) => { Some($deps) };
 
+    // OS-scoped strict dependency helpers
+    (@depends_on_by_os) => { &[] };
+    (@depends_on_by_os $deps:expr) => { $deps };
+
     // Flexible dependency helpers (one-of)
     (@depends_on_one_of) => { None };
     (@depends_on_one_of $deps:expr) => { Some($deps) };
@@ -945,9 +965,14 @@ pub struct ToolIndexEntry {
     /// Tool category for filtering (e.g., "devops", "language", "editor")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
-    /// Strict dependencies — ALL must be installed before this tool
+    /// Strict dependencies — ALL must be installed before this tool.
+    /// Applies on every platform. See `depends_on_by_os` for scoped deps.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on: Option<Vec<String>>,
+    /// OS-scoped strict dependencies: `(os, tool_name)` pairs that apply
+    /// only on the matching OS. Merged with `depends_on` at install time.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub depends_on_by_os: Vec<(Os, String)>,
     /// Flexible dependencies — at least ONE must be available
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on_one_of: Option<Vec<String>>,
@@ -974,6 +999,11 @@ impl From<&ToolSpec> for ToolIndexEntry {
             depends_on: spec
                 .depends_on
                 .map(|d| d.iter().map(|s| s.to_string()).collect()),
+            depends_on_by_os: spec
+                .depends_on_by_os
+                .iter()
+                .map(|(os, name)| (*os, (*name).to_string()))
+                .collect(),
             depends_on_one_of: spec
                 .depends_on_one_of
                 .map(|d| d.iter().map(|s| s.to_string()).collect()),
@@ -1039,6 +1069,7 @@ pub fn generate_tool_index() -> ToolIndex {
             fallback: Vec::new(),
             category: None,
             depends_on: None,
+            depends_on_by_os: Vec::new(),
             depends_on_one_of: None,
             default_hook: None,
         });
@@ -1572,12 +1603,38 @@ where
 // Dependency Ordering
 // ============================================================================
 
-/// Get the strict dependencies of a tool by name.
-/// Returns an empty slice if the tool has no dependencies or is not found.
-pub fn get_tool_dependencies(tool_name: &str) -> &'static [&'static str] {
-    get_tool_spec(tool_name)
-        .and_then(|spec| spec.depends_on)
-        .unwrap_or(&[])
+/// Get the strict dependencies of a tool by name, merging cross-platform
+/// `depends_on` with `depends_on_by_os` entries that match the CURRENT OS.
+/// Returns an empty `Vec` if the tool has no dependencies or is not found.
+pub fn get_tool_dependencies(tool_name: &str) -> Vec<&'static str> {
+    get_tool_dependencies_for_os(tool_name, current_os())
+}
+
+/// OS-parameterized form of [`get_tool_dependencies`]. Exposed for tests
+/// so the OS-scoping logic can be exercised across every `Os` variant on
+/// the same host.
+pub fn get_tool_dependencies_for_os(tool_name: &str, os: Os) -> Vec<&'static str> {
+    let Some(spec) = get_tool_spec(tool_name) else {
+        return Vec::new();
+    };
+    merge_dependencies(spec.depends_on, spec.depends_on_by_os, os)
+}
+
+/// Pure merge of cross-platform `depends_on` and OS-scoped
+/// `depends_on_by_os`, filtered to entries matching `os`. Extracted so
+/// tests can construct fixtures with both fields populated without
+/// needing to register a test-only tool in the inventory.
+fn merge_dependencies(
+    base: Option<&'static [&'static str]>,
+    scoped: &'static [(Os, &'static str)],
+    os: Os,
+) -> Vec<&'static str> {
+    let base_iter = base.unwrap_or(&[]).iter().copied();
+    let scoped_iter = scoped
+        .iter()
+        .filter(move |(dep_os, _)| *dep_os == os)
+        .map(|(_, name)| *name);
+    base_iter.chain(scoped_iter).collect()
 }
 
 /// Get the flexible dependencies (one-of) of a tool by name.
@@ -1641,8 +1698,16 @@ impl DependencyCheckResult {
 /// Returns true if JARVY_IGNORE_MISSING_DEPS is set to "1" or "true".
 pub fn should_ignore_missing_deps() -> bool {
     std::env::var("JARVY_IGNORE_MISSING_DEPS")
-        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
+}
+
+/// Case-insensitive membership check for tool-name sets.
+/// Avoids allocating a lowercased `String` per candidate: tool names are
+/// ASCII (guarded elsewhere by `validate_package_name`), so
+/// `eq_ignore_ascii_case` is safe and zero-alloc.
+fn set_contains_ci(set: &std::collections::HashSet<String>, needle: &str) -> bool {
+    set.iter().any(|entry| entry.eq_ignore_ascii_case(needle))
 }
 
 pub fn check_tool_dependencies(
@@ -1650,18 +1715,36 @@ pub fn check_tool_dependencies(
     config_tools: &std::collections::HashSet<String>,
     installed_tools: &std::collections::HashSet<String>,
 ) -> DependencyCheckResult {
+    check_tool_dependencies_for_os(tool_name, config_tools, installed_tools, current_os())
+}
+
+/// OS-parameterized form of [`check_tool_dependencies`]. Exposed for
+/// tests so a `depends_on_by_os` prereq's absence on unsupported OSes
+/// can be verified across every `Os` variant on the same host.
+pub fn check_tool_dependencies_for_os(
+    tool_name: &str,
+    config_tools: &std::collections::HashSet<String>,
+    installed_tools: &std::collections::HashSet<String>,
+    os: Os,
+) -> DependencyCheckResult {
     let spec = match get_tool_spec(tool_name) {
         Some(s) => s,
         None => return DependencyCheckResult::Satisfied, // Unknown tool, no deps to check
     };
 
-    // Check strict dependencies first (ALL must be present)
-    if let Some(strict_deps) = spec.depends_on {
+    // Check strict dependencies first (ALL must be present).
+    // Merges cross-platform `depends_on` with `depends_on_by_os` entries for
+    // the current OS so a Windows-only prereq like vcredist doesn't fire on
+    // macOS or Linux.
+    // Case-insensitive membership check uses `eq_ignore_ascii_case` rather
+    // than allocating a lowercased `String` per candidate — tool names are
+    // ASCII so the ascii-only variant is safe and zero-alloc.
+    let strict_deps = get_tool_dependencies_for_os(tool_name, os);
+    if !strict_deps.is_empty() {
         let missing: Vec<String> = strict_deps
             .iter()
             .filter(|dep| {
-                let dep_lower = dep.to_lowercase();
-                !installed_tools.contains(&dep_lower) && !config_tools.contains(&dep_lower)
+                !set_contains_ci(installed_tools, dep) && !set_contains_ci(config_tools, dep)
             })
             .map(|s| s.to_string())
             .collect();
@@ -1674,10 +1757,9 @@ pub fn check_tool_dependencies(
     // Check flexible dependencies (ONE OF must be present)
     if let Some(flex_deps) = spec.depends_on_one_of {
         // Check if any is already installed
-        let any_installed = flex_deps.iter().any(|dep| {
-            let dep_lower = dep.to_lowercase();
-            installed_tools.contains(&dep_lower)
-        });
+        let any_installed = flex_deps
+            .iter()
+            .any(|dep| set_contains_ci(installed_tools, dep));
 
         if any_installed {
             return DependencyCheckResult::Satisfied;
@@ -1686,10 +1768,7 @@ pub fn check_tool_dependencies(
         // Check if any is in config (will be installed)
         let in_config: Vec<&str> = flex_deps
             .iter()
-            .filter(|dep| {
-                let dep_lower = dep.to_lowercase();
-                config_tools.contains(&dep_lower)
-            })
+            .filter(|dep| set_contains_ci(config_tools, dep))
             .copied()
             .collect();
 
@@ -1788,11 +1867,12 @@ where
     let mut result: Vec<(String, String)> = Vec::with_capacity(tool_list.len());
 
     while let Some(tool) = queue.pop_front() {
-        if let Some(&version) = version_map.get(tool.as_str()) {
-            result.push((tool.clone(), version.to_string()));
-        }
-
-        if let Some(deps) = dependents.get(&tool).cloned() {
+        // Kahn's algorithm visits each node exactly once, so `remove`
+        // is cheaper than `get().cloned()` — it hands us the owned
+        // `Vec<String>` without cloning the dependent list. Do the
+        // removal BEFORE moving `tool` into the result so the HashMap
+        // key is still available.
+        if let Some(deps) = dependents.remove(&tool) {
             for dependent in deps {
                 if let Some(deg) = in_degree.get_mut(&dependent) {
                     *deg = deg.saturating_sub(1);
@@ -1801,6 +1881,11 @@ where
                     }
                 }
             }
+        }
+        // Now safe to move `tool` into the result (previous code
+        // cloned it to keep it alive for the `dependents.get` above).
+        if let Some(&version) = version_map.get(tool.as_str()) {
+            result.push((tool, version.to_string()));
         }
     }
 
@@ -2012,6 +2097,7 @@ mod tests {
         custom_install: None,
         default_hook: None,
         depends_on: None,
+        depends_on_by_os: &[],
         depends_on_one_of: None,
         category: None,
         fallback: &[],
@@ -2031,6 +2117,7 @@ mod tests {
             "echo 'test hook executed'",
         )),
         depends_on: None,
+        depends_on_by_os: &[],
         depends_on_one_of: None,
         category: None,
         fallback: &[],
@@ -2104,6 +2191,7 @@ mod tests {
             custom_install: None,
             default_hook: None,
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: &[],
@@ -2139,6 +2227,7 @@ mod tests {
             custom_install: Some(|_, _| Ok(())),
             default_hook: None,
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: &[],
@@ -2163,6 +2252,7 @@ mod tests {
             custom_install: None,
             default_hook: None,
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: ROUTES,
@@ -2373,6 +2463,7 @@ mod tests {
                 "windows",
             )),
             depends_on: None,
+            depends_on_by_os: &[],
             depends_on_one_of: None,
             category: None,
             fallback: &[],
@@ -2469,12 +2560,231 @@ mod tests {
         assert!(deps.is_empty());
     }
 
+    // Verify get_tool_dependencies merges cross-platform `depends_on` with
+    // `depends_on_by_os` entries for the CURRENT OS only. Git declares no
+    // cross-platform strict deps and a Windows-only `vcredist` dep, so the
+    // merged list is `["vcredist"]` on Windows and empty everywhere else.
+    #[test]
+    fn test_get_tool_dependencies_merges_current_os() {
+        let git_deps = get_tool_dependencies("git");
+        if current_os() == Os::Windows {
+            assert_eq!(git_deps, vec!["vcredist"]);
+        } else {
+            assert!(git_deps.is_empty());
+        }
+    }
+
+    // Portable coverage of the OS filter: exercise every `Os` variant on
+    // the same host so CI running on Linux still catches a regression
+    // that only misfires on Windows or BSD.
+    #[test]
+    fn test_get_tool_dependencies_for_os_filters_by_variant() {
+        // git: cross-platform depends_on is empty; vcredist is Windows-only.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert!(
+                get_tool_dependencies_for_os("git", os).is_empty(),
+                "git must not report vcredist on {:?}",
+                os
+            );
+        }
+        assert_eq!(
+            get_tool_dependencies_for_os("git", Os::Windows),
+            vec!["vcredist"]
+        );
+
+        // python: pyenv scoped to macOS/Linux/BSD, absent on Windows.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert_eq!(
+                get_tool_dependencies_for_os("python", os),
+                vec!["pyenv"],
+                "python must require pyenv on {:?}",
+                os
+            );
+        }
+        assert!(get_tool_dependencies_for_os("python", Os::Windows).is_empty());
+
+        // ruby: rbenv scoped to macOS/Linux/BSD, absent on Windows.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert_eq!(
+                get_tool_dependencies_for_os("ruby", os),
+                vec!["rbenv"],
+                "ruby must require rbenv on {:?}",
+                os
+            );
+        }
+        assert!(get_tool_dependencies_for_os("ruby", Os::Windows).is_empty());
+
+        // node: nvm scoped to macOS/Linux/Windows, absent on BSD.
+        for os in [Os::Macos, Os::Linux, Os::Windows] {
+            assert_eq!(
+                get_tool_dependencies_for_os("node", os),
+                vec!["nvm"],
+                "node must require nvm on {:?}",
+                os
+            );
+        }
+        assert!(get_tool_dependencies_for_os("node", Os::Bsd).is_empty());
+    }
+
+    // The whole point of OS-scoped deps: on an unsupported OS, the
+    // check must return Satisfied even when the config and installed
+    // sets are empty. Otherwise doctor / diff / validate would nag
+    // users to install a prereq their OS cannot install.
+    #[test]
+    fn test_check_tool_dependencies_stays_quiet_on_unsupported_os() {
+        use std::collections::HashSet;
+        let empty: HashSet<String> = HashSet::new();
+
+        // git on macOS/Linux/BSD: vcredist scoped to Windows only, so
+        // the check must NOT flag it as missing on any of the three.
+        for os in [Os::Macos, Os::Linux, Os::Bsd] {
+            assert_eq!(
+                check_tool_dependencies_for_os("git", &empty, &empty, os),
+                DependencyCheckResult::Satisfied,
+                "git dep check must stay quiet on {:?}",
+                os
+            );
+        }
+
+        // python / ruby on Windows: their pyenv / rbenv deps are Unix-
+        // family scoped, so an empty config on Windows must not flag
+        // them as missing.
+        assert_eq!(
+            check_tool_dependencies_for_os("python", &empty, &empty, Os::Windows),
+            DependencyCheckResult::Satisfied,
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("ruby", &empty, &empty, Os::Windows),
+            DependencyCheckResult::Satisfied,
+        );
+
+        // node on BSD: nvm is scoped to macOS/Linux/Windows, so an
+        // empty config on BSD must not flag nvm as missing.
+        assert_eq!(
+            check_tool_dependencies_for_os("node", &empty, &empty, Os::Bsd),
+            DependencyCheckResult::Satisfied,
+        );
+    }
+
+    // Positive control: on a SUPPORTED OS, the same empty config MUST
+    // return MissingRequired. Without this, the negative test above
+    // could pass even if the filter accidentally suppressed every dep
+    // on every OS.
+    #[test]
+    fn test_check_tool_dependencies_fires_on_supported_os() {
+        use std::collections::HashSet;
+        let empty: HashSet<String> = HashSet::new();
+
+        assert_eq!(
+            check_tool_dependencies_for_os("git", &empty, &empty, Os::Windows),
+            DependencyCheckResult::MissingRequired(vec!["vcredist".to_string()]),
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("python", &empty, &empty, Os::Macos),
+            DependencyCheckResult::MissingRequired(vec!["pyenv".to_string()]),
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("ruby", &empty, &empty, Os::Linux),
+            DependencyCheckResult::MissingRequired(vec!["rbenv".to_string()]),
+        );
+        assert_eq!(
+            check_tool_dependencies_for_os("node", &empty, &empty, Os::Windows),
+            DependencyCheckResult::MissingRequired(vec!["nvm".to_string()]),
+        );
+    }
+
+    // Merge helper: cross-platform + OS-scoped in one call. No tool in
+    // the current registry uses both fields at once (every real dep is
+    // either fully cross-platform or fully scoped), so the merge path
+    // needs its own test — otherwise a bug that drops one side or
+    // double-counts would ship silently.
+    #[test]
+    fn test_merge_dependencies_combines_base_and_scoped() {
+        static SCOPED: &[(Os, &str)] = &[(Os::Windows, "win_only"), (Os::Linux, "linux_only")];
+
+        // Both fields populated: base + matching-OS scoped.
+        assert_eq!(
+            merge_dependencies(Some(&["base"]), SCOPED, Os::Windows),
+            vec!["base", "win_only"],
+        );
+        assert_eq!(
+            merge_dependencies(Some(&["base"]), SCOPED, Os::Linux),
+            vec!["base", "linux_only"],
+        );
+        // Both fields populated, current OS matches neither scoped entry.
+        assert_eq!(
+            merge_dependencies(Some(&["base"]), SCOPED, Os::Macos),
+            vec!["base"],
+        );
+        // Only base.
+        assert_eq!(
+            merge_dependencies(Some(&["base"]), &[], Os::Windows),
+            vec!["base"],
+        );
+        // Only scoped.
+        assert_eq!(
+            merge_dependencies(None, SCOPED, Os::Windows),
+            vec!["win_only"],
+        );
+        // Neither.
+        assert!(merge_dependencies(None, &[], Os::Windows).is_empty());
+        // Multi-entry base + scoped, ordering preserved (base first).
+        assert_eq!(
+            merge_dependencies(Some(&["a", "b"]), SCOPED, Os::Windows),
+            vec!["a", "b", "win_only"],
+        );
+    }
+
+    // Invariant: every declared dep name must resolve to a registered
+    // tool — either via the `inventory` submission (all `define_tool!`
+    // specs) OR via `MANUAL_TOOLS` (nvm / brew, which use custom
+    // installers registered by hand in `mod.rs::register_all`).
+    // Catches typos like `depends_on: &["kubectrl"]` that jarvy would
+    // otherwise silently treat as an unsatisfiable prereq — the user
+    // gets "install kubectrl" (typo) instead of "install kubectl".
+    #[test]
+    fn all_declared_dependencies_are_registered_tools() {
+        let is_known = |dep: &str| {
+            get_tool_spec(dep).is_some()
+                || MANUAL_TOOLS
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case(dep))
+        };
+        for entry in iter_tools() {
+            let tool_name = entry.spec.name;
+            if let Some(deps) = entry.spec.depends_on {
+                for dep in deps {
+                    assert!(
+                        is_known(dep),
+                        "{tool_name} declares unknown depends_on '{dep}'",
+                    );
+                }
+            }
+            for (os, dep) in entry.spec.depends_on_by_os {
+                assert!(
+                    is_known(dep),
+                    "{tool_name} on {os:?} declares unknown depends_on_by_os '{dep}'",
+                );
+            }
+            if let Some(flex) = entry.spec.depends_on_one_of {
+                for dep in flex {
+                    assert!(
+                        is_known(dep),
+                        "{tool_name} declares unknown depends_on_one_of '{dep}'",
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_tool_has_dependencies() {
         // Unknown tools have no dependencies
         assert!(!tool_has_dependencies("nonexistent"));
-        // Most standard tools have no dependencies
-        assert!(!tool_has_dependencies("git"));
+        // jq has no deps on any OS (git carries a Windows-scoped vcredist
+        // dep, so it would report true on Windows and false elsewhere,
+        // which is the opposite of what this test is trying to check).
+        assert!(!tool_has_dependencies("jq"));
     }
 
     #[test]
@@ -2555,8 +2865,9 @@ mod tests {
     fn test_tool_has_any_dependencies() {
         // Unknown tools have no dependencies
         assert!(!tool_has_any_dependencies("nonexistent"));
-        // Standard tools without deps
-        assert!(!tool_has_any_dependencies("git"));
+        // jq has no deps on any OS (git carries a Windows-scoped vcredist
+        // dep so it isn't a valid "no deps" fixture anymore).
+        assert!(!tool_has_any_dependencies("jq"));
     }
 
     #[test]
@@ -2607,8 +2918,10 @@ mod tests {
         let config_tools = HashSet::new();
         let installed_tools = HashSet::new();
 
-        // git has no dependencies
-        let result = check_tool_dependencies("git", &config_tools, &installed_tools);
+        // jq has no dependencies on any OS. (git carries a Windows-scoped
+        // vcredist dep, so the old fixture returned MissingRequired on
+        // Windows CI.)
+        let result = check_tool_dependencies("jq", &config_tools, &installed_tools);
         assert_eq!(result, DependencyCheckResult::Satisfied);
     }
 

@@ -16,6 +16,8 @@ define_tool!(SEMANTIC_RELEASE, {
     // The fallback runtime bootstraps node through jarvy's own
     // registry when it's missing (verified 2026-08).
     fallback: { npm: "semantic-release" },
+    // Node.js CLI — runs the release pipeline on the node runtime.
+    depends_on_one_of: &["node", "nvm"],
     category: "workflow",
 });
 
@@ -38,5 +40,13 @@ mod tests {
             crate::tools::spec::FallbackEco::Npm
         );
         assert_eq!(SEMANTIC_RELEASE.fallback[0].package, "semantic-release");
+    }
+
+    #[test]
+    fn semantic_release_needs_node_runtime() {
+        assert_eq!(
+            SEMANTIC_RELEASE.depends_on_one_of,
+            Some(&["node", "nvm"] as &[&str])
+        );
     }
 }

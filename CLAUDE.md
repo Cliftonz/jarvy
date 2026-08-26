@@ -138,7 +138,7 @@ define_tool!(JQ, {
 });
 ```
 
-Macro slots: `macos.brew` / `macos.cask`, `linux.uniform` OR `linux.{apt,dnf,pacman,apk}`, `windows.winget` / `windows.choco`, `custom_install: Some(fn)` for shell-script installs (nvm/rustup/brew), `fallback: { go|npm|cargo|uv: "<first-party pkg>" }` (PRD-060 — ecosystem routes tried in declared order when no platform slot covers the OS; missing toolchains auto-bootstrap through jarvy's own registry; ecosystem package managers ONLY, never curl|sh), `default_hook: { description, script }`, `depends_on: &[...]` (strict — all required), `depends_on_one_of: &[...]` (flexible — one required), `category: "messaging" | …`. Register in `src/tools/mod.rs::register_all()`.
+Macro slots: `macos.brew` / `macos.cask`, `linux.uniform` OR `linux.{apt,dnf,pacman,apk}`, `windows.winget` / `windows.choco`, `custom_install: Some(fn)` for shell-script installs (nvm/rustup/brew), `fallback: { go|npm|cargo|uv: "<first-party pkg>" }` (PRD-060 — ecosystem routes tried in declared order when no platform slot covers the OS; missing toolchains auto-bootstrap through jarvy's own registry; ecosystem package managers ONLY, never curl|sh), `default_hook: { description, script }`, `depends_on: &[...]` (strict — all required, applies on every platform), `depends_on_by_os: &[(Os::Windows, "vcredist")]` (strict — applies only when the current OS matches; merged with `depends_on` at check + topo-sort time so a Windows-only prereq doesn't false-fire on macOS/Linux), `depends_on_one_of: &[...]` (flexible — one required), `category: "messaging" | …`. Register in `src/tools/mod.rs::register_all()`.
 
 **Non-obvious rules:**
 

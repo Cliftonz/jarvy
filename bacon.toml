@@ -1,0 +1,74 @@
+# bacon config — <https://dystroy.org/bacon>.
+#
+# Background Rust checker for the local dev loop. Run `bacon` at the
+# repo root; use `bacon <job>` to switch. Job list mirrors what CI runs
+# (see .github/workflows/{clippy,test}.yml) so a green bacon means a
+# green PR.
+#
+# Keybindings inside the TUI: `q` quit, `c` clippy-all, `t` test,
+# `n` nextest, `d` doc, `w` toggle watch, `s` toggle summary.
+
+# Default lands on clippy-all — LSP already surfaces type errors in the
+# editor, so bacon's job is to catch what the LSP does not (lints,
+# style, perf). Matches Chris Biscardi / no-boilerplate's advice.
+default_job = "clippy-all"
+
+# Jarvy uses --all-features in CI so the `test-bypass` gated
+# integration paths compile locally too (see CLAUDE.md § build).
+[jobs.check]
+command = ["cargo", "check", "--all-features", "--color", "always"]
+need_stdout = false
+
+[jobs.clippy]
+command = [
+    "cargo", "clippy",
+    "--all-features",
+    "--color", "always",
+    "--", "-D", "warnings",
+]
+need_stdout = false
+
+# Alias so `bacon clippy-all` matches Chris's convention.
+[jobs.clippy-all]
+command = [
+    "cargo", "clippy",
+    "--all-targets", "--all-features",
+    "--color", "always",
+    "--", "-D", "warnings",
+]
+need_stdout = false
+
+# Unit + integration. --no-fail-fast to see the full failure surface
+# per run (matches CI's rationale in test.yml).
+[jobs.nextest]
+command = [
+    "cargo", "nextest", "run",
+    "--all-features",
+    "--no-fail-fast",
+    "--color", "always",
+]
+analyzer = "nextest"
+need_stdout = true
+
+# Doctests — nextest doesn't run them (rust-lang/rust#50297) so keep a
+# separate job for docs-heavy edits.
+[jobs.doc]
+command = ["cargo", "test", "--doc", "--all-features", "--color", "always"]
+need_stdout = true
+
+# Fallback that mirrors cargo test exactly, for cases where nextest's
+# per-test process isolation hides a shared-state bug.
+[jobs.test]
+command = [
+    "cargo", "test",
+    "--all-features",
+    "--color", "always",
+    "--", "--show-output",
+]
+need_stdout = true
+
+[keybindings]
+c = "job:clippy-all"
+t = "job:test"
+n = "job:nextest"
+d = "job:doc"

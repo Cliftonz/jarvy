@@ -16,6 +16,10 @@ define_tool!(WRANGLER, {
     // route covers Windows via `wrangler` (bin = `wrangler`,
     // verified 2026-08).
     fallback: { npm: "wrangler" },
+    // Node.js CLI at runtime (dev server, deploy, tail logs all run on
+    // node). Brew formula bundles node transitively; npm fallback path
+    // needs it explicitly.
+    depends_on_one_of: &["node", "nvm"],
 });
 
 #[cfg(test)]
@@ -36,5 +40,13 @@ mod tests {
             crate::tools::spec::FallbackEco::Npm
         );
         assert_eq!(WRANGLER.fallback[0].package, "wrangler");
+    }
+
+    #[test]
+    fn wrangler_needs_node_runtime() {
+        assert_eq!(
+            WRANGLER.depends_on_one_of,
+            Some(&["node", "nvm"] as &[&str])
+        );
     }
 }

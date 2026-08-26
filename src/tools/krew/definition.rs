@@ -30,8 +30,9 @@ if [ -f "$HOME/.zshrc" ] && ! grep -q '.krew/bin' "$HOME/.zshrc"; then
 fi
 "#
     },
-    // kubectl plugin manager needs kubectl
-    depends_on_one_of: &["kubectl"],
+    // kubectl plugin manager needs kubectl. Strict dep —
+    // single-element flexible was semantically equivalent.
+    depends_on: &["kubectl"],
 });
 
 #[cfg(test)]
@@ -43,5 +44,11 @@ mod tests {
         assert_eq!(KREW.command, "kubectl-krew");
         let mac = KREW.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("krew"));
+    }
+
+    #[test]
+    fn krew_requires_kubectl() {
+        assert_eq!(KREW.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(KREW.depends_on_one_of.is_none());
     }
 }

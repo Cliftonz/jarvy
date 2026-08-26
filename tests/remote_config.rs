@@ -12,13 +12,17 @@ use common::jarvy_fast_cmd;
 
 fn make_valid_config() -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
+    // jq is the canonical zero-deps fixture tool. See "Fixture tool
+    // selection rationale" in `tests/common/mod.rs` for why git is not
+    // used (Windows-scoped vcredist dep would fail .success() asserts
+    // on windows-latest CI).
     writeln!(
         f,
         r#"[privileges]
 use_sudo = false
 
 [provisioner]
-git = "2.0"
+jq = "latest"
 "#
     )
     .unwrap();

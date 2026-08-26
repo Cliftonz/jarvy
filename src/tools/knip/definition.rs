@@ -13,6 +13,8 @@ define_tool!(KNIP, {
     // The fallback runtime bootstraps node through jarvy's own
     // registry when it's missing (verified 2026-08).
     fallback: { npm: "knip" },
+    // Runs on the Node.js runtime. Cypress / playwright pattern.
+    depends_on_one_of: &["node", "nvm"],
 });
 
 #[cfg(test)]
@@ -30,5 +32,10 @@ mod tests {
         assert_eq!(KNIP.fallback.len(), 1);
         assert_eq!(KNIP.fallback[0].eco, crate::tools::spec::FallbackEco::Npm);
         assert_eq!(KNIP.fallback[0].package, "knip");
+    }
+
+    #[test]
+    fn knip_needs_node_runtime() {
+        assert_eq!(KNIP.depends_on_one_of, Some(&["node", "nvm"] as &[&str]));
     }
 }

@@ -23,8 +23,9 @@ fi
 helm repo update 2>/dev/null || true
 "#
     },
-    // Helm needs kubectl/kubeconfig to deploy to a cluster
-    depends_on_one_of: &["kubectl"],
+    // Helm needs kubectl/kubeconfig to deploy to a cluster. Strict
+    // dep — single-element flexible was semantically equivalent.
+    depends_on: &["kubectl"],
 });
 
 #[cfg(test)]
@@ -38,5 +39,11 @@ mod tests {
         assert_eq!(mac.brew, Some("helm"));
         let win = HELM.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Helm.Helm"));
+    }
+
+    #[test]
+    fn helm_requires_kubectl() {
+        assert_eq!(HELM.depends_on, Some(&["kubectl"] as &[&str]));
+        assert!(HELM.depends_on_one_of.is_none());
     }
 }
