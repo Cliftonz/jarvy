@@ -166,6 +166,7 @@ fn resolve_docker_daemon_hint(
     )
 }
 
+// TODO: podman likely has the same WSL-integration ambiguity as docker; unaddressed pending a report.
 /// Build a platform-aware, actionable hint for a stopped Podman daemon.
 ///
 /// On macOS/Windows, podman requires a running VM (`podman machine start`).
@@ -245,6 +246,33 @@ mod tests {
     fn resolve_docker_daemon_hint_bare_linux_still_suggests_systemd() {
         let (_, kind) = resolve_docker_daemon_hint(false, false, false, false);
         assert_eq!(kind, "systemd");
+    }
+
+    #[test]
+    fn resolve_docker_daemon_hint_macos_with_colima_suggests_colima() {
+        let (_, kind) = resolve_docker_daemon_hint(true, false, true, false);
+        assert_eq!(kind, "colima");
+    }
+
+    #[test]
+    fn resolve_docker_daemon_hint_macos_without_colima_suggests_docker_desktop() {
+        let (_, kind) = resolve_docker_daemon_hint(true, false, false, false);
+        assert_eq!(kind, "docker_desktop_macos");
+    }
+
+    #[test]
+    fn resolve_docker_daemon_hint_windows_suggests_docker_desktop() {
+        let (_, kind) = resolve_docker_daemon_hint(false, true, false, false);
+        assert_eq!(kind, "docker_desktop_windows");
+    }
+
+    #[test]
+    fn resolve_docker_daemon_hint_windows_wins_over_wsl_flag() {
+        // is_windows and is_wsl both true is not a real combo in production
+        // (is_wsl() only ever returns true on a Linux-target build), but the
+        // branch order should still resolve deterministically: Windows wins.
+        let (_, kind) = resolve_docker_daemon_hint(false, true, false, true);
+        assert_eq!(kind, "docker_desktop_windows");
     }
 
     #[test]
