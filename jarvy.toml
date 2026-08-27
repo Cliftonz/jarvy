@@ -80,6 +80,20 @@ btop = "latest"
 # Hooks Configuration
 # =============================================================================
 [hooks]
+# MSVC C++ Build Tools (link.exe) are required to compile jarvy itself on
+# Windows; this is not one of the tools jarvy manages for other projects.
+pre_setup = """
+if [ "${OS:-}" = "Windows_NT" ]; then
+    if cmd.exe /c "where cl.exe" >/dev/null 2>&1; then
+        echo "MSVC Build Tools already installed (cl.exe found), skipping."
+    else
+        echo "Installing MSVC C++ Build Tools (needed to compile jarvy on Windows)..."
+        winget install --id Microsoft.VisualStudio.2022.BuildTools -e --silent --accept-package-agreements --accept-source-agreements --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" || true
+        echo "MSVC C++ Build Tools install step complete."
+    fi
+fi
+"""
+
 post_setup = """
 echo ""
 echo "=========================================="
