@@ -27,6 +27,36 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.8.2] — Windows hook/Chocolatey fixes, OS-scoped dependencies, 9 new tools (2026-08-26)
+
+**Features — tools:**
+
+- Add PowerToys, AutoHotkey, and VCRedist (Windows).
+- Add 6 Rust ecosystem tools (cargo-generate, cargo-seek, dioxus-cli, sqlx-cli,
+  tauri-cli, trunk) plus a bacon dev-loop config template.
+
+**Features — dependency declarations:**
+
+- New `depends_on_by_os` macro slot: a tool can declare a prerequisite that
+  only applies on a specific OS (e.g. VCRedist is Windows-only), merged into
+  dependency checking and topo-sort so it doesn't false-fire on other
+  platforms.
+- Node declared as `depends_on_one_of` for npm-distributed CLIs, so at least
+  one JS runtime is ensured before those installs run.
+
+**Fixes:**
+
+- Default Windows hooks to git-bash instead of PowerShell (every built-in
+  `default_hook` script is POSIX syntax), auto-bootstrap Chocolatey when a
+  tool only ships a `windows.choco` entry, and refresh PATH mid-setup-run so
+  a hook depending on a tool installed earlier in the same run sees it
+  immediately.
+- Scope pyenv/rbenv/nvm's declared dependencies to the OSes they actually
+  support, fixing false "missing required dependency" warnings on
+  unsupported OSes.
+- Declare missing runtime dependencies for git-lfs (→ git), cargo-tarpaulin,
+  and yadm so topo-sort installs them in the correct order.
+
 ## [v0.8.1] — WSL2 bridge, 16 new tools, per-OS example templates (2026-08-22)
 
 **Features — WSL2 bridge (`[windows.wsl]`):**
@@ -3422,6 +3452,7 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
 [Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.8.1...HEAD
+[v0.8.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.2
 [v0.8.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.1
 [v0.8.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.7.0
