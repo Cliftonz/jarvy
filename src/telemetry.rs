@@ -1354,6 +1354,68 @@ pub fn config_parse_error(file: &str, error: &str) {
     }
 }
 
+/// Record a successful upward `jarvy.toml` parent-directory search
+/// (`resolve_project_root_from_cli`, mirrors `git`'s walk to find
+/// `.git`). `command` is a bounded subcommand label; `levels_climbed`
+/// is the directory-depth distance between the original cwd and the
+/// discovered root.
+pub fn config_parent_search_succeeded(command: &str, levels_climbed: u32) {
+    if !is_enabled() {
+        return;
+    }
+
+    tracing::info!(
+        event = "config.parent_search_succeeded",
+        command = %command,
+        levels_climbed = %levels_climbed,
+    );
+}
+
+/// Record an upward `jarvy.toml` search that reached `$HOME` without
+/// finding a config. `command` is a bounded subcommand label.
+pub fn config_parent_search_failed(command: &str) {
+    if !is_enabled() {
+        return;
+    }
+
+    tracing::warn!(
+        event = "config.parent_search_failed",
+        command = %command,
+    );
+}
+
+/// Emit the telemetry for a `config::resolve_project_root_from_cli`
+/// outcome. That resolver runs immediately after `Cli::parse()`, before
+/// `telemetry::init` populates the state `is_enabled()` reads, so it
+/// cannot call telemetry directly; it returns a `ParentSearchOutcome`
+/// instead, which the caller replays through here once `init` has run.
+pub fn emit_parent_search_outcome(outcome: crate::config::ParentSearchOutcome) {
+    use crate::config::ParentSearchOutcome;
+    match outcome {
+        ParentSearchOutcome::Found {
+            command,
+            levels_climbed,
+        } => config_parent_search_succeeded(command, levels_climbed),
+        ParentSearchOutcome::ChdirFailed { command } => {
+            if is_enabled() {
+                tracing::warn!(
+                    event = "config.parent_search_chdir_failed",
+                    command = %command,
+                );
+            }
+        }
+        ParentSearchOutcome::NotFound {
+            command,
+            hint_shown,
+        } => {
+            if hint_shown {
+                config_parent_search_failed(command);
+            }
+        }
+        ParentSearchOutcome::Skipped => {}
+    }
+}
+
 // ============================================================================
 // Event Functions - Services
 // ============================================================================

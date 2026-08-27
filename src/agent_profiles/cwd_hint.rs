@@ -246,7 +246,7 @@ pub(crate) fn run_inner(
             reason: SilentReason::NoConfig,
         };
     };
-    let Some((jarvy_toml, repo_root)) = find_config_walking_up(&cwd) else {
+    let Some((jarvy_toml, repo_root)) = crate::paths::find_jarvy_toml_upward(&cwd) else {
         return RunEffect::Silent {
             reason: SilentReason::NoConfig,
         };
@@ -315,43 +315,6 @@ pub(crate) fn run_inner(
         matched,
         prefer,
         mismatched,
-    }
-}
-
-/// Walk up from `start` looking for `jarvy.toml`. Stops at the home
-/// dir (inclusive) so a rogue `~/../etc/jarvy.toml`-style traversal
-/// can't happen and system paths above `$HOME` never get probed.
-/// Also refuses to walk at all if `start` canonicalizes outside
-/// `$HOME` — closes Security F2 (traversal outside home; a user
-/// `cd`'d into `/tmp` shouldn't have their shell prompt probe there
-/// for a config file). Returns `(config_path, repo_root)` — repo_root
-/// is the canonicalized dir holding the config.
-///
-/// Perf: `home_dir` and `home.canonicalize()` are computed once —
-/// previously canonicalized on every prompt hit.
-fn find_config_walking_up(start: &Path) -> Option<(PathBuf, PathBuf)> {
-    let home = crate::agents::home_dir()?;
-    let home_canon = home.canonicalize().ok()?;
-    let start_canon = start.canonicalize().ok()?;
-    // Security F2: refuse walks whose canonical start isn't under
-    // `$HOME`. Without this, a shell `cd`'d into `/tmp` would have
-    // its prompt hook stat `/tmp/jarvy.toml`, `/jarvy.toml`, etc —
-    // the loop's home-stop only helps when start IS under home.
-    if !start_canon.starts_with(&home_canon) {
-        return None;
-    }
-    let mut cur = start_canon;
-    loop {
-        let candidate = cur.join("jarvy.toml");
-        if candidate.is_file() {
-            return Some((candidate, cur));
-        }
-        // Stop at home dir — do not scan `/`, `/etc`, or a sibling
-        // user's home.
-        if cur == home_canon {
-            return None;
-        }
-        cur = cur.parent()?.to_path_buf();
     }
 }
 
@@ -685,7 +648,7 @@ mod tests {
     #[test]
     #[serial_test::serial(jarvy_home_env)]
     fn no_jarvy_toml_is_silent() {
-        // find_config_walking_up must return None when no jarvy.toml
+        // find_jarvy_toml_upward must return None when no jarvy.toml
         // exists between cwd and home. `run()` returns 0 without
         // touching state in that case.
         let _home = JarvyHomeGuard::new();
@@ -694,7 +657,7 @@ mod tests {
         let start = home.join("no_config_here");
         fs::create_dir_all(&start).unwrap();
 
-        assert!(find_config_walking_up(&start).is_none());
+        assert!(crate::paths::find_jarvy_toml_upward(&start).is_none());
 
         // Also assert the top-level: state file must not exist since
         // nothing wrote it (no config → early return before save).
@@ -881,29 +844,6 @@ prefer = \"leak\"
         let path = tmp.path().join("jarvy.toml");
         fs::write(&path, "[agents.profiles]\nprefer = \"work\"\n").unwrap();
         assert_eq!(read_prefer(&path), Some("work".to_string()));
-    }
-
-    // ---- Change 1.4: find_config_walking_up ---------------------------
-
-    #[test]
-    #[serial_test::serial(jarvy_home_env)]
-    fn find_config_walking_up_refuses_outside_home() {
-        // Canonical start outside $HOME (JARVY_HOME) → must not walk.
-        // Uses env::temp_dir() which is guaranteed NOT under the guard's
-        // tempdir root.
-        let _home = JarvyHomeGuard::new();
-        let outside = std::env::temp_dir().join(format!("cwd-hint-outside-{}", std::process::id()));
-        fs::create_dir_all(&outside).unwrap();
-        // Belt-and-braces: outside is under the OS tempdir, but the
-        // guard put JARVY_HOME under a *different* tempdir path. If
-        // the two happen to alias, skip.
-        let home_canon = crate::agents::home_dir().unwrap().canonicalize().unwrap();
-        if outside.canonicalize().unwrap().starts_with(&home_canon) {
-            return;
-        }
-        assert!(find_config_walking_up(&outside).is_none());
-        // Cleanup.
-        let _ = fs::remove_dir_all(&outside);
     }
 
     // ---- Change 1.2: quick_key_check fast path ------------------------

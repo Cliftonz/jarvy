@@ -27,6 +27,41 @@ pub fn config_parent_dir(file: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Walk up from `start` looking for `jarvy.toml`. Stops at the home
+/// dir (inclusive) so a rogue `~/../etc/jarvy.toml`-style traversal
+/// can't happen and system paths above `$HOME` never get probed. Also
+/// refuses to walk at all if `start` canonicalizes outside `$HOME`,
+/// closing Security F2 (traversal outside home; a user `cd`'d into
+/// `/tmp` shouldn't have their shell prompt, or the CLI's own upward
+/// config search, probe there for a config file). Returns
+/// `(config_path, repo_root)`, where repo_root is the canonicalized
+/// dir holding the config.
+///
+/// Shared by `config::resolve_project_root_from_cli` (the CLI's own
+/// upward search, bin-only) and `agent_profiles::cwd_hint` (the
+/// shell-prompt hint, which compiles into both the lib and bin crate
+/// trees) — lives here rather than in either caller because `paths` is
+/// the one module declared in both `lib.rs` and `main.rs`.
+pub(crate) fn find_jarvy_toml_upward(start: &Path) -> Option<(PathBuf, PathBuf)> {
+    let home = crate::agents::home_dir()?;
+    let home_canon = home.canonicalize().ok()?;
+    let start_canon = start.canonicalize().ok()?;
+    if !start_canon.starts_with(&home_canon) {
+        return None;
+    }
+    let mut cur = start_canon;
+    loop {
+        let candidate = cur.join("jarvy.toml");
+        if candidate.is_file() {
+            return Some((candidate, cur));
+        }
+        if cur == home_canon {
+            return None;
+        }
+        cur = cur.parent()?.to_path_buf();
+    }
+}
+
 /// Returned when `dirs::home_dir()` cannot be resolved (rare; running as
 /// `nobody`, certain container images, etc.) OR when `JARVY_HOME` is
 /// rejected as unsafe.
@@ -418,5 +453,25 @@ mod tests {
         assert!(backup_dir().unwrap().starts_with(&home));
         assert!(config_toml().unwrap().starts_with(&home));
         assert!(agent_profiles_dir().unwrap().starts_with(&home));
+    }
+
+    #[test]
+    #[serial_test::serial(jarvy_home_env)]
+    fn find_jarvy_toml_upward_refuses_outside_home() {
+        // Uses env::temp_dir() which is guaranteed NOT under the guard's
+        // tempdir root.
+        let _home = crate::agent_profiles::test_support::JarvyHomeGuard::new();
+        let outside =
+            std::env::temp_dir().join(format!("paths-upward-outside-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        // Belt-and-braces: outside is under the OS tempdir, but the
+        // guard put JARVY_HOME under a *different* tempdir path. If
+        // the two happen to alias, skip.
+        let home_canon = crate::agents::home_dir().unwrap().canonicalize().unwrap();
+        if outside.canonicalize().unwrap().starts_with(&home_canon) {
+            return;
+        }
+        assert!(find_jarvy_toml_upward(&outside).is_none());
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }

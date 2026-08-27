@@ -99,6 +99,14 @@ fn main() {
         return;
     }
 
+    // Must run before anything touches a config-relative path: telemetry
+    // config extraction, `run_setup`'s workspace/CI handling, and every
+    // handler's `Config::new` all assume cwd already IS the project root.
+    // Telemetry isn't initialized yet at this point (see below), so the
+    // outcome is captured here and replayed through
+    // `telemetry::emit_parent_search_outcome` once `telemetry::init` runs.
+    let parent_search_outcome = config::resolve_project_root_from_cli(&cli);
+
     // CI-flag forwarding to env BEFORE any cached ci::detect()/is_ci()
     // call. The `Setup { ci, no_ci, .. }` flags were forwarded into
     // `JARVY_CI` / `JARVY_NO_CI` only inside `run_setup`, but the
@@ -277,6 +285,7 @@ fn main() {
 
     init_logging(&telemetry_config, obs_config.as_ref());
     telemetry::init(telemetry_config);
+    telemetry::emit_parent_search_outcome(parent_search_outcome);
 
     // If `initialize_from_disk` rendered the first-run / legacy-upgrade
     // telemetry disclosure, emit the audit event now that the OTLP

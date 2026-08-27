@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{fs, process};
 
 use crate::roles::definition::{RoleAssignment, RolesConfig};
@@ -1504,6 +1504,189 @@ docker = "latest"
         return;
     }
     println!("Created jarvy.toml with default configuration");
+}
+
+/// Outcome of [`resolve_project_root_from_cli`]'s upward search,
+/// captured at the call site (right after `Cli::parse()`, which runs
+/// before `telemetry::init` populates the state `telemetry::is_enabled()`
+/// reads) so the actual telemetry emission can happen later in `main()`,
+/// after `telemetry::init` has run. The chdir and the user-facing
+/// `eprintln!` hints still happen immediately inside
+/// `resolve_project_root_from_cli`; only the telemetry call is deferred.
+pub(crate) enum ParentSearchOutcome {
+    /// A parent `jarvy.toml` was found and the process chdir'd into it.
+    Found {
+        command: &'static str,
+        levels_climbed: u32,
+    },
+    /// A parent `jarvy.toml` was found but `set_current_dir` into its
+    /// directory failed.
+    ChdirFailed { command: &'static str },
+    /// The search reached `$HOME` without finding a `jarvy.toml`.
+    NotFound {
+        command: &'static str,
+        hint_shown: bool,
+    },
+    /// No search was attempted (explicit `--file`, a default-path file
+    /// already present in cwd, `JARVY_NO_PARENT_SEARCH` set, or a
+    /// command with no `--file` concept).
+    Skipped,
+}
+
+/// Mirrors `git`: when the default `--file ./jarvy.toml` isn't present
+/// in cwd, search parent directories (bounded by `$HOME`, see
+/// [`crate::paths::find_jarvy_toml_upward`]) and chdir the process into
+/// the discovered root before any command logic runs. Every existing
+/// cwd-relative code path (`Config::new`, hooks, `[commands]`
+/// execution, workspace auto-detection) then works unchanged.
+///
+/// An explicit `--file` (anything other than the clap default) is
+/// consent to use exactly that path, never searched. Same for a
+/// default-path file that already exists in cwd: no search needed.
+pub fn resolve_project_root_from_cli(cli: &crate::cli::Cli) -> ParentSearchOutcome {
+    if std::env::var_os("JARVY_NO_PARENT_SEARCH").is_some() {
+        return ParentSearchOutcome::Skipped;
+    }
+    let Some(file) = cli_file_arg(cli) else {
+        return ParentSearchOutcome::Skipped;
+    };
+    if file != crate::cli::DEFAULT_CONFIG_FILE || Path::new(file).exists() {
+        return ParentSearchOutcome::Skipped;
+    }
+    let Ok(cwd) = std::env::current_dir() else {
+        return ParentSearchOutcome::Skipped;
+    };
+    match crate::paths::find_jarvy_toml_upward(&cwd) {
+        Some((_config_path, root)) => {
+            let levels = cwd
+                .components()
+                .count()
+                .saturating_sub(root.components().count());
+            match std::env::set_current_dir(&root) {
+                Ok(()) => {
+                    eprintln!(
+                        "  Using jarvy.toml found in a parent directory: {}",
+                        root.display()
+                    );
+                    ParentSearchOutcome::Found {
+                        command: command_name(cli),
+                        levels_climbed: levels as u32,
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "  Found jarvy.toml in a parent directory ({}) but could not switch into it: {}",
+                        root.display(),
+                        e
+                    );
+                    ParentSearchOutcome::ChdirFailed {
+                        command: command_name(cli),
+                    }
+                }
+            }
+        }
+        None => {
+            let hint_shown = requires_config_hint(cli);
+            if hint_shown && let Some(home) = crate::agents::home_dir() {
+                eprintln!(
+                    "  (jarvy also searched parent directories up to {} for a jarvy.toml and found none)",
+                    home.display()
+                );
+            }
+            ParentSearchOutcome::NotFound {
+                command: command_name(cli),
+                hint_shown,
+            }
+        }
+    }
+}
+
+/// The `--file` value for every subcommand that takes one, folding
+/// `Doctor`'s `Option<String>` to the same clap default the other
+/// commands carry directly. `None` covers commands with no jarvy.toml
+/// concept (`Upgrade`, `Explain` treat a missing `--file` as "no
+/// config", not a default path, so they're out of scope here) plus
+/// every subcommand action that has no `file` field.
+fn cli_file_arg(cli: &crate::cli::Cli) -> Option<&str> {
+    use crate::cli::{Commands, ConfigAction, LibraryAction, LockAction};
+    match cli.command.as_ref()? {
+        Commands::Setup { file, .. }
+        | Commands::Get { file, .. }
+        | Commands::Env { file, .. }
+        | Commands::Context { file, .. }
+        | Commands::Workspace { file, .. }
+        | Commands::Discover { file, .. }
+        | Commands::Services { file, .. }
+        | Commands::Diff { file, .. }
+        | Commands::Validate { file, .. }
+        | Commands::Roles { file, .. }
+        | Commands::CheckUpdates { file, .. }
+        | Commands::Drift { file, .. }
+        | Commands::Migrate { file, .. }
+        | Commands::AiHooks { file, .. }
+        | Commands::McpRegister { file, .. }
+        | Commands::Hooks { file, .. }
+        | Commands::Skills { file, .. }
+        | Commands::Wizard { file, .. }
+        | Commands::Run { file, .. } => Some(file.as_str()),
+        Commands::Doctor { file, .. } => {
+            Some(file.as_deref().unwrap_or(crate::cli::DEFAULT_CONFIG_FILE))
+        }
+        Commands::Lock {
+            action: LockAction::Generate { file, .. },
+        } => Some(file.as_str()),
+        Commands::Config {
+            action: ConfigAction::Show { file, .. } | ConfigAction::Refresh { file, .. },
+        } => Some(file.as_str()),
+        Commands::Library {
+            action: LibraryAction::Sync { file, .. },
+        } => Some(file.as_str()),
+        _ => None,
+    }
+}
+
+/// Low-cardinality telemetry label for the subcommand being run.
+/// Doesn't need to cover every `Commands` variant, only the ones
+/// [`cli_file_arg`] can return `Some` for, since that's the only path
+/// that calls this.
+fn command_name(cli: &crate::cli::Cli) -> &'static str {
+    use crate::cli::Commands;
+    match cli.command.as_ref() {
+        Some(Commands::Setup { .. }) => "setup",
+        Some(Commands::Get { .. }) => "get",
+        Some(Commands::Env { .. }) => "env",
+        Some(Commands::Context { .. }) => "context",
+        Some(Commands::Workspace { .. }) => "workspace",
+        Some(Commands::Discover { .. }) => "discover",
+        Some(Commands::Services { .. }) => "services",
+        Some(Commands::Diff { .. }) => "diff",
+        Some(Commands::Validate { .. }) => "validate",
+        Some(Commands::Roles { .. }) => "roles",
+        Some(Commands::CheckUpdates { .. }) => "check-updates",
+        Some(Commands::Drift { .. }) => "drift",
+        Some(Commands::Migrate { .. }) => "migrate",
+        Some(Commands::AiHooks { .. }) => "ai-hooks",
+        Some(Commands::McpRegister { .. }) => "mcp-register",
+        Some(Commands::Hooks { .. }) => "hooks",
+        Some(Commands::Skills { .. }) => "skills",
+        Some(Commands::Wizard { .. }) => "wizard",
+        Some(Commands::Run { .. }) => "run",
+        Some(Commands::Doctor { .. }) => "doctor",
+        Some(Commands::Lock { .. }) => "lock",
+        Some(Commands::Config { .. }) => "config",
+        Some(Commands::Library { .. }) => "library",
+        _ => "unknown",
+    }
+}
+
+/// "No config found while searching" is only worth a hint when the
+/// command actually wanted a jarvy.toml. `Doctor` treats a missing
+/// config as an expected, silent outcome (its `--file` is already
+/// `Option<String>` for that reason), so it's carved out here even
+/// though [`cli_file_arg`] resolves it to the default path.
+fn requires_config_hint(cli: &crate::cli::Cli) -> bool {
+    cli_file_arg(cli).is_some()
+        && !matches!(cli.command, Some(crate::cli::Commands::Doctor { .. }))
 }
 
 #[cfg(test)]
