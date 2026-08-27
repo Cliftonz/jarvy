@@ -3,6 +3,7 @@
 //! This tool uses the ToolSpec pattern for declarative installation.
 
 use crate::define_tool;
+use crate::tools::common::Os;
 
 define_tool!(DOTNET, {
     command: "dotnet",
@@ -64,6 +65,7 @@ done
 mkdir -p "$HOME/.dotnet/tools"
 "#
     },
+    depends_on_by_os: &[(Os::Linux, "icu")],
 });
 
 #[cfg(test)]
@@ -77,5 +79,13 @@ mod tests {
         assert_eq!(mac.cask, Some("dotnet-sdk"));
         let win = DOTNET.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Microsoft.DotNet.SDK.8"));
+    }
+
+    // .NET on Linux dynamically loads ICU at runtime and fails hard if it's
+    // missing; the OS-scoped dep must fire on Linux only.
+    #[test]
+    fn dotnet_declares_linux_only_icu_dep() {
+        assert_eq!(DOTNET.depends_on_by_os, &[(Os::Linux, "icu")]);
+        assert!(DOTNET.depends_on.is_none());
     }
 }

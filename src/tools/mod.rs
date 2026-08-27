@@ -136,6 +136,7 @@ pub mod htop;
 pub mod httpie;
 pub mod hugo;
 pub mod hyperfine;
+pub mod icu;
 pub mod infisical;
 pub mod infracost;
 pub mod install_method;
