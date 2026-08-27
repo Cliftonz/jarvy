@@ -8,7 +8,7 @@ define_tool!(MAKE, {
     command: "make",
     macos: { brew: "make" },
     linux: { uniform: "make" },
-    windows: { winget: "GnuWin32.Make" },
+    windows: { winget: "ezwinports.make" },
     bsd: { pkg: "gmake" },
 });
 
@@ -22,6 +22,6 @@ mod tests {
         let mac = MAKE.macos.expect("must support macOS");
         assert_eq!(mac.brew, Some("make"));
         let win = MAKE.windows.expect("must support Windows");
-        assert_eq!(win.winget, Some("GnuWin32.Make"));
+        assert_eq!(win.winget, Some("ezwinports.make"));
     }
 }

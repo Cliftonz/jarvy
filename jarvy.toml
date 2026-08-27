@@ -25,6 +25,9 @@ git-lfs = "latest"
 # GitHub CLI for PRs, issues, and workflows
 gh = "latest"
 
+# Some contributor workflows/Makefiles need it
+make = "latest"
+
 # =============================================================================
 # Code Quality & Linting
 # =============================================================================
