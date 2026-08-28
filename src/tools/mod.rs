@@ -181,6 +181,7 @@ pub mod lens;
 pub mod linkerd;
 pub mod litecli;
 pub mod litellm;
+pub mod llm_checker;
 pub mod lnav;
 pub mod localstack;
 pub mod locust;
