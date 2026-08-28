@@ -26,12 +26,12 @@ pub fn setup() {
 
     check_hard_dependencies(PLATFORM);
     check_and_install_git(PLATFORM);
-    install_docker();
 
     match PLATFORM {
         "macos" => {
             // install homebrew
             install_homebrew();
+            install_docker();
         }
         "linux" => {}
         "windows" => {}
