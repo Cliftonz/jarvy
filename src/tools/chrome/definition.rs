@@ -3,7 +3,7 @@
 //! macOS: Homebrew cask. Windows: winget. Linux: Google's vendor apt/dnf
 //! repository (`google-chrome-stable`). Linux arm64 is unsupported upstream —
 //! Google only ships x86_64 debs/rpms, so arm64 Linux boxes surface as
-//! `Unsupported` via [`browser_repos::install_via_vendor_repo`].
+//! `Unsupported` via [`vendor_repos::install_via_vendor_repo`].
 
 use crate::define_tool;
 use crate::tools::common::{InstallError, has};
@@ -12,12 +12,13 @@ use crate::tools::common::{InstallError, has};
 use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
-use crate::tools::browser_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
+use crate::tools::vendor_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
 
 #[cfg(target_os = "linux")]
 const APT: AptRepo = AptRepo {
     slug: "google-chrome",
     key_url: "https://dl.google.com/linux/linux_signing_key.pub",
+    raw_key_url: None,
     sources_line: "deb https://dl.google.com/linux/chrome/deb/ stable main",
     package: "google-chrome-stable",
 };
@@ -27,6 +28,7 @@ const DNF: DnfRepo = DnfRepo {
     slug: "google-chrome",
     baseurl: "https://dl.google.com/linux/chrome/rpm/stable/x86_64",
     gpgkey: "https://dl.google.com/linux/linux_signing_key.pub",
+    gpgkey2: None,
     package: "google-chrome-stable",
 };
 

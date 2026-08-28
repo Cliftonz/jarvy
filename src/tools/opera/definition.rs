@@ -10,12 +10,13 @@ use crate::tools::common::{InstallError, has};
 use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
-use crate::tools::browser_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
+use crate::tools::vendor_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
 
 #[cfg(target_os = "linux")]
 const APT: AptRepo = AptRepo {
     slug: "opera-stable",
     key_url: "https://deb.opera.com/archive.key",
+    raw_key_url: None,
     sources_line: "deb https://deb.opera.com/opera-stable/ stable non-free",
     package: "opera-stable",
 };
@@ -25,6 +26,7 @@ const DNF: DnfRepo = DnfRepo {
     slug: "opera-stable",
     baseurl: "https://rpm.opera.com/rpm",
     gpgkey: "https://rpm.opera.com/rpmrepo.key",
+    gpgkey2: None,
     package: "opera-stable",
 };
 

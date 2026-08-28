@@ -11,12 +11,13 @@ use crate::tools::common::{InstallError, has};
 use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
-use crate::tools::browser_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
+use crate::tools::vendor_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
 
 #[cfg(target_os = "linux")]
 const APT: AptRepo = AptRepo {
     slug: "vivaldi",
     key_url: "https://repo.vivaldi.com/archive/linux_signing_key.pub",
+    raw_key_url: None,
     sources_line: "deb https://repo.vivaldi.com/archive/deb/ stable main",
     package: "vivaldi-stable",
 };
@@ -26,6 +27,7 @@ const DNF: DnfRepo = DnfRepo {
     slug: "vivaldi",
     baseurl: "https://repo.vivaldi.com/archive/rpm/x86_64",
     gpgkey: "https://repo.vivaldi.com/archive/linux_signing_key.pub",
+    gpgkey2: None,
     package: "vivaldi-stable",
 };
 

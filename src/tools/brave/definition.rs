@@ -11,12 +11,13 @@ use crate::tools::common::{InstallError, has};
 use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
-use crate::tools::browser_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
+use crate::tools::vendor_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
 
 #[cfg(target_os = "linux")]
 const APT: AptRepo = AptRepo {
     slug: "brave-browser",
     key_url: "https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg",
+    raw_key_url: None,
     sources_line: "deb https://brave-browser-apt-release.s3.brave.com/ stable main",
     package: "brave-browser",
 };
@@ -26,6 +27,7 @@ const DNF: DnfRepo = DnfRepo {
     slug: "brave-browser",
     baseurl: "https://brave-browser-rpm-release.s3.brave.com/x86_64/",
     gpgkey: "https://brave-browser-rpm-release.s3.brave.com/brave-core.asc",
+    gpgkey2: None,
     package: "brave-browser",
 };
 

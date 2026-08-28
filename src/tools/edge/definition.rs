@@ -10,12 +10,13 @@ use crate::tools::common::{InstallError, has};
 use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
-use crate::tools::browser_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
+use crate::tools::vendor_repos::{AptRepo, DnfRepo, install_via_vendor_repo};
 
 #[cfg(target_os = "linux")]
 const APT: AptRepo = AptRepo {
     slug: "microsoft-edge",
     key_url: "https://packages.microsoft.com/keys/microsoft.asc",
+    raw_key_url: None,
     sources_line: "deb https://packages.microsoft.com/repos/edge stable main",
     package: "microsoft-edge-stable",
 };
@@ -25,6 +26,7 @@ const DNF: DnfRepo = DnfRepo {
     slug: "microsoft-edge",
     baseurl: "https://packages.microsoft.com/yumrepos/edge",
     gpgkey: "https://packages.microsoft.com/keys/microsoft.asc",
+    gpgkey2: None,
     package: "microsoft-edge-stable",
 };
 
