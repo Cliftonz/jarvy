@@ -35,6 +35,7 @@ pub fn is_installed() -> bool {
 /// Resolve the expected location of `nvm.sh`: `$NVM_DIR` when set and
 /// non-empty, else `~/.nvm`. Pure so the precedence is unit-testable
 /// without mutating process env.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 fn nvm_sh_path(nvm_dir: Option<std::ffi::OsString>, home: Option<PathBuf>) -> Option<PathBuf> {
     let dir = nvm_dir
         .filter(|d| !d.is_empty())

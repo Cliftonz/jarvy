@@ -322,6 +322,7 @@ pub fn ensure_dir_0700(dir: &std::path::Path) -> std::io::Result<()> {
 /// Like [`ensure_dir_0700`] but lets the caller supply a telemetry event
 /// name for the chmod-failed / chmod-ignored warning. `None` skips the
 /// event (safe for callers that don't need telemetry on chmod failures).
+#[cfg_attr(not(unix), allow(unused_variables))]
 pub(crate) fn ensure_dir_0700_with_event(
     dir: &std::path::Path,
     event: Option<&'static str>,

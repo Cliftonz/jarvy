@@ -52,6 +52,7 @@ pub enum CacheError {
         "refusing to use {path}: mode {mode:#o} grants group/other access. \
          Run `chmod 0700 {path}` or remove the dir so jarvy can recreate it."
     )]
+    #[cfg_attr(not(unix), allow(dead_code))]
     InsecurePerms { path: String, mode: u32 },
 }
 

@@ -15,7 +15,7 @@
 // rustc would flag them as dead. The tests cover every function.
 #![allow(dead_code)]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::RwLock;
 
 #[cfg(target_os = "windows")]
@@ -385,8 +385,10 @@ mod exec {
             let text = if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
                 // UTF-16LE BOM — decode
                 let u16s: Vec<u16> = bytes[2..]
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| u16::from_le_bytes(*c))
                     .collect();
                 String::from_utf16_lossy(&u16s)
             } else {
@@ -513,16 +515,16 @@ mod exec {
             );
             return Err(RefusalReason::AutoBootstrapOff);
         };
-        if !crate::tools::wsl::rootfs::cache_hit(entry, &rootfs_path) {
-            if let Err(e) = fetch_rootfs(entry.url, &rootfs_path) {
-                emit_bootstrap_failed(
-                    &cfg.distro,
-                    InstallMethod::WslImport,
-                    "rootfs_download",
-                    &e.to_string(),
-                );
-                return Err(RefusalReason::AutoBootstrapOff);
-            }
+        if !crate::tools::wsl::rootfs::cache_hit(entry, &rootfs_path)
+            && let Err(e) = fetch_rootfs(entry.url, &rootfs_path)
+        {
+            emit_bootstrap_failed(
+                &cfg.distro,
+                InstallMethod::WslImport,
+                "rootfs_download",
+                &e.to_string(),
+            );
+            return Err(RefusalReason::AutoBootstrapOff);
         }
         if let Err(e) = std::fs::create_dir_all(&location) {
             emit_bootstrap_failed(
@@ -656,7 +658,7 @@ mod exec {
 }
 
 #[cfg(target_os = "windows")]
-pub use exec::{bootstrap, delegate_setup, install_jarvy_inside, is_elevated, probe};
+pub use exec::{bootstrap, delegate_setup, install_jarvy_inside};
 
 /// Cross-platform stubs so callers can compile everywhere. The
 /// non-Windows path always returns `NoOp` / `false` / a `NoWsl`-shaped
@@ -693,9 +695,8 @@ pub fn delegate_setup(
 /// Silence the unused-path lint on non-Windows builds where
 /// [`translate_win_path`] is only used by the Windows executor.
 #[cfg(not(target_os = "windows"))]
-fn _keep_import_alive() -> PathBuf {
+fn _keep_import_alive() {
     let _ = translate_win_path;
-    PathBuf::new()
 }
 
 //

@@ -568,11 +568,11 @@ impl ToolSpec {
         let windows = self.windows.ok_or(InstallError::Unsupported)?;
 
         // Prefer winget
-        if let Some(winget_id) = windows.winget {
-            if has("winget") {
-                run("winget", &["install", "-e", "--id", winget_id])?;
-                return Ok(());
-            }
+        if let Some(winget_id) = windows.winget
+            && has("winget")
+        {
+            run("winget", &["install", "-e", "--id", winget_id])?;
+            return Ok(());
         }
 
         // Fallback to Chocolatey — bootstrap it first if this machine
@@ -1503,26 +1503,26 @@ pub fn get_tool_install_info(tool_name: &str, version: &str) -> Option<ToolInsta
     {
         if let Some(windows) = spec.windows {
             // Prefer winget
-            if let Some(winget_id) = windows.winget {
-                if super::common::has("winget") {
-                    return Some(ToolInstallInfo {
-                        name: tool_name.to_string(),
-                        version: version.to_string(),
-                        package_manager: PackageManager::Winget,
-                        package_name: winget_id.to_string(),
-                    });
-                }
+            if let Some(winget_id) = windows.winget
+                && super::common::has("winget")
+            {
+                return Some(ToolInstallInfo {
+                    name: tool_name.to_string(),
+                    version: version.to_string(),
+                    package_manager: PackageManager::Winget,
+                    package_name: winget_id.to_string(),
+                });
             }
             // Fallback to Chocolatey
-            if let Some(choco_name) = windows.choco {
-                if super::common::has("choco") {
-                    return Some(ToolInstallInfo {
-                        name: tool_name.to_string(),
-                        version: version.to_string(),
-                        package_manager: PackageManager::Choco,
-                        package_name: choco_name.to_string(),
-                    });
-                }
+            if let Some(choco_name) = windows.choco
+                && super::common::has("choco")
+            {
+                return Some(ToolInstallInfo {
+                    name: tool_name.to_string(),
+                    version: version.to_string(),
+                    package_manager: PackageManager::Choco,
+                    package_name: choco_name.to_string(),
+                });
             }
         }
     }

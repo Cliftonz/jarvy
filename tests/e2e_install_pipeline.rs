@@ -165,6 +165,7 @@ fn compute_skip_reason() -> Option<String> {
 /// Reject `JARVY_TEST_BIN` paths that aren't safe to bind-mount: must
 /// canonicalize, must not be group/world-writable. Closes the TOCTOU +
 /// foot-gun gap surfaced by PRD-054 review F12.
+#[cfg_attr(not(unix), allow(unused_variables))]
 fn validate_host_bin(bin: &Path) -> Result<(), String> {
     let canonical = std::fs::canonicalize(bin)
         .map_err(|e| format!("canonicalize {} failed: {e}", bin.display()))?;

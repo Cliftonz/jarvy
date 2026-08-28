@@ -84,6 +84,7 @@ pub(crate) fn quote_shell_arg(arg: &str) -> String {
 }
 
 /// POSIX single-quote wrapping; embedded `'` becomes `'\''`.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn quote_shell_arg_posix(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', r"'\''"))
 }

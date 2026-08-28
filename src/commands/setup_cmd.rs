@@ -2069,13 +2069,13 @@ fn run_wsl_bootstrap_phase(config: &Config) {
         match crate::tools::wsl::bootstrap::bootstrap(wsl) {
             Ok(crate::tools::wsl::bootstrap::BootstrapOutcome::NoOp) => {
                 println!("  WSL distro \"{}\": already present", wsl.effective_name());
-                if wsl.install_jarvy {
-                    if let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(wsl) {
-                        eprintln!(
-                            "[wsl] jarvy install inside \"{}\" failed: {e}",
-                            wsl.effective_name()
-                        );
-                    }
+                if wsl.install_jarvy
+                    && let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(wsl)
+                {
+                    eprintln!(
+                        "[wsl] jarvy install inside \"{}\" failed: {e}",
+                        wsl.effective_name()
+                    );
                 }
             }
             Ok(crate::tools::wsl::bootstrap::BootstrapOutcome::Installed { method }) => {
@@ -2084,13 +2084,13 @@ fn run_wsl_bootstrap_phase(config: &Config) {
                     wsl.effective_name(),
                     method.as_label()
                 );
-                if wsl.install_jarvy {
-                    if let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(wsl) {
-                        eprintln!(
-                            "[wsl] jarvy install inside \"{}\" failed: {e}",
-                            wsl.effective_name()
-                        );
-                    }
+                if wsl.install_jarvy
+                    && let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(wsl)
+                {
+                    eprintln!(
+                        "[wsl] jarvy install inside \"{}\" failed: {e}",
+                        wsl.effective_name()
+                    );
                 }
             }
             Err(reason) => {
@@ -2124,14 +2124,14 @@ fn run_wsl_delegated_setup(
     {
         match crate::tools::wsl::bootstrap::bootstrap(cfg) {
             Ok(_) => {
-                if cfg.install_jarvy {
-                    if let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(cfg) {
-                        eprintln!(
-                            "[wsl] jarvy install inside \"{}\" failed: {e}",
-                            cfg.effective_name()
-                        );
-                        return error_codes::HOOK_FAILED;
-                    }
+                if cfg.install_jarvy
+                    && let Err(e) = crate::tools::wsl::bootstrap::install_jarvy_inside(cfg)
+                {
+                    eprintln!(
+                        "[wsl] jarvy install inside \"{}\" failed: {e}",
+                        cfg.effective_name()
+                    );
+                    return error_codes::HOOK_FAILED;
                 }
                 match crate::tools::wsl::bootstrap::delegate_setup(cfg, cwd, from) {
                     Ok(code) => code,

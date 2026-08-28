@@ -162,7 +162,7 @@ fn path_to_file_url_component(p: &Path) -> String {
         if forward.chars().nth(1) == Some(':') {
             return format!("/{forward}");
         }
-        return forward;
+        forward
     }
     #[cfg(not(windows))]
     {
@@ -186,10 +186,10 @@ fn simplified_canonicalize(p: &Path) -> PathBuf {
     let canon = p.canonicalize().expect("canonicalize");
     #[cfg(windows)]
     {
-        if let Some(s) = canon.to_str() {
-            if let Some(stripped) = s.strip_prefix(r"\\?\") {
-                return PathBuf::from(stripped);
-            }
+        if let Some(s) = canon.to_str()
+            && let Some(stripped) = s.strip_prefix(r"\\?\")
+        {
+            return PathBuf::from(stripped);
         }
     }
     canon

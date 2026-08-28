@@ -35,24 +35,24 @@ fn bootstrap_wsl(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallEr
         }
         match bootstrap::bootstrap(&cfg) {
             Ok(bootstrap::BootstrapOutcome::NoOp) => {
-                if cfg.install_jarvy {
-                    if let Err(e) = bootstrap::install_jarvy_inside(&cfg) {
-                        eprintln!(
-                            "[wsl] jarvy install inside \"{}\" failed: {e}",
-                            cfg.effective_name()
-                        );
-                    }
+                if cfg.install_jarvy
+                    && let Err(e) = bootstrap::install_jarvy_inside(&cfg)
+                {
+                    eprintln!(
+                        "[wsl] jarvy install inside \"{}\" failed: {e}",
+                        cfg.effective_name()
+                    );
                 }
                 Ok(())
             }
             Ok(bootstrap::BootstrapOutcome::Installed { .. }) => {
-                if cfg.install_jarvy {
-                    if let Err(e) = bootstrap::install_jarvy_inside(&cfg) {
-                        eprintln!(
-                            "[wsl] jarvy install inside \"{}\" failed: {e}",
-                            cfg.effective_name()
-                        );
-                    }
+                if cfg.install_jarvy
+                    && let Err(e) = bootstrap::install_jarvy_inside(&cfg)
+                {
+                    eprintln!(
+                        "[wsl] jarvy install inside \"{}\" failed: {e}",
+                        cfg.effective_name()
+                    );
                 }
                 Ok(())
             }

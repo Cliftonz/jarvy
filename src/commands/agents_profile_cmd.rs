@@ -1925,7 +1925,14 @@ mod tests {
     /// RAII guard for `JARVY_MOCK_RUNNING_IDES` — the probe unit tests
     /// set this too, and a panicking test between them would otherwise
     /// leak the mock into an unrelated serial group.
+    ///
+    /// Every caller of `MockRunningIdesGuard::set` in this file is a
+    /// `#[cfg(unix)]` test (the symlink-tier / running-IDE suite is
+    /// unix-only here), so this type is unused on non-unix — cfg-gate
+    /// it to match rather than leaving it to be flagged dead code.
+    #[cfg(unix)]
     struct MockRunningIdesGuard;
+    #[cfg(unix)]
     impl MockRunningIdesGuard {
         fn set(value: &str) -> Self {
             #[allow(unsafe_code)]
@@ -1939,6 +1946,7 @@ mod tests {
             Self
         }
     }
+    #[cfg(unix)]
     impl Drop for MockRunningIdesGuard {
         fn drop(&mut self) {
             #[allow(unsafe_code)]
@@ -1959,7 +1967,12 @@ mod tests {
     /// will refuse the swap. Serialized on the `probe_env` group
     /// alongside `MockRunningIdesGuard` so parallel probe unit tests
     /// can't clobber the env mid-run.
+    ///
+    /// Same cfg-gating rationale as `MockRunningIdesGuard` above: every
+    /// caller is a `#[cfg(unix)]` test.
+    #[cfg(unix)]
     struct ProbeEnvGuard;
+    #[cfg(unix)]
     impl ProbeEnvGuard {
         fn new() -> Self {
             #[allow(unsafe_code)]
@@ -1969,6 +1982,7 @@ mod tests {
             Self
         }
     }
+    #[cfg(unix)]
     impl Drop for ProbeEnvGuard {
         fn drop(&mut self) {
             #[allow(unsafe_code)]

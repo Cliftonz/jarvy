@@ -6,7 +6,10 @@
 //! This tool uses the ToolSpec pattern with a custom installer (no Homebrew formula).
 
 use crate::define_tool;
-use crate::tools::common::{InstallContext, InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallContext, InstallError, has};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::tools::pinned_installer::PinnedInstaller;
 
 /// Pinned commit of `kagent-dev/kmcp`. Updating this constant is the only
@@ -17,7 +20,9 @@ use crate::tools::pinned_installer::PinnedInstaller;
 /// To refresh: pick a commit, download
 /// `https://raw.githubusercontent.com/kagent-dev/kmcp/<sha>/scripts/get-kmcp.sh`,
 /// compute its sha256, update both constants together.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const KMCP_INSTALLER_COMMIT: &str = "1cec6470560fa8ccc43de3d95c7567993ae13e95";
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const KMCP_INSTALLER_SHA256: &str =
     "7336aa53391c0aa3e302d7cf914de5e412aae1c7f400f81fb5425be0c939e884";
 

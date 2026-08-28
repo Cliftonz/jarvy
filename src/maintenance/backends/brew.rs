@@ -11,6 +11,7 @@
 
 use super::{BACKEND_TIMEOUT, BackendError, FreshnessBackend, probe_error};
 
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub struct BrewBackend;
 
 impl FreshnessBackend for BrewBackend {
@@ -39,6 +40,7 @@ impl FreshnessBackend for BrewBackend {
     }
 }
 
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 fn parse_brew_info(stdout: &[u8]) -> Result<String, BackendError> {
     let text = std::str::from_utf8(stdout).map_err(|_| BackendError::ParseFailed)?;
     let value: serde_json::Value =

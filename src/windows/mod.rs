@@ -32,6 +32,7 @@ pub enum SkipReason {
     Disabled,
     /// Running on a non-Windows target — the block parses but is a
     /// no-op.
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     NotWindows,
     /// Both knobs are set to their no-op values (`sh_pathext = false`
     /// AND `sh_association = "off"`). Emits a distinct event so
@@ -150,10 +151,10 @@ pub fn run_windows_phase(
             None
         };
         emit_phase_completed(pathext_outcome, assoc_outcome, started_at.elapsed());
-        return Ok(WindowsPhaseOutcome::Applied {
+        Ok(WindowsPhaseOutcome::Applied {
             pathext: pathext_outcome.map(str::to_string),
             association: assoc_outcome.map(str::to_string),
-        });
+        })
     }
     #[cfg(not(target_os = "windows"))]
     {

@@ -7,7 +7,10 @@
 //! This tool uses the ToolSpec pattern with a custom installer (no Homebrew formula).
 
 use crate::define_tool;
-use crate::tools::common::{InstallContext, InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallContext, InstallError, has};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::tools::pinned_installer::PinnedInstaller;
 
 /// Pinned commit of `agentregistry-dev/agentregistry`. Updating this constant
@@ -18,7 +21,9 @@ use crate::tools::pinned_installer::PinnedInstaller;
 /// To refresh: pick a commit, download
 /// `https://raw.githubusercontent.com/agentregistry-dev/agentregistry/<sha>/scripts/get-arctl`,
 /// compute its sha256, update both constants together.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const ARCTL_INSTALLER_COMMIT: &str = "2df820132f555380257510290cec498ab67db6bf";
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const ARCTL_INSTALLER_SHA256: &str =
     "e90bfaf0e6e71000155f8aade195e51aea52624de3272813f7441d1712bcd377";
 

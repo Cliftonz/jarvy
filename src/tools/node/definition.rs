@@ -9,8 +9,14 @@
 //! back to the platform slots unchanged.
 
 use crate::define_tool;
-use crate::tools::common::{InstallContext, InstallError, Os, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallContext, InstallError, Os};
 
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "linux")),
+    allow(unused_variables)
+)]
 fn install_node(min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {

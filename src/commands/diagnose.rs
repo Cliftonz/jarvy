@@ -473,6 +473,7 @@ fn analyze_binary(_path: &str) -> Result<BinaryAnalysis, std::io::Error> {
 }
 
 /// Format Unix permissions
+#[cfg_attr(not(unix), allow(dead_code))]
 fn format_permissions(mode: u32) -> String {
     let user = (mode >> 6) & 0o7;
     let group = (mode >> 3) & 0o7;
@@ -1225,28 +1226,18 @@ mod tests {
     /// clusters" filter.
     #[test]
     fn parse_minikube_status_cases() {
-        use crate::tools::common::ProbeResult;
-        let mk = |success: bool, stdout: &str| {
-            let output = std::process::Output {
-                status: {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::process::ExitStatusExt;
-                        std::process::ExitStatus::from_raw(if success { 0 } else { 256 })
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        // Placeholder — the test is gated below.
-                        std::process::Command::new("true").status().unwrap()
-                    }
-                },
-                stdout: stdout.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            };
-            ProbeResult::Completed(output)
-        };
         #[cfg(unix)]
         {
+            use crate::tools::common::ProbeResult;
+            use std::os::unix::process::ExitStatusExt;
+            let mk = |success: bool, stdout: &str| {
+                let output = std::process::Output {
+                    status: std::process::ExitStatus::from_raw(if success { 0 } else { 256 }),
+                    stdout: stdout.as_bytes().to_vec(),
+                    stderr: Vec::new(),
+                };
+                ProbeResult::Completed(output)
+            };
             let cases: &[(&str, bool)] = &[
                 ("Running\n", true),
                 ("running", true), // case-insensitive
@@ -1263,9 +1254,9 @@ mod tests {
 
     #[test]
     fn parse_kind_clusters_counts_correctly() {
-        use crate::tools::common::ProbeResult;
         #[cfg(unix)]
         {
+            use crate::tools::common::ProbeResult;
             use std::os::unix::process::ExitStatusExt;
             let mk = |stdout: &str| {
                 ProbeResult::Completed(std::process::Output {
@@ -1288,9 +1279,9 @@ mod tests {
 
     #[test]
     fn parse_k3d_clusters_counts_correctly() {
-        use crate::tools::common::ProbeResult;
         #[cfg(unix)]
         {
+            use crate::tools::common::ProbeResult;
             use std::os::unix::process::ExitStatusExt;
             let mk = |stdout: &str| {
                 ProbeResult::Completed(std::process::Output {

@@ -135,6 +135,8 @@ mod exec {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
+// Consumed by cross-platform integration tests + Windows exec.
 pub use exec::{PathExtOutcome, apply, parse_reg_query_value};
 
 #[cfg(test)]
