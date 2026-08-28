@@ -585,7 +585,17 @@ impl ToolSpec {
             return Ok(());
         }
 
-        // Neither package manager applies to this tool
+        // Fallback of last resort: Scoop, bootstrapped the same way as
+        // Chocolatey above. Some tools (Ory CLI) ship no first-party
+        // winget or Chocolatey package and rely solely on a Scoop
+        // bucket.
+        if let Some(scoop_pkg) = windows.scoop {
+            crate::tools::scoop::ensure_installed()?;
+            run("scoop", &["install", scoop_pkg])?;
+            return Ok(());
+        }
+
+        // No package manager applies to this tool
         if windows.winget.is_some() {
             Err(InstallError::Prereq(
                 "winget not found. Install Windows Package Manager, then re-run.".into(),
