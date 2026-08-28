@@ -1,6 +1,6 @@
 ---
 title: "Tool registry (auto-generated) — Jarvy"
-description: "Every tool Jarvy knows how to install — 298 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
+description: "Every tool Jarvy knows how to install — 335 entries spanning runtimes, build tools, cloud SDKs, container tools, security scanners, and editors."
 tags:
   - reference
   - tools
@@ -12,7 +12,7 @@ tags:
     This page is generated from `jarvy tools --index` by `scripts/gen-docs.sh`. 
     Run that script after registering new tools.
 
-Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its **name**.
+Jarvy currently ships **335 tools**. Reference one in your `jarvy.toml` by its **name**.
 
 | Name | Command | macOS | Linux | Windows | Fallback | Default hook | Depends on |
 |---|---|---|---|---|---|---|---|
@@ -26,13 +26,15 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `android_command_line_tools` | `sdkmanager` | — | — | — | — |  | `java` |
 | `android_platform_tools` | `adb` | `cask: android-platform-tools` | apt: `adb`<br>dnf: `android-tools`<br>pacman: `android-tools`<br>apk: `android-tools` | `winget: Google.PlatformTools` | — |  | — |
 | `ansible` | `ansible` | `brew: ansible` | apt: `ansible`<br>dnf: `ansible`<br>pacman: `ansible`<br>apk: `ansible` | `choco: ansible` | — |  | — |
-| `appium` | `appium` | — | — | — | npm: `appium` | ✓ | — |
+| `appium` | `appium` | — | — | — | npm: `appium` | ✓ | `node`, `nvm` |
+| `arc` | `arc` | `cask: arc` | — | `winget: TheBrowserCompany.Arc` | — |  | — |
 | `arctl` | `arctl` | — | — | — | — |  | — |
 | `argo` | `argo` | `brew: argo` | brew: `argo` | — | go: `github.com/argoproj/argo-workflows/v4/cmd/argo` |  | `kubectl` |
 | `argocd` | `argocd` | `brew: argocd` | apk: `argocd`<br>brew: `argocd` | `winget: Argoproj.ArgoCD` | — | ✓ | `kubectl` |
 | `aria2` | `aria2c` | `brew: aria2` | apt: `aria2`<br>dnf: `aria2`<br>pacman: `aria2`<br>apk: `aria2` | `winget: aria2.aria2` | — |  | — |
 | `atlas` | `atlas` | `brew: ariga/tap/atlas` | apt: `atlas`<br>dnf: `atlas`<br>pacman: `atlas`<br>apk: `atlas` | `winget: Ariga.Atlas` | — |  | — |
 | `atuin` | `atuin` | `brew: atuin` | apt: `atuin`<br>dnf: `atuin`<br>pacman: `atuin`<br>apk: `atuin` | `winget: atuinsh.atuin` | — | ✓ | — |
+| `autohotkey` | `AutoHotkey` | — | — | `winget: AutoHotkey.AutoHotkey`<br>`choco: autohotkey` | — |  | — |
 | `aws_sam_cli` | `sam` | `brew: aws-sam-cli` | brew: `aws-sam-cli` | `winget: Amazon.SAM-CLI` | — |  | — |
 | `awscli` | `aws` | `brew: awscli` | apt: `awscli`<br>dnf: `awscli`<br>pacman: `aws-cli-v2`<br>apk: `aws-cli` | `winget: Amazon.AWSCLI` | — | ✓ | — |
 | `azd` | `azd` | `brew: azure-dev` | apt: `azure-dev`<br>dnf: `azure-dev`<br>pacman: `azure-dev`<br>apk: `azure-dev` | `winget: Microsoft.Azd` | — |  | — |
@@ -42,19 +44,26 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `bazelisk` | `bazelisk` | `brew: bazelisk` | brew: `bazelisk` | `winget: Bazel.Bazelisk` | — |  | — |
 | `betterleaks` | `betterleaks` | `brew: betterleaks` | brew: `betterleaks` | — | go: `github.com/betterleaks/betterleaks` | ✓ | `git` |
 | `bicep` | `bicep` | `brew: bicep` | apt: `bicep`<br>dnf: `bicep`<br>pacman: `bicep`<br>apk: `bicep` | `winget: Microsoft.Bicep` | — |  | — |
+| `bitwarden_cli` | `bw` | — | — | `choco: bitwarden-cli` | npm: `@bitwarden/cli` |  | — |
+| `blisk` | `blisk` | `cask: blisk` | — | — | — |  | — |
 | `bottom` | `btm` | `brew: bottom` | apt: `bottom`<br>dnf: `bottom`<br>pacman: `bottom`<br>apk: `bottom` | `winget: Clement.bottom` | — |  | — |
+| `brave` | `brave-browser` | `cask: brave-browser` | — | `winget: Brave.Brave` | — |  | — |
 | `brew` | `brew` | — | — | — | — |  | — |
 | `broot` | `broot` | `brew: broot` | apt: `broot`<br>dnf: `broot`<br>pacman: `broot`<br>apk: `broot` | `winget: Dystroy.broot` | — | ✓ | — |
 | `btop` | `btop` | `brew: btop` | apt: `btop`<br>dnf: `btop`<br>pacman: `btop`<br>apk: `btop` | — | — |  | — |
 | `buf` | `buf` | `brew: bufbuild/buf/buf` | apt: `buf`<br>dnf: `buf`<br>pacman: `buf`<br>apk: `buf` | `winget: Bufbuild.Buf` | — |  | — |
 | `buildah` | `buildah` | `brew: buildah` | apt: `buildah`<br>dnf: `buildah`<br>pacman: `buildah`<br>apk: `buildah` | — | — |  | — |
 | `bun` | `bun` | `brew: oven-sh/bun/bun` | brew: `oven-sh/bun/bun` | `winget: Oven-sh.Bun` | — |  | — |
+| `cargo_generate` | `cargo-generate` | — | — | — | — |  | `rust` |
 | `cargo_nextest` | `cargo-nextest` | — | — | — | — |  | `rust` |
-| `cargo_tarpaulin` | `cargo-tarpaulin` | — | — | — | cargo: `cargo-tarpaulin` |  | — |
+| `cargo_seek` | `cargo-seek` | — | — | — | — |  | `rust` |
+| `cargo_tarpaulin` | `cargo-tarpaulin` | — | — | — | cargo: `cargo-tarpaulin` |  | `rust` |
 | `cfn_lint` | `cfn-lint` | `brew: cfn-lint` | brew: `cfn-lint` | — | uv: `cfn-lint` |  | — |
 | `checkov` | `checkov` | `brew: checkov` | brew: `checkov` | — | uv: `checkov` |  | — |
 | `chezmoi` | `chezmoi` | `brew: chezmoi` | apt: `chezmoi`<br>dnf: `chezmoi`<br>pacman: `chezmoi`<br>apk: `chezmoi` | `winget: twpayne.chezmoi` | — |  | — |
+| `chocolatey` | `choco` | — | — | — | — |  | — |
 | `choose` | `choose` | `brew: choose-rust` | apt: `choose`<br>dnf: `choose`<br>pacman: `choose`<br>apk: `choose` | `winget: choose.choose` | — |  | — |
+| `chrome` | `google-chrome` | `cask: google-chrome` | — | `winget: Google.Chrome` | — |  | — |
 | `cilium` | `cilium` | `brew: cilium-cli` | brew: `cilium-cli` | `winget: Cilium.CiliumCLI` | — |  | `kubectl` |
 | `claude_code` | `claude` | — | — | `winget: Anthropic.ClaudeCode` | npm: `@anthropic-ai/claude-code` |  | — |
 | `cloudflared` | `cloudflared` | `brew: cloudflared` | brew: `cloudflared` | `winget: Cloudflare.cloudflared` | — |  | — |
@@ -72,6 +81,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `cypress` | `cypress` | — | — | — | — |  | `node`, `nvm` |
 | `dagger` | `dagger` | `brew: dagger/tap/dagger` | apt: `dagger`<br>dnf: `dagger`<br>pacman: `dagger`<br>apk: `dagger` | `winget: Dagger.Dagger` | — |  | `docker`, `podman` |
 | `dapr` | `dapr` | `brew: dapr/tap/dapr-cli` | apt: `dapr`<br>dnf: `dapr`<br>pacman: `dapr`<br>apk: `dapr` | `winget: Dapr.CLI` | — |  | `docker`, `podman` |
+| `dashlane_cli` | `dcli` | `brew: dashlane/tap/dashlane-cli` | brew: `dashlane/tap/dashlane-cli` | — | — |  | — |
 | `dbmate` | `dbmate` | `brew: dbmate` | brew: `dbmate` | `choco: dbmate` | — |  | — |
 | `dbt` | `dbt` | — | — | `winget: dbtLabs.dbt-core` | uv: `dbt-core` |  | — |
 | `delta` | `delta` | `brew: git-delta` | apt: `git-delta`<br>dnf: `git-delta`<br>pacman: `git-delta`<br>apk: `git-delta` | `winget: dandavison.delta` | — | ✓ | — |
@@ -80,17 +90,22 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `detect_secrets` | `detect-secrets` | `brew: detect-secrets` | brew: `detect-secrets` | — | uv: `detect-secrets` |  | — |
 | `dfc` | `dfc` | `brew: chainguard-dev/tap/dfc` | brew: `chainguard-dev/tap/dfc` | — | go: `github.com/chainguard-dev/dfc` |  | — |
 | `difftastic` | `difft` | `brew: difftastic` | brew: `difftastic` | `winget: Wilfred.Difftastic` | — |  | — |
+| `dioxus_cli` | `dx` | — | — | — | — |  | `rust` |
+| `directory_opus` | `dopus` | — | — | `winget: GPSoftware.DirectoryOpus` | — |  | — |
 | `direnv` | `direnv` | `brew: direnv` | apt: `direnv`<br>dnf: `direnv`<br>pacman: `direnv`<br>apk: `direnv` | `winget: direnv.direnv` | — | ✓ | — |
 | `dive` | `dive` | `brew: dive` | apk: `dive`<br>brew: `dive` | — | go: `github.com/wagoodman/dive` |  | `docker`, `podman` |
 | `docker` | `docker` | `cask: docker` | apt: `docker.io`<br>dnf: `docker`<br>pacman: `docker`<br>apk: `docker` | `winget: Docker.DockerDesktop` | — | ✓ | — |
 | `docker_desktop` | `docker` | `cask: docker` | apt: `docker-desktop`<br>dnf: `docker-desktop`<br>pacman: `docker-desktop`<br>apk: `docker-desktop` | `winget: Docker.DockerDesktop` | — | ✓ | — |
 | `dog` | `dog` | `brew: dog` | apt: `dog`<br>dnf: `dog`<br>pacman: `dog`<br>apk: `dog` | — | — |  | — |
+| `doppler` | `doppler` | `brew: dopplerhq/cli/doppler` | — | `winget: doppler.doppler` | — |  | — |
 | `dotnet` | `dotnet` | `cask: dotnet-sdk` | apt: `dotnet-sdk-8.0`<br>dnf: `dotnet-sdk`<br>pacman: `dotnet-sdk`<br>apk: `dotnet-sdk` | `winget: Microsoft.DotNet.SDK.8` | — | ✓ | — |
+| `double_commander` | `doublecmd` | `cask: double-commander` | — | `winget: alexx2000.DoubleCommander` | — |  | — |
 | `duckdb` | `duckdb` | `brew: duckdb` | apt: `duckdb`<br>dnf: `duckdb`<br>pacman: `duckdb`<br>apk: `duckdb` | `winget: DuckDB.cli`<br>`choco: duckdb` | — |  | — |
 | `duf` | `duf` | `brew: duf` | apt: `duf`<br>dnf: `duf`<br>pacman: `duf`<br>apk: `duf` | `winget: muesli.duf` | — |  | — |
 | `dust` | `dust` | `brew: dust` | apt: `du-dust`<br>dnf: `dust`<br>pacman: `dust`<br>apk: `dust` | `winget: bootandy.dust`<br>`choco: dust` | — |  | — |
 | `earthly` | `earthly` | `brew: earthly/earthly/earthly` | apt: `earthly`<br>dnf: `earthly`<br>pacman: `earthly`<br>apk: `earthly` | `winget: Earthly.Earthly` | — |  | `docker`, `podman` |
 | `eas_cli` | `eas` | — | — | — | npm: `eas-cli` |  | — |
+| `edge` | `microsoft-edge` | `cask: microsoft-edge` | — | `winget: Microsoft.Edge` | — |  | — |
 | `eksctl` | `eksctl` | `brew: eksctl` | apt: `eksctl`<br>dnf: `eksctl`<br>pacman: `eksctl`<br>apk: `eksctl` | `winget: weaveworks.eksctl` | — | ✓ | — |
 | `elixir` | `elixir` | `brew: elixir` | apt: `elixir`<br>dnf: `elixir`<br>pacman: `elixir`<br>apk: `elixir` | `winget: Elixir.Elixir` | — |  | `erlang` |
 | `emacs` | `emacs` | `cask: emacs` | apt: `emacs`<br>dnf: `emacs`<br>pacman: `emacs`<br>apk: `emacs` | `winget: GNU.Emacs` | — |  | — |
@@ -98,6 +113,8 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `erlang` | `erl` | `brew: erlang` | apt: `erlang`<br>dnf: `erlang`<br>pacman: `erlang`<br>apk: `erlang` | `winget: Erlang.ErlangOTP`<br>`choco: erlang` | — |  | — |
 | `eza` | `eza` | `brew: eza` | apt: `eza`<br>dnf: `eza`<br>pacman: `eza`<br>apk: `eza` | `winget: eza-community.eza` | — | ✓ | — |
 | `fd` | `fd` | `brew: fd` | apt: `fd-find`<br>dnf: `fd-find`<br>pacman: `fd`<br>apk: `fd` | `winget: sharkdp.fd` | — | ✓ | — |
+| `files_app` | `files` | — | — | `winget: FilesCommunity.Files` | — |  | — |
+| `firefox` | `firefox` | `cask: firefox` | apt: `firefox`<br>dnf: `firefox`<br>pacman: `firefox`<br>apk: `firefox` | `winget: Mozilla.Firefox` | — |  | — |
 | `flux` | `flux` | `brew: fluxcd/tap/flux` | brew: `fluxcd/tap/flux` | `winget: Fluxcd.Flux` | — | ✓ | — |
 | `freelens` | `freelens` | `cask: freelens` | brew: `freelens` | `winget: freelensapp.Freelens` | — |  | — |
 | `fzf` | `fzf` | `brew: fzf` | apt: `fzf`<br>dnf: `fzf`<br>pacman: `fzf`<br>apk: `fzf` | `winget: junegunn.fzf` | — | ✓ | — |
@@ -105,8 +122,9 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `gh` | `gh` | `brew: gh` | apt: `gh`<br>dnf: `gh`<br>pacman: `github-cli`<br>apk: `github-cli` | `winget: GitHub.cli` | — | ✓ | — |
 | `git` | `git` | `brew: git` | apt: `git`<br>dnf: `git`<br>pacman: `git`<br>apk: `git` | `winget: Git.Git` | — | ✓ | — |
 | `git_cliff` | `git-cliff` | `brew: git-cliff` | brew: `git-cliff` | `winget: orhun.git-cliff` | — |  | `git` |
-| `git_lfs` | `git-lfs` | `brew: git-lfs` | apt: `git-lfs`<br>dnf: `git-lfs`<br>pacman: `git-lfs`<br>apk: `git-lfs` | `winget: GitHub.GitLFS` | — |  | — |
+| `git_lfs` | `git-lfs` | `brew: git-lfs` | apt: `git-lfs`<br>dnf: `git-lfs`<br>pacman: `git-lfs`<br>apk: `git-lfs` | `winget: GitHub.GitLFS` | — |  | `git` |
 | `git_secrets` | `git-secrets` | `brew: git-secrets` | apt: `git-secrets`<br>dnf: `git-secrets`<br>pacman: `git-secrets`<br>apk: `git-secrets` | — | — |  | `git` |
+| `git_town` | `git-town` | `brew: git-town` | brew: `git-town` | `choco: git-town` | — |  | `git` |
 | `gitleaks` | `gitleaks` | `brew: gitleaks` | brew: `gitleaks` | `winget: Gitleaks.Gitleaks` | — |  | `git` |
 | `gitversion` | `gitversion` | `brew: gitversion` | apt: `gitversion`<br>dnf: `gitversion`<br>pacman: `gitversion`<br>apk: `gitversion` | `winget: GitTools.GitVersion` | — |  | `git` |
 | `glab` | `glab` | `brew: glab` | apt: `glab`<br>dnf: `glab`<br>pacman: `glab`<br>apk: `glab` | `winget: GLab.GLab` | — | ✓ | — |
@@ -128,6 +146,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `hadolint` | `hadolint` | `brew: hadolint` | brew: `hadolint` | `winget: hadolint.hadolint` | — |  | — |
 | `haskell` | `ghc` | `brew: ghc` | apt: `ghc`<br>dnf: `ghc`<br>pacman: `ghc`<br>apk: `ghc` | `winget: Haskell.GHCup` | — |  | — |
 | `headscale` | `headscale` | — | — | — | — |  | — |
+| `helium` | `helium` | — | — | `winget: ImputNet.Helium` | — |  | — |
 | `helix` | `hx` | `brew: helix` | apt: `helix-editor`<br>dnf: `helix`<br>pacman: `helix`<br>apk: `helix` | `winget: Helix.Helix` | — |  | — |
 | `helm` | `helm` | `brew: helm` | apt: `helm`<br>dnf: `helm`<br>pacman: `helm`<br>apk: `helm` | `winget: Helm.Helm` | — | ✓ | `kubectl` |
 | `helmfile` | `helmfile` | `brew: helmfile` | brew: `helmfile` | — | — |  | `helm` |
@@ -135,6 +154,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `httpie` | `http` | `brew: httpie` | apt: `httpie`<br>dnf: `httpie`<br>pacman: `httpie`<br>apk: `py3-httpie` | `winget: HTTPie.HTTPie` | — |  | — |
 | `hugo` | `hugo` | `brew: hugo` | apt: `hugo`<br>dnf: `hugo`<br>pacman: `hugo`<br>apk: `hugo` | `winget: Hugo.Hugo.Extended` | — |  | — |
 | `hyperfine` | `hyperfine` | `brew: hyperfine` | apt: `hyperfine`<br>dnf: `hyperfine`<br>pacman: `hyperfine`<br>apk: `hyperfine` | `winget: sharkdp.hyperfine`<br>`choco: hyperfine` | — |  | — |
+| `icu` | `icu` | — | apt: `libicu-dev`<br>dnf: `libicu`<br>pacman: `icu`<br>apk: `icu-libs` | — | — |  | — |
 | `infisical` | `infisical` | `brew: infisical` | — | `winget: infisical.infisical` | — |  | — |
 | `infracost` | `infracost` | `brew: infracost` | apt: `infracost`<br>dnf: `infracost`<br>pacman: `infracost`<br>apk: `infracost` | `winget: Infracost.Infracost` | — |  | — |
 | `iterm2` | `iterm2` | `cask: iterm2` | — | — | — |  | — |
@@ -155,7 +175,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `kind` | `kind` | `brew: kind` | brew: `kind` | `winget: Kubernetes.kind` | — | ✓ | `docker` |
 | `kmcp` | `kmcp` | — | — | — | — |  | `kubectl` |
 | `kn` | `kn` | `brew: kn` | brew: `kn` | — | — |  | `kubectl` |
-| `knip` | `knip` | — | — | — | npm: `knip` |  | — |
+| `knip` | `knip` | — | — | — | npm: `knip` |  | `node`, `nvm` |
 | `ko` | `ko` | `brew: ko` | apt: `ko`<br>dnf: `ko`<br>pacman: `ko`<br>apk: `ko` | `winget: ko-build.ko` | — |  | `go` |
 | `kotlin` | `kotlin` | `brew: kotlin` | apt: `kotlin`<br>dnf: `kotlin`<br>pacman: `kotlin`<br>apk: `kotlin` | `winget: JetBrains.Kotlin.Compiler`<br>`choco: kotlinc` | — |  | `java` |
 | `krew` | `kubectl-krew` | `brew: krew` | apk: `kubectl-krew`<br>brew: `krew` | — | — | ✓ | `kubectl` |
@@ -168,11 +188,14 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `kubescape` | `kubescape` | `brew: kubescape` | apt: `kubescape`<br>dnf: `kubescape`<br>pacman: `kubescape`<br>apk: `kubescape` | `winget: kubescape.kubescape` | — |  | `kubectl` |
 | `kubeseal` | `kubeseal` | `brew: kubeseal` | brew: `kubeseal` | — | — |  | `kubectl` |
 | `kustomize` | `kustomize` | `brew: kustomize` | apt: `kustomize`<br>dnf: `kustomize`<br>pacman: `kustomize`<br>apk: `kustomize` | `winget: Kubernetes.kustomize` | — |  | — |
+| `lastpass_cli` | `lpass` | `brew: lastpass-cli` | apt: `lastpass-cli`<br>dnf: `lastpass-cli`<br>pacman: `lastpass-cli`<br>apk: `lastpass-cli` | — | — |  | — |
 | `lazydocker` | `lazydocker` | `brew: lazydocker` | apk: `lazydocker`<br>brew: `lazydocker` | `choco: lazydocker` | — |  | `docker` |
 | `lazygit` | `lazygit` | `brew: lazygit` | apt: `lazygit`<br>dnf: `lazygit`<br>pacman: `lazygit`<br>apk: `lazygit` | `winget: JesseDuffield.lazygit` | — | ✓ | — |
+| `lens` | `lens` | `cask: lens` | — | `winget: Mirantis.Lens` | — |  | — |
 | `linkerd` | `linkerd` | `brew: linkerd` | brew: `linkerd` | — | — |  | `kubectl` |
 | `litecli` | `litecli` | `brew: litecli` | apt: `litecli`<br>dnf: `litecli`<br>pacman: `litecli`<br>apk: `litecli` | `choco: litecli` | — |  | — |
 | `litellm` | `litellm` | — | — | — | — |  | — |
+| `llm_checker` | `llm-checker` | — | — | — | npm: `llm-checker` |  | — |
 | `lnav` | `lnav` | `brew: lnav` | apt: `lnav`<br>dnf: `lnav`<br>pacman: `lnav`<br>apk: `lnav` | — | — |  | — |
 | `localstack` | `localstack` | `brew: localstack` | apt: `localstack`<br>dnf: `localstack`<br>pacman: `localstack`<br>apk: `localstack` | — | uv: `localstack` |  | `docker`, `podman` |
 | `locust` | `locust` | `brew: locust` | brew: `locust` | — | uv: `locust` |  | — |
@@ -181,7 +204,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `lua` | `lua` | `brew: lua` | apt: `lua5.4`<br>dnf: `lua`<br>pacman: `lua`<br>apk: `lua` | `winget: DEVCOM.Lua`<br>`choco: lua` | — |  | — |
 | `luarocks` | `luarocks` | `brew: luarocks` | apt: `luarocks`<br>dnf: `luarocks`<br>pacman: `luarocks`<br>apk: `luarocks` | `winget: LuaRocks.LuaRocks` | — |  | `lua` |
 | `lynis` | `lynis` | `brew: lynis` | apt: `lynis`<br>dnf: `lynis`<br>pacman: `lynis`<br>apk: `lynis` | — | — |  | — |
-| `make` | `make` | `brew: make` | apt: `make`<br>dnf: `make`<br>pacman: `make`<br>apk: `make` | `winget: GnuWin32.Make` | — |  | — |
+| `make` | `make` | `brew: make` | apt: `make`<br>dnf: `make`<br>pacman: `make`<br>apk: `make` | `winget: ezwinports.make` | — |  | — |
 | `micro` | `micro` | `brew: micro` | apt: `micro`<br>dnf: `micro`<br>pacman: `micro`<br>apk: `micro` | `winget: zyedidia.micro` | — |  | — |
 | `microk8s` | `microk8s` | — | — | — | — |  | — |
 | `mimirtool` | `mimirtool` | `brew: grafana/grafana/mimirtool` | — | — | go: `github.com/grafana/mimir/cmd/mimirtool` |  | — |
@@ -204,8 +227,8 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `ngrok` | `ngrok` | `brew: ngrok` | apt: `ngrok`<br>dnf: `ngrok`<br>pacman: `ngrok`<br>apk: `ngrok` | `winget: Ngrok.Ngrok` | — |  | — |
 | `nim` | `nim` | `brew: nim` | apt: `nim`<br>dnf: `nim`<br>pacman: `nim`<br>apk: `nim` | `winget: Nim.Nim` | — |  | — |
 | `nmap` | `nmap` | `brew: nmap` | apt: `nmap`<br>dnf: `nmap`<br>pacman: `nmap`<br>apk: `nmap` | `winget: Insecure.Nmap` | — |  | — |
-| `node` | `node` | `brew: node` | apt: `nodejs`<br>dnf: `nodejs`<br>pacman: `nodejs`<br>apk: `nodejs` | `winget: OpenJS.NodeJS.LTS` | — | ✓ | `nvm` |
-| `nodemon` | `nodemon` | — | — | — | npm: `nodemon` |  | — |
+| `node` | `node` | `brew: node` | apt: `nodejs`<br>dnf: `nodejs`<br>pacman: `nodejs`<br>apk: `nodejs` | `winget: OpenJS.NodeJS.LTS` | — | ✓ | — |
+| `nodemon` | `nodemon` | — | — | — | npm: `nodemon` |  | `node`, `nvm` |
 | `noseyparker` | `noseyparker` | `brew: noseyparker` | brew: `noseyparker` | — | — |  | — |
 | `nsc` | `nsc` | `brew: nats-io/nats-tools/nsc` | brew: `nats-io/nats-tools/nsc` | `winget: NATSAuthors.nsc` | — |  | — |
 | `nushell` | `nu` | `brew: nushell` | apt: `nushell`<br>dnf: `nushell`<br>pacman: `nushell`<br>apk: `nushell` | `winget: Nushell.Nushell` | — |  | — |
@@ -215,21 +238,26 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `ocaml` | `ocaml` | `brew: ocaml` | apt: `ocaml`<br>dnf: `ocaml`<br>pacman: `ocaml`<br>apk: `ocaml` | `winget: OCaml.OCaml` | — |  | — |
 | `ollama` | `ollama` | `brew: ollama` | brew: `ollama` | `winget: Ollama.Ollama` | — |  | — |
 | `omnictl` | `omnictl` | `brew: siderolabs/tap/omnictl` | brew: `siderolabs/tap/omnictl` | `winget: Sidero.omnictl` | — |  | — |
+| `onecommander` | `onecommander` | — | — | `winget: MilosParipovic.OneCommander` | — |  | — |
+| `onepassword_cli` | `op` | `brew: 1password-cli` | — | `winget: 1password-cli` | — |  | — |
 | `openclaw` | `openclaw` | `brew: openclaw-cli` | apt: `openclaw-cli`<br>dnf: `openclaw-cli`<br>pacman: `openclaw-cli`<br>apk: `openclaw-cli` | — | npm: `openclaw` |  | — |
 | `openssh` | `ssh` | `brew: openssh` | apt: `openssh`<br>dnf: `openssh`<br>pacman: `openssh`<br>apk: `openssh` | `winget: Microsoft.OpenSSH.Beta` | — |  | — |
 | `opentofu` | `tofu` | `brew: opentofu` | apt: `opentofu`<br>dnf: `opentofu`<br>pacman: `opentofu`<br>apk: `opentofu` | `winget: OpenTofu.OpenTofu` | — |  | — |
 | `openvpn` | `openvpn` | `brew: openvpn` | apt: `openvpn`<br>dnf: `openvpn`<br>pacman: `openvpn`<br>apk: `openvpn` | `winget: OpenVPNTechnologies.OpenVPN` | — |  | — |
+| `opera` | `opera` | `cask: opera` | — | `winget: Opera.Opera` | — |  | — |
 | `oras` | `oras` | `brew: oras` | apt: `oras`<br>dnf: `oras`<br>pacman: `oras`<br>apk: `oras` | `winget: oras-project.oras` | — |  | — |
+| `ory` | `ory` | `brew: ory/tap/cli` | — | `scoop: ory` | — |  | — |
 | `p7zip` | `7z` | `brew: p7zip` | apt: `p7zip`<br>dnf: `p7zip`<br>pacman: `p7zip`<br>apk: `p7zip` | `winget: 7zip.7zip` | — |  | — |
 | `packer` | `packer` | `brew: packer` | apt: `packer`<br>dnf: `packer`<br>pacman: `packer`<br>apk: `packer` | `winget: HashiCorp.Packer` | — |  | — |
 | `pgcli` | `pgcli` | `brew: pgcli` | apt: `pgcli`<br>dnf: `pgcli`<br>pacman: `pgcli`<br>apk: `pgcli` | `choco: pgcli` | — |  | — |
 | `php` | `php` | `brew: php` | apt: `php`<br>dnf: `php`<br>pacman: `php`<br>apk: `php` | `winget: PHP.PHP` | — |  | — |
 | `playwright` | `playwright` | — | — | — | — |  | `node`, `nvm` |
-| `pm2` | `pm2` | — | — | — | npm: `pm2` |  | — |
-| `pnpm` | `pnpm` | `brew: pnpm` | brew: `pnpm` | `winget: pnpm.pnpm` | — |  | — |
+| `pm2` | `pm2` | — | — | — | npm: `pm2` |  | `node`, `nvm` |
+| `pnpm` | `pnpm` | `brew: pnpm` | brew: `pnpm` | `winget: pnpm.pnpm` | — |  | `node` |
 | `podman` | `podman` | `brew: podman` | apt: `podman`<br>dnf: `podman`<br>pacman: `podman`<br>apk: `podman` | `winget: RedHat.Podman` | — |  | — |
 | `podman_desktop` | `podman-desktop` | `cask: podman-desktop` | brew: `podman-desktop` | `winget: RedHat.Podman-Desktop` | — |  | — |
 | `powershell` | `pwsh` | `cask: powershell` | apt: `powershell`<br>dnf: `powershell`<br>pacman: `powershell`<br>apk: `powershell` | `winget: Microsoft.PowerShell` | — |  | — |
+| `powertoys` | `PowerToys` | — | — | `winget: Microsoft.PowerToys`<br>`choco: powertoys` | — |  | — |
 | `pre_commit` | `pre-commit` | `brew: pre-commit` | apt: `pre-commit`<br>dnf: `pre-commit`<br>pacman: `pre-commit`<br>apk: `pre-commit` | `choco: pre-commit` | — |  | — |
 | `procs` | `procs` | `brew: procs` | apt: `procs`<br>dnf: `procs`<br>pacman: `procs`<br>apk: `procs` | `winget: dalance.procs` | — |  | — |
 | `promtail` | `promtail` | — | — | — | go: `github.com/grafana/loki/v3/clients/cmd/promtail` |  | — |
@@ -238,7 +266,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `pulumi` | `pulumi` | `brew: pulumi` | apt: `pulumi`<br>dnf: `pulumi`<br>pacman: `pulumi`<br>apk: `pulumi` | `winget: Pulumi.Pulumi` | — |  | — |
 | `putty` | `putty` | `brew: putty` | apt: `putty`<br>dnf: `putty`<br>pacman: `putty`<br>apk: `putty` | `winget: PuTTY.PuTTY` | — |  | — |
 | `pyenv` | `pyenv` | `brew: pyenv` | brew: `pyenv` | — | — | ✓ | — |
-| `python` | `python3` | `brew: python` | apt: `python3`<br>dnf: `python3`<br>pacman: `python`<br>apk: `python3` | `winget: Python.Python.3` | — | ✓ | `pyenv` |
+| `python` | `python3` | `brew: python` | apt: `python3`<br>dnf: `python3`<br>pacman: `python`<br>apk: `python3` | `winget: Python.Python.3` | — | ✓ | — |
 | `rabbitmq` | `rabbitmq-server` | `brew: rabbitmq` | apt: `rabbitmq-server`<br>dnf: `rabbitmq-server`<br>pacman: `rabbitmq-server`<br>apk: `rabbitmq-server` | — | — |  | — |
 | `rancher_desktop` | `rdctl` | `cask: rancher` | brew: `rancher` | `winget: suse.RancherDesktop` | — |  | — |
 | `rbenv` | `rbenv` | `brew: rbenv` | brew: `rbenv` | — | — | ✓ | — |
@@ -247,13 +275,14 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `release_plz` | `release-plz` | — | — | — | — |  | `rust` |
 | `ripgrep` | `rg` | `brew: ripgrep` | apt: `ripgrep`<br>dnf: `ripgrep`<br>pacman: `ripgrep`<br>apk: `ripgrep` | `winget: BurntSushi.ripgrep.MSVC` | — | ✓ | — |
 | `rpk` | `rpk` | `brew: redpanda-data/tap/redpanda` | brew: `redpanda-data/tap/redpanda` | — | — |  | — |
-| `ruby` | `ruby` | `brew: ruby` | apt: `ruby`<br>dnf: `ruby`<br>pacman: `ruby`<br>apk: `ruby` | `winget: RubyInstallerTeam.Ruby` | — |  | `rbenv` |
+| `ruby` | `ruby` | `brew: ruby` | apt: `ruby`<br>dnf: `ruby`<br>pacman: `ruby`<br>apk: `ruby` | `winget: RubyInstallerTeam.Ruby` | — |  | — |
 | `ruff` | `ruff` | `brew: ruff` | apk: `ruff`<br>brew: `ruff` | `winget: astral-sh.ruff` | — |  | — |
 | `rust` | `rustc` | — | — | — | — | ✓ | — |
 | `scala` | `scala` | `brew: scala` | apt: `scala`<br>dnf: `scala`<br>pacman: `scala`<br>apk: `scala` | `winget: Scala.Scala.3`<br>`choco: scala` | — |  | `java` |
+| `scoop` | `scoop` | — | — | — | — |  | — |
 | `sd` | `sd` | `brew: sd` | brew: `sd` | `choco: sd-cli` | — |  | — |
 | `sdkman` | `sdk` | `brew: sdkman-cli` | apt: `sdkman`<br>dnf: `sdkman`<br>pacman: `sdkman`<br>apk: `sdkman` | — | — | ✓ | — |
-| `semantic_release` | `semantic-release` | — | — | — | npm: `semantic-release` |  | — |
+| `semantic_release` | `semantic-release` | — | — | — | npm: `semantic-release` |  | `node`, `nvm` |
 | `semgrep` | `semgrep` | `brew: semgrep` | brew: `semgrep` | — | uv: `semgrep` |  | — |
 | `shellcheck` | `shellcheck` | `brew: shellcheck` | apt: `shellcheck`<br>dnf: `shellcheck`<br>pacman: `shellcheck`<br>apk: `shellcheck` | `winget: koalaman.shellcheck` | — |  | — |
 | `shfmt` | `shfmt` | `brew: shfmt` | apt: `shfmt`<br>dnf: `shfmt`<br>pacman: `shfmt`<br>apk: `shfmt` | `winget: mvdan.shfmt` | — |  | — |
@@ -262,6 +291,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `sonar_scanner` | `sonar-scanner` | `brew: sonar-scanner` | apt: `sonar-scanner`<br>dnf: `sonar-scanner`<br>pacman: `sonar-scanner`<br>apk: `sonar-scanner` | — | — |  | — |
 | `sops` | `sops` | `brew: sops` | brew: `sops` | `winget: Mozilla.sops` | — |  | — |
 | `sqlite` | `sqlite3` | `brew: sqlite` | apt: `sqlite3`<br>dnf: `sqlite3`<br>pacman: `sqlite3`<br>apk: `sqlite3` | `winget: SQLite.SQLite` | — |  | — |
+| `sqlx_cli` | `sqlx` | — | — | — | — |  | `rust` |
 | `starship` | `starship` | `brew: starship` | apt: `starship`<br>dnf: `starship`<br>pacman: `starship`<br>apk: `starship` | `winget: Starship.Starship` | — | ✓ | — |
 | `stern` | `stern` | `brew: stern` | apt: `stern`<br>dnf: `stern`<br>pacman: `stern`<br>apk: `stern` | `winget: stern.stern` | — |  | `kubectl` |
 | `stow` | `stow` | `brew: stow` | apt: `stow`<br>dnf: `stow`<br>pacman: `stow`<br>apk: `stow` | — | — |  | — |
@@ -272,6 +302,7 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `talosctl` | `talosctl` | `brew: siderolabs/tap/talosctl` | apt: `talosctl`<br>dnf: `talosctl`<br>pacman: `talosctl`<br>apk: `talosctl` | `winget: SideroLabs.talosctl` | — |  | — |
 | `tanka` | `tk` | `brew: tanka` | — | — | go: `github.com/grafana/tanka/cmd/tk` |  | — |
 | `task` | `task` | `brew: go-task` | brew: `go-task` | `winget: Task.Task` | — |  | — |
+| `tauri_cli` | `cargo-tauri` | — | — | — | — |  | `rust` |
 | `temporal` | `temporal` | `brew: temporal` | brew: `temporal` | — | — |  | — |
 | `terraform` | `terraform` | `brew: terraform` | apt: `terraform`<br>dnf: `terraform`<br>pacman: `terraform`<br>apk: `terraform` | `winget: HashiCorp.Terraform` | — | ✓ | — |
 | `terraform_docs` | `terraform-docs` | `brew: terraform-docs` | brew: `terraform-docs` | `choco: terraform-docs` | — |  | — |
@@ -281,9 +312,11 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `tmux` | `tmux` | `brew: tmux` | apt: `tmux`<br>dnf: `tmux`<br>pacman: `tmux`<br>apk: `tmux` | — | — | ✓ | — |
 | `todoist` | `todoist` | `brew: todoist-cli-go` | brew: `todoist-cli-go` | — | — |  | — |
 | `tokei` | `tokei` | `brew: tokei` | apt: `tokei`<br>dnf: `tokei`<br>pacman: `tokei`<br>apk: `tokei` | `winget: XAMPPRocky.tokei`<br>`choco: tokei` | — |  | — |
+| `total_commander` | `totalcmd` | — | — | `winget: Ghisler.TotalCommander` | — |  | — |
 | `tree` | `tree` | `brew: tree` | apt: `tree`<br>dnf: `tree`<br>pacman: `tree`<br>apk: `tree` | — | — |  | — |
 | `trivy` | `trivy` | `brew: trivy` | apk: `trivy`<br>brew: `trivy` | `winget: aquasecurity.trivy` | — |  | — |
 | `trufflehog` | `trufflehog` | `brew: trufflehog` | brew: `trufflehog` | — | — |  | `git` |
+| `trunk` | `trunk` | — | — | — | — |  | `rust` |
 | `twingate` | `twingate` | `cask: twingate` | — | `winget: Twingate.Client` | — |  | — |
 | `up` | `up` | `brew: upbound/tap/up` | brew: `upbound/tap/up` | — | — |  | — |
 | `usql` | `usql` | `brew: usql` | brew: `usql` | `choco: usql` | — |  | — |
@@ -291,25 +324,29 @@ Jarvy currently ships **298 tools**. Reference one in your `jarvy.toml` by its *
 | `vagrant` | `vagrant` | `cask: vagrant` | apt: `vagrant`<br>dnf: `vagrant`<br>pacman: `vagrant`<br>apk: `vagrant` | `winget: Hashicorp.Vagrant`<br>`choco: vagrant` | — |  | — |
 | `vault` | `vault` | `brew: vault` | apt: `vault`<br>dnf: `vault`<br>pacman: `vault`<br>apk: `vault` | `winget: HashiCorp.Vault` | — |  | — |
 | `vcluster` | `vcluster` | `brew: vcluster` | brew: `vcluster` | — | — |  | `kubectl`, `helm` |
+| `vcredist` | `vcredist` | — | — | `winget: Microsoft.VCRedist.2015+.x64`<br>`choco: vcredist140` | — |  | — |
 | `velero` | `velero` | `brew: velero` | brew: `velero` | — | — |  | `kubectl` |
 | `vfox` | `vfox` | `brew: vfox` | brew: `vfox` | `winget: vfox` | — | ✓ | — |
 | `vim` | `vim` | `brew: vim` | apt: `vim`<br>dnf: `vim-enhanced`<br>pacman: `vim`<br>apk: `vim` | `winget: vim.vim` | — |  | — |
+| `vivaldi` | `vivaldi` | `cask: vivaldi` | — | `winget: Vivaldi.Vivaldi` | — |  | — |
 | `vllm` | `vllm` | — | — | — | — |  | — |
 | `vscode` | `code` | `cask: visual-studio-code` | apt: `code`<br>dnf: `code`<br>pacman: `code`<br>apk: `code` | `winget: Microsoft.VisualStudioCode` | — |  | — |
 | `watchexec` | `watchexec` | `brew: watchexec` | apt: `watchexec`<br>dnf: `watchexec`<br>pacman: `watchexec`<br>apk: `watchexec` | `winget: watchexec.watchexec`<br>`choco: watchexec` | — |  | — |
 | `watchman` | `watchman` | `brew: watchman` | brew: `watchman` | `choco: watchman` | — |  | — |
 | `wget` | `wget` | `brew: wget` | apt: `wget`<br>dnf: `wget`<br>pacman: `wget`<br>apk: `wget` | `winget: GnuWin32.Wget` | — |  | — |
 | `wireguard_tools` | `wg` | `brew: wireguard-tools` | apt: `wireguard-tools`<br>dnf: `wireguard-tools`<br>pacman: `wireguard-tools`<br>apk: `wireguard-tools` | `winget: WireGuard.WireGuard` | — |  | — |
-| `wrangler` | `wrangler` | `brew: cloudflare-wrangler` | brew: `cloudflare-wrangler` | — | npm: `wrangler` |  | — |
+| `wrangler` | `wrangler` | `brew: cloudflare-wrangler` | brew: `cloudflare-wrangler` | — | npm: `wrangler` |  | `node`, `nvm` |
+| `wsl` | `wsl` | — | — | — | — |  | — |
 | `xk6` | `xk6` | — | — | — | go: `go.k6.io/xk6/cmd/xk6` |  | — |
 | `xz` | `xz` | `brew: xz` | apt: `xz`<br>dnf: `xz`<br>pacman: `xz`<br>apk: `xz` | `winget: XZUtils.XZ` | — |  | — |
-| `yadm` | `yadm` | `brew: yadm` | apt: `yadm`<br>dnf: `yadm`<br>pacman: `yadm`<br>apk: `yadm` | — | — |  | — |
+| `yadm` | `yadm` | `brew: yadm` | apt: `yadm`<br>dnf: `yadm`<br>pacman: `yadm`<br>apk: `yadm` | — | — |  | `git` |
 | `yamllint` | `yamllint` | `brew: yamllint` | apt: `yamllint`<br>dnf: `yamllint`<br>pacman: `yamllint`<br>apk: `py3-yamllint` | `winget: adrienverge.yamllint` | — |  | — |
 | `yarn` | `yarn` | `brew: yarn` | brew: `yarn` | `winget: Yarn.Yarn` | — |  | — |
 | `yazi` | `yazi` | `brew: yazi` | apt: `yazi`<br>dnf: `yazi`<br>pacman: `yazi`<br>apk: `yazi` | `winget: sxyazi.yazi` | — |  | — |
 | `yq` | `yq` | `brew: yq` | apt: `yq`<br>dnf: `yq`<br>pacman: `yq`<br>apk: `yq` | `winget: mikefarah.yq` | — |  | — |
 | `zed` | `zed` | `cask: zed` | — | — | — |  | — |
 | `zellij` | `zellij` | `brew: zellij` | brew: `zellij` | `winget: Zellij.Zellij` | — |  | — |
+| `zen` | `zen-browser` | `cask: zen` | — | `winget: Zen-Team.Zen-Browser` | — |  | — |
 | `zerotier` | `zerotier-cli` | `cask: zerotier-one` | — | `winget: ZeroTier.ZeroTierOne` | — |  | — |
 | `zig` | `zig` | `brew: zig` | apt: `zig`<br>dnf: `zig`<br>pacman: `zig`<br>apk: `zig` | `winget: zig.zig`<br>`choco: zig` | — |  | — |
 | `zoxide` | `zoxide` | `brew: zoxide` | apt: `zoxide`<br>dnf: `zoxide`<br>pacman: `zoxide`<br>apk: `zoxide` | `winget: ajeetdsouza.zoxide` | — | ✓ | — |
