@@ -17,6 +17,8 @@ use crate::tools::common::{InstallContext, InstallError};
 use super::bootstrap;
 #[cfg(target_os = "windows")]
 use super::refusal::RefusalReason;
+#[cfg(target_os = "windows")]
+use crate::windows::config::BrowserLauncherMode;
 
 fn bootstrap_wsl(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     #[cfg(target_os = "windows")]
@@ -43,6 +45,14 @@ fn bootstrap_wsl(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallEr
                         cfg.effective_name()
                     );
                 }
+                if cfg.browser_launcher != BrowserLauncherMode::Off
+                    && let Err(e) = bootstrap::configure_browser_launcher(&cfg)
+                {
+                    eprintln!(
+                        "[wsl] browser launcher setup inside \"{}\" failed: {e}",
+                        cfg.effective_name()
+                    );
+                }
                 Ok(())
             }
             Ok(bootstrap::BootstrapOutcome::Installed { .. }) => {
@@ -51,6 +61,14 @@ fn bootstrap_wsl(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallEr
                 {
                     eprintln!(
                         "[wsl] jarvy install inside \"{}\" failed: {e}",
+                        cfg.effective_name()
+                    );
+                }
+                if cfg.browser_launcher != BrowserLauncherMode::Off
+                    && let Err(e) = bootstrap::configure_browser_launcher(&cfg)
+                {
+                    eprintln!(
+                        "[wsl] browser launcher setup inside \"{}\" failed: {e}",
                         cfg.effective_name()
                     );
                 }

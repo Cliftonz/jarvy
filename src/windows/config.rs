@@ -129,6 +129,41 @@ fn default_sh_association() -> ShAssociationMode {
     ShAssociationMode::Off
 }
 
+/// How CLIs inside a WSL distro launch a browser on the Windows host.
+/// String-typed for the same reason as [`ShAssociationMode`]: `"off"`
+/// is a real value users write to intentionally clear a prior team
+/// setting, and future modes have a natural home here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserLauncherMode {
+    /// Do not touch `$BROWSER` inside the distro. Default.
+    Off,
+    /// Install the `wslu` apt package and set `$BROWSER=wslview`.
+    /// Only available on distros that carry `wslu` in an official
+    /// repo (Ubuntu's `universe`); refused for `distro = "Debian"`
+    /// at config-load via [`WslConfig::validate`].
+    Wslu,
+    /// Set `$BROWSER` to a `cmd.exe /c start` shim. No package
+    /// install; works on any distro.
+    CmdShim,
+}
+
+impl BrowserLauncherMode {
+    /// Bounded label for telemetry. Never called for `Off` — callers
+    /// early-return before needing a label for that variant.
+    pub fn as_label(self) -> &'static str {
+        match self {
+            BrowserLauncherMode::Off => "off",
+            BrowserLauncherMode::Wslu => "wslu",
+            BrowserLauncherMode::CmdShim => "cmd_shim",
+        }
+    }
+}
+
+fn default_browser_launcher() -> BrowserLauncherMode {
+    BrowserLauncherMode::Off
+}
+
 /// `[windows.wsl]` sub-block. Bootstraps a named WSL2 distro on
 /// Windows, optionally installs jarvy inside it, and optionally
 /// delegates the outer `jarvy setup` into the distro on the translated
@@ -193,6 +228,20 @@ pub struct WslConfig {
     /// inside the distro, not on Windows).
     #[serde(default)]
     pub run_setup: bool,
+
+    /// How CLIs inside the distro (e.g. `gh auth login`) launch a
+    /// browser on the Windows host:
+    ///   `"off"`      = do not touch `$BROWSER` inside the distro (default)
+    ///   `"wslu"`     = install the `wslu` apt package and set
+    ///                  `$BROWSER=wslview`
+    ///   `"cmd_shim"` = set `$BROWSER` to a `cmd.exe /c start` shim,
+    ///                  no package install
+    ///
+    /// `"wslu"` is only in Ubuntu's official `universe` repo, not in
+    /// Debian's official repos — `validate()` refuses the combination
+    /// of `browser_launcher = "wslu"` with `distro = "Debian"`.
+    #[serde(default = "default_browser_launcher")]
+    pub browser_launcher: BrowserLauncherMode,
 }
 
 impl Default for WslConfig {
@@ -206,6 +255,7 @@ impl Default for WslConfig {
             install_jarvy: true,
             jarvy_channel: default_channel(),
             run_setup: false,
+            browser_launcher: BrowserLauncherMode::Off,
         }
     }
 }
@@ -247,6 +297,14 @@ impl WslConfig {
     /// get a clean parse error on any invalid value.
     pub fn validate(&self) -> Result<(), String> {
         validate_distro_slug(&self.distro)?;
+        if self.browser_launcher == BrowserLauncherMode::Wslu
+            && self.distro.eq_ignore_ascii_case("Debian")
+        {
+            return Err(
+                "[windows.wsl] browser_launcher = \"wslu\" is not available on Debian (wslu is not in Debian's official repos); use browser_launcher = \"cmd_shim\" instead"
+                    .to_string(),
+            );
+        }
         if let Some(name) = self.name.as_deref() {
             validate_distro_name(name)?;
         } else {
@@ -555,6 +613,68 @@ sh_association = "open"
         assert_eq!(cfg.jarvy_channel, "stable");
         assert_eq!(cfg.install_location, "auto");
         assert!(cfg.name.is_none());
+        assert_eq!(cfg.browser_launcher, BrowserLauncherMode::Off);
+    }
+
+    #[test]
+    fn browser_launcher_defaults_to_off_on_empty_parse() {
+        let cfg: WindowsConfig = toml::from_str("[wsl]").unwrap();
+        let wsl = cfg.wsl.expect("wsl block present");
+        assert_eq!(wsl.browser_launcher, BrowserLauncherMode::Off);
+    }
+
+    #[test]
+    fn browser_launcher_parses_wslu_and_cmd_shim() {
+        let cfg: WindowsConfig = toml::from_str(
+            r#"
+[wsl]
+browser_launcher = "wslu"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.wsl.unwrap().browser_launcher, BrowserLauncherMode::Wslu);
+
+        let cfg: WindowsConfig = toml::from_str(
+            r#"
+[wsl]
+browser_launcher = "cmd_shim"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.wsl.unwrap().browser_launcher,
+            BrowserLauncherMode::CmdShim
+        );
+    }
+
+    #[test]
+    fn validate_refuses_wslu_on_debian() {
+        let cfg = WslConfig {
+            distro: "Debian".to_string(),
+            browser_launcher: BrowserLauncherMode::Wslu,
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn validate_allows_wslu_on_ubuntu() {
+        let cfg = WslConfig {
+            distro: "Ubuntu".to_string(),
+            browser_launcher: BrowserLauncherMode::Wslu,
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_allows_cmd_shim_on_debian() {
+        let cfg = WslConfig {
+            distro: "Debian".to_string(),
+            browser_launcher: BrowserLauncherMode::CmdShim,
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
     }
 
     #[test]
@@ -569,6 +689,7 @@ install_location = "C:\\wsl\\jarvy"
 install_jarvy = true
 jarvy_channel = "beta"
 run_setup = true
+browser_launcher = "cmd_shim"
 "#;
         let cfg: WindowsConfig = toml::from_str(toml_str).unwrap();
         let wsl = cfg.wsl.expect("wsl block present");
@@ -580,6 +701,7 @@ run_setup = true
         assert!(wsl.install_jarvy);
         assert_eq!(wsl.jarvy_channel, "beta");
         assert!(wsl.run_setup);
+        assert_eq!(wsl.browser_launcher, BrowserLauncherMode::CmdShim);
         assert!(wsl.validate().is_ok());
     }
 

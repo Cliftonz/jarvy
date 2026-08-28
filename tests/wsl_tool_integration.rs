@@ -14,6 +14,7 @@ use jarvy::tools::wsl::bootstrap::{
 };
 use jarvy::tools::wsl::refusal::RefusalReason;
 use jarvy::tools::wsl::rootfs;
+use jarvy::windows::config::BrowserLauncherMode;
 use jarvy::windows::{
     PathTranslateError, WindowsConfig, WslConfig, translate_win_path, validate_channel,
     validate_distro_name, validate_distro_slug, validate_install_location,
@@ -29,6 +30,7 @@ fn base_cfg() -> WslConfig {
         install_jarvy: true,
         jarvy_channel: "stable".to_string(),
         run_setup: false,
+        browser_launcher: BrowserLauncherMode::Off,
     }
 }
 

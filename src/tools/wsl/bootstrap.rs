@@ -20,7 +20,9 @@ use std::sync::RwLock;
 
 #[cfg(target_os = "windows")]
 use crate::tools::common::InstallError;
-use crate::windows::config::{PathTranslateError, WslConfig, translate_win_path};
+use crate::windows::config::{
+    BrowserLauncherMode, PathTranslateError, WslConfig, translate_win_path,
+};
 
 use super::refusal::RefusalReason;
 
@@ -109,6 +111,26 @@ impl InnerInstallError {
             InnerInstallError::Io(_) => "network",
         }
     }
+}
+
+/// `$BROWSER` export line for `browser_launcher = "wslu"`. Appended to
+/// `~/.bashrc` inside the distro after `wslu` (which provides
+/// `wslview`) is installed.
+pub const WSLU_BROWSER_EXPORT: &str = "export BROWSER=wslview";
+
+/// `$BROWSER` export line for `browser_launcher = "cmd_shim"`. No
+/// package install required — launches the Windows host's default
+/// browser via `cmd.exe /c start`.
+pub const CMD_SHIM_BROWSER_EXPORT: &str =
+    r#"export BROWSER="/mnt/c/Windows/System32/cmd.exe /c start""#;
+
+/// Errors returned by [`configure_browser_launcher`].
+#[derive(Debug, thiserror::Error)]
+pub enum BrowserLauncherError {
+    #[error("wsl.exe not present")]
+    NoWsl,
+    #[error("command exited {code:?}: {stderr}")]
+    CommandFailed { code: Option<i32>, stderr: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,6 +226,49 @@ pub fn argv_wsl_delegate_setup(name: &str, wsl_cwd: &str, from_url: Option<&str>
         inner.push_str(" --from ");
         inner.push_str(&shell_single_quote(url));
     }
+    vec![
+        "-d".to_string(),
+        name.to_string(),
+        "--".to_string(),
+        "bash".to_string(),
+        "-lc".to_string(),
+        inner,
+    ]
+}
+
+/// Resolve the `$BROWSER` export line for a browser-launcher mode.
+/// `None` for `Off` — nothing to configure.
+pub fn browser_export_line(mode: BrowserLauncherMode) -> Option<&'static str> {
+    match mode {
+        BrowserLauncherMode::Off => None,
+        BrowserLauncherMode::Wslu => Some(WSLU_BROWSER_EXPORT),
+        BrowserLauncherMode::CmdShim => Some(CMD_SHIM_BROWSER_EXPORT),
+    }
+}
+
+/// Build the argv for `wsl -d <name> -u root -- bash -lc "apt-get
+/// update && apt-get install -y wslu"`.
+pub fn argv_wsl_install_wslu(name: &str) -> Vec<String> {
+    vec![
+        "-d".to_string(),
+        name.to_string(),
+        "-u".to_string(),
+        "root".to_string(),
+        "--".to_string(),
+        "bash".to_string(),
+        "-lc".to_string(),
+        "apt-get update && apt-get install -y wslu".to_string(),
+    ]
+}
+
+/// Build the argv for `wsl -d <name> -- bash -lc "grep -qxF '<line>'
+/// ~/.bashrc || echo '<line>' >> ~/.bashrc"`. Idempotent: re-running
+/// with the same line is a no-op. Uses [`shell_single_quote`] so
+/// lines with embedded double-quotes (like the cmd_shim export) are
+/// safe.
+pub fn argv_wsl_append_rc_line(name: &str, line: &str) -> Vec<String> {
+    let quoted = shell_single_quote(line);
+    let inner = format!("grep -qxF {quoted} ~/.bashrc || echo {quoted} >> ~/.bashrc");
     vec![
         "-d".to_string(),
         name.to_string(),
@@ -425,6 +490,56 @@ mod exec {
             ],
         )
         .is_ok()
+    }
+
+    pub fn wslview_in_distro(name: &str) -> bool {
+        run(
+            "wsl",
+            &[
+                "-d",
+                name,
+                "--",
+                "sh",
+                "-lc",
+                "command -v wslview >/dev/null 2>&1",
+            ],
+        )
+        .is_ok()
+    }
+
+    pub fn configure_browser_launcher(cfg: &WslConfig) -> Result<(), BrowserLauncherError> {
+        let Some(line) = browser_export_line(cfg.browser_launcher) else {
+            return Ok(());
+        };
+        if !has("wsl") {
+            return Err(BrowserLauncherError::NoWsl);
+        }
+        let name = cfg.effective_name();
+        let started = std::time::Instant::now();
+        if cfg.browser_launcher == BrowserLauncherMode::Wslu && !wslview_in_distro(name) {
+            let argv = argv_wsl_install_wslu(name);
+            let arg_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+            if let Err(e) = run("wsl", &arg_refs) {
+                let stderr = install_error_stderr(&e);
+                let code = install_error_code(&e);
+                emit_browser_launcher_failed(cfg.browser_launcher, "apt_install_failed", &stderr);
+                return Err(BrowserLauncherError::CommandFailed { code, stderr });
+            }
+        }
+        let argv = argv_wsl_append_rc_line(name, line);
+        let arg_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+        match run("wsl", &arg_refs) {
+            Ok(_) => {
+                emit_browser_launcher_configured(cfg.browser_launcher, started.elapsed());
+                Ok(())
+            }
+            Err(e) => {
+                let stderr = install_error_stderr(&e);
+                let code = install_error_code(&e);
+                emit_browser_launcher_failed(cfg.browser_launcher, "rc_write_failed", &stderr);
+                Err(BrowserLauncherError::CommandFailed { code, stderr })
+            }
+        }
     }
 
     pub fn bootstrap(cfg: &WslConfig) -> Result<BootstrapOutcome, RefusalReason> {
@@ -658,7 +773,7 @@ mod exec {
 }
 
 #[cfg(target_os = "windows")]
-pub use exec::{bootstrap, delegate_setup, install_jarvy_inside};
+pub use exec::{bootstrap, configure_browser_launcher, delegate_setup, install_jarvy_inside};
 
 /// Cross-platform stubs so callers can compile everywhere. The
 /// non-Windows path always returns `NoOp` / `false` / a `NoWsl`-shaped
@@ -690,6 +805,11 @@ pub fn delegate_setup(
     _from_url: Option<&str>,
 ) -> Result<i32, DelegateError> {
     Err(DelegateError::NoWsl)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn configure_browser_launcher(_cfg: &WslConfig) -> Result<(), BrowserLauncherError> {
+    Err(BrowserLauncherError::NoWsl)
 }
 
 /// Silence the unused-path lint on non-Windows builds where
@@ -808,6 +928,31 @@ fn emit_jarvy_install_failed(base_distro: &str, channel: &str, cause: &str, erro
 }
 
 #[allow(dead_code)]
+fn emit_browser_launcher_configured(mode: BrowserLauncherMode, duration: std::time::Duration) {
+    if !gate() {
+        return;
+    }
+    tracing::info!(
+        event = "wsl.browser_launcher_configured",
+        launcher = mode.as_label(),
+        duration_ms = duration.as_millis() as u64,
+    );
+}
+
+#[allow(dead_code)]
+fn emit_browser_launcher_failed(mode: BrowserLauncherMode, cause: &str, error: &str) {
+    if !gate() {
+        return;
+    }
+    tracing::warn!(
+        event = "wsl.browser_launcher_failed",
+        launcher = mode.as_label(),
+        cause = %cause,
+        error = %error,
+    );
+}
+
+#[allow(dead_code)]
 fn emit_delegated_started(base_distro: &str) {
     if !gate() {
         return;
@@ -865,6 +1010,7 @@ mod tests {
             install_jarvy: true,
             jarvy_channel: "stable".to_string(),
             run_setup: false,
+            browser_launcher: BrowserLauncherMode::Off,
         }
     }
 
@@ -1031,6 +1177,66 @@ mod tests {
             argv[5],
             "cd '/mnt/c/proj' && jarvy setup --from 'https://example.com/config.toml'"
         );
+    }
+
+    #[test]
+    fn browser_export_line_shape() {
+        assert_eq!(browser_export_line(BrowserLauncherMode::Off), None);
+        assert_eq!(
+            browser_export_line(BrowserLauncherMode::Wslu),
+            Some(WSLU_BROWSER_EXPORT)
+        );
+        assert_eq!(
+            browser_export_line(BrowserLauncherMode::CmdShim),
+            Some(CMD_SHIM_BROWSER_EXPORT)
+        );
+    }
+
+    #[test]
+    fn argv_install_wslu_shape() {
+        let argv = argv_wsl_install_wslu("Ubuntu");
+        assert_eq!(
+            argv,
+            vec![
+                "-d",
+                "Ubuntu",
+                "-u",
+                "root",
+                "--",
+                "bash",
+                "-lc",
+                "apt-get update && apt-get install -y wslu",
+            ]
+        );
+    }
+
+    #[test]
+    fn argv_append_rc_line_wslu_shape() {
+        let argv = argv_wsl_append_rc_line("Ubuntu", WSLU_BROWSER_EXPORT);
+        assert_eq!(
+            argv,
+            vec![
+                "-d".to_string(),
+                "Ubuntu".to_string(),
+                "--".to_string(),
+                "bash".to_string(),
+                "-lc".to_string(),
+                "grep -qxF 'export BROWSER=wslview' ~/.bashrc || echo 'export BROWSER=wslview' >> ~/.bashrc".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn argv_append_rc_line_cmd_shim_shape() {
+        let argv = argv_wsl_append_rc_line("Ubuntu", CMD_SHIM_BROWSER_EXPORT);
+        let inner = &argv[5];
+        // Single quotes in POSIX shell don't need escaping double
+        // quotes, so the embedded `"` characters from the export
+        // line appear literally inside the single-quoted segments.
+        assert!(inner.contains(r#"'export BROWSER="/mnt/c/Windows/System32/cmd.exe /c start"'"#));
+        assert!(inner.starts_with("grep -qxF "));
+        assert!(inner.contains("|| echo "));
+        assert!(inner.ends_with(" >> ~/.bashrc"));
     }
 
     #[test]
