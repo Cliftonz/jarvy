@@ -161,7 +161,7 @@ pub fn run_capture(cmd: &str, args: &[&str], stage: &str, context: &str) -> Opti
 
 /// winget (and some other installers) prints its real diagnostic to stdout
 /// instead of stderr, so fall back to stdout when stderr is empty.
-fn command_failure_stderr(out: &Output) -> String {
+pub(crate) fn command_failure_stderr(out: &Output) -> String {
     let stderr = String::from_utf8_lossy(&out.stderr);
     if stderr.trim().is_empty() {
         String::from_utf8_lossy(&out.stdout).into_owned()
