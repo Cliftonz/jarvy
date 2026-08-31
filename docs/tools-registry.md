@@ -242,7 +242,7 @@ Jarvy currently ships **335 tools**. Reference one in your `jarvy.toml` by its *
 | `onepassword_cli` | `op` | `brew: 1password-cli` | — | `winget: 1password-cli` | — |  | — |
 | `openclaw` | `openclaw` | `brew: openclaw-cli` | apt: `openclaw-cli`<br>dnf: `openclaw-cli`<br>pacman: `openclaw-cli`<br>apk: `openclaw-cli` | — | npm: `openclaw` |  | — |
 | `openssh` | `ssh` | `brew: openssh` | apt: `openssh`<br>dnf: `openssh`<br>pacman: `openssh`<br>apk: `openssh` | `winget: Microsoft.OpenSSH.Beta` | — |  | — |
-| `opentofu` | `tofu` | `brew: opentofu` | apt: `opentofu`<br>dnf: `opentofu`<br>pacman: `opentofu`<br>apk: `opentofu` | `winget: OpenTofu.OpenTofu` | — |  | — |
+| `opentofu` | `tofu` | `brew: opentofu` | — | `winget: OpenTofu.OpenTofu` | — |  | — |
 | `openvpn` | `openvpn` | `brew: openvpn` | apt: `openvpn`<br>dnf: `openvpn`<br>pacman: `openvpn`<br>apk: `openvpn` | `winget: OpenVPNTechnologies.OpenVPN` | — |  | — |
 | `opera` | `opera` | `cask: opera` | — | `winget: Opera.Opera` | — |  | — |
 | `oras` | `oras` | `brew: oras` | apt: `oras`<br>dnf: `oras`<br>pacman: `oras`<br>apk: `oras` | `winget: oras-project.oras` | — |  | — |
