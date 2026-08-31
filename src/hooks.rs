@@ -586,12 +586,19 @@ fn build_shell_command(shell: &str, script: &str) -> HookResult<(String, Vec<Str
                 .unwrap_or_else(|| shell.to_string())
         };
 
+        // Normalize CRLF to LF: a jarvy.toml saved with Windows line endings
+        // preserves literal \r bytes in the script string, which breaks
+        // POSIX shell parsing (`$'\r': command not found`). PowerShell/cmd
+        // tolerate embedded \r fine, so this normalization is scoped to
+        // this Unix-shell branch only.
+        let script = script.replace('\r', "");
+
         // Fish has different syntax
         if shell_lower == "fish" {
-            (shell_path, vec!["-c".to_string(), script.to_string()])
+            (shell_path, vec!["-c".to_string(), script])
         } else {
             // bash, zsh, sh, etc.
-            (shell_path, vec!["-c".to_string(), script.to_string()])
+            (shell_path, vec!["-c".to_string(), script])
         }
     };
 
@@ -723,6 +730,30 @@ mod tests {
         #[cfg(not(windows))]
         assert_eq!(shell, "pwsh");
         assert!(args.contains(&"-Command".to_string()));
+    }
+
+    #[test]
+    fn test_build_shell_command_bash_strips_crlf() {
+        let (_, args) = build_shell_command("bash", "echo hello\r\necho world\r\n").unwrap();
+        assert!(!args[1].contains('\r'));
+        assert_eq!(args[1], "echo hello\necho world\n");
+    }
+
+    #[test]
+    fn test_build_shell_command_fish_strips_crlf() {
+        let (_, args) = build_shell_command("fish", "echo hello\r\necho world\r\n").unwrap();
+        assert!(!args[1].contains('\r'));
+        assert_eq!(args[1], "echo hello\necho world\n");
+    }
+
+    #[test]
+    fn test_build_shell_command_powershell_preserves_crlf() {
+        let (_, args) =
+            build_shell_command("powershell", "Write-Host hello\r\nWrite-Host world\r\n").unwrap();
+        assert!(
+            args.iter().any(|a| a.contains('\r')),
+            "powershell branch must not strip \\r; fix is scoped to POSIX shells"
+        );
     }
 
     #[test]

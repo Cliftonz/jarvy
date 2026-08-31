@@ -420,6 +420,25 @@ fn validate_tool_dependencies(
     }
 }
 
+/// Warn when a hook script string carries CRLF (`\r\n`) line endings.
+/// jarvy's runtime strips `\r` automatically before executing POSIX-shell
+/// hooks, so this is advisory rather than a hard failure — but a
+/// CRLF-saved `jarvy.toml` (common on Windows editors) is worth flagging
+/// so users can clean up the source file instead of relying on the
+/// runtime workaround.
+fn check_crlf_hook_script(label: &str, script: &str, issues: &mut Vec<ValidationIssue>) {
+    if script.contains('\r') {
+        issues.push(ValidationIssue {
+            severity: Severity::Warning,
+            message: format!("Hook 'hooks.{}' has CRLF (\\r\\n) line endings", label),
+            line: None,
+            suggestion: Some(
+                "jarvy strips \\r automatically before running POSIX-shell hooks, but saving this file with LF line endings avoids relying on that".to_string(),
+            ),
+        });
+    }
+}
+
 fn validate_hooks(
     hooks: &toml::map::Map<String, toml::Value>,
     full_config: &toml::Value,
@@ -432,8 +451,15 @@ fn validate_hooks(
         .map(|t| t.keys().cloned().collect())
         .unwrap_or_default();
 
+    if let Some(script) = hooks.get("pre_setup").and_then(|v| v.as_str()) {
+        check_crlf_hook_script("pre_setup", script, issues);
+    }
+    if let Some(script) = hooks.get("post_setup").and_then(|v| v.as_str()) {
+        check_crlf_hook_script("post_setup", script, issues);
+    }
+
     // Check for tool hooks referencing undefined tools
-    for (key, _value) in hooks {
+    for (key, value) in hooks {
         // Skip known hook config keys
         if ["pre_setup", "post_setup", "config"].contains(&key.as_str()) {
             continue;
@@ -456,6 +482,14 @@ fn validate_hooks(
                     key, key
                 )),
             });
+        }
+
+        if let Some(post_install) = value
+            .as_table()
+            .and_then(|t| t.get("post_install"))
+            .and_then(|v| v.as_str())
+        {
+            check_crlf_hook_script(&format!("{}.post_install", key), post_install, issues);
         }
     }
 
@@ -993,6 +1027,50 @@ mod tests {
         assert_eq!(
             result.error_count, 0,
             "locked knob misidentified as hostile package: {:?}",
+            result.issues
+        );
+    }
+
+    /// A `jarvy.toml` saved with CRLF line endings preserves literal
+    /// `\r\n` bytes inside a multi-line `hooks.post_setup` script string.
+    /// `jarvy validate` should flag this with a warning even though the
+    /// runtime now strips `\r` before executing the hook — the point is
+    /// to point the user at the source file, not rely on the runtime
+    /// workaround silently papering over it.
+    #[test]
+    fn validate_warns_on_crlf_in_post_setup_hook() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[hooks]\npost_setup = \"\"\"\nline one\r\nline two\r\n\"\"\"\n",
+        )
+        .unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert!(
+            result.issues.iter().any(|i| {
+                matches!(i.severity, Severity::Warning)
+                    && i.message.contains("post_setup")
+                    && i.message.contains("CRLF")
+            }),
+            "expected CRLF warning for post_setup hook, got: {:?}",
+            result.issues
+        );
+    }
+
+    /// Regression guard: a clean LF-only hook script must NOT trigger the
+    /// CRLF warning.
+    #[test]
+    fn validate_does_not_warn_on_lf_only_post_setup_hook() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\ngit = \"latest\"\n\n[hooks]\npost_setup = \"\"\"\nline one\nline two\n\"\"\"\n",
+        )
+        .unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert!(
+            !result.issues.iter().any(|i| i.message.contains("CRLF")),
+            "unexpected CRLF warning for LF-only hook, got: {:?}",
             result.issues
         );
     }
