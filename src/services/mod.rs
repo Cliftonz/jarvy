@@ -372,6 +372,17 @@ fn command_exists(cmd: &str) -> bool {
     crate::tools::common::command_on_path(cmd)
 }
 
+/// Some CLIs print their real diagnostic to stdout instead of stderr, so
+/// fall back to stdout when stderr is empty or whitespace-only.
+fn command_failure_stderr(out: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if stderr.trim().is_empty() {
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    } else {
+        stderr.into_owned()
+    }
+}
+
 /// Run a command and capture output.
 ///
 /// Wrapped in a `tracing::info_span!("subprocess.exec", ...)` so support
@@ -511,5 +522,50 @@ mod tests {
         assert!(result.is_some());
         let (backend, _) = result.unwrap();
         assert_eq!(backend, ServiceBackend::DockerCompose);
+    }
+}
+
+#[cfg(test)]
+mod command_failure_stderr_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn dummy_exit_status(code: i32) -> std::process::ExitStatus {
+        std::os::unix::process::ExitStatusExt::from_raw(code << 8)
+    }
+
+    #[cfg(windows)]
+    fn dummy_exit_status(code: i32) -> std::process::ExitStatus {
+        std::os::windows::process::ExitStatusExt::from_raw(code as u32)
+    }
+
+    #[test]
+    fn command_failure_stderr_falls_back_to_stdout_when_stderr_empty() {
+        let out = Output {
+            status: dummy_exit_status(1),
+            stdout: b"compose's real diagnostic".to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(command_failure_stderr(&out), "compose's real diagnostic");
+    }
+
+    #[test]
+    fn command_failure_stderr_prefers_stderr_when_present() {
+        let out = Output {
+            status: dummy_exit_status(1),
+            stdout: b"noise on stdout".to_vec(),
+            stderr: b"the real stderr message".to_vec(),
+        };
+        assert_eq!(command_failure_stderr(&out), "the real stderr message");
+    }
+
+    #[test]
+    fn command_failure_stderr_falls_back_to_stdout_when_stderr_is_whitespace_only() {
+        let out = Output {
+            status: dummy_exit_status(1),
+            stdout: b"compose's real diagnostic".to_vec(),
+            stderr: b"\n".to_vec(),
+        };
+        assert_eq!(command_failure_stderr(&out), "compose's real diagnostic");
     }
 }

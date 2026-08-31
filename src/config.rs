@@ -285,14 +285,7 @@ pub struct HookSettings {
 }
 
 fn default_shell() -> String {
-    #[cfg(windows)]
-    {
-        "powershell".to_string()
-    }
-    #[cfg(not(windows))]
-    {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-    }
+    crate::hooks::detect_shell()
 }
 
 fn default_timeout() -> u64 {
@@ -1685,8 +1678,7 @@ fn command_name(cli: &crate::cli::Cli) -> &'static str {
 /// `Option<String>` for that reason), so it's carved out here even
 /// though [`cli_file_arg`] resolves it to the default path.
 fn requires_config_hint(cli: &crate::cli::Cli) -> bool {
-    cli_file_arg(cli).is_some()
-        && !matches!(cli.command, Some(crate::cli::Commands::Doctor { .. }))
+    cli_file_arg(cli).is_some() && !matches!(cli.command, Some(crate::cli::Commands::Doctor { .. }))
 }
 
 #[cfg(test)]
@@ -2131,15 +2123,7 @@ pre_setup = "echo 'hi'"
     #[test]
     fn test_hook_settings_default_shell() {
         let settings = HookSettings::default();
-        // Should be the value of SHELL env var or /bin/sh on Unix, powershell on Windows
-        #[cfg(not(windows))]
-        {
-            assert!(!settings.shell.is_empty());
-        }
-        #[cfg(windows)]
-        {
-            assert_eq!(settings.shell, "powershell");
-        }
+        assert_eq!(settings.shell, crate::hooks::detect_shell());
         assert_eq!(settings.timeout, DEFAULT_HOOK_TIMEOUT);
         assert!(!settings.continue_on_error);
     }

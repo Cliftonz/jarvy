@@ -3,7 +3,7 @@
 use super::preflight::{DaemonState, docker_daemon_hint, probe_container_daemon};
 use super::{
     ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult, ServiceStatus, command_exists,
-    run_command,
+    command_failure_stderr, run_command,
 };
 use crate::observability::telemetry_gate;
 use crate::telemetry;
@@ -149,7 +149,7 @@ impl ServiceBackendOps for DockerComposeBackend {
             Err(ServiceError::CommandFailed {
                 backend: ServiceBackend::DockerCompose,
                 operation: "start",
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                stderr: command_failure_stderr(&output),
                 exit_code: output.status.code(),
             })
         }
@@ -186,7 +186,7 @@ impl ServiceBackendOps for DockerComposeBackend {
             Err(ServiceError::CommandFailed {
                 backend: ServiceBackend::DockerCompose,
                 operation: "stop",
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                stderr: command_failure_stderr(&output),
                 exit_code: output.status.code(),
             })
         }

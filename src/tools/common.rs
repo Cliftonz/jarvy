@@ -159,6 +159,17 @@ pub fn run_capture(cmd: &str, args: &[&str], stage: &str, context: &str) -> Opti
     }
 }
 
+/// winget (and some other installers) prints its real diagnostic to stdout
+/// instead of stderr, so fall back to stdout when stderr is empty.
+fn command_failure_stderr(out: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if stderr.trim().is_empty() {
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    } else {
+        stderr.into_owned()
+    }
+}
+
 #[must_use = "this Result may contain an error that should be handled"]
 pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
     // Fast, deterministic tests: allow skipping external command execution.
@@ -189,11 +200,10 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
     })?;
 
     if !out.status.success() {
-        // Try to capture stderr for easier diagnostics.
         return Err(InstallError::CommandFailed {
             cmd: cmd.to_string(),
             code: out.status.code(),
-            stderr: String::from_utf8_lossy(&out.stderr).into(),
+            stderr: command_failure_stderr(&out),
         });
     }
     Ok(out)
@@ -248,7 +258,7 @@ pub fn run_with_network(
         return Err(InstallError::CommandFailed {
             cmd: cmd.to_string(),
             code: out.status.code(),
-            stderr: String::from_utf8_lossy(&out.stderr).into(),
+            stderr: command_failure_stderr(&out),
         });
     }
     Ok(out)
@@ -848,6 +858,51 @@ mod install_error_kind_tests {
             format!("prerequisite missing: {RUST_TOOLCHAIN_MISSING_HINT}"),
             "Prereq message must be the canonical hint"
         );
+    }
+}
+
+#[cfg(test)]
+mod command_failure_stderr_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn dummy_exit_status(code: i32) -> std::process::ExitStatus {
+        std::os::unix::process::ExitStatusExt::from_raw(code << 8)
+    }
+
+    #[cfg(windows)]
+    fn dummy_exit_status(code: i32) -> std::process::ExitStatus {
+        std::os::windows::process::ExitStatusExt::from_raw(code as u32)
+    }
+
+    #[test]
+    fn command_failure_stderr_falls_back_to_stdout_when_stderr_empty() {
+        let out = Output {
+            status: dummy_exit_status(1),
+            stdout: b"winget's real diagnostic".to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(command_failure_stderr(&out), "winget's real diagnostic");
+    }
+
+    #[test]
+    fn command_failure_stderr_prefers_stderr_when_present() {
+        let out = Output {
+            status: dummy_exit_status(1),
+            stdout: b"noise on stdout".to_vec(),
+            stderr: b"the real stderr message".to_vec(),
+        };
+        assert_eq!(command_failure_stderr(&out), "the real stderr message");
+    }
+
+    #[test]
+    fn command_failure_stderr_falls_back_to_stdout_when_stderr_is_whitespace_only() {
+        let out = Output {
+            status: dummy_exit_status(1),
+            stdout: b"winget's real diagnostic".to_vec(),
+            stderr: b"\n".to_vec(),
+        };
+        assert_eq!(command_failure_stderr(&out), "winget's real diagnostic");
     }
 }
 

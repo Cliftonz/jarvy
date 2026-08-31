@@ -2,7 +2,7 @@
 
 use super::{
     ServiceBackend, ServiceBackendOps, ServiceError, ServiceResult, ServiceStatus, command_exists,
-    run_command,
+    command_failure_stderr, run_command,
 };
 use crate::telemetry;
 use std::path::{Path, PathBuf};
@@ -54,7 +54,7 @@ impl ServiceBackendOps for TiltBackend {
             Err(ServiceError::CommandFailed {
                 backend: ServiceBackend::Tilt,
                 operation: "start",
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                stderr: command_failure_stderr(&output),
                 exit_code: output.status.code(),
             })
         }
@@ -87,7 +87,7 @@ impl ServiceBackendOps for TiltBackend {
             Err(ServiceError::CommandFailed {
                 backend: ServiceBackend::Tilt,
                 operation: "stop",
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                stderr: command_failure_stderr(&output),
                 exit_code: output.status.code(),
             })
         }
