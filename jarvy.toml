@@ -12,6 +12,18 @@ macos = false
 windows = false
 
 # =============================================================================
+# Git Configuration
+#
+# Pin core.autocrlf to false at repo-local scope so Windows checkouts don't
+# reintroduce CRLF into hook scripts and other text files (CRLF in an
+# embedded hook script breaks bash parsing). Deliberately local, not global:
+# this must not touch a contributor's `~/.gitconfig`.
+# =============================================================================
+[git]
+autocrlf = "false"
+scope = "local"
+
+# =============================================================================
 # Core Development Tools
 # =============================================================================
 [provisioner]
