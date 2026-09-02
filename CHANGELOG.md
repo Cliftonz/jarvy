@@ -27,13 +27,43 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
-## [v0.8.2] — Windows hook/Chocolatey fixes, OS-scoped dependencies, 9 new tools (2026-08-26)
+## [v0.8.2] — Windows dev-env fixes, config parent-dir search, 17 new tools (2026-09-02)
 
 **Features — tools:**
 
 - Add PowerToys, AutoHotkey, and VCRedist (Windows).
 - Add 6 Rust ecosystem tools (cargo-generate, cargo-seek, dioxus-cli, sqlx-cli,
   tauri-cli, trunk) plus a bacon dev-loop config template.
+- Add Ory, LastPass, Dashlane, 1Password, Bitwarden, and Doppler CLIs
+  (secrets/auth). Ory installs on Windows via a newly wired Scoop tier,
+  used after winget/choco for tools that ship no first-party package there.
+- Add llm-checker, a hardware scanner and local-LLM recommendation CLI
+  (npm-only distribution).
+- Add graphify-dotnet's `graphify` knowledge-graph tool via a NuGet global
+  install; refuses when no installed .NET SDK is major version 10 or newer.
+- Give ollama a `default_hook` that backgrounds pulls of pinned default
+  models (llama3.1:8b for chat, bge-m3 for embeddings) after install, logged
+  to `~/.jarvy/logs/ollama-pull.log`.
+
+**Features — config:**
+
+- Every command now searches parent directories for `jarvy.toml` when it
+  isn't found in the current directory (bounded by `$HOME`, mirroring git's
+  search for `.git`), then switches into the discovered project root before
+  running. Fixes `jarvy setup` and other subcommands failing with "Failed to
+  read config file" when run from a project subdirectory.
+
+**Features — windows:**
+
+- Auto-install MSVC Build Tools via a `pre_setup` hook so a fresh Windows
+  contributor building jarvy itself doesn't hit a missing `link.exe` with no
+  guidance.
+- Add `[windows.wsl] browser_launcher = "off" | "wslu" | "cmd_shim"`: fixes
+  CLIs inside a WSL distro (e.g. `gh auth login`) that can't open the
+  Windows browser. `wslu` installs the wslu apt package and sets
+  `BROWSER=wslview`; `cmd_shim` points `BROWSER` at a `cmd.exe /c start`
+  shim with no package install. `wslu` is refused at config-load time for
+  the Debian base distro, since it's Ubuntu-universe-only.
 
 **Features — dependency declarations:**
 
@@ -56,6 +86,28 @@ for divergences from generic release skills.
   unsupported OSes.
 - Declare missing runtime dependencies for git-lfs (→ git), cargo-tarpaulin,
   and yadm so topo-sort installs them in the correct order.
+- Add icu as a Linux-only dependency of dotnet; .NET on Linux dynamically
+  loads ICU at runtime and fails hard without it, which bit `dotnet run` on
+  a fresh WSL or Linux box.
+- Use the maintained `ezwinports.make` winget id for `make` instead of
+  `GnuWin32.Make`, a roughly 2006-era 3.81 build; the new id ships 4.4.1.
+- Gate the legacy `install_docker()` call to macOS only; it was running
+  unconditionally on every OS and logging a spurious warning from an
+  unnecessary `brew --version` subprocess on Linux and Windows.
+- Fix opentofu's Linux install: it isn't in Debian/Ubuntu's or Fedora/RHEL's
+  default repos, and the apt/dnf package is named `tofu`, not `opentofu`.
+  Routes apt/dnf through OpenTofu's official vendor repository instead;
+  pacman already carries `opentofu` directly in its default repo.
+- Use real shell detection for hooks instead of a hardcoded `powershell` on
+  Windows and raw `$SHELL` on Unix; every built-in hook script is bash
+  syntax, so a machine with git-bash on PATH but no explicit
+  `[hooks.config]` override was silently failing hooks with parse errors.
+  Installer failures (winget and others) also now fall back to stdout when
+  stderr is empty, since some tools print their real diagnostic there.
+- Strip CRLF line endings from hook scripts before POSIX-shell execution; a
+  `jarvy.toml` saved with Windows line endings broke bash parsing on
+  embedded `\r` bytes. `jarvy validate` now also warns when a hook script
+  contains CRLF.
 
 ## [v0.8.1] — WSL2 bridge, 16 new tools, per-OS example templates (2026-08-22)
 
