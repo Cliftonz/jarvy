@@ -30,6 +30,21 @@ define_tool!(OLLAMA, {
     linux: { brew: "ollama" },
     windows: { winget: "Ollama.Ollama" },
     custom_install: install_ollama,
+    default_hook: {
+        description: "Pull jarvy's pinned default Ollama models (llama3.1:8b, bge-m3) in the background",
+        script: r#"
+# Pull jarvy's pinned default models for local architecture Q&A + hybrid
+# retrieval, in the background so a multi-GB download can't blow the
+# hook's fixed 300s timeout. qwen2.5:7b (optional Graphify AI
+# enrichment) is deliberately not pinned here — stays opt-in.
+mkdir -p "$HOME/.jarvy/logs"
+for model in llama3.1:8b bge-m3; do
+    if ! ollama list 2>/dev/null | grep -q "^${model}"; then
+        nohup ollama pull "$model" >> "$HOME/.jarvy/logs/ollama-pull.log" 2>&1 < /dev/null &
+    fi
+done
+"#
+    },
 });
 
 fn install_ollama(
@@ -101,5 +116,41 @@ mod tests {
         assert_eq!(mac.brew, Some("ollama"));
         let win = OLLAMA.windows.expect("must support Windows");
         assert_eq!(win.winget, Some("Ollama.Ollama"));
+    }
+
+    #[test]
+    fn ollama_has_default_hook() {
+        assert!(OLLAMA.default_hook.is_some());
+    }
+
+    #[test]
+    fn ollama_default_hook_pins_expected_models() {
+        let hook = OLLAMA.default_hook.expect("default hook must be set");
+        let pull_loop_line = hook
+            .script
+            .lines()
+            .find(|l| l.trim_start().starts_with("for model in"))
+            .expect("script must have a `for model in ...` loop line");
+        assert!(pull_loop_line.contains("llama3.1:8b"));
+        assert!(pull_loop_line.contains("bge-m3"));
+        assert!(!pull_loop_line.contains("qwen2.5:7b"));
+    }
+
+    #[test]
+    fn ollama_default_hook_backgrounds_the_pull() {
+        let hook = OLLAMA.default_hook.expect("default hook must be set");
+        assert!(hook.script.contains("nohup"));
+        assert!(hook.script.contains('&'));
+    }
+
+    #[test]
+    fn ollama_default_hook_runs_on_all_platforms() {
+        assert!(
+            OLLAMA
+                .default_hook
+                .expect("default hook must be set")
+                .platform
+                .is_none()
+        );
     }
 }
