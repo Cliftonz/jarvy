@@ -1074,4 +1074,27 @@ mod tests {
             result.issues
         );
     }
+
+    /// The per-tool `hooks.<tool>.post_install` field is a distinct call
+    /// site from `hooks.post_setup`; it must also flag CRLF line endings
+    /// in the hook script string.
+    #[test]
+    fn validate_warns_on_crlf_in_tool_post_install_hook() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "[provisioner]\nnode = \"latest\"\n\n[hooks.node]\npost_install = \"\"\"\nnpm install -g yarn\r\n\"\"\"\n",
+        )
+        .unwrap();
+        let result = validate_config(tmp.path().to_str().unwrap(), false);
+        assert!(
+            result.issues.iter().any(|i| {
+                matches!(i.severity, Severity::Warning)
+                    && i.message.contains("node.post_install")
+                    && i.message.contains("CRLF")
+            }),
+            "expected CRLF warning for node.post_install hook, got: {:?}",
+            result.issues
+        );
+    }
 }
