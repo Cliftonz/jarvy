@@ -124,6 +124,7 @@ pub mod gotestsum;
 pub mod govulncheck;
 pub mod gping;
 pub mod grafanactl;
+pub mod graphify;
 pub mod grex;
 pub mod grpcurl;
 pub mod grype;
