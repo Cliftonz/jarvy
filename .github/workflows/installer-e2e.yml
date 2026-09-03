@@ -79,6 +79,8 @@ jobs:
       VERSION: ${{ needs.setup.outputs.version }}
       CORE: ${{ needs.setup.outputs.core }}
       PRERELEASE: ${{ needs.setup.outputs.prerelease }}
+      # install.sh's gh_api_fetch sends this as a Bearer token; macOS hosted runners share egress IPs and hit the unauthenticated /releases/latest rate limit.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
