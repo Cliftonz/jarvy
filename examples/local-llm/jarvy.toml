@@ -1,0 +1,18 @@
+# Local LLM tooling: Ollama (local models) + graphify (AST-based code graph)
+# Run: jarvy setup
+
+# ollama's default_hook pulls jarvy's pinned models (llama3.1:8b for chat,
+# bge-m3 for embeddings) automatically in the background after install —
+# see src/tools/ollama/definition.rs. No extra config needed here.
+#
+# graphify requires the .NET 10 SDK already installed manually
+# (https://dotnet.microsoft.com/download/dotnet/10.0) — jarvy's own
+# `dotnet` tool is pinned to .NET 8 and won't satisfy this, so don't add
+# `dotnet` to [provisioner] expecting it to cover graphify's requirement.
+
+[provisioner]
+ollama = "latest"
+graphify = "latest"
+
+[commands]
+graphify-ast = "graphify run . --format json,report"

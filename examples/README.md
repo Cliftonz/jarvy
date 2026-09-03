@@ -62,6 +62,12 @@ cp examples/<template>/jarvy.toml /path/to/your/project/
 | [`personal-workstation-linux/`](personal-workstation-linux/jarvy.toml) | Linux work-machine bootstrap: apt/dnf/pacman auto-route with go/npm/cargo fallbacks, k8s + platform CLIs, `libsecret` credential helper, flatpak GUI-app installer. |
 | [`personal-workstation-windows/`](personal-workstation-windows/jarvy.toml) | Windows work-machine bootstrap: winget/Choco/Scoop stack, k8s + platform CLIs, PowerShell hooks, `autocrlf = "input"`, winget GUI-app installer. |
 
+### AI Tooling
+
+| Template | Stack |
+|----------|-------|
+| [`local-llm/`](local-llm/jarvy.toml) | Ollama (local models, auto-pulled) + graphify (AST-based code graph, `jarvy run graphify-ast`) |
+
 ## Each Template Includes
 
 - `[provisioner]` — language runtime + universal CLI tools
