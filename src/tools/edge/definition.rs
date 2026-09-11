@@ -6,7 +6,7 @@
 use crate::define_tool;
 use crate::tools::common::{InstallError, has};
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
@@ -69,7 +69,7 @@ fn install_edge(
                 "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
-        run("winget", &["install", "-e", "--id", "Microsoft.Edge"])?;
+        crate::tools::common::winget_install("Microsoft.Edge")?;
         return Ok(());
     }
 

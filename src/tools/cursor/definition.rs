@@ -23,7 +23,9 @@
 //! This tool uses the ToolSpec pattern with a custom installer.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallError, has};
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use crate::tools::pinned_binary_installer::AppImagePin;
 
@@ -96,7 +98,7 @@ fn install_cursor(
                 "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
-        run("winget", &["install", "-e", "--id", "Cursor.Cursor"])?;
+        crate::tools::common::winget_install("Cursor.Cursor")?;
         return Ok(());
     }
 

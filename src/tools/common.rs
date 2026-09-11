@@ -202,6 +202,20 @@ pub(crate) fn command_failure_stderr(out: &Output) -> String {
     }
 }
 
+/// Detects winget's "no-op success" failure shape: the package is already
+/// registered in winget's package database, so `winget install` internally
+/// redirects to an upgrade check, and that check reports no newer version
+/// is available — exiting non-zero even though the package is genuinely
+/// installed and functioning. Requires BOTH substrings (case-insensitive)
+/// so winget's other, genuine failure modes (e.g. "No package found
+/// matching input criteria.") are never misclassified as success. Mirrors
+/// the stderr-substring-matching style of `InstallError::kind()`'s
+/// `tapping` / `fatal:` brew classification.
+pub(crate) fn winget_reports_already_installed(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("already installed") && lower.contains("no available upgrade found")
+}
+
 #[must_use = "this Result may contain an error that should be handled"]
 pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
     // Fast, deterministic tests: allow skipping external command execution.
@@ -239,6 +253,24 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output, InstallError> {
         });
     }
     Ok(out)
+}
+
+/// Install a package via `winget install -e --id <winget_id>`, treating
+/// winget's "already installed, no upgrade available" non-zero exit as
+/// success rather than a hard failure. See `winget_reports_already_installed`
+/// for the exact message shape this recognizes. Any other error propagates
+/// unchanged.
+#[must_use = "this Result may contain an error that should be handled"]
+pub fn winget_install(winget_id: &str) -> Result<(), InstallError> {
+    match run("winget", &["install", "-e", "--id", winget_id]) {
+        Ok(_) => Ok(()),
+        Err(InstallError::CommandFailed { stderr, .. })
+            if winget_reports_already_installed(&stderr) =>
+        {
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Run a command with network/proxy configuration applied.
@@ -939,6 +971,23 @@ mod command_failure_stderr_tests {
 }
 
 #[cfg(test)]
+mod winget_already_installed_tests {
+    use super::winget_reports_already_installed;
+
+    #[test]
+    fn recognizes_captured_already_installed_no_upgrade_output() {
+        let stderr = "Found an existing package already installed. Trying to upgrade the installed package...\nNo available upgrade found.\nNo newer package versions are available from the configured sources.";
+        assert!(winget_reports_already_installed(stderr));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_failure_text() {
+        let stderr = "No package found matching input criteria.";
+        assert!(!winget_reports_already_installed(stderr));
+    }
+}
+
+#[cfg(test)]
 mod wsl_detect_tests {
     #[cfg(not(target_os = "linux"))]
     use super::is_wsl;
@@ -1169,7 +1218,7 @@ impl PkgOps {
                 // For now, install sequentially since winget is internally sequential anyway
                 require("winget", "Winget is required to install packages")?;
                 for pkg in packages {
-                    run("winget", &["install", "-e", "--id", pkg])?;
+                    winget_install(pkg)?;
                 }
                 Ok(())
             }
@@ -1539,7 +1588,7 @@ impl PkgOps {
             }
             PackageManager::Winget => {
                 require("winget", "Winget is required to install packages")?;
-                run("winget", &["install", "-e", "--id", pkg])?;
+                winget_install(pkg)?;
             }
             PackageManager::Choco => {
                 crate::tools::chocolatey::ensure_installed()?;

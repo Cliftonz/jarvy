@@ -6,7 +6,9 @@
 //! This tool uses the ToolSpec pattern with a custom installer for Linux.
 
 use crate::define_tool;
-use crate::tools::common::{InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallError, has};
 #[cfg(target_os = "linux")]
 use crate::tools::pinned_installer::PinnedInstaller;
 
@@ -97,7 +99,7 @@ fn install_ollama(
                 "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
-        run("winget", &["install", "-e", "--id", "Ollama.Ollama"])?;
+        crate::tools::common::winget_install("Ollama.Ollama")?;
         return Ok(());
     }
 

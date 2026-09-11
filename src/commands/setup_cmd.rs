@@ -49,6 +49,42 @@ fn install_context_for(
         .unwrap_or_else(InstallContext::none)
 }
 
+/// Report a custom-install failure through the right telemetry event.
+///
+/// `InstallError::Unsupported` means the tool has no installer on this
+/// platform at all; that's `tool.unsupported`, not a real failure, and
+/// must not pollute the `tool.failed` counter (Observability F1). Every
+/// other error is a genuine install failure and goes through
+/// `tool.failed` with its `InstallError::kind()` discriminant.
+///
+/// Shared by both the sequential and parallel custom-install loops so a
+/// no-platform-installer tool (e.g. `krew` on Windows) is reported
+/// identically regardless of which path ran; branch selection depends
+/// only on how many custom-install tools are in the config, never on
+/// tool identity, so the two paths must agree.
+fn report_custom_install_error(name: &str, version: &str, e: &tools::common::InstallError) {
+    if e.is_no_platform_installer() {
+        let (fallback_declared, fallback_blocked) = tools::fallback::unsupported_info(name);
+        tracing::info!(
+            event = "tool.unsupported",
+            tool = %name,
+            version = %version,
+            source = "config",
+            channel = "registered_no_platform_installer",
+            platform = std::env::consts::OS,
+            exit_code = error_codes::TOOL_UNSUPPORTED,
+            fallback_declared,
+            fallback_blocked,
+        );
+        telemetry::tool_not_supported(name, Some(version), telemetry::Source::Config);
+        eprintln!("  {} has no installer on this platform; skipping.", name);
+    } else {
+        let msg = format!("Failed to install {} ({}): {:?}", name, version, e);
+        eprintln!("{}", msg);
+        telemetry::tool_failed_with_kind(name, version, e.kind(), &format!("{:?}", e));
+    }
+}
+
 /// Run the setup command
 #[allow(unsafe_code)] // SAFETY: env vars set at startup before spawning threads
 #[allow(clippy::too_many_arguments)]
@@ -609,10 +645,8 @@ pub fn run_setup(
                     .build()
                     .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
 
-                // Thread-safe collectors for results
+                // Thread-safe collector for successful installs
                 let success_collector: Arc<Mutex<Vec<(String, String)>>> =
-                    Arc::new(Mutex::new(Vec::new()));
-                let error_collector: Arc<Mutex<Vec<(String, String, String)>>> =
                     Arc::new(Mutex::new(Vec::new()));
 
                 // Capture the parent span (which carries `run_id`) so rayon
@@ -662,18 +696,7 @@ pub fn run_setup(
                                     }
                                 }
                                 Err(e) => {
-                                    let msg = format!(
-                                        "Failed to install {} ({}): {:?}",
-                                        name, version, e
-                                    );
-                                    eprintln!("{}", msg);
-                                    if let Ok(mut guard) = error_collector.lock() {
-                                        guard.push((
-                                            name.clone(),
-                                            version.clone(),
-                                            format!("{:?}", e),
-                                        ));
-                                    }
+                                    report_custom_install_error(name, version, &e);
                                 }
                             }
                         });
@@ -682,13 +705,6 @@ pub fn run_setup(
                 // Merge successful installs
                 if let Ok(guard) = success_collector.lock() {
                     successfully_installed.extend(guard.iter().cloned());
-                }
-
-                // Report errors to telemetry
-                if let Ok(guard) = error_collector.lock() {
-                    for (name, version, error) in guard.iter() {
-                        telemetry::tool_failed(name, version, error);
-                    }
                 }
             } else {
                 // Sequential installation (--sequential or --jobs 1)
@@ -713,45 +729,13 @@ pub fn run_setup(
                             successfully_installed.push((name.clone(), version.clone()));
                         }
                         Err(e) => {
-                            // Same discrimination as the batch path:
+                            // Same discrimination as the parallel path
+                            // (both call `report_custom_install_error`):
                             // route `Unsupported` to `tool.unsupported`
                             // so it doesn't pollute the failed-installs
                             // counter on Windows when a tool ships with
                             // no winget manifest (Observability F1).
-                            if e.is_no_platform_installer() {
-                                let (fallback_declared, fallback_blocked) =
-                                    tools::fallback::unsupported_info(name);
-                                tracing::info!(
-                                    event = "tool.unsupported",
-                                    tool = %name,
-                                    version = %version,
-                                    source = "config",
-                                    channel = "registered_no_platform_installer",
-                                    platform = std::env::consts::OS,
-                                    exit_code = error_codes::TOOL_UNSUPPORTED,
-                                    fallback_declared,
-                                    fallback_blocked,
-                                );
-                                telemetry::tool_not_supported(
-                                    name,
-                                    Some(version),
-                                    telemetry::Source::Config,
-                                );
-                                eprintln!(
-                                    "  {} has no installer on this platform; skipping.",
-                                    name
-                                );
-                            } else {
-                                let msg =
-                                    format!("Failed to install {} ({}): {:?}", name, version, e);
-                                eprintln!("{}", msg);
-                                telemetry::tool_failed_with_kind(
-                                    name,
-                                    version,
-                                    e.kind(),
-                                    &format!("{:?}", e),
-                                );
-                            }
+                            report_custom_install_error(name, version, &e);
                         }
                     }
                 }

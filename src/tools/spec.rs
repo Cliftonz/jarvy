@@ -571,7 +571,7 @@ impl ToolSpec {
         if let Some(winget_id) = windows.winget
             && has("winget")
         {
-            run("winget", &["install", "-e", "--id", winget_id])?;
+            super::common::winget_install(winget_id)?;
             return Ok(());
         }
 

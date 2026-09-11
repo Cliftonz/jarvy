@@ -25,7 +25,9 @@
 //! This tool uses the ToolSpec pattern with a custom installer.
 
 use crate::define_tool;
-use crate::tools::common::{InstallContext, InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallContext, InstallError, has};
 #[cfg(target_os = "linux")]
 use crate::tools::pinned_binary_installer::TarballAppPin;
 
@@ -106,7 +108,7 @@ fn install_jetbrains_toolbox(_min_hint: &str, _ctx: &InstallContext) -> Result<(
                 "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
-        run("winget", &["install", "-e", "--id", "JetBrains.Toolbox"])?;
+        crate::tools::common::winget_install("JetBrains.Toolbox")?;
         return Ok(());
     }
 

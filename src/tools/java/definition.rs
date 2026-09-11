@@ -1222,8 +1222,7 @@ fn winget_install(id: &str) -> Result<(), InstallError> {
             "winget not found. Install Windows Package Manager, then re-run.".into(),
         ));
     }
-    run("winget", &["install", "-e", "--id", id])?;
-    Ok(())
+    crate::tools::common::winget_install(id)
 }
 
 fn choco_install(id: &str) -> Result<(), InstallError> {

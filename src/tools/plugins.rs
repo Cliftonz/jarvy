@@ -597,7 +597,7 @@ fn install_windows(tool: &PluginTool) -> Result<(), InstallError> {
         return Err(InstallError::Unsupported);
     };
     if let Some(winget) = platform.winget.as_deref() {
-        return run("winget", &["install", "-e", "--id", winget]).map(|_| ());
+        return crate::tools::common::winget_install(winget);
     }
     if let Some(choco) = platform.choco.as_deref() {
         crate::tools::chocolatey::ensure_installed()?;

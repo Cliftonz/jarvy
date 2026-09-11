@@ -7,7 +7,7 @@
 use crate::define_tool;
 use crate::tools::common::{InstallError, has};
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use crate::tools::common::run;
 
 #[cfg(target_os = "linux")]
@@ -70,7 +70,7 @@ fn install_vivaldi(
                 "winget not found. Install Windows Package Manager, then re-run.".into(),
             ));
         }
-        run("winget", &["install", "-e", "--id", "Vivaldi.Vivaldi"])?;
+        crate::tools::common::winget_install("Vivaldi.Vivaldi")?;
         return Ok(());
     }
 

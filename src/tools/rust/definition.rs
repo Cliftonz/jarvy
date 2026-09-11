@@ -8,7 +8,9 @@
 //! Windows, routed through `custom_install`.
 
 use crate::define_tool;
-use crate::tools::common::{InstallContext, InstallError, has, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallContext, InstallError, has};
 
 fn install_rust(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallError> {
     // Preserve the pre-migration `ensure()` acceptance: an existing
@@ -39,7 +41,7 @@ fn install_rust(_min_hint: &str, _ctx: &InstallContext) -> Result<(), InstallErr
             ));
         }
         // Official rustup package ID
-        return run("winget", &["install", "-e", "--id", "Rustlang.Rustup"]).map(|_| ());
+        return crate::tools::common::winget_install("Rustlang.Rustup");
     }
     #[allow(unreachable_code)]
     Err(InstallError::Unsupported)
