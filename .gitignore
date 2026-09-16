@@ -43,3 +43,11 @@ docs/schema/jarvy-telemetry-forwarder.values.schema.json
 # JetBrains IDE state (RustRover / IntelliJ)
 .idea/
 .claude/worktrees/
+
+# Per-machine AI agent MCP registration / jarvy local state
+# (written by `jarvy setup` / `jarvy mcp register` against this repo itself;
+# not portable across machines, see .mcp.json for the tracked shared config)
+.mcp.json.tmp
+.codex/
+.cursor/
+.jarvy/
