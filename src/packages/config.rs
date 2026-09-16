@@ -51,6 +51,27 @@ pub struct PackagesConfigRef<'a> {
     pub allow_remote_packages: bool,
 }
 
+/// Policy for a `[nuget]` global tool whose pinned version is older than
+/// what's already installed globally. `.NET` global tools are not
+/// side-by-side, so `dotnet tool update -g <name> --version <pin>` hard-fails
+/// in this situation by default; this lets a package opt into a softer
+/// behavior instead of always failing.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum OnNewerInstalledPolicy {
+    /// Always attempt the pinned update; a conflict is a hard failure.
+    /// Default for backward compatibility with pre-existing configs.
+    #[default]
+    Strict,
+    /// If the installed version already satisfies the pin, skip the update
+    /// entirely and treat it as success. Never downgrades.
+    Skip,
+    /// Always attempt the pinned update; if it fails specifically because
+    /// the installed version is newer, log a warning and move on instead
+    /// of propagating the failure.
+    Warn,
+}
+
 /// Package specification - either a simple version string or detailed config
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -67,6 +88,10 @@ pub enum PackageSpec {
         /// Cargo features to enable
         #[serde(default)]
         features: Vec<String>,
+        /// `[nuget]`-specific: how to handle a pin older than what's
+        /// already installed globally.
+        #[serde(default)]
+        on_newer_installed: OnNewerInstalledPolicy,
     },
 }
 
@@ -92,6 +117,16 @@ impl PackageSpec {
         match self {
             PackageSpec::Version(_) => &[],
             PackageSpec::Detailed { features, .. } => features,
+        }
+    }
+
+    /// Get the `[nuget]` newer-installed policy (defaults to `Strict`).
+    pub fn on_newer_installed(&self) -> OnNewerInstalledPolicy {
+        match self {
+            PackageSpec::Version(_) => OnNewerInstalledPolicy::Strict,
+            PackageSpec::Detailed {
+                on_newer_installed, ..
+            } => *on_newer_installed,
         }
     }
 }
@@ -486,5 +521,55 @@ mod tests {
         let test: Test = toml::from_str(toml_str).unwrap();
         assert!(test.some_crate.is_optional());
         assert_eq!(test.some_crate.features().len(), 2);
+    }
+
+    #[test]
+    fn on_newer_installed_defaults_to_strict() {
+        let plain = PackageSpec::Version("1.0.0".to_string());
+        assert_eq!(plain.on_newer_installed(), OnNewerInstalledPolicy::Strict);
+
+        let toml_str = r#"
+            [dotnet-ef]
+            version = "8.0.2"
+        "#;
+        #[derive(Deserialize)]
+        struct Test {
+            #[serde(rename = "dotnet-ef")]
+            dotnet_ef: PackageSpec,
+        }
+        let test: Test = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            test.dotnet_ef.on_newer_installed(),
+            OnNewerInstalledPolicy::Strict
+        );
+    }
+
+    #[test]
+    fn on_newer_installed_parses_skip_and_warn() {
+        let toml_str = r#"
+            [skip-pkg]
+            version = "8.0.2"
+            on_newer_installed = "skip"
+
+            [warn-pkg]
+            version = "8.0.2"
+            on_newer_installed = "warn"
+        "#;
+        #[derive(Deserialize)]
+        struct Test {
+            #[serde(rename = "skip-pkg")]
+            skip_pkg: PackageSpec,
+            #[serde(rename = "warn-pkg")]
+            warn_pkg: PackageSpec,
+        }
+        let test: Test = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            test.skip_pkg.on_newer_installed(),
+            OnNewerInstalledPolicy::Skip
+        );
+        assert_eq!(
+            test.warn_pkg.on_newer_installed(),
+            OnNewerInstalledPolicy::Warn
+        );
     }
 }

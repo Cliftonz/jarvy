@@ -716,6 +716,7 @@ pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error:
     }
 
     let redacted_error = redact_sensitive(error);
+    let logged_error = sanitize_multiline_for_log(&redacted_error);
     let category = crate::tools::spec::get_tool_category(tool).unwrap_or("uncategorized");
     // Same dimension as `tool.installed` so per-route failure rates are
     // computable; "platform" = the native package-manager path failed.
@@ -728,7 +729,7 @@ pub fn tool_failed_with_kind(tool: &str, version: &str, error_kind: &str, error:
         category = %category,
         error_kind = %error_kind,
         install_route = %install_route,
-        error = %redacted_error,
+        error = %logged_error,
         platform = %env::consts::OS,
         env_kind = %env_kind(),
     );
@@ -1636,6 +1637,35 @@ fn redact_sensitive(s: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Collapses embedded newlines so a multi-line `InstallError` display
+/// (winget/brew stderr, etc.) can't fracture the `tool.failed` tracing
+/// line into stray unattributed fragments; `tracing-subscriber`'s
+/// plain-text formatter does not escape `\n` inside `%`-Display fields.
+/// The human-facing `eprintln!` in `setup_cmd.rs` is unaffected; only
+/// the value handed to `tracing::error!` goes through this.
+///
+/// Returns `Cow::Borrowed` when there's nothing to collapse so the
+/// common single-line-error case allocates nothing.
+fn sanitize_multiline_for_log(s: &str) -> std::borrow::Cow<'_, str> {
+    if !s.contains(['\n', '\r']) {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    // `str::lines()` only splits on `\n` or `\r\n`; a lone `\r` with no
+    // following `\n` survives it untouched. Turn every such lone `\r`
+    // into `\n` first (leaving real `\r\n` pairs alone) so `lines()`
+    // catches it too.
+    let mut normalized = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' && chars.peek() != Some(&'\n') {
+            normalized.push('\n');
+        } else {
+            normalized.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(normalized.lines().collect::<Vec<_>>().join(" | "))
+}
+
 /// Redact file paths to remove user-identifying information.
 pub fn redact_path(path: &str) -> String {
     if let Some(home) = HOME_DIR_STRING.as_deref()
@@ -2272,6 +2302,57 @@ mod tests {
         assert!(result.contains("[REDACTED]"));
         assert!(!result.contains("user"));
         assert!(!result.contains("secret123"));
+    }
+
+    #[test]
+    fn sanitize_multiline_for_log_passes_through_single_line() {
+        let s = sanitize_multiline_for_log("command failed: winget (code: Some(-1))");
+        assert!(matches!(s, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(s.as_ref(), "command failed: winget (code: Some(-1))");
+    }
+
+    #[test]
+    fn sanitize_multiline_for_log_passes_through_empty_string() {
+        let s = sanitize_multiline_for_log("");
+        assert!(matches!(s, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(s.as_ref(), "");
+    }
+
+    #[test]
+    fn sanitize_multiline_for_log_collapses_lf() {
+        let s = sanitize_multiline_for_log("line one\nline two");
+        assert!(matches!(s, std::borrow::Cow::Owned(_)));
+        assert_eq!(s.as_ref(), "line one | line two");
+    }
+
+    #[test]
+    fn sanitize_multiline_for_log_collapses_crlf() {
+        let s = sanitize_multiline_for_log("line one\r\nline two");
+        assert!(matches!(s, std::borrow::Cow::Owned(_)));
+        assert_eq!(s.as_ref(), "line one | line two");
+    }
+
+    #[test]
+    fn sanitize_multiline_for_log_collapses_bare_cr() {
+        let s = sanitize_multiline_for_log("line one\rline two");
+        assert!(matches!(s, std::borrow::Cow::Owned(_)));
+        assert!(!s.contains('\r'));
+        assert_eq!(s.as_ref(), "line one | line two");
+    }
+
+    #[test]
+    fn sanitize_multiline_for_log_collapses_blank_lines() {
+        // Mirrors the real winget error: a trailing blank line before
+        // the last line of stderr.
+        let s = sanitize_multiline_for_log(
+            "No available upgrade found.\nNo newer package versions are available.\n\nNo newer package versions are available from the configured sources.",
+        );
+        assert!(matches!(s, std::borrow::Cow::Owned(_)));
+        assert!(!s.contains('\n'));
+        assert_eq!(
+            s.as_ref(),
+            "No available upgrade found. | No newer package versions are available. |  | No newer package versions are available from the configured sources."
+        );
     }
 
     #[test]

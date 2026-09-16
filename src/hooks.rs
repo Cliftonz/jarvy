@@ -317,7 +317,17 @@ impl Hook {
         // hook that depends on that tool (e.g. node's `corepack enable`)
         // fails with "not recognized" even though a fresh shell would
         // see it immediately. No-op off Windows.
-        crate::windows::env_refresh::refresh_current_process_path();
+        //
+        // Retried because an installer (winget in particular) can report
+        // success a moment before its own PATH write actually lands in
+        // the registry, so a single read right after install can still
+        // lose that race.
+        const PATH_REFRESH_ATTEMPTS: u32 = 3;
+        const PATH_REFRESH_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+        crate::windows::env_refresh::refresh_current_process_path_with_retry(
+            PATH_REFRESH_ATTEMPTS,
+            PATH_REFRESH_DELAY,
+        );
 
         // Determine hook type for telemetry
         let hook_type = self.determine_hook_type();
@@ -340,12 +350,22 @@ impl Hook {
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
 
+        // Without this lock, the stdout and stderr threads' console writes race
+        // and can interleave mid-line, which is what produced the garbled
+        // "staircase" hook banner this fix addresses.
+        let print_lock = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let stdout_print_lock = print_lock.clone();
+        let stderr_print_lock = print_lock;
+
         let stdout_handle = std::thread::spawn(move || {
             let mut output = String::new();
             if let Some(stdout) = stdout {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
-                    println!("    {}", line);
+                    {
+                        let _guard = stdout_print_lock.lock().unwrap_or_else(|e| e.into_inner());
+                        println!("    {}", line);
+                    }
                     output.push_str(&line);
                     output.push('\n');
                 }
@@ -358,7 +378,10 @@ impl Hook {
             if let Some(stderr) = stderr {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
-                    eprintln!("    {}", line);
+                    {
+                        let _guard = stderr_print_lock.lock().unwrap_or_else(|e| e.into_inner());
+                        eprintln!("    {}", line);
+                    }
                     output.push_str(&line);
                     output.push('\n');
                 }

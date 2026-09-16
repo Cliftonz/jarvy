@@ -248,6 +248,10 @@ pub fn run_package_command(
     // tools like cargo/npm route real errors to stderr).
     let stderr_ring: Mutex<RingTail> = Mutex::new(RingTail::new(STDERR_TAIL_BYTES));
 
+    // Without this lock, the stdout and stderr threads' raw chunk writes race
+    // and can interleave mid-write at the console, corrupting the display.
+    let write_lock: Mutex<()> = Mutex::new(());
+
     std::thread::scope(|s| {
         s.spawn(|| {
             let mut reader = BufReader::new(stdout);
@@ -257,6 +261,7 @@ pub fn run_package_command(
                 if n == 0 {
                     break;
                 }
+                let _guard = write_lock.lock().unwrap_or_else(|e| e.into_inner());
                 let _ = sink.write_all(&buf[..n]);
             }
         });
@@ -268,7 +273,10 @@ pub fn run_package_command(
                 if n == 0 {
                     break;
                 }
-                let _ = sink.write_all(&buf[..n]);
+                {
+                    let _guard = write_lock.lock().unwrap_or_else(|e| e.into_inner());
+                    let _ = sink.write_all(&buf[..n]);
+                }
                 if let Ok(mut ring) = stderr_ring.lock() {
                     ring.extend(&buf[..n]);
                 }

@@ -67,12 +67,18 @@ mod exec {
     /// and install the result into this process's environment, ahead of
     /// whatever PATH this process already inherited (so a shell-profile
     /// PATH addition the registry doesn't know about still survives).
-    pub fn refresh_current_process_path() {
+    ///
+    /// Returns the registry-derived value it just merged in (`None` when
+    /// neither hive had a `Path` value), so callers can tell whether a
+    /// later read differs from an earlier one without re-parsing the
+    /// process's own `PATH`, which keeps growing on every call regardless
+    /// of whether the registry changed.
+    pub fn refresh_current_process_path() -> Option<String> {
         // Best-effort: a poisoned lock (an earlier panic while holding
         // it) just means this refresh is skipped, same as any other
         // best-effort cache in this codebase (see `tools::common::has_cache`).
         let Ok(_guard) = PATH_REFRESH_LOCK.lock() else {
-            return;
+            return None;
         };
         let machine = read_registry_path(
             "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
@@ -82,11 +88,11 @@ mod exec {
             (Some(m), Some(u)) => format!("{m};{u}"),
             (Some(m), None) => m,
             (None, Some(u)) => u,
-            (None, None) => return,
+            (None, None) => return None,
         };
         let merged = match std::env::var("PATH") {
             Ok(existing) => format!("{combined};{existing}"),
-            Err(_) => combined,
+            Err(_) => combined.clone(),
         };
         // SAFETY: `set_var` is unsound if it races another thread's
         // env read/write. `PATH_REFRESH_LOCK`, held for this whole
@@ -99,6 +105,35 @@ mod exec {
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("PATH", merged);
+        }
+        Some(combined)
+    }
+
+    /// Two consecutive reads returning the same registry value mean the
+    /// write already landed, so there is nothing left to wait for.
+    fn stabilized(reads: &[Option<String>]) -> bool {
+        matches!(reads, [.., a, b] if a == b)
+    }
+
+    /// Call `refresh_current_process_path` up to `attempts` times, sleeping
+    /// `delay` between attempts. Installers (winget in particular) can
+    /// return "success" a moment before their own PATH write lands in the
+    /// registry, so a single read immediately after install can still miss
+    /// it; a short bounded retry gives that write time to land without
+    /// blocking indefinitely. Stops as soon as two consecutive reads agree,
+    /// since further attempts would just pay `delay` again to re-confirm a
+    /// value that already stabilized; `attempts` stays the ceiling for the
+    /// case where the value never settles.
+    pub fn refresh_current_process_path_with_retry(attempts: u32, delay: std::time::Duration) {
+        let mut reads = Vec::with_capacity(attempts as usize);
+        for attempt in 0..attempts {
+            reads.push(refresh_current_process_path());
+            if stabilized(&reads) {
+                break;
+            }
+            if attempt + 1 < attempts {
+                std::thread::sleep(delay);
+            }
         }
     }
 
@@ -130,11 +165,61 @@ mod exec {
                 "ERROR: The system was unable to find the specified registry key or value.\r\n";
             assert_eq!(parse_reg_query_path(sample), None);
         }
+
+        fn simulate(reads: &[Option<String>], max_attempts: u32) -> u32 {
+            let mut used = 0u32;
+            for _ in reads.iter().take(max_attempts as usize) {
+                used += 1;
+                if stabilized(&reads[..used as usize]) {
+                    break;
+                }
+            }
+            used
+        }
+
+        #[test]
+        fn three_identical_reads_stop_after_two_attempts() {
+            let reads = vec![Some("A".to_string()); 3];
+            assert_eq!(simulate(&reads, 3), 2);
+        }
+
+        #[test]
+        fn three_different_reads_use_all_attempts() {
+            let reads = vec![
+                Some("A".to_string()),
+                Some("B".to_string()),
+                Some("C".to_string()),
+            ];
+            assert_eq!(simulate(&reads, 3), 3);
+        }
+
+        #[test]
+        fn reads_differ_then_repeat_stops_at_the_repeat() {
+            let reads = vec![
+                Some("A".to_string()),
+                Some("B".to_string()),
+                Some("B".to_string()),
+                Some("C".to_string()),
+            ];
+            assert_eq!(simulate(&reads, 4), 3);
+        }
+
+        #[test]
+        fn single_read_never_stabilizes() {
+            let reads = vec![Some("A".to_string())];
+            assert_eq!(simulate(&reads, 3), 1);
+        }
+
+        #[test]
+        fn two_none_reads_stabilize() {
+            let reads = vec![None, None];
+            assert_eq!(simulate(&reads, 3), 2);
+        }
     }
 }
 
 #[cfg(target_os = "windows")]
-pub use exec::refresh_current_process_path;
+pub use exec::{refresh_current_process_path, refresh_current_process_path_with_retry};
 
 /// No-op off Windows — mid-process PATH staleness is a Windows-specific
 /// problem (POSIX hooks already run in a fresh child shell that
@@ -142,3 +227,8 @@ pub use exec::refresh_current_process_path;
 /// changes made earlier in the same install).
 #[cfg(not(target_os = "windows"))]
 pub fn refresh_current_process_path() {}
+
+/// No-op off Windows, same as `refresh_current_process_path`: no retry
+/// loop or sleeping, since there is nothing to retry.
+#[cfg(not(target_os = "windows"))]
+pub fn refresh_current_process_path_with_retry(_attempts: u32, _delay: std::time::Duration) {}
