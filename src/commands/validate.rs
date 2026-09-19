@@ -648,6 +648,39 @@ fn validate_package_section(
             // point compounding the error message.
             continue;
         }
+        if let Some(policy) = value.as_table().and_then(|t| t.get("on_newer_installed")) {
+            if section != "nuget" {
+                issues.push(ValidationIssue {
+                    severity: Severity::Error,
+                    message: format!(
+                        "Refused {} entry `{}`: `on_newer_installed` is only supported under [nuget]",
+                        purpose,
+                        crate::observability::redact_for_display(key)
+                    ),
+                    line: None,
+                    suggestion: Some(
+                        "Remove `on_newer_installed` from this entry; it only applies to .NET global tools."
+                            .to_string(),
+                    ),
+                });
+            } else if !policy
+                .as_str()
+                .is_some_and(|p| matches!(p, "strict" | "skip" | "warn"))
+            {
+                issues.push(ValidationIssue {
+                    severity: Severity::Error,
+                    message: format!(
+                        "Refused {} entry `{}`: `on_newer_installed` must be one of \"strict\", \"skip\", \"warn\"",
+                        purpose,
+                        crate::observability::redact_for_display(key)
+                    ),
+                    line: None,
+                    suggestion: Some(
+                        "Values are case-sensitive strings; use lowercase.".to_string(),
+                    ),
+                });
+            }
+        }
         // Versions live either as a bare string `name = "1.0"` or as
         // a `{version = "1.0", ...}` inline table.
         let version_str = match value {
@@ -1029,6 +1062,103 @@ mod tests {
             "locked knob misidentified as hostile package: {:?}",
             result.issues
         );
+    }
+
+    const ALLOWED_POLICIES_TEXT: &str = r#""strict", "skip", "warn""#;
+
+    fn validate_package_toml(body: &str) -> ValidationResult {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            format!("[provisioner]\njq = \"latest\"\n\n{body}"),
+        )
+        .unwrap();
+        validate_config(tmp.path().to_str().unwrap(), false)
+    }
+
+    fn on_newer_installed_errors(result: &ValidationResult) -> Vec<&str> {
+        result
+            .issues
+            .iter()
+            .filter(|i| {
+                matches!(i.severity, Severity::Error) && i.message.contains("on_newer_installed")
+            })
+            .map(|i| i.message.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn validate_rejects_on_newer_installed_outside_nuget() {
+        for section in ["npm", "pip", "cargo", "gem", "go"] {
+            for policy in ["skip", "strict"] {
+                let result = validate_package_toml(&format!(
+                    "[{section}]\nsome-pkg = {{ version = \"1.0.0\", on_newer_installed = \"{policy}\" }}\n"
+                ));
+                assert_eq!(
+                    on_newer_installed_errors(&result).len(),
+                    1,
+                    "[{section}] {policy}: {:?}",
+                    result.issues
+                );
+                assert!(!result.valid, "[{section}] {policy} reported as valid");
+            }
+        }
+    }
+
+    #[test]
+    fn validate_reports_one_error_for_bad_on_newer_installed_value_outside_nuget() {
+        let result = validate_package_toml(
+            "[npm]\nsome-pkg = { version = \"1.0.0\", on_newer_installed = \"Skip\" }\n",
+        );
+        let errors = on_newer_installed_errors(&result);
+        assert_eq!(errors.len(), 1, "{:?}", result.issues);
+        assert!(errors[0].contains("only supported under [nuget]"));
+        assert_eq!(result.error_count, 1, "{:?}", result.issues);
+    }
+
+    #[test]
+    fn validate_rejects_miscased_on_newer_installed_under_nuget() {
+        let result = validate_package_toml(
+            "[nuget]\ndotnet-ef = { version = \"8.0.2\", on_newer_installed = \"Skip\" }\n",
+        );
+        let errors = on_newer_installed_errors(&result);
+        assert_eq!(errors.len(), 1, "{:?}", result.issues);
+        assert!(errors[0].contains(ALLOWED_POLICIES_TEXT), "{}", errors[0]);
+        assert!(!errors[0].contains("Skip"), "{}", errors[0]);
+    }
+
+    #[test]
+    fn validate_rejects_non_string_on_newer_installed_under_nuget() {
+        let result = validate_package_toml(
+            "[nuget]\ndotnet-ef = { version = \"8.0.2\", on_newer_installed = true }\n",
+        );
+        let errors = on_newer_installed_errors(&result);
+        assert_eq!(errors.len(), 1, "{:?}", result.issues);
+        assert!(errors[0].contains(ALLOWED_POLICIES_TEXT), "{}", errors[0]);
+    }
+
+    #[test]
+    fn validate_accepts_each_on_newer_installed_policy_under_nuget() {
+        for policy in ["strict", "skip", "warn"] {
+            let result = validate_package_toml(&format!(
+                "[nuget]\ndotnet-ef = {{ version = \"8.0.2\", on_newer_installed = \"{policy}\" }}\n"
+            ));
+            assert_eq!(result.error_count, 0, "{policy}: {:?}", result.issues);
+        }
+    }
+
+    #[test]
+    fn validate_accepts_detailed_spec_without_on_newer_installed() {
+        for section in ["nuget", "npm", "pip", "cargo", "gem", "go"] {
+            let result = validate_package_toml(&format!(
+                "[{section}]\nsome-pkg = {{ version = \"1.0.0\", optional = true }}\n"
+            ));
+            assert_eq!(
+                result.error_count, 0,
+                "[{section}] detailed spec rejected: {:?}",
+                result.issues
+            );
+        }
     }
 
     /// A `jarvy.toml` saved with CRLF line endings preserves literal

@@ -321,10 +321,13 @@ impl Hook {
         // Retried because an installer (winget in particular) can report
         // success a moment before its own PATH write actually lands in
         // the registry, so a single read right after install can still
-        // lose that race.
+        // lose that race. Only a run that installed something can be in
+        // that race, so the retry (and its delay) applies to every hook
+        // after an install marked PATH dirty; a run that installs
+        // nothing does one read.
         const PATH_REFRESH_ATTEMPTS: u32 = 3;
         const PATH_REFRESH_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
-        crate::windows::env_refresh::refresh_current_process_path_with_retry(
+        crate::windows::env_refresh::refresh_current_process_path_for_hook(
             PATH_REFRESH_ATTEMPTS,
             PATH_REFRESH_DELAY,
         );

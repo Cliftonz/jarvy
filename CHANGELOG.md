@@ -27,6 +27,104 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [v0.8.4] - Windows install and hook fixes, nuget pin handling (2026-09-18)
+
+**Fixes:**
+
+- Stop reporting an already-installed winget package as a failed install
+  on English-locale Windows. `winget install -e --id <id>` exits non-zero
+  when the package is already registered and no newer version exists, so
+  `jarvy setup` flagged a working tool as failed. Output carrying both
+  "already installed" and "No available upgrade found" now counts as
+  success; every other winget error still fails. The check matches
+  winget's English message text only, so winget output in another
+  language is not recognized and fails as before. It covers every
+  `winget install` jarvy runs. The `winget upgrade` call behind
+  `jarvy upgrade` is unchanged.
+- Correct yq's winget id to `MikeFarah.yq`; the lowercase `mikefarah.yq`
+  did not match winget's catalog.
+- Report a tool with no installer on the current platform the same way on
+  both custom-install paths. When a config held two or more custom-install
+  tools and parallel jobs were on, such a tool (krew on Windows, for one)
+  printed `Failed to install krew (...): Unsupported` and counted as
+  `tool.failed`. It now prints "krew has no installer on this platform;
+  skipping." and emits `tool.unsupported`, as the sequential path already
+  did. Genuine failures on the parallel path also now carry their specific
+  `error_kind` rather than the generic `install_command_failed`.
+- Close a Windows race where a hook ran before an installer's PATH write
+  reached the registry. An installer (winget in particular) can report
+  success a moment early, so a hook could miss a tool installed earlier in
+  the same run. Jarvy refreshes PATH from the registry before every hook
+  it runs, of any hook type. Once a tool install or the package phase has
+  run in that `jarvy setup`, every later hook in the run re-reads the
+  registry up to 3 times, 500ms apart, until two consecutive reads match.
+  A run that installs nothing does a single read with no wait. No-op off
+  Windows.
+- Serialize the stdout and stderr relay threads for hook output and for
+  package-manager command output. The two streams could interleave
+  mid-line on the console, which produced the garbled "staircase" hook
+  banner.
+- Collapse embedded newlines in the `tool.failed` event's `error` field
+  into ` | ` separators, so a multi-line installer error (winget or brew
+  stderr) no longer splits one log line into unattributed fragments. The
+  error printed to the terminal is unchanged.
+- Stop a `[nuget]` pin older than the installed global tool from always
+  failing that package. .NET global tools are not side-by-side, so
+  `dotnet tool update -g <name> --version <pin>` refuses the downgrade.
+  Detailed `[nuget]` entries now accept
+  `on_newer_installed = "strict" | "skip" | "warn"`, for example
+  `dotnet-ef = { version = "8.0.2", on_newer_installed = "skip" }`. As
+  with every package failure, a failed nuget package is a warning:
+  `jarvy setup` carries on and still exits 0.
+  - `"strict"` (default; also what a plain version string gets): always
+    attempt the pinned update; a downgrade conflict fails that package.
+    Existing configs behave as before.
+  - `"skip"`: check `dotnet tool list -g` first. When the installed version
+    is at or above the pin, print a skip line and leave the tool alone;
+    never downgrades. Three-part versions compare as semver. Four-part
+    .NET versions compare numerically with a missing revision counted as
+    0, so `8.0.2` equals `8.0.2.0` and an installed `8.0.2.1` satisfies a
+    pin of `8.0.2`. A four-part numeric version against a three-part
+    semver version compares by numeric core, build metadata ignored, and
+    a prerelease sorts below its own core: pin `8.0.2-rc.1` is satisfied
+    by installed `8.0.2.0` or `8.0.2.1`, and pin `8.0.3-rc.1` is not
+    satisfied by installed `8.0.2.1`. Everything else skips only on an
+    exact string match: a four-part version with its own prerelease or
+    build suffix, more than four parts, fewer than three parts (such as
+    `8.0`), or a non-version such as `latest`. If the list query fails,
+    jarvy warns and attempts the update as under `"strict"`.
+  - `"warn"`: attempt the update. When dotnet refuses because the requested
+    version is lower than the existing one, print a warning, keep the
+    installed tool, and continue. Any other failure still fails that
+    package.
+- `on_newer_installed` is read only under `[nuget]`. Under `[npm]`,
+  `[pip]`, `[cargo]`, `[gem]`, or `[go]`, `jarvy validate` reports any
+  value as an error, `"strict"` included, and the JSON schema rejects it
+  in editors; `jarvy setup` ignores the key there. Under `[nuget]`,
+  `jarvy validate` also checks the value: anything other than exactly
+  `"strict"`, `"skip"`, or `"warn"` (a case-sensitive string) is an error
+  listing the allowed values. A wrong-case value such as `"Skip"`
+  otherwise stops `jarvy setup` at config load. `docs/packages.md` covers
+  the full contract under "Newer Version Already Installed".
+
+**Security:**
+
+- The per-package `package.install_failed` event now respects the
+  telemetry gate. It was emitted whatever the telemetry setting, so users
+  with `telemetry.enabled = false` no longer ship it. The stderr warning
+  for a failed package is unchanged.
+- Bump the VS Code extension's transitive `js-yaml` to 4.3.2
+  (GHSA-2883-xcg3-v3hh / CVE-2026-84375, a CPU-exhaustion DoS in YAML
+  merge-key handling). `js-yaml` is a dev-only dependency of the
+  separately versioned extension; no v0.8.4 CLI artifact contains it.
+  Lockfile-only.
+
+**Internal:**
+
+- Gitignore the per-machine files that `jarvy setup` and
+  `jarvy mcp register` write when run against the jarvy repo itself
+  (`.mcp.json.tmp`, `.codex/`, `.cursor/`, `.jarvy/`).
+
 ## [v0.8.3] — In-house update swap, WSL-aware diagnostics (2026-09-06)
 
 **Changed:**
@@ -3558,7 +3656,9 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.8.4...HEAD
+[v0.8.4]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.4
+[v0.8.3]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.3
 [v0.8.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.2
 [v0.8.1]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.1
 [v0.8.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.0

@@ -18,6 +18,7 @@
 mod exec {
     use std::process::Command;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicBool;
 
     /// Serializes `refresh_current_process_path`. `jarvy setup` installs
     /// `custom_install` tools (Chocolatey's own bootstrap included) on a
@@ -124,7 +125,7 @@ mod exec {
     /// since further attempts would just pay `delay` again to re-confirm a
     /// value that already stabilized; `attempts` stays the ceiling for the
     /// case where the value never settles.
-    pub fn refresh_current_process_path_with_retry(attempts: u32, delay: std::time::Duration) {
+    fn refresh_current_process_path_with_retry(attempts: u32, delay: std::time::Duration) {
         let mut reads = Vec::with_capacity(attempts as usize);
         for attempt in 0..attempts {
             reads.push(refresh_current_process_path());
@@ -134,6 +135,24 @@ mod exec {
             if attempt + 1 < attempts {
                 std::thread::sleep(delay);
             }
+        }
+    }
+
+    static PATH_DIRTY: AtomicBool = AtomicBool::new(false);
+
+    /// Record that an install in this run may have a PATH write that has
+    /// not landed in the registry yet.
+    pub fn mark_path_dirty() {
+        super::dirty::mark(&PATH_DIRTY);
+    }
+
+    /// Pre-hook refresh: one plain read while PATH is clean, the bounded
+    /// retry for every hook once an install has marked it dirty.
+    pub fn refresh_current_process_path_for_hook(attempts: u32, delay: std::time::Duration) {
+        if super::dirty::needs_retry(&PATH_DIRTY) {
+            refresh_current_process_path_with_retry(attempts, delay);
+        } else {
+            refresh_current_process_path();
         }
     }
 
@@ -218,8 +237,50 @@ mod exec {
     }
 }
 
+/// The registry alone cannot tell "settled" from "write still pending":
+/// two agreeing reads also happen when the installer's write has not
+/// started. So the flag is never cleared; once an install marks PATH
+/// dirty, every later hook in this process keeps the bounded retry, and
+/// a run that installs nothing pays one plain read. Compiled under
+/// `test` on every OS so the decision is verified off Windows too.
+#[cfg(any(target_os = "windows", test))]
+mod dirty {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    // `Relaxed`: one independent atomic that only ever goes false to
+    // true, so there is no ordering between stores to get wrong.
+    pub(super) fn mark(flag: &AtomicBool) {
+        flag.store(true, Ordering::Relaxed);
+    }
+
+    pub(super) fn needs_retry(flag: &AtomicBool) -> bool {
+        flag.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn clean_path_needs_no_retry() {
+            let flag = AtomicBool::new(false);
+            assert!(!needs_retry(&flag));
+        }
+
+        #[test]
+        fn marked_path_needs_retry_for_every_later_hook() {
+            let flag = AtomicBool::new(false);
+            mark(&flag);
+            assert!(needs_retry(&flag));
+            assert!(needs_retry(&flag));
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
-pub use exec::{refresh_current_process_path, refresh_current_process_path_with_retry};
+pub use exec::{
+    mark_path_dirty, refresh_current_process_path, refresh_current_process_path_for_hook,
+};
 
 /// No-op off Windows — mid-process PATH staleness is a Windows-specific
 /// problem (POSIX hooks already run in a fresh child shell that
@@ -231,4 +292,8 @@ pub fn refresh_current_process_path() {}
 /// No-op off Windows, same as `refresh_current_process_path`: no retry
 /// loop or sleeping, since there is nothing to retry.
 #[cfg(not(target_os = "windows"))]
-pub fn refresh_current_process_path_with_retry(_attempts: u32, _delay: std::time::Duration) {}
+pub fn refresh_current_process_path_for_hook(_attempts: u32, _delay: std::time::Duration) {}
+
+/// No-op off Windows: nothing reads the flag there.
+#[cfg(not(target_os = "windows"))]
+pub fn mark_path_dirty() {}

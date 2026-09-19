@@ -70,12 +70,14 @@ impl NugetHandler {
             let mut failed_names: Vec<String> = Vec::new();
             for (name, spec) in &warn_packages {
                 if let Err(e) = install_with_warn_policy(name, spec, &current_dir) {
-                    tracing::warn!(
-                        event = "package.install_failed",
-                        ecosystem = "nuget",
-                        package = %name,
-                        error = %e,
-                    );
+                    if crate::observability::telemetry_gate::is_enabled() {
+                        tracing::warn!(
+                            event = "package.install_failed",
+                            ecosystem = "nuget",
+                            package = %name,
+                            error = %e,
+                        );
+                    }
                     eprintln!("    Warning: Failed to install {}: {}", name, e);
                     failed_names.push(name.clone());
                 }
@@ -183,7 +185,10 @@ pub(crate) fn parse_installed_version(output: &str, tool_name: &str) -> Option<S
 /// version is present and >= the pin. Non-`Skip` policies, an unparseable
 /// pin (e.g. `"latest"`), or a missing/unparseable installed version all
 /// fall through to `false` (attempt the update), matching `Strict`.
-/// Non-semver strings fall back to exact equality, mirroring
+/// Four-part .NET versions (`1.2.3.4`) compare part by part numerically,
+/// a missing revision counting as 0; against a prerelease semver the
+/// prerelease's core ranks strictly below that core's revision 0.
+/// Anything else non-semver falls back to exact equality, mirroring
 /// `VersionPolicy`'s fallback in `src/drift/config.rs`.
 pub(crate) fn should_skip(
     policy: OnNewerInstalledPolicy,
@@ -196,6 +201,12 @@ pub(crate) fn should_skip(
     let Some(installed) = installed else {
         return false;
     };
+    let four_part_numeric = |v: &str| v.split('.').count() == 4 && numeric_parts(v).is_some();
+    if (four_part_numeric(pinned) || four_part_numeric(installed))
+        && let (Some(p), Some(i)) = (version_key(pinned), version_key(installed))
+    {
+        return i >= p;
+    }
     match (
         semver::Version::parse(pinned),
         semver::Version::parse(installed),
@@ -203,6 +214,31 @@ pub(crate) fn should_skip(
         (Ok(p), Ok(i)) => i >= p,
         _ => installed == pinned,
     }
+}
+
+/// NuGet routinely ships four-part versions, which semver rejects.
+fn numeric_parts(version: &str) -> Option<[u64; 4]> {
+    let mut parts = [0u64; 4];
+    let mut count = 0;
+    for field in version.split('.') {
+        if count == 4 || !field.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        parts[count] = field.parse().ok()?;
+        count += 1;
+    }
+    (count >= 3).then_some(parts)
+}
+
+/// Orders the four-part and semver forms against each other: numeric core
+/// plus a rank placing a prerelease below its own revision 0. Build
+/// metadata is ignored, as semver does.
+fn version_key(version: &str) -> Option<([u64; 4], u8)> {
+    if let Some(parts) = numeric_parts(version) {
+        return Some((parts, 1));
+    }
+    let v = semver::Version::parse(version).ok()?;
+    Some(([v.major, v.minor, v.patch, 0], u8::from(v.pre.is_empty())))
 }
 
 /// True when a failed `dotnet tool update -g` message matches the
@@ -456,6 +492,193 @@ csharpier       0.30.0       csharpier
             OnNewerInstalledPolicy::Skip,
             "abc123",
             Some("abc124")
+        ));
+    }
+
+    #[test]
+    fn should_skip_treats_missing_revision_as_zero() {
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.2",
+            Some("8.0.2.0")
+        ));
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.2.0",
+            Some("8.0.2")
+        ));
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.2",
+            Some("8.0.2.1")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.2.1",
+            Some("8.0.2")
+        ));
+    }
+
+    #[test]
+    fn should_skip_four_part_compares_numerically_not_lexically() {
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4",
+            Some("1.2.3.10")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.10",
+            Some("1.2.3.4")
+        ));
+    }
+
+    #[test]
+    fn should_skip_four_part_with_suffix_falls_back_to_exact_match() {
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4-beta",
+            Some("1.2.3.4-beta")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4-beta",
+            Some("1.2.3.5")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4",
+            Some("1.2.3.4+abc")
+        ));
+    }
+
+    #[test]
+    fn should_skip_three_part_prerelease_ordering_unchanged() {
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.0.0",
+            Some("1.0.0-alpha")
+        ));
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.0.0-alpha",
+            Some("1.0.0")
+        ));
+    }
+
+    #[test]
+    fn should_skip_unparseable_parts_fall_back_to_exact_match() {
+        let overflow = "1.2.3.99999999999999999999999";
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            overflow,
+            Some(overflow)
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4",
+            Some("1.2.3.x")
+        ));
+    }
+
+    #[test]
+    fn should_skip_empty_fields_fall_back_to_exact_match() {
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1..2.3",
+            Some("1.2.3.4")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4",
+            Some("1.2.3.")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            ".1.2.3",
+            Some("1.2.3.4")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4",
+            Some("")
+        ));
+    }
+
+    #[test]
+    fn should_skip_fewer_than_three_parts_falls_back_to_exact_match() {
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2",
+            Some("1.2.3.4")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4",
+            Some("1.2")
+        ));
+    }
+
+    /// A dotted prerelease tag (`1.0.0-alpha.1`) has four dot-separated
+    /// fields but is ordinary three-part semver, so semver ordering must
+    /// still decide it.
+    #[test]
+    fn should_skip_dotted_prerelease_tag_keeps_semver_ordering() {
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.0.0-alpha.1",
+            Some("1.0.0")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.0.0",
+            Some("1.0.0-alpha.1")
+        ));
+    }
+
+    /// Mixed form: one side four-part numeric, the other three-part semver
+    /// carrying a prerelease. The prerelease sorts strictly below its own
+    /// core with revision 0.
+    #[test]
+    fn should_skip_mixed_four_part_and_prerelease_semver() {
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.2-rc.1",
+            Some("8.0.2.0")
+        ));
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.2-rc.1",
+            Some("8.0.2.1")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.3-rc.1",
+            Some("8.0.2.1")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.2.0",
+            Some("8.0.2-rc.1")
+        ));
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "8.0.1.5",
+            Some("8.0.2-rc.1")
+        ));
+    }
+
+    #[test]
+    fn should_skip_more_than_four_parts_falls_back_to_exact_match() {
+        assert!(should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4.5",
+            Some("1.2.3.4.5")
+        ));
+        assert!(!should_skip(
+            OnNewerInstalledPolicy::Skip,
+            "1.2.3.4",
+            Some("1.2.3.4.5")
         ));
     }
 

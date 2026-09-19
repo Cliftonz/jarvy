@@ -1,6 +1,8 @@
 #[cfg(target_os = "windows")]
 use crate::tools::common::has;
-use crate::tools::common::{InstallContext, InstallError, run};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::tools::common::run;
+use crate::tools::common::{InstallContext, InstallError};
 use std::path::PathBuf;
 
 /// Shell-independent probe for an existing nvm installation.
@@ -84,10 +86,7 @@ fn install_windows() -> Result<(), InstallError> {
         ));
     }
     // NVM for Windows official package ID
-    run(
-        "winget",
-        &["install", "-e", "--id", "CoreyButler.NVMforWindows"],
-    )?;
+    crate::tools::common::winget_install("CoreyButler.NVMforWindows")?;
     Ok(())
 }
 
