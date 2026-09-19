@@ -143,6 +143,34 @@ Installs CLI binaries published as NuGet packages via `dotnet tool update -g <na
 
 Project-level `<PackageReference>` deps in `.csproj` / `Directory.Packages.props` are NOT managed here; they're restored by `dotnet restore` during build.
 
+### Newer Version Already Installed
+
+```toml
+[nuget]
+dotnet-ef = { version = "8.0.2", on_newer_installed = "skip" }
+```
+
+.NET global tools are not side-by-side: one version per tool, per user. When a newer version is already installed, `dotnet tool update -g <name> --version <pin>` refuses to downgrade, and that package fails. `on_newer_installed` lets a pinned tool opt into softer behavior. It is set per package, on the detailed form only; a plain version string always gets `"strict"`.
+
+| Value | Behavior |
+|-------|----------|
+| `"strict"` | Default. Always attempt the pinned update; a downgrade conflict fails that package |
+| `"skip"` | Check `dotnet tool list -g` first. If the installed version is at or above the pin, print a skip line and leave the tool alone. Never downgrades |
+| `"warn"` | Attempt the pinned update. If `dotnet` refuses because the installed version is newer, print a warning, keep the installed tool, and continue. Any other failure still fails that package |
+
+If `dotnet tool list -g` itself fails, Jarvy prints a warning and `"skip"` packages are attempted as `"strict"` for that run.
+
+How `"skip"` compares the installed version to the pin:
+
+- Both sides three-part (`8.0.2`, `1.0.0-alpha.1`): semver ordering, prerelease tags included.
+- Either side four-part, and both purely numeric with three or four parts (`8.0.2` vs `8.0.2.1`): numeric comparison, with a missing revision treated as `0`. So `8.0.2` equals `8.0.2.0`, and an installed `8.0.2.1` satisfies a pin of `8.0.2`.
+- A four-part numeric version against a three-part semver version: the three-part side is compared by its numeric core, build metadata ignored, and a prerelease always sorts below its own core. So a pin of `8.0.2-rc.1` is satisfied by an installed `8.0.2.0` or `8.0.2.1`; a pin of `8.0.3-rc.1` is not satisfied by an installed `8.0.2.1`.
+- Everything else skips only on an exact string match: a four-part version carrying its own prerelease or build suffix, more than four parts, fewer than three parts (such as `8.0`), or a non-version such as `latest`.
+
+`on_newer_installed` is read only under `[nuget]`. Under `[npm]`, `[pip]`, `[cargo]`, `[gem]`, or `[go]`, `jarvy validate` reports it as an error for any value, including `"strict"`, and the JSON schema rejects it in editors; `jarvy setup` ignores the key there, so it has no effect.
+
+Under `[nuget]`, `jarvy validate` also checks the value: anything other than exactly `"strict"`, `"skip"`, or `"warn"` (case-sensitive) is an error naming the allowed values. Left uncaught, a wrong-case value such as `"Skip"` stops `jarvy setup` at config load.
+
 ## gem (Ruby)
 
 ```toml

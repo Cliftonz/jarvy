@@ -554,6 +554,7 @@ pub fn run_setup(
                         {
                             println!("Successfully installed {} ({})", tool_name, version);
                             successfully_installed.push((tool_name.clone(), version.clone()));
+                            crate::windows::env_refresh::mark_path_dirty();
                             telemetry::tool_installed(
                                 tool_name,
                                 version,
@@ -678,6 +679,7 @@ pub fn run_setup(
                             match tools::add(name, version, &ctx) {
                                 Ok(()) => {
                                     println!("Successfully installed {} ({})", name, version);
+                                    crate::windows::env_refresh::mark_path_dirty();
                                     // Round-2 obs F13: emit tool.installed
                                     // for the custom-install path. The
                                     // batch-install path already does
@@ -719,6 +721,7 @@ pub fn run_setup(
                     match tools::add(name, version, &ctx) {
                         Ok(()) => {
                             println!("Successfully installed {} ({})", name, version);
+                            crate::windows::env_refresh::mark_path_dirty();
                             // Round-2 obs F13: same fix as the parallel path.
                             telemetry::tool_installed(
                                 name,
@@ -1354,6 +1357,7 @@ fn run_packages_phase(config: &Config, file: &str, dry_run: bool) {
         }
     } else {
         println!("\n=== Installing Package Dependencies ===");
+        crate::windows::env_refresh::mark_path_dirty();
         if let Err(e) = packages::install_packages(packages_ref, project_dir) {
             // Ecosystem-level failure is `error!` (the entire phase
             // is broken — e.g. venv creation failed before any

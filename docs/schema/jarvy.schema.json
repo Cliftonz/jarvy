@@ -45,7 +45,7 @@
     "npm":   { "$ref": "#/$defs/PackageBlock" },
     "pip":   { "$ref": "#/$defs/PackageBlock" },
     "cargo": { "$ref": "#/$defs/PackageBlock" },
-    "nuget": { "$ref": "#/$defs/PackageBlock" },
+    "nuget": { "$ref": "#/$defs/NugetPackageBlock" },
     "gem":   { "$ref": "#/$defs/PackageBlock" },
     "go":    { "$ref": "#/$defs/PackageBlock" },
     "packages":  { "type": "object", "additionalProperties": true },
@@ -291,6 +291,34 @@
               "features": {
                 "type": "array",
                 "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+
+    "NugetPackageBlock": {
+      "type": "object",
+      "description": ".NET global tool list. Keys are NuGet package ids, values are version specs or detailed objects.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "properties": {
+              "version":  { "type": "string" },
+              "optional": { "type": "boolean" },
+              "features": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "on_newer_installed": {
+                "type": "string",
+                "description": "What to do when the pinned version is older than the globally installed one (nuget only). strict: attempt the update and fail the package on conflict. skip: leave the tool alone when the installed version already satisfies the pin. warn: attempt the update, warn and keep the installed tool if dotnet refuses the downgrade.",
+                "enum": ["strict", "skip", "warn"],
+                "default": "strict"
               }
             },
             "additionalProperties": false

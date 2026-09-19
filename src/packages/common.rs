@@ -436,12 +436,14 @@ where
             &current_dir,
             &mut build_args,
         ) {
-            tracing::warn!(
-                event = "package.install_failed",
-                ecosystem = ecosystem,
-                package = %name,
-                error = %e,
-            );
+            if crate::observability::telemetry_gate::is_enabled() {
+                tracing::warn!(
+                    event = "package.install_failed",
+                    ecosystem = ecosystem,
+                    package = %name,
+                    error = %e,
+                );
+            }
             eprintln!("    Warning: Failed to install {}: {}", name, e);
         }
     }
