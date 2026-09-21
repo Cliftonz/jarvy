@@ -53,11 +53,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Write a known-good minimal config
+      - name: Write a known-good minimal config (jq, a dependency-free tool)
         shell: bash
         run: |
           set -euo pipefail
-          printf '[provisioner]\ngit = "latest"\n' > selftest.jarvy.toml
+          # The fixture tool must declare no prereqs on ANY platform, because
+          # the action runs `validate --strict`. jq qualifies: src/tools/jq
+          # declares no depends_on / depends_on_by_os / depends_on_one_of.
+          # Do NOT swap this back to git: git declares a Windows-only
+          # `vcredist` prereq, so on windows-latest --strict promotes
+          # "requires 'vcredist'" to an error and the job exits 2. The Windows
+          # integration tests moved off git for this same reason (PR #95).
+          printf '[provisioner]\njq = "latest"\n' > selftest.jarvy.toml
           cat selftest.jarvy.toml
 
       - name: Install Jarvy and validate the config

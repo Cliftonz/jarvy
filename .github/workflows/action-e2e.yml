@@ -2,11 +2,17 @@
 # exercises `run: validate`). Installs jarvy via the local action, then runs
 # `jarvy setup` against a real jarvy.toml on all three OSes.
 #
-# The sample config pins `git` (preinstalled on every runner), so setup
+# The sample config pins `jq` (preinstalled on every runner), so setup
 # exercises the full pipeline — config load, version check, detection, hook
 # phase, completion — and reaches exit 0 reliably without a flaky
 # package-manager install. (Real fresh-install coverage lives in
 # tool-e2e / e2e-cross-platform.)
+#
+# Why jq and not git: jq ships on all three runner images AND is
+# dependency-free in jarvy's tool registry. git declares a Windows-only
+# vcredist prereq (src/tools/git/definition.rs), so it is the wrong shape
+# for a fixture that must behave identically on all three OSes. Do not
+# switch this back to git.
 name: Action E2E (setup)
 
 on:
@@ -48,11 +54,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Write a sample jarvy.toml (git is preinstalled everywhere)
+      - name: Write a sample jarvy.toml (jq is preinstalled and dependency-free)
         shell: bash
         run: |
           set -euo pipefail
-          printf '[privileges]\nuse_sudo = false\n\n[provisioner]\ngit = "latest"\n' > e2e.jarvy.toml
+          printf '[privileges]\nuse_sudo = false\n\n[provisioner]\njq = "latest"\n' > e2e.jarvy.toml
           cat e2e.jarvy.toml
 
       - name: Install jarvy and run setup
@@ -71,7 +77,7 @@ jobs:
           set -euo pipefail
           # The action step above already fails the job if `jarvy setup`
           # exits non-zero. Re-run doctor to confirm jarvy resolved the
-          # config and sees git satisfied — proves the pipeline, not just
+          # config and sees jq satisfied — proves the pipeline, not just
           # the process exit.
           jarvy --version
           # `jarvy doctor` exits non-zero to signal health (1 = warnings,
@@ -81,12 +87,12 @@ jobs:
           # succeeded.) The JSON is written to stdout before the exit code.
           jarvy doctor --file e2e.jarvy.toml --format json > doctor.json || true
           cat doctor.json
-          # git must be present and satisfied in the doctor report.
+          # jq must be present and satisfied in the doctor report.
           python3 - <<'PY'
           import json
           d = json.load(open("doctor.json"))
           tools = {t["name"].lower(): t for t in d.get("tools", [])}
-          assert "git" in tools, f"git missing from doctor tools: {list(tools)}"
-          assert tools["git"]["status"] == "ok", f"git not ok: {tools['git']}"
-          print("OK: jarvy setup resolved the config and git is satisfied")
+          assert "jq" in tools, f"jq missing from doctor tools: {list(tools)}"
+          assert tools["jq"]["status"] == "ok", f"jq not ok: {tools['jq']}"
+          print("OK: jarvy setup resolved the config and jq is satisfied")
           PY
