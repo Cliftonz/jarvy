@@ -38,7 +38,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           # `fetch-tags: true` would conflict with the tag-trigger
@@ -523,7 +523,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo tools
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-cargo-sbom-tools
@@ -649,7 +649,9 @@ jobs:
           path: artifacts/sbom
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v2.6.5
 
       - name: Sign artifacts with Sigstore
         run: |
@@ -963,7 +965,9 @@ jobs:
       # uploads are caught too.
       # ========================================================================
       - name: Install cosign (draft verification)
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v2.6.5
 
       - name: Verify draft before publishing
         env:

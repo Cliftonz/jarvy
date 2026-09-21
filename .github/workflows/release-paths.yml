@@ -255,7 +255,9 @@ jobs:
       # instead of the upgrade path. Same pinned installer as release.yml.
       - name: Install cosign (required by jarvy update signature verify)
         if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v2.6.5
 
       - name: Path 2 — jarvy update --version <target> --method binary
         if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'

@@ -78,7 +78,9 @@ jobs:
 
       - name: Install cosign
         if: steps.resolve.outputs.tag != ''
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v2.6.5
 
       - name: Install jq and curl (already on ubuntu-latest, belt-and-braces)
         if: steps.resolve.outputs.tag != ''
