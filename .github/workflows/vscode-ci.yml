@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '26'
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
@@ -49,8 +49,12 @@ jobs:
       - name: Unit tests (parseValidationResult schema contract)
         run: npm test
 
+      # Run the vsce that package.json declares as a devDependency and npm ci
+      # installed, not whatever `npx --yes` resolves as latest at run time.
+      # --no-install makes the step fail loudly instead of silently fetching a
+      # newer major nobody chose.
       - name: Package (.vsix) — validates the manifest and bundled files
-        run: npx --yes @vscode/vsce package --out jarvy-vscode.vsix
+        run: npx --no-install @vscode/vsce package --out jarvy-vscode.vsix
 
       - name: Upload .vsix for inspection
         uses: actions/upload-artifact@v7.0.1

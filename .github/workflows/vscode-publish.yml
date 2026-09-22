@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '26'
 
       - name: Install dependencies
         run: npm ci || npm install
@@ -49,8 +49,11 @@ jobs:
       - name: Type-check and compile
         run: npm run compile
 
+      # Run the locally installed vsce (a declared devDependency) rather than
+      # letting `npx --yes` resolve latest at run time; --no-install fails the
+      # step instead of fetching an unpinned major.
       - name: Package (.vsix)
-        run: npx --yes @vscode/vsce package --out jarvy-vscode.vsix
+        run: npx --no-install @vscode/vsce package --out jarvy-vscode.vsix
 
       - name: Upload .vsix artifact
         uses: actions/upload-artifact@v7.0.1
@@ -71,8 +74,12 @@ jobs:
             echo "::notice::VSCE_PAT not set — skipping VS Marketplace publish."
             exit 0
           fi
-          npx --yes @vscode/vsce publish --packagePath jarvy-vscode.vsix
+          npx --no-install @vscode/vsce publish --packagePath jarvy-vscode.vsix
 
+      # Run the ovsx that package.json declares as a devDependency and the
+      # install step above fetched, not whatever `npx --yes` resolves as latest
+      # at run time. --no-install makes the step fail loudly instead of silently
+      # fetching a newer major nobody chose.
       - name: Publish to Open VSX
         if: github.event_name == 'push' && github.event.inputs.dry_run != 'true'
         env:
@@ -82,4 +89,4 @@ jobs:
             echo "::notice::OVSX_PAT not set — skipping Open VSX publish."
             exit 0
           fi
-          npx --yes ovsx publish jarvy-vscode.vsix -p "$OVSX_PAT"
+          npx --no-install ovsx publish jarvy-vscode.vsix -p "$OVSX_PAT"
