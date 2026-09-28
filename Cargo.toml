@@ -63,7 +63,7 @@ tracing-appender = "0.2"
 opentelemetry = { version = "0.32", features = ["metrics"] }
 opentelemetry-otlp = { version = "0.32", features = ["logs", "http-proto", "metrics"] }
 opentelemetry_sdk = { version = "0.32", features = ["metrics"] }
-opentelemetry-appender-tracing = "0.32"
+opentelemetry-appender-tracing = "0.33"
 thiserror = "2.0"
 ureq = { version = "3.3", features = ["json"] }
 uuid = { version = "1.23", features = ["v7"] }
