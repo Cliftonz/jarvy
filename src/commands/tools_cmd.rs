@@ -61,7 +61,7 @@ pub fn run_tools(
             OutputFormat::Json => serde_json::to_string_pretty(&hook_infos)
                 .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e)),
             OutputFormat::Yaml => {
-                serde_yaml::to_string(&hook_infos).unwrap_or_else(|e| format!("error: {}", e))
+                serde_saphyr::to_string(&hook_infos).unwrap_or_else(|e| format!("error: {}", e))
             }
             OutputFormat::Toml => {
                 let wrapper = serde_json::json!({ "hooks": hook_infos });
@@ -101,7 +101,7 @@ pub fn run_tools(
             OutputFormat::Json => serde_json::to_string_pretty(&tool_index)
                 .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e)),
             OutputFormat::Yaml => {
-                serde_yaml::to_string(&tool_index).unwrap_or_else(|e| format!("error: {}", e))
+                serde_saphyr::to_string(&tool_index).unwrap_or_else(|e| format!("error: {}", e))
             }
             OutputFormat::Toml => {
                 toml::to_string(&tool_index).unwrap_or_else(|e| format!("error = \"{}\"", e))
@@ -145,7 +145,7 @@ pub fn run_tools(
             OutputFormat::Json => serde_json::to_string_pretty(&names)
                 .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e)),
             OutputFormat::Yaml => {
-                serde_yaml::to_string(&names).unwrap_or_else(|e| format!("error: {}", e))
+                serde_saphyr::to_string(&names).unwrap_or_else(|e| format!("error: {}", e))
             }
             OutputFormat::Toml => {
                 // TOML doesn't support bare arrays at root, wrap it
@@ -330,7 +330,7 @@ fn run_request(name: &str, open: bool, output_format: OutputFormat, output: Opti
             .unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e))
         }
         OutputFormat::Yaml => {
-            serde_yaml::to_string(&report).unwrap_or_else(|e| format!("error: {}", e))
+            serde_saphyr::to_string(&report).unwrap_or_else(|e| format!("error: {}", e))
         }
         OutputFormat::Toml => {
             // Wrap because TOML can't represent a top-level array of

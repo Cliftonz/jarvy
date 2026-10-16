@@ -59,7 +59,7 @@ pub fn run_get(file: &str, output_format: OutputFormat, output: Option<&str>) {
             let wrapper = Reports {
                 tools: reports.clone(),
             };
-            serde_yaml::to_string(&wrapper).unwrap_or_else(|e| format!("error: {}", e))
+            serde_saphyr::to_string(&wrapper).unwrap_or_else(|e| format!("error: {}", e))
         }
         OutputFormat::Toml => {
             let wrapper = Reports {

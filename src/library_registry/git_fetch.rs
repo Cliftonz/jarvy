@@ -413,7 +413,7 @@ fn build_skill_item(_root: &Path, path: &Path) -> Result<LibrarySkillItem, Strin
     let (frontmatter, _) = split_frontmatter(&body_str)
         .ok_or("missing YAML frontmatter (expected `---` ... `---` block at top)")?;
     let parsed: SkillFrontmatter =
-        serde_yaml::from_str(frontmatter).map_err(|e| format!("frontmatter parse: {e}"))?;
+        serde_saphyr::from_str(frontmatter).map_err(|e| format!("frontmatter parse: {e}"))?;
     let name = parsed
         .name
         .ok_or("missing required `name` field in frontmatter")?;

@@ -27,6 +27,18 @@ for the full release process and
 [`docs/release-quirks-jarvy.md`](https://github.com/Cliftonz/jarvy/blob/main/docs/release-quirks-jarvy.md)
 for divergences from generic release skills.
 
+## [Unreleased]
+
+**Changes:**
+
+- Replace the archived `serde_yaml` crate with `serde-saphyr`. `serde_yaml`
+  pulled in `unsafe-libyaml`, which RUSTSEC-2024-0449 flags; both repos
+  were archived in 2024-03.
+- Minimum supported Rust version is now 1.89 (was 1.88), as required by
+  `serde-saphyr`.
+- `--format yaml` output may differ cosmetically (quoting, indentation).
+  The data it carries is unchanged.
+
 ## [v0.8.4] - Windows install and hook fixes, nuget pin handling (2026-09-18)
 
 **Fixes:**

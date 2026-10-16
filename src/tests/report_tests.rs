@@ -79,7 +79,7 @@ fn test_serialization_json_yaml_status_strings() {
     }
 
     // YAML serialization
-    let yaml_str = serde_yaml::to_string(&reports).expect("yaml serialize");
+    let yaml_str = serde_saphyr::to_string(&reports).expect("yaml serialize");
     // Status strings are the same values in YAML
     assert!(yaml_str.contains("match"));
     assert!(yaml_str.contains("mismatch"));
