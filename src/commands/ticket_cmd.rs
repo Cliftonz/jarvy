@@ -188,9 +188,11 @@ fn handle_ticket_show(ticket_arg: &str, output_format: &str) -> i32 {
     if output_format == "json" {
         let mut entries: Vec<serde_json::Value> = Vec::new();
         for i in 0..archive.len() {
-            if let Ok(f) = archive.by_index(i) {
+            if let Ok(f) = archive.by_index(i)
+                && let Ok(name) = f.name()
+            {
                 entries.push(serde_json::json!({
-                    "name": f.name(),
+                    "name": name,
                     "size": f.size(),
                 }));
             }
@@ -223,12 +225,14 @@ fn handle_ticket_show(ticket_arg: &str, output_format: &str) -> i32 {
     println!("Contents:");
 
     for i in 0..archive.len() {
-        if let Ok(file) = archive.by_index(i) {
+        if let Ok(file) = archive.by_index(i)
+            && let Ok(name) = file.name()
+        {
             // Zip entry names from a third-party ticket are
             // attacker-controllable. Strip ANSI / C0 controls before
             // emitting to a TTY (review item P2 #21). The JSON path
             // doesn't need this because serde_json escapes them.
-            let safe_name = crate::observability::sanitizer::redact_for_display(file.name());
+            let safe_name = crate::observability::sanitizer::redact_for_display(&name);
             println!("  {} ({} bytes)", safe_name, file.size());
         }
     }
