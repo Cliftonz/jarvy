@@ -435,6 +435,8 @@ jobs:
 
       - name: Package Binary
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           # cargo-packager can trigger its own cargo build; keep the
           # build-tag env consistent so a rebuild doesn't silently drop
@@ -451,7 +453,7 @@ jobs:
           # + setup.exe (nsis) artifacts and can `cargo install jarvy
           # --version <rc>`; MSI is a stable-only artifact.
           WINDOWS_FORMATS=""
-          if [ "${{ matrix.platform }}" = "windows-latest" ] && [[ "${{ github.ref_name }}" == *-* ]]; then
+          if [ "${{ matrix.platform }}" = "windows-latest" ] && [[ "$REF_NAME" == *-* ]]; then
             WINDOWS_FORMATS="--formats=nsis"
           fi
           if [ "${{ matrix.cross }}" = "true" ] && [ "${{ matrix.sysroot }}" != "" ]; then
