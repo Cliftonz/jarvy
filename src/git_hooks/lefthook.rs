@@ -17,6 +17,9 @@
 //!    each hook stage.
 
 use super::{HookError, HookInfo};
+use serde::Deserialize;
+use serde::de::{Deserializer, IgnoredAny, MapAccess, Visitor};
+use std::fmt;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -123,44 +126,80 @@ impl LefthookHandler {
             return Ok(Vec::new());
         }
         let content = std::fs::read_to_string(&config_path)?;
-        // Permissive top-level shape — lefthook.yml mixes stages with
-        // top-level config keys (`skip_output`, `extends`, …). We
-        // deserialize as `BTreeMap<String, Value>` and only walk
-        // entries whose key is a known git stage AND whose value is a
-        // mapping with a `commands:` block.
-        let parsed: std::collections::BTreeMap<String, serde_yaml::Value> =
-            serde_yaml::from_str(&content)
+        // lefthook.yml mixes stages with top-level config keys
+        // (`skip_output`, `extends`, ...). Only stage-shaped entries are
+        // read; everything else is skipped without being materialized.
+        let options = serde_saphyr::options! {
+            non_finite_float_policy: serde_saphyr::NonFiniteFloatPolicy::PassThrough,
+        };
+        let parsed: std::collections::BTreeMap<String, LefthookEntry> =
+            serde_saphyr::from_str_with_options(&content, options)
                 .map_err(|e| HookError::Config(format!("parse {}: {e}", config_path.display())))?;
 
         let mut hooks = Vec::new();
-        for (stage, value) in &parsed {
+        for (stage, entry) in &parsed {
             if !is_stage_name(stage) {
                 continue;
             }
-            let Some(map) = value.as_mapping() else {
+            let LefthookEntry::Stage { commands } = entry else {
                 continue;
             };
-            let Some(commands) = map.get(serde_yaml::Value::String("commands".to_string())) else {
-                continue;
-            };
-            let Some(cmd_map) = commands.as_mapping() else {
-                continue;
-            };
-            for (id_value, _) in cmd_map {
-                if let Some(id) = id_value.as_str() {
-                    hooks.push(HookInfo {
-                        id: id.to_string(),
-                        repo: "local".to_string(),
-                        version: String::new(),
-                        hook_type: stage.clone(),
-                    });
-                }
+            for id in &commands.0 {
+                hooks.push(HookInfo {
+                    id: id.clone(),
+                    repo: "local".to_string(),
+                    version: String::new(),
+                    hook_type: stage.clone(),
+                });
             }
         }
         hooks.sort_by(|a, b| {
             (a.hook_type.as_str(), a.id.as_str()).cmp(&(b.hook_type.as_str(), b.id.as_str()))
         });
         Ok(hooks)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum LefthookEntry {
+    Stage { commands: CommandIds },
+    Other(IgnoredAny),
+}
+
+struct CommandIds(Vec<String>);
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CommandKey {
+    Name(String),
+    Other(IgnoredAny),
+}
+
+impl<'de> Deserialize<'de> for CommandIds {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct CommandIdsVisitor;
+
+        impl<'de> Visitor<'de> for CommandIdsVisitor {
+            type Value = CommandIds;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a commands mapping")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<CommandIds, A::Error> {
+                let mut ids = Vec::new();
+                while let Some(key) = map.next_key::<CommandKey>()? {
+                    map.next_value::<IgnoredAny>()?;
+                    if let CommandKey::Name(id) = key {
+                        ids.push(id);
+                    }
+                }
+                Ok(CommandIds(ids))
+            }
+        }
+
+        deserializer.deserialize_map(CommandIdsVisitor)
     }
 }
 
@@ -254,6 +293,49 @@ skip_output:
                 .iter()
                 .any(|h| h.id == "conventional" && h.hook_type == "commit-msg")
         );
+    }
+
+    #[test]
+    fn list_ignores_complex_keys_outside_stages() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("lefthook.yml"),
+            r#"
+pre-commit:
+  commands:
+    lint:
+      run: cargo clippy
+settings:
+  ? [a, b]
+  : c
+"#,
+        )
+        .unwrap();
+        let handler = LefthookHandler::new(tmp.path().to_path_buf());
+        let hooks = handler.list().unwrap();
+        assert_eq!(hooks.len(), 1, "got {hooks:?}");
+        assert_eq!(hooks[0].id, "lint");
+    }
+
+    #[test]
+    fn list_ignores_non_finite_floats_outside_stages() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("lefthook.yml"),
+            r#"
+pre-commit:
+  commands:
+    lint:
+      run: cargo clippy
+settings:
+  ratio: .nan
+"#,
+        )
+        .unwrap();
+        let handler = LefthookHandler::new(tmp.path().to_path_buf());
+        let hooks = handler.list().unwrap();
+        assert_eq!(hooks.len(), 1, "got {hooks:?}");
+        assert_eq!(hooks[0].id, "lint");
     }
 
     #[test]

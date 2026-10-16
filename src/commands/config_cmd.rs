@@ -60,7 +60,7 @@ pub fn run_config(action: &ConfigAction) -> i32 {
                             "yaml" => {
                                 println!(
                                     "{}",
-                                    serde_yaml::to_string(&extended).unwrap_or_default()
+                                    serde_saphyr::to_string(&extended).unwrap_or_default()
                                 );
                             }
                             _ => {
@@ -99,7 +99,7 @@ pub fn run_config(action: &ConfigAction) -> i32 {
                                 if let Ok(value) = toml::from_str::<toml::Value>(&content) {
                                     println!(
                                         "{}",
-                                        serde_yaml::to_string(&value).unwrap_or_default()
+                                        serde_saphyr::to_string(&value).unwrap_or_default()
                                     );
                                 } else {
                                     eprintln!("Failed to parse config file");

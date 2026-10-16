@@ -58,6 +58,22 @@ fn get_known_command_prints_json_yaml_toml_pretty() {
 }
 
 #[test]
+fn config_show_yaml_parses_back_with_config_data() {
+    let cfg = make_config();
+
+    let mut c = Command::new(assert_cmd::cargo::cargo_bin!("jarvy"));
+    c.env("JARVY_TEST_MODE", "1");
+    c.args(["config", "show", "--file"])
+        .arg(cfg.path())
+        .args(["--format", "yaml"]);
+    let assert = c.assert().success();
+    let stdout = String::from_utf8_lossy(assert.get_output().stdout.as_ref()).to_string();
+
+    let parsed: serde_json::Value = serde_saphyr::from_str(&stdout).expect("valid yaml");
+    assert_eq!(parsed["provisioner"]["git"], "1.0.0");
+}
+
+#[test]
 fn get_writes_output_file_when_requested() {
     let cfg = make_config();
     let outfile = NamedTempFile::new().unwrap();

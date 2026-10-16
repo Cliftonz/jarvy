@@ -37,7 +37,7 @@ When considering a new dependency:
 | Need | Use Existing |
 |------|--------------|
 | JSON | `serde_json` |
-| YAML | `serde_yaml` |
+| YAML | `serde-saphyr` |
 | TOML | `toml` |
 | Error types | `thiserror` |
 | HTTP | `ureq` |
