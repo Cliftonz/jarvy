@@ -7,7 +7,7 @@ format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Raised the minimum supported VS Code version to 1.138.0. Older VS Code builds
+- Raised the minimum supported VS Code version to 1.140.0. Older VS Code builds
   can no longer install the extension.
 
 ## [0.1.0] — 2026-07-26
