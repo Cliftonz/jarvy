@@ -263,7 +263,7 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
             cmd_argv0 = cli_command,
             mcp_preapproval = mcp_preapproval,
             wizard_session_env = true,
-            wizard_session_id = %session_id,
+            wizard_session_id = %crate::wizard::session::session_id_hash(&session_id),
         );
     }
 
@@ -298,7 +298,7 @@ fn run_headless(opts: &WizardOpts, agent: crate::agents::Agent, cli_command: &st
             jarvy_toml_before = jarvy_toml_before,
             jarvy_toml_after = jarvy_toml_after,
             terminal_state = terminal_state,
-            wizard_session_id = %session_id,
+            wizard_session_id = %crate::wizard::session::session_id_hash(&session_id),
         );
     }
     exit_status.code().unwrap_or(error_codes::CONFIG_ERROR)

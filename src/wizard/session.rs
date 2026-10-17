@@ -252,15 +252,34 @@ fn emit_refused(reason: &'static str, session_id: &str) {
         tracing::debug!(
             event = "wizard.session.bypass_refused",
             reason = reason,
-            session_id = %session_id,
+            session_id = %session_id_hash(session_id),
         );
     }
+}
+
+/// Telemetry form of a wizard session id. The raw id names the MCP-bypass
+/// marker file, so it never leaves the machine; this truncated SHA-256
+/// still correlates every event of one session.
+pub fn session_id_hash(session_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(&Sha256::digest(session_id.as_bytes())[..8])
 }
 
 #[cfg(test)]
 #[allow(unsafe_code)] // Env-var manipulation is the entire point.
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_id_hash_is_stable_and_hides_the_raw_id() {
+        let id = uuid::Uuid::now_v7().to_string();
+        let hashed = session_id_hash(&id);
+        assert_eq!(hashed, session_id_hash(&id));
+        assert_ne!(hashed, session_id_hash(&uuid::Uuid::now_v7().to_string()));
+        assert!(!hashed.contains(&id));
+        assert_eq!(hashed.len(), 16);
+        assert!(hashed.chars().all(|c| c.is_ascii_hexdigit()));
+    }
 
     /// RAII contract: guard's Drop removes the marker file. Without
     /// this, a stale marker from a panicked wizard could be replayed

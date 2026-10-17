@@ -202,7 +202,7 @@ pub fn gate_mutation(
                 workspace = %ctx.workspace().display(),
                 effect = effect_summary,
                 pid = std::process::id(),
-                wizard_session_id = %session_id,
+                wizard_session_id = %crate::wizard::session::session_id_hash(&session_id),
             );
         }
         // Bypass grant IS a completed mutation-decision point —
@@ -233,7 +233,7 @@ pub fn gate_mutation(
             tool = tool_name,
             client = ctx.client_name.unwrap_or("unknown"),
             workspace = %ctx.workspace().display(),
-            wizard_session_id = %session_id,
+            wizard_session_id = %crate::wizard::session::session_id_hash(&session_id),
         );
     }
 
