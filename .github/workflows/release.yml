@@ -635,7 +635,7 @@ jobs:
       && needs.build_and_package.result == 'success'
       && needs.generate_sbom.result == 'success'
     permissions:
-      contents: write
+      contents: read
       id-token: write  # Required for Sigstore OIDC
     steps:
       - name: Download build artifacts
@@ -690,19 +690,14 @@ jobs:
       contents: write
       id-token: write
       attestations: write
-      # `actions: write` is required for the `gh workflow run`
-      # dispatches below. Without it every dispatch 403s ("Resource
-      # not accessible by integration") and `set -e` aborts the step —
-      # which silently starved release-paths / verify-release /
-      # prerelease-soak AND package publishing of their per-release
-      # triggers (they only ran on cron). Verified 403 on v0.5.0.
-      actions: write
     needs: [build_and_package, generate_sbom, sign_artifacts]
     if: |
       always()
       && needs.build_and_package.result == 'success'
       && needs.generate_sbom.result == 'success'
       && needs.sign_artifacts.result == 'success'
+    outputs:
+      is_prerelease: ${{ steps.detect_prerelease.outputs.is_prerelease }}
     steps:
       # Checkout so we have CHANGELOG.md + git history for release-note
       # extraction. `fetch-depth: 0` is needed because `git describe` walks
@@ -1100,6 +1095,25 @@ jobs:
             echo "Stable release ${VERSION} published and pinned as Latest."
           fi
 
+  dispatch_downstream:
+    name: Dispatch downstream workflows
+    runs-on: ubuntu-latest
+    permissions:
+      # `actions: write` is required for the `gh workflow run`
+      # dispatches below. Without it every dispatch 403s ("Resource
+      # not accessible by integration") and `set -e` aborts the step,
+      # which silently starved release-paths / verify-release /
+      # prerelease-soak AND package publishing of their per-release
+      # triggers (they only ran on cron). Verified 403 on v0.5.0.
+      actions: write
+    needs: [build_and_package, generate_sbom, sign_artifacts, upload_to_release]
+    if: |
+      always()
+      && needs.build_and_package.result == 'success'
+      && needs.generate_sbom.result == 'success'
+      && needs.sign_artifacts.result == 'success'
+      && needs.upload_to_release.result == 'success'
+    steps:
       # Package publishing runs as its OWN step, BEFORE the validation
       # dispatches below, so publishing never rides on their success —
       # a failed `gh workflow run` for release-paths / verify-release /
@@ -1119,7 +1133,7 @@ jobs:
       # The version input is unprefixed semver (publish-packages reads
       # the real value from Cargo.toml regardless), so strip `v`.
       - name: Dispatch package publishing (stable only)
-        if: steps.detect_prerelease.outputs.is_prerelease == 'false'
+        if: needs.upload_to_release.outputs.is_prerelease == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

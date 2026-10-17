@@ -240,9 +240,10 @@ published by `github-actions[bot]`, so nothing published — crates.io
 had no 0.5.0 and `jarvy update` (cargo path) failed with
 `could not find jarvy in registry with version =0.5.0`.
 
-Fix (`release.yml::upload_to_release`):
+Fix (`release.yml`; the dispatches and `actions: write` now live in the
+`dispatch_downstream` job, split out of `upload_to_release`):
 
-1. Added `actions: write` to the job. Without it the `gh workflow run`
+1. Added `actions: write` to the dispatching job. Without it the `gh workflow run`
    dispatch step 403'd (`Resource not accessible by integration`) and
    `set -e` aborted — which had *also* been silently starving
    release-paths / verify-release / prerelease-soak of their per-release

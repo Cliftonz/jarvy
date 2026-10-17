@@ -16,12 +16,14 @@ on:
     - cron: '0 0 * * 0'
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   update-contributors:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

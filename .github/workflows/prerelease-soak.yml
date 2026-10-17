@@ -52,7 +52,7 @@ on:
 
 permissions:
   contents: read
-  issues: write
+  issues: read
 
 concurrency:
   group: prerelease-soak
@@ -820,14 +820,11 @@ jobs:
       needs.path6-breaking-config.result != 'failure' &&
       needs.path7-migration-replay.result != 'failure'
     runs-on: ubuntu-latest
-    # Workflow-level perms are `contents: read, issues: write`. This
-    # job additionally needs `contents: write` for `gh release edit`
-    # (appending the "24h soak: PASSED" footer to the release body).
-    # Scoped per-job so the rest of the workflow keeps the minimum
-    # surface area.
+    # issues: write for soak issue/label upkeep; contents: write for gh release edit; actions: read for run lookups
     permissions:
       contents: write
       issues: write
+      actions: read
     env:
       TAG: ${{ needs.gate.outputs.tag }}
       GH_TOKEN: ${{ github.token }}

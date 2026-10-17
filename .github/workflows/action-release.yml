@@ -16,7 +16,7 @@ on:
       - 'action-v*.*.*'   # immutable release tags only; never fires on action-vX
 
 permissions:
-  contents: write          # push the moving major tag + create the release
+  contents: read
 
 concurrency:
   group: action-release-${{ github.ref }}
@@ -25,6 +25,8 @@ concurrency:
 jobs:
   move-major-tag:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout at the pushed tag
         uses: actions/checkout@v7
