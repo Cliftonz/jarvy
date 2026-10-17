@@ -91,11 +91,11 @@ jobs:
       - name: Compare benchmarks
         id: compare
         run: |
-          echo "## Benchmark Comparison" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Benchmark Comparison" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           if [ -d "base/target/criterion" ] && [ -d "pr/target/criterion" ]; then
-            critcmp base/target/criterion pr/target/criterion >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No baseline to compare against" >> $GITHUB_STEP_SUMMARY
+            critcmp base/target/criterion pr/target/criterion >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No baseline to compare against" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Baseline benchmarks not available for comparison" >> $GITHUB_STEP_SUMMARY
+            echo "Baseline benchmarks not available for comparison" >> "$GITHUB_STEP_SUMMARY"
           fi
         continue-on-error: true

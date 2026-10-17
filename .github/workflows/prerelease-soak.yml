@@ -129,9 +129,11 @@ jobs:
           IS_PRERELEASE=$(echo "$RELEASE_JSON" | jq -r '.prerelease')
           PUBLISHED_AT=$(echo "$RELEASE_JSON" | jq -r '.published_at // .created_at')
 
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "published_at=$PUBLISHED_AT" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$TAG"
+            echo "is_prerelease=$IS_PRERELEASE"
+            echo "published_at=$PUBLISHED_AT"
+          } >> "$GITHUB_OUTPUT"
 
           if [ "$IS_PRERELEASE" != "true" ]; then
             echo "supersession_reason=not_a_prerelease" >> "$GITHUB_OUTPUT"
@@ -219,7 +221,7 @@ jobs:
           elif [ "$rc_min" -gt "$st_min" ]; then
             BUMP=minor
           else
-            BUMP=patch
+            BUMP="patch"
           fi
           echo "rc=$rc_ver last_stable=$st_ver bump_kind=$BUMP"
           echo "bump_kind=$BUMP" >> "$GITHUB_OUTPUT"
@@ -330,7 +332,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET_PATTERN: ${{ matrix.asset_pattern }}
-          FALLBACK_PATTERN: ${{ matrix.fallback_asset_pattern || '' }}
         run: |
           set -euo pipefail
           mkdir -p _soak && cd _soak
@@ -338,20 +339,14 @@ jobs:
               --repo "${{ github.repository }}" \
               --pattern "$ASSET_PATTERN" 2>/dev/null; then
             echo "Downloaded primary asset ($ASSET_PATTERN)"
-            echo "used_fallback=false" >> "$GITHUB_OUTPUT"
-          elif [ -n "$FALLBACK_PATTERN" ] && gh release download "$TAG" \
-              --repo "${{ github.repository }}" \
-              --pattern "$FALLBACK_PATTERN" 2>/dev/null; then
-            echo "::warning::Primary asset $ASSET_PATTERN missing; used fallback $FALLBACK_PATTERN"
-            echo "used_fallback=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::Neither $ASSET_PATTERN nor $FALLBACK_PATTERN present in $TAG"
+            echo "::error::$ASSET_PATTERN not present in $TAG"
             exit 1
           fi
           ls -la
 
       - name: Extract binary (tar)
-        if: matrix.archive_kind == 'tar' && steps.download.outputs.used_fallback == 'false'
+        if: matrix.archive_kind == 'tar'
         shell: bash
         run: |
           set -euo pipefail
@@ -364,7 +359,7 @@ jobs:
           ./jarvy --version
 
       - name: Extract binary (zip)
-        if: matrix.archive_kind == 'zip' && steps.download.outputs.used_fallback == 'false'
+        if: matrix.archive_kind == 'zip'
         shell: pwsh
         run: |
           Set-Location _soak
@@ -373,20 +368,6 @@ jobs:
           $bin = Get-ChildItem -Recurse -Filter 'jarvy.exe' | Select-Object -First 1
           Move-Item $bin.FullName .\jarvy.exe -Force
           .\jarvy.exe --version
-
-      - name: Extract binary (macOS dmg fallback)
-        if: matrix.archive_kind == 'tar' && steps.download.outputs.used_fallback == 'true' && runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd _soak
-          DMG=$(ls jarvy_*_aarch64.dmg)
-          MOUNT=$(hdiutil attach -nobrowse -readonly -mountrandom /tmp "$DMG" | tail -1 | awk '{print $3}')
-          # Copy binary out; unmount immediately so we don't leak the mount.
-          cp "$MOUNT"/jarvy ./jarvy
-          hdiutil detach "$MOUNT" -quiet
-          chmod +x jarvy
-          ./jarvy --version
 
       - name: Smoke — version reports tag
         shell: bash
