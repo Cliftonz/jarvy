@@ -57,7 +57,7 @@ jobs:
         run: npx --no-install @vscode/vsce package --out jarvy-vscode.vsix
 
       - name: Upload .vsix for inspection
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: jarvy-vscode-vsix-ci
           path: editors/vscode/jarvy-vscode.vsix
