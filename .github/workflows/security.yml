@@ -202,10 +202,12 @@ jobs:
       - name: Run cargo-geiger
         run: |
           cargo geiger --all-features --all-targets 2>&1 | tee geiger-report.txt || true
-          echo "## Unsafe Code Report" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat geiger-report.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Unsafe Code Report"
+            echo '```'
+            cat geiger-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload geiger report
         uses: actions/upload-artifact@v7.0.2
@@ -231,10 +233,10 @@ jobs:
 
       - name: Check outdated dependencies
         run: |
-          echo "## Outdated Dependencies" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cargo outdated --depth 1 >> $GITHUB_STEP_SUMMARY 2>&1 || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "## Outdated Dependencies" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cargo outdated --depth 1 >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
   # Summary job - ensures all required checks pass
   security-summary:
@@ -245,38 +247,38 @@ jobs:
     steps:
       - name: Check security status
         run: |
-          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Security Scan Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
           # Check each job status
           if [ "${{ needs.audit.result }}" = "success" ]; then
-            echo "- :white_check_mark: cargo-audit: Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- :white_check_mark: cargo-audit: Passed" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "- :x: cargo-audit: ${{ needs.audit.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- :x: cargo-audit: ${{ needs.audit.result }}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ "${{ needs.deny.result }}" = "success" ]; then
-            echo "- :white_check_mark: cargo-deny: Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- :white_check_mark: cargo-deny: Passed" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "- :x: cargo-deny: ${{ needs.deny.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- :x: cargo-deny: ${{ needs.deny.result }}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ "${{ needs.secrets.result }}" = "success" ]; then
-            echo "- :white_check_mark: Gitleaks: Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- :white_check_mark: Gitleaks: Passed" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "- :x: Gitleaks: ${{ needs.secrets.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- :x: Gitleaks: ${{ needs.secrets.result }}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ "${{ needs.semgrep.result }}" = "success" ]; then
-            echo "- :white_check_mark: Semgrep: Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- :white_check_mark: Semgrep: Passed" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "- :x: Semgrep: ${{ needs.semgrep.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- :x: Semgrep: ${{ needs.semgrep.result }}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ "${{ needs.codeql.result }}" = "success" ]; then
-            echo "- :white_check_mark: CodeQL: Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- :white_check_mark: CodeQL: Passed" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "- :x: CodeQL: ${{ needs.codeql.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- :x: CodeQL: ${{ needs.codeql.result }}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # Fail if any required check failed
@@ -284,9 +286,9 @@ jobs:
              [ "${{ needs.deny.result }}" != "success" ] || \
              [ "${{ needs.secrets.result }}" != "success" ]; then
             echo ""
-            echo ":warning: **Security checks failed. Please review and fix issues before merging.**" >> $GITHUB_STEP_SUMMARY
+            echo ":warning: **Security checks failed. Please review and fix issues before merging.**" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
           echo ""
-          echo ":shield: **All required security checks passed!**" >> $GITHUB_STEP_SUMMARY
+          echo ":shield: **All required security checks passed!**" >> "$GITHUB_STEP_SUMMARY"
