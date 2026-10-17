@@ -123,9 +123,11 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "skip_reason=no-n-minus-1" >> "$GITHUB_OUTPUT"
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "target=$TARGET" >> "$GITHUB_OUTPUT"
-            echo "n_minus_1=$NM1" >> "$GITHUB_OUTPUT"
+            {
+              echo "skip=false"
+              echo "target=$TARGET"
+              echo "n_minus_1=$NM1"
+            } >> "$GITHUB_OUTPUT"
           fi
           echo "Target: $TARGET / N-1: $NM1"
 
@@ -413,7 +415,7 @@ jobs:
             --limit 100 \
             --json tagName,isPrerelease \
             --jq '.[] | select(.isPrerelease == false) | .tagName' \
-            | while read tag; do
+            | while read -r tag; do
                 core="${tag#v}"; core="${core%%-*}"
                 ceil_core="${CEIL#v}"
                 if [ "$(printf '%s\n%s\n' "$core" "$ceil_core" | sort -V | head -1)" = "$core" ] \
@@ -426,9 +428,11 @@ jobs:
             echo "::notice::No N-2 stable found for target $TARGET (ceiling $CEIL); Path 3 not applicable yet"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "target=$TARGET" >> "$GITHUB_OUTPUT"
-            echo "n_minus_2=$NM2" >> "$GITHUB_OUTPUT"
+            {
+              echo "skip=false"
+              echo "target=$TARGET"
+              echo "n_minus_2=$NM2"
+            } >> "$GITHUB_OUTPUT"
             echo "Target: $TARGET / N-2: $NM2"
           fi
 
