@@ -18,9 +18,7 @@ on:
         required: false
 
 permissions:
-  contents: write    # for creating the GitHub release
-  packages: write    # for pushing to GHCR
-  id-token: write    # for cosign keyless OIDC signing
+  contents: read
 
 env:
   CHART_DIR: dist/helm/jarvy-telemetry-forwarder
@@ -34,6 +32,10 @@ jobs:
   release:
     name: Release Helm chart
     runs-on: ubuntu-latest
+    permissions:
+      contents: write    # for creating the GitHub release
+      packages: write    # for pushing to GHCR
+      id-token: write    # for cosign keyless OIDC signing
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
