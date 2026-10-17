@@ -23,14 +23,14 @@ jobs:
     name: Link check (lychee)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Restore lychee cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .lycheecache
           key: lychee-${{ runner.os }}
       - name: Lychee
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: >-
             --config .lychee.toml
@@ -43,9 +43,9 @@ jobs:
     name: Prose lint (vale)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Vale
-        uses: errata-ai/vale-action@v3
+        uses: errata-ai/vale-action@518a9136acc6e6668ce7c00d367051e0941e87ff # v3.0.0
         # Vale style loading (`vale sync` for write-good etc.) regresses
         # periodically when the action's vendored toolchain drifts —
         # produces `E100 [loadStyles] Runtime error` with exit code 2
@@ -68,8 +68,8 @@ jobs:
     name: Spell check (codespell)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: codespell-project/actions-codespell@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: codespell-project/actions-codespell@8f01853be192eb0f849a5c7d721450e7a467c579 # v2.2
         with:
           check_filenames: true
           check_hidden: true
@@ -80,8 +80,8 @@ jobs:
     name: Build (mkdocs --strict)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: pip install "mkdocs-material[imaging]" cairosvg Pillow mike

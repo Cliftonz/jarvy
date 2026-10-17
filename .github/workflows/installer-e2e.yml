@@ -82,7 +82,7 @@ jobs:
       # install.sh's gh_api_fetch sends this as a Bearer token; macOS hosted runners share egress IPs and hit the unauthenticated /releases/latest rate limit.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install via install.sh (pinned version)
         run: |
@@ -147,7 +147,7 @@ jobs:
       VERSION: ${{ needs.setup.outputs.version }}
       CORE: ${{ needs.setup.outputs.core }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install via install.ps1 (pinned version)
         shell: pwsh
