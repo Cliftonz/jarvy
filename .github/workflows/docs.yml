@@ -79,7 +79,9 @@ jobs:
              docs/schema/jarvy-telemetry-forwarder.values.schema.json
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # v1
+        with:
+          toolchain: stable
 
       - name: Build jarvy binary (for auto-gen pages)
         run: cargo build --bin jarvy --release

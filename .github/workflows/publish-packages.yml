@@ -46,7 +46,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # v1
+        with:
+          toolchain: stable
 
       # Exchange the GitHub OIDC token for a 30-minute crates.io API
       # token (auto-revoked when the job ends). Both `jarvy` and
