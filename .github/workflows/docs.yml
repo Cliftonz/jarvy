@@ -119,8 +119,10 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## Deployed docs" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **URL:** ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Ref:** \`${{ github.ref }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Commit:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Deployed docs"
+            echo ""
+            echo "- **URL:** ${{ steps.deployment.outputs.page_url }}"
+            echo "- **Ref:** \`${{ github.ref }}\`"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

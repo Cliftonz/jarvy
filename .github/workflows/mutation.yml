@@ -55,44 +55,46 @@ jobs:
           else
             # User-specified modules
             IFS=',' read -ra MODULE_ARRAY <<< "$MODULES"
-            ARGS=""
+            ARGS=()
             for module in "${MODULE_ARRAY[@]}"; do
-              ARGS="$ARGS -f src/${module}.rs"
+              ARGS+=(-f "src/${module}.rs")
             done
             cargo mutants --timeout 300 --jobs 4 \
-              --shard ${{ matrix.shard }}/4 $ARGS -- --lib
+              --shard ${{ matrix.shard }}/4 "${ARGS[@]}" -- --lib
           fi
         continue-on-error: true
 
       - name: Generate mutation report
         run: |
-          echo "## Mutation Testing Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Mutation Testing Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
           if [ -f mutants.out/caught.txt ]; then
             CAUGHT=$(wc -l < mutants.out/caught.txt)
-            echo "### Caught Mutations: $CAUGHT" >> $GITHUB_STEP_SUMMARY
+            echo "### Caught Mutations: $CAUGHT" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ -f mutants.out/missed.txt ]; then
             MISSED=$(wc -l < mutants.out/missed.txt)
-            echo "### Missed Mutations: $MISSED" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Missed Mutations: $MISSED" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
 
             if [ "$MISSED" -gt 0 ]; then
-              echo "<details><summary>Missed mutations (tests did not catch)</summary>" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 mutants.out/missed.txt >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              {
+                echo "<details><summary>Missed mutations (tests did not catch)</summary>"
+                echo ""
+                echo '```'
+                head -50 mutants.out/missed.txt
+                echo '```'
+                echo "</details>"
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
 
           if [ -f mutants.out/timeout.txt ]; then
             TIMEOUT=$(wc -l < mutants.out/timeout.txt)
             if [ "$TIMEOUT" -gt 0 ]; then
-              echo "### Timeouts: $TIMEOUT" >> $GITHUB_STEP_SUMMARY
+              echo "### Timeouts: $TIMEOUT" >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
 
@@ -103,12 +105,12 @@ jobs:
             TOTAL=$((CAUGHT + MISSED))
             if [ "$TOTAL" -gt 0 ]; then
               SCORE=$(echo "scale=1; $CAUGHT * 100 / $TOTAL" | bc)
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Mutation Score: ${SCORE}%" >> $GITHUB_STEP_SUMMARY
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "### Mutation Score: ${SCORE}%" >> "$GITHUB_STEP_SUMMARY"
 
               if (( $(echo "$SCORE < 60" | bc -l) )); then
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "⚠️ Mutation score is below 60% target" >> $GITHUB_STEP_SUMMARY
+                echo "" >> "$GITHUB_STEP_SUMMARY"
+                echo "⚠️ Mutation score is below 60% target" >> "$GITHUB_STEP_SUMMARY"
               fi
             fi
           fi

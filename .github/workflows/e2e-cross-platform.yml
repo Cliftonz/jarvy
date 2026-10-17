@@ -110,9 +110,9 @@ jobs:
           # Windows accepts mixed-slash paths uniformly.
           WORKSPACE="${GITHUB_WORKSPACE//\\//}"
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            echo "bin=$WORKSPACE/target/release/jarvy.exe" >> $GITHUB_OUTPUT
+            echo "bin=$WORKSPACE/target/release/jarvy.exe" >> "$GITHUB_OUTPUT"
           else
-            echo "bin=$WORKSPACE/target/release/jarvy" >> $GITHUB_OUTPUT
+            echo "bin=$WORKSPACE/target/release/jarvy" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify Jarvy runs
@@ -290,10 +290,12 @@ jobs:
       - name: Generate Summary Report
         shell: bash
         run: |
-          echo "## E2E Cross-Platform Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | Status | Duration | Tools Passed | Tools Failed |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|----------|--------------|--------------|" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## E2E Cross-Platform Test Results"
+            echo ""
+            echo "| Platform | Status | Duration | Tools Passed | Tools Failed |"
+            echo "|----------|--------|----------|--------------|--------------|"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           for dir in all-results/e2e-results-*/; do
             if [ -d "$dir" ]; then
@@ -311,19 +313,21 @@ jobs:
                   status="failed"
                 fi
 
-                echo "| $platform | $status | ${duration}s | $passed | $failed |" >> $GITHUB_STEP_SUMMARY
+                echo "| $platform | $status | ${duration}s | $passed | $failed |" >> "$GITHUB_STEP_SUMMARY"
               else
-                echo "| $platform | no results | - | - | - |" >> $GITHUB_STEP_SUMMARY
+                echo "| $platform | no results | - | - | - |" >> "$GITHUB_STEP_SUMMARY"
               fi
             fi
           done
 
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Download test results from the workflow artifacts for detailed logs." >> $GITHUB_STEP_SUMMARY
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Artifacts"
+            echo ""
+            echo "Download test results from the workflow artifacts for detailed logs."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check for Failures
         shell: bash
