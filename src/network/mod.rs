@@ -73,24 +73,9 @@ pub fn redact_home(path: &str) -> String {
 /// that log on the no-credentials path do not pay an allocation.
 #[allow(dead_code)] // Public API for safe proxy URL logging
 pub fn redact_credentials(url: &str) -> std::borrow::Cow<'_, str> {
-    let Some(proto_end) = url.find("://") else {
+    let Some((proto_part, creds_part, after_at)) = split_userinfo(url) else {
         return std::borrow::Cow::Borrowed(url);
     };
-    // Only consider an `@` that occurs in the authority section (before the
-    // first `/`, `?`, or `#` after the scheme). This prevents redacting `@`
-    // characters that appear in paths or query strings.
-    let after_scheme = &url[proto_end + 3..];
-    let authority_end = after_scheme
-        .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
-    let authority = &after_scheme[..authority_end];
-    let Some(at_offset_in_authority) = authority.find('@') else {
-        return std::borrow::Cow::Borrowed(url);
-    };
-
-    let proto_part = &url[..proto_end + 3];
-    let creds_part = &authority[..at_offset_in_authority];
-    let after_at = &url[proto_end + 3 + at_offset_in_authority..];
 
     // No `:` => userinfo-only (e.g. token-as-username). Redact the whole creds.
     let redacted = match creds_part.find(':') {
@@ -105,6 +90,34 @@ pub fn redact_credentials(url: &str) -> std::borrow::Cow<'_, str> {
         None => format!("{}***{}", proto_part, after_at),
     };
     std::borrow::Cow::Owned(redacted)
+}
+
+/// Like [`redact_credentials`], but masks the whole userinfo (username
+/// included) for telemetry sinks: `scheme://user:pass@host` → `scheme://***@host`.
+pub fn redact_userinfo(url: &str) -> std::borrow::Cow<'_, str> {
+    match split_userinfo(url) {
+        Some((proto_part, _, after_at)) => {
+            std::borrow::Cow::Owned(format!("{}***{}", proto_part, after_at))
+        }
+        None => std::borrow::Cow::Borrowed(url),
+    }
+}
+
+/// Splits `url` into `(scheme://, userinfo, @rest)` when the authority
+/// carries a userinfo segment. Only an `@` before the first `/`, `?`, or `#`
+/// after the scheme counts, so `@` in paths or queries is never mistaken for it.
+fn split_userinfo(url: &str) -> Option<(&str, &str, &str)> {
+    let proto_end = url.find("://")? + 3;
+    let after_scheme = &url[proto_end..];
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let at = after_scheme[..authority_end].find('@')?;
+    Some((
+        &url[..proto_end],
+        &after_scheme[..at],
+        &url[proto_end + at..],
+    ))
 }
 
 #[cfg(test)]
@@ -161,6 +174,20 @@ mod tests {
         let url = "https://github.com/owner/repo/blob/main/file.txt?ref=abc@v1";
         let redacted = redact_credentials(url);
         assert_eq!(&*redacted, url);
+    }
+
+    #[test]
+    fn redact_userinfo_masks_username_and_password() {
+        let redacted = redact_userinfo("https://alice:secret@example.com/r");
+        assert!(!redacted.contains("alice"));
+        assert!(!redacted.contains("secret"));
+        assert!(redacted.contains("example.com/r"));
+    }
+
+    #[test]
+    fn redact_userinfo_without_userinfo_is_unchanged() {
+        let url = "https://example.com/r";
+        assert_eq!(&*redact_userinfo(url), url);
     }
 
     #[test]

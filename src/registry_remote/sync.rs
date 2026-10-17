@@ -147,10 +147,11 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     }
 
     let redacted_url = crate::network::redact_credentials(&cfg.url).into_owned();
+    let telemetry_url = crate::network::redact_userinfo(&cfg.url).into_owned();
     emit(|| {
         tracing::info!(
             event = "registry.sync.started",
-            registry_url = %redacted_url,
+            registry_url = %telemetry_url,
             require_signature = cfg.require_signature,
         );
     });
@@ -159,7 +160,7 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     //       manifest (invalid UTF-8, bad JSON, bad schema) must not
     //       leave a `manifest.json` on disk that a subsequent
     //       `jarvy registry status` would happily print.
-    let manifest_bytes = fetch_with_event(&cfg.manifest_url(), MAX_MANIFEST_BYTES, &redacted_url)?;
+    let manifest_bytes = fetch_with_event(&cfg.manifest_url(), MAX_MANIFEST_BYTES, &telemetry_url)?;
     let manifest_str =
         std::str::from_utf8(&manifest_bytes).map_err(|_| ManifestError::InvalidEncoding)?;
     let manifest = Manifest::parse(manifest_str).inspect_err(|e| {
@@ -188,8 +189,8 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
 
     // -- 2. Verify signature (or accept unsigned if explicitly allowed).
     let signature_verified = if cfg.require_signature {
-        let sig_bytes = fetch_with_event(&cfg.signature_url(), MAX_SIG_BYTES, &redacted_url)?;
-        let pem_bytes = fetch_with_event(&cfg.certificate_url(), MAX_SIG_BYTES, &redacted_url)?;
+        let sig_bytes = fetch_with_event(&cfg.signature_url(), MAX_SIG_BYTES, &telemetry_url)?;
+        let pem_bytes = fetch_with_event(&cfg.certificate_url(), MAX_SIG_BYTES, &telemetry_url)?;
         cache::write_atomic(&sig_unverified, &sig_bytes)?;
         cache::write_atomic(&pem_unverified, &pem_bytes)?;
 
@@ -211,7 +212,7 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
             emit(|| {
                 tracing::error!(
                     event = "registry.sync.signature_refused",
-                    registry_url = %redacted_url,
+                    registry_url = %telemetry_url,
                     identity_regexp = %cfg.signature_identity_regexp,
                     oidc_issuer = %cfg.signature_oidc_issuer,
                     reason = %reason,
@@ -236,7 +237,7 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
         emit(|| {
             tracing::warn!(
                 event = "registry.signature_disabled",
-                registry_url = %redacted_url,
+                registry_url = %telemetry_url,
             );
         });
         // Promote the manifest to the canonical path even without verify
@@ -285,7 +286,7 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     let max_parallel = max_parallel.max(1).min(total.max(1)).min(64);
     let cfg_ref = cfg;
     let manifest_ref = &manifest;
-    let redacted_ref = redacted_url.as_str();
+    let telemetry_ref = telemetry_url.as_str();
     let first_error_flag_ref = &first_error_flag;
     let first_error_slot_ref = &first_error_slot;
     let next_idx_ref = &next_idx;
@@ -320,7 +321,7 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
                     }
                     let entry = &manifest_ref.tools[idx];
                     let url = cfg_ref.tool_url(&entry.path);
-                    let url_for_log = crate::network::redact_credentials(&url).into_owned();
+                    let url_for_log = crate::network::redact_userinfo(&url).into_owned();
                     emit(|| {
                         tracing::debug!(
                             event = "registry.sync.tool.start",
@@ -329,7 +330,7 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
                             url = %url_for_log,
                         );
                     });
-                    let body = match fetch_with_event(&url, MAX_TOOL_BYTES, redacted_ref) {
+                    let body = match fetch_with_event(&url, MAX_TOOL_BYTES, telemetry_ref) {
                         Ok(b) => b,
                         Err(e) => {
                             emit(|| {
@@ -512,7 +513,7 @@ pub fn run_sync_with_config(cfg: &RegistryConfig) -> Result<SyncReport, SyncErro
     emit(|| {
         tracing::info!(
             event = "registry.sync.completed",
-            registry_url = %redacted_url,
+            registry_url = %telemetry_url,
             tools_synced = manifest.tools.len(),
             tools_removed = removed_count,
             signature_verified = signature_verified,
@@ -537,7 +538,7 @@ fn fetch_with_event(
 ) -> Result<Vec<u8>, SyncError> {
     // Derived from the configured registry URL, so it inherits any
     // embedded `user:pass@` — redact it the same way `registry_url` is.
-    let safe_url = crate::network::redact_credentials(url);
+    let safe_url = crate::network::redact_userinfo(url);
     emit(|| {
         tracing::debug!(
             event = "registry.fetch.start",

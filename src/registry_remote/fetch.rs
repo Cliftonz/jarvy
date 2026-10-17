@@ -52,7 +52,7 @@ pub fn fetch_bounded(url: &str, max_bytes: u64) -> Result<Vec<u8>, FetchError> {
         insecure_loopback_env: "JARVY_REGISTRY_ALLOW_INSECURE_FETCH",
     };
     bounded_fetch(url, max_bytes, cfg).map_err(|kind| {
-        let redacted = crate::network::redact_credentials(url).into_owned();
+        let redacted = crate::network::redact_userinfo(url).into_owned();
         match kind {
             BoundedFetchErrorKind::NonHttps => FetchError::NonHttps(redacted),
             BoundedFetchErrorKind::Network(message) => FetchError::Network {
