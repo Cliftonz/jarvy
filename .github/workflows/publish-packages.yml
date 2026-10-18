@@ -393,7 +393,7 @@ jobs:
         shell: bash
         run: |
           if [ -z "${{ secrets.WINGET_TOKEN }}" ]; then
-            echo "::warning::WINGET_TOKEN not configured; skipping winget submission. Generate a fine-grained PAT with public_repo scope on your account, add as WINGET_TOKEN secret to enable winget distribution."
+            echo "::warning::WINGET_TOKEN not configured; skipping winget submission. Generate a classic PAT with public_repo scope on your account, add as WINGET_TOKEN secret to enable winget distribution."
             echo "have_secret=false" >> "$GITHUB_OUTPUT"
           else
             echo "have_secret=true" >> "$GITHUB_OUTPUT"
