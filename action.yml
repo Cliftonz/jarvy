@@ -90,6 +90,7 @@ runs:
         JARVY_CHANNEL: ${{ inputs.channel }}
         JARVY_NO_MODIFY_PATH: '1'
         JARVY_TELEMETRY: '0'
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         # Install into a stable, cache-aligned directory. The installer's
@@ -105,6 +106,7 @@ runs:
         JARVY_VERSION: ${{ inputs.version }}
         JARVY_CHANNEL: ${{ inputs.channel }}
         JARVY_TELEMETRY: '0'
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         $ErrorActionPreference = 'Stop'
         $env:JARVY_INSTALL_DIR = Join-Path $HOME '.jarvy\bin'

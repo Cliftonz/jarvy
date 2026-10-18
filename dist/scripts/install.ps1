@@ -56,15 +56,17 @@ function Test-ChannelMatch {
 }
 
 function Get-LatestVersion {
+    $headers = @{}
+    if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
     try {
         if ($JarvyChannel -eq 'stable') {
-            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$JarvyRepo/releases/latest" -Method Get
+            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$JarvyRepo/releases/latest" -Method Get -Headers $headers
             return $response.tag_name -replace '^v', ''
         }
 
         # beta or nightly: walk recent releases (newest first) and pick the
         # first one that matches the channel.
-        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$JarvyRepo/releases?per_page=30" -Method Get
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$JarvyRepo/releases?per_page=30" -Method Get -Headers $headers
         foreach ($release in $releases) {
             if ($release.draft) { continue }
             if (Test-ChannelMatch -Tag $release.tag_name) {
