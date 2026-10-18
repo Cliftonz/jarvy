@@ -51,21 +51,13 @@ dist/
 
 The following secrets must be configured in the repository settings under **Settings > Secrets and variables > Actions**:
 
-### 1. crates.io Token (`CRATES_IO_TOKEN`)
+### 1. crates.io Trusted Publishing (no secret)
 
 **Purpose:** Publish Jarvy to crates.io for `cargo install jarvy`
 
-**How to obtain:**
-1. Go to https://crates.io/
-2. Log in with your GitHub account
-3. Click on your avatar → Account Settings
-4. Scroll to "API Tokens"
-5. Click "New Token"
-6. Name: `jarvy-release`
-7. Scopes: Select `publish-new` and `publish-update`
-8. Copy the token immediately (it won't be shown again)
+crates.io publishing uses Trusted Publishing (OIDC). No token secret is stored in this repository. A Trusted Publisher is configured on crates.io for both `jarvy` and `jarvy-templates` with owner `Cliftonz`, repository `jarvy`, and workflow `publish-packages.yml`. The `publish-crates-io` job exchanges its GitHub OIDC identity for a short-lived publish token on each run.
 
-**Secret name:** `CRATES_IO_TOKEN`
+To change the configuration, open each crate's Settings page on crates.io and edit its Trusted Publishing entry.
 
 ---
 
@@ -609,7 +601,7 @@ cargo release 1.2.3 --execute
 ## Troubleshooting
 
 ### crates.io publish failed
-- Check if CRATES_IO_TOKEN is valid
+- Check that the Trusted Publisher config on crates.io for both `jarvy` and `jarvy-templates` matches the repo (`Cliftonz/jarvy`) and workflow (`publish-packages.yml`)
 - Ensure all dependencies are published
 - Check if version already exists
 
