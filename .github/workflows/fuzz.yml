@@ -62,11 +62,14 @@ jobs:
         continue-on-error: true
 
       - name: Run fuzz target (extended)
+        env:
+          FUZZ_DURATION: ${{ github.event.inputs.fuzz_duration || '28800' }}
+          FUZZ_TARGET: ${{ matrix.target }}
         run: |
           cd fuzz
-          DURATION=${{ github.event.inputs.fuzz_duration || '28800' }}
+          DURATION="$FUZZ_DURATION"
           echo "Running fuzz target for ${DURATION} seconds..."
-          cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${DURATION}
+          cargo +nightly fuzz run "$FUZZ_TARGET" -- "-max_total_time=${DURATION}"
         continue-on-error: true
 
       - name: Upload corpus

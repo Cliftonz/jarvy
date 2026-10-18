@@ -120,11 +120,13 @@ jobs:
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
       - name: Summary
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
           {
             echo "## Deployed docs"
             echo ""
-            echo "- **URL:** ${{ steps.deployment.outputs.page_url }}"
-            echo "- **Ref:** \`${{ github.ref }}\`"
+            echo "- **URL:** $PAGE_URL"
+            echo "- **Ref:** \`$GITHUB_REF\`"
             echo "- **Commit:** \`${{ github.sha }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

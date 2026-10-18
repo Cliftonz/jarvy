@@ -874,11 +874,14 @@ jobs:
 
       - name: Upgrade leg — only if a prior tag exists
         if: steps.prev.outputs.previous_tag != ''
+        env:
+          PREVIOUS_CHART_TAG: ${{ steps.prev.outputs.previous_tag }}
+          CURRENT_CHART_VERSION: ${{ steps.prev.outputs.current_version }}
         run: |
           set -euo pipefail
-          PREV_TAG="${{ steps.prev.outputs.previous_tag }}"
+          PREV_TAG="$PREVIOUS_CHART_TAG"
           PREV_VERSION="${PREV_TAG#helm-v}"
-          echo "Testing upgrade from ${PREV_VERSION} → ${{ steps.prev.outputs.current_version }}"
+          echo "Testing upgrade from ${PREV_VERSION} → ${CURRENT_CHART_VERSION}"
           # Check out the prior chart version
           git stash
           git checkout "${PREV_TAG}" -- "${CHART_DIR}" || { echo "no prior chart in tag ${PREV_TAG}; skipping"; git stash pop; exit 0; }

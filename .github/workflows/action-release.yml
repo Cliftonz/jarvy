@@ -61,14 +61,16 @@ jobs:
       - name: Create/update the immutable release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.ver.outputs.full }}
+          MOVING_TAG: ${{ steps.ver.outputs.moving }}
         run: |
           set -euo pipefail
-          tag="${{ steps.ver.outputs.full }}"
+          tag="$RELEASE_TAG"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists; leaving it as-is."
           else
             gh release create "$tag" \
               --title "GitHub Action $tag" \
-              --notes "Jarvy GitHub Action \`$tag\`. Pin \`${{ steps.ver.outputs.moving }}\` for the moving major, or this tag for an exact version. See docs/github-action.md." \
+              --notes "Jarvy GitHub Action \`$tag\`. Pin \`$MOVING_TAG\` for the moving major, or this tag for an exact version. See docs/github-action.md." \
               --verify-tag
           fi

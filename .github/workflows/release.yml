@@ -389,7 +389,7 @@ jobs:
         run: |
           set -euo pipefail
           TRIPLE="${{ matrix.rust_target }}"
-          VER="${{ env.VERSION }}"
+          VER="$VERSION"
           VER_CLEAN="${VER#v}"
           OUT="target/${TRIPLE}/release/jarvy-v${VER_CLEAN}-${TRIPLE}.tar.gz"
           tar -C "target/${TRIPLE}/release" -czf "${OUT}" jarvy
@@ -411,7 +411,7 @@ jobs:
         run: |
           set -euo pipefail
           TRIPLE="aarch64-apple-darwin"
-          VER="${{ env.VERSION }}"
+          VER="$VERSION"
           VER_CLEAN="${VER#v}"
           OUT="target/release/jarvy-v${VER_CLEAN}-${TRIPLE}.tar.gz"
           tar -C target/release -czf "${OUT}" jarvy
@@ -424,7 +424,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $Triple = 'x86_64-pc-windows-msvc'
-          $Ver = '${{ env.VERSION }}'
+          $Ver = $env:VERSION
           $VerClean = $Ver -replace '^v',''
           $Out = "target\release\jarvy-v$VerClean-$Triple.zip"
           # Use built-in Compress-Archive to sidestep third-party zip
@@ -546,12 +546,12 @@ jobs:
       - name: Generate SPDX SBOM
         run: |
           cargo sbom --output-format spdx_json_2_3 > sbom.spdx.json || \
-          cargo metadata --format-version 1 | jq '{
+          cargo metadata --format-version 1 | jq --arg version "$VERSION" '{
             spdxVersion: "SPDX-2.3",
             dataLicense: "CC0-1.0",
             SPDXID: "SPDXRef-DOCUMENT",
             name: "jarvy-sbom",
-            documentNamespace: "https://github.com/Cliftonz/jarvy/releases/tag/${{ env.VERSION }}",
+            documentNamespace: ("https://github.com/Cliftonz/jarvy/releases/tag/" + $version),
             packages: [.packages[] | {
               SPDXID: ("SPDXRef-Package-" + .name),
               name: .name,
@@ -581,7 +581,7 @@ jobs:
         # produces a non-empty file.
         run: |
           set -euo pipefail
-          cargo metadata --format-version 1 | jq '{
+          cargo metadata --format-version 1 | jq --arg version "$VERSION" '{
             bomFormat: "CycloneDX",
             specVersion: "1.4",
             version: 1,
@@ -590,7 +590,7 @@ jobs:
               component: {
                 type: "application",
                 name: "jarvy",
-                version: "${{ env.VERSION }}"
+                version: $version
               }
             },
             components: [.packages[] | {

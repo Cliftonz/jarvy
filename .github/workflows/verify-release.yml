@@ -100,15 +100,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JARVY_REPO: ${{ github.repository }}
+          VERIFY_TAG: ${{ steps.resolve.outputs.tag }}
         # Pass `|| true` only on scheduled runs (asset rot is informational,
         # not a release-blocker). Release / workflow_dispatch runs hard-fail.
         run: |
           set -euo pipefail
           if [ "${{ steps.resolve.outputs.soft_fail }}" = "true" ]; then
-            ./dist/scripts/verify-release-assets.sh "${{ steps.resolve.outputs.tag }}" \
-              || echo "::warning::Scheduled sweep found drift on ${{ steps.resolve.outputs.tag }} — investigate."
+            ./dist/scripts/verify-release-assets.sh "$VERIFY_TAG" \
+              || echo "::warning::Scheduled sweep found drift on $VERIFY_TAG — investigate."
           else
-            ./dist/scripts/verify-release-assets.sh "${{ steps.resolve.outputs.tag }}"
+            ./dist/scripts/verify-release-assets.sh "$VERIFY_TAG"
           fi
 
       - name: Annotate failure on soak issue

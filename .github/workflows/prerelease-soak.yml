@@ -274,16 +274,20 @@ jobs:
 
       - name: Summarize decision
         if: always()
+        env:
+          GATE_TAG: ${{ steps.decide.outputs.tag || 'none' }}
+          GATE_LAST_STABLE_TAG: ${{ steps.bump.outputs.last_stable_tag || 'none' }}
+          GATE_SUPERSESSION_REASON: ${{ steps.decide.outputs.supersession_reason }}
         run: |
           {
             echo "## Soak-gate decision"
             echo ""
-            echo "- Tag: \`${{ steps.decide.outputs.tag || 'none' }}\`"
+            echo "- Tag: \`$GATE_TAG\`"
             echo "- Should soak: \`${{ steps.decide.outputs.should_soak || 'false' }}\`"
             echo "- Bump kind: \`${{ steps.bump.outputs.bump_kind || 'unknown' }}\`"
-            echo "- Last stable: \`${{ steps.bump.outputs.last_stable_tag || 'none' }}\`"
-            [ -n "${{ steps.decide.outputs.supersession_reason }}" ] && \
-              echo "- Supersession reason: \`${{ steps.decide.outputs.supersession_reason }}\`"
+            echo "- Last stable: \`$GATE_LAST_STABLE_TAG\`"
+            [ -n "$GATE_SUPERSESSION_REASON" ] && \
+              echo "- Supersession reason: \`$GATE_SUPERSESSION_REASON\`"
             [ -n "${{ steps.decide.outputs.published_at }}" ] && \
               echo "- Published at: \`${{ steps.decide.outputs.published_at }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
