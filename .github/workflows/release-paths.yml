@@ -91,28 +91,31 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TARGET_TAG: ${{ inputs.target_tag }}
+          DISPATCH_N_MINUS_1_TAG: ${{ inputs.n_minus_1_tag }}
         run: |
           set -euo pipefail
-          case "${{ github.event_name }}" in
+          case "$GITHUB_EVENT_NAME" in
             release)
-              TARGET="${{ github.event.release.tag_name }}"
+              TARGET="$RELEASE_TAG"
               ;;
             workflow_dispatch)
-              TARGET="${{ inputs.target_tag }}"
+              TARGET="$DISPATCH_TARGET_TAG"
               ;;
             *)
-              echo "::error::Unexpected event ${{ github.event_name }}"
+              echo "::error::Unexpected event $GITHUB_EVENT_NAME"
               exit 1
               ;;
           esac
 
-          NM1="${{ inputs.n_minus_1_tag }}"
+          NM1="$DISPATCH_N_MINUS_1_TAG"
           if [ -z "$NM1" ]; then
             # Auto-resolve: latest stable release that isn't the target. We
             # walk up to 50 entries so a long string of rcs before a stable
             # doesn't hide the real N-1.
             NM1=$(gh release list \
-              --repo "${{ github.repository }}" \
+              --repo "$GITHUB_REPOSITORY" \
               --limit 50 \
               --json tagName,isPrerelease \
               --jq "[.[] | select(.isPrerelease == false) | select(.tagName != \"$TARGET\")] | .[0].tagName // empty")
@@ -371,11 +374,13 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TARGET_TAG: ${{ inputs.target_tag }}
         run: |
           set -euo pipefail
-          case "${{ github.event_name }}" in
-            release)        TARGET="${{ github.event.release.tag_name }}" ;;
-            workflow_dispatch) TARGET="${{ inputs.target_tag }}" ;;
+          case "$GITHUB_EVENT_NAME" in
+            release)        TARGET="$RELEASE_TAG" ;;
+            workflow_dispatch) TARGET="$DISPATCH_TARGET_TAG" ;;
             *)              echo "::error::Unexpected event"; exit 1 ;;
           esac
 
@@ -411,7 +416,7 @@ jobs:
           # `sort -V` is in coreutils on ubuntu/macOS-14; Windows runners are
           # only ever Path 3 candidates, and we run this resolver step under
           # bash on Git for Windows which also has sort -V.
-          NM2=$(gh release list --repo "${{ github.repository }}" \
+          NM2=$(gh release list --repo "$GITHUB_REPOSITORY" \
             --limit 100 \
             --json tagName,isPrerelease \
             --jq '.[] | select(.isPrerelease == false) | .tagName' \

@@ -45,22 +45,24 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          case "${{ github.event_name }}" in
+          case "$GITHUB_EVENT_NAME" in
             release)
-              TAG="${{ github.event.release.tag_name }}"
+              TAG="$RELEASE_TAG"
               SOFT_FAIL=false
               ;;
             workflow_dispatch)
-              TAG="${{ inputs.tag }}"
+              TAG="$DISPATCH_TAG"
               SOFT_FAIL=false
               ;;
             schedule)
               # Re-verify the most recent prerelease — that's the rc currently
               # in soak and most likely to surface rot. Skip if none exist.
               TAG=$(gh release list \
-                --repo "${{ github.repository }}" \
+                --repo "$GITHUB_REPOSITORY" \
                 --limit 20 \
                 --json tagName,isPrerelease \
                 --jq '[.[] | select(.isPrerelease)] | .[0].tagName // empty')

@@ -58,10 +58,12 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.version }}" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ -n "${DISPATCH_VERSION}" ]]; then
+            VERSION="${DISPATCH_VERSION}"
           elif [[ "$GITHUB_REF" == refs/tags/helm-v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/helm-v}"
           else
