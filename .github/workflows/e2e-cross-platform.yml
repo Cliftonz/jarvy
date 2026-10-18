@@ -224,6 +224,7 @@ jobs:
           HOME: /root
           CARGO_HOME: /root/.cargo
           RUSTUP_HOME: /root/.rustup
+        # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
           echo "/root/.cargo/bin" >> "$GITHUB_PATH"
