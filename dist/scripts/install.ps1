@@ -57,7 +57,8 @@ function Test-ChannelMatch {
 
 function Get-LatestVersion {
     $headers = @{}
-    if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+    $token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { $env:GH_TOKEN }
+    if ($token) { $headers['Authorization'] = "Bearer $token" }
     try {
         if ($JarvyChannel -eq 'stable') {
             $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$JarvyRepo/releases/latest" -Method Get -Headers $headers
