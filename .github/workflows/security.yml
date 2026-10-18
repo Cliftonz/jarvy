@@ -154,6 +154,7 @@ jobs:
           --config p/secrets
           --config p/command-injection
           --severity ERROR --error
+          --exclude semgrep.sarif
 
   # Job 5: CodeQL - Semantic Analysis
   codeql:
