@@ -63,13 +63,11 @@ jobs:
       - name: Generate lockfile
         run: cargo generate-lockfile
 
-      # Ignores mirror deny.toml's [advisories].ignore — keep both lists
-      # in sync (cargo-audit has no shared config with cargo-deny).
+      # No ignores, matching deny.toml's empty [advisories].ignore. Any
+      # future ignore must land in both places (cargo-audit has no shared
+      # config with cargo-deny).
       - name: Run cargo-audit
-        run: |
-          cargo audit --deny warnings \
-            --ignore RUSTSEC-2026-0194 \
-            --ignore RUSTSEC-2026-0195
+        run: cargo audit --deny warnings
 
   # Job 2: cargo-deny - Licenses, Advisories, Bans, Sources
   deny:
@@ -112,15 +110,11 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: false
 
   # Job 4: Semgrep - Static Analysis Security Testing (SAST)
-  # Advisory while the 152-finding backlog from the 6-month disablement
-  # is triaged (tracked in the security follow-up issue) — findings
-  # still upload to the Security tab via SARIF; the summary job never
-  # hard-required semgrep. Flip back to blocking once the backlog is
-  # burned down.
+  # Blocking on ERROR-severity findings only (#64). WARNING and INFO
+  # findings stay advisory and still reach the Security tab via SARIF.
   semgrep:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
-    continue-on-error: true
     if: github.event_name != 'schedule' || github.repository == 'Cliftonz/jarvy'
     permissions:
       contents: read
@@ -133,8 +127,10 @@ jobs:
 
       # `semgrep-action@v1` has no `generateSarif` input, so the old
       # setup never wrote semgrep.sarif and the upload step always
-      # failed. Run the CLI directly instead; `semgrep scan` exits 0
-      # on findings (advisory), non-zero only on scan errors.
+      # failed. Run the CLI directly instead. This pass exits 0 on
+      # findings and writes the full SARIF; `--severity` would also drop
+      # lower-severity findings from the SARIF, so the ERROR gate is a
+      # separate pass after the upload.
       - name: Run Semgrep
         run: >-
           semgrep scan
@@ -149,6 +145,15 @@ jobs:
         with:
           sarif_file: semgrep.sarif
         if: always() && hashFiles('semgrep.sarif') != ''
+
+      - name: Fail on ERROR-severity findings
+        run: >-
+          semgrep scan
+          --config p/rust
+          --config p/security-audit
+          --config p/secrets
+          --config p/command-injection
+          --severity ERROR --error
 
   # Job 5: CodeQL - Semantic Analysis
   codeql:
