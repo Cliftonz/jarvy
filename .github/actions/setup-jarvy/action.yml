@@ -52,12 +52,15 @@ runs:
     - name: Install Jarvy via cargo (crates.io)
       if: ${{ inputs.method == 'cargo' }}
       shell: bash
+      env:
+        SETUP_JARVY_LOCKED: ${{ inputs.locked }}
+        SETUP_JARVY_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
         LOCKED_FLAG=""
-        if [ "${{ inputs.locked }}" = "true" ]; then LOCKED_FLAG="--locked"; fi
-        if [ -n "${{ inputs.version }}" ]; then
-          cargo install jarvy --version "${{ inputs.version }}" ${LOCKED_FLAG}
+        if [ "$SETUP_JARVY_LOCKED" = "true" ]; then LOCKED_FLAG="--locked"; fi
+        if [ -n "$SETUP_JARVY_VERSION" ]; then
+          cargo install jarvy --version "$SETUP_JARVY_VERSION" ${LOCKED_FLAG}
         else
           cargo install jarvy ${LOCKED_FLAG}
         fi
@@ -66,10 +69,12 @@ runs:
       if: ${{ inputs.method == 'path' }}
       shell: bash
       working-directory: ${{ inputs.path }}
+      env:
+        SETUP_JARVY_LOCKED: ${{ inputs.locked }}
       run: |
         set -euo pipefail
         LOCKED_FLAG=""
-        if [ "${{ inputs.locked }}" = "true" ]; then LOCKED_FLAG="--locked"; fi
+        if [ "$SETUP_JARVY_LOCKED" = "true" ]; then LOCKED_FLAG="--locked"; fi
         cargo install --path . ${LOCKED_FLAG}
 
     - name: Resolve installed binary path

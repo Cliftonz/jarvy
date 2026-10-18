@@ -47,9 +47,11 @@ jobs:
       core: ${{ steps.r.outputs.core }}
     steps:
       - id: r
+        env:
+          RESOLVED_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          TAG="$RESOLVED_TAG"
           CORE="${TAG#v}"; CORE="${CORE%%-*}"
           { echo "tag=$TAG"; echo "core=$CORE"; } >> "$GITHUB_OUTPUT"
           echo "tag=$TAG core=$CORE"

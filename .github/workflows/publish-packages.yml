@@ -182,7 +182,6 @@ jobs:
       - name: Get release assets
         id: get_assets
         run: |
-          VERSION="${{ env.VERSION }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -203,8 +202,10 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Update formula
+        env:
+          RELEASE_VERSION: ${{ steps.get_assets.outputs.version }}
         run: |
-          VERSION="${{ steps.get_assets.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           FORMULA="dist/homebrew/jarvy.rb"
 
           # Update version and SHA256 placeholders
@@ -275,7 +276,6 @@ jobs:
       - name: Get version
         id: version
         run: |
-          VERSION="${{ env.VERSION }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -298,8 +298,10 @@ jobs:
 
       - name: Update PKGBUILD
         if: steps.aur_secret.outputs.have_secret == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" dist/aur/PKGBUILD-bin
 
       # Compute real sha256sums from SHA256SUMS.txt. The PKGBUILD
@@ -318,9 +320,11 @@ jobs:
       #                   in CI)
       - name: Substitute sha256sums from release checksums
         if: steps.aur_secret.outputs.have_secret == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           curl -fsSL \
             "https://github.com/Cliftonz/jarvy/releases/download/v${VERSION}/SHA256SUMS.txt" \
             -o /tmp/sha256sums.txt
@@ -376,7 +380,6 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION="${{ env.VERSION }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -399,8 +402,10 @@ jobs:
       - name: Update winget manifest
         if: steps.winget_secret.outputs.have_secret == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" dist/windows/winget.yaml
 
       # installers-regex matches the actual asset name pattern produced
@@ -443,7 +448,6 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION="${{ env.VERSION }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -474,9 +478,11 @@ jobs:
         # files, and fetch the real .msi SHA256 from SHA256SUMS.txt
         # so the install integrity check passes.
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           NUSPEC=dist/windows/chocolatey/jarvy.nuspec
           INSTALL=dist/windows/chocolatey/tools/chocolateyinstall.ps1
 
@@ -504,7 +510,9 @@ jobs:
       - name: Pack and push to Chocolatey
         if: steps.choco_secret.outputs.have_secret == 'true'
         shell: powershell
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           cd dist/windows/chocolatey
           choco pack
-          choco push jarvy.${{ steps.version.outputs.version }}.nupkg --source https://push.chocolatey.org/ --api-key ${{ secrets.CHOCOLATEY_API_KEY }}
+          choco push "jarvy.$($env:RELEASE_VERSION).nupkg" --source https://push.chocolatey.org/ --api-key ${{ secrets.CHOCOLATEY_API_KEY }}

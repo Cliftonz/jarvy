@@ -45,12 +45,15 @@ jobs:
         uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Run mutation testing (critical modules)
+        env:
+          DISPATCH_MODULES: ${{ github.event.inputs.modules }}
+          MUTATION_SHARD: ${{ matrix.shard }}
         run: |
-          MODULES="${{ github.event.inputs.modules }}"
+          MODULES="$DISPATCH_MODULES"
           if [ -z "$MODULES" ]; then
             # Default critical modules
             cargo mutants --timeout 300 --jobs 4 \
-              --shard ${{ matrix.shard }}/4 \
+              --shard "${MUTATION_SHARD}/4" \
               -f src/config.rs \
               -f src/tools/common.rs \
               -- --lib
@@ -62,7 +65,7 @@ jobs:
               ARGS+=(-f "src/${module}.rs")
             done
             cargo mutants --timeout 300 --jobs 4 \
-              --shard ${{ matrix.shard }}/4 "${ARGS[@]}" -- --lib
+              --shard "${MUTATION_SHARD}/4" "${ARGS[@]}" -- --lib
           fi
         continue-on-error: true
 
