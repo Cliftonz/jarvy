@@ -39,8 +39,9 @@ inputs:
     default: ./jarvy.toml
   args:
     description: >-
-      Extra arguments appended verbatim to the chosen command (e.g.
-      "--format json"). Ignored when run is "none".
+      Extra arguments appended to the chosen command (e.g.
+      "--format json"). Split on whitespace; shell quoting is not
+      supported. Ignored when run is "none".
     required: false
     default: ''
   cache:
@@ -115,13 +116,14 @@ runs:
       shell: bash
       env:
         JARVY_TELEMETRY: '0'
+        JARVY_VERSION_INPUT: ${{ inputs.version }}
       run: |
         set -euo pipefail
         if ! command -v cargo >/dev/null 2>&1; then
           echo "::error::install-method=cargo requires a Rust toolchain (cargo) on PATH." >&2
           exit 1
         fi
-        VER="${{ inputs.version }}"
+        VER="$JARVY_VERSION_INPUT"
         VER="${VER#v}"
         if [ "$VER" = "latest" ] || [ -z "$VER" ]; then
           cargo install jarvy --locked
@@ -179,13 +181,18 @@ runs:
       shell: bash
       env:
         JARVY_TELEMETRY: '0'
+        JARVY_CONFIG_PATH: ${{ inputs.config-path }}
+        JARVY_RUN_COMMAND: ${{ inputs.run }}
+        JARVY_ARGS: ${{ inputs.args }}
       run: |
         set -euo pipefail
-        CONFIG="${{ inputs.config-path }}"
+        CONFIG="$JARVY_CONFIG_PATH"
+        set -f
         # shellcheck disable=SC2206
-        EXTRA=(${{ inputs.args }})
+        EXTRA=($JARVY_ARGS)
+        set +f
         # Guard the empty-array expansion for bash 3.2 (macOS) under set -u.
-        case "${{ inputs.run }}" in
+        case "$JARVY_RUN_COMMAND" in
           validate)
             jarvy validate --strict --file "$CONFIG" "${EXTRA[@]+"${EXTRA[@]}"}"
             ;;
@@ -196,7 +203,7 @@ runs:
             jarvy doctor --file "$CONFIG" "${EXTRA[@]+"${EXTRA[@]}"}"
             ;;
           *)
-            echo "::error::Unknown run value '${{ inputs.run }}' (expected: none | validate | setup | doctor)." >&2
+            echo "::error::Unknown run value '$JARVY_RUN_COMMAND' (expected: none | validate | setup | doctor)." >&2
             exit 2
             ;;
         esac

@@ -16,9 +16,11 @@ runs:
   steps:
     - name: Install kubeconform with checksum verification
       shell: bash
+      env:
+        KUBECONFORM_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        VER="${{ inputs.version }}"
+        VER="${KUBECONFORM_VERSION}"
         curl -sSfL -o /tmp/kubeconform.tar.gz \
           "https://github.com/yannh/kubeconform/releases/download/${VER}/kubeconform-linux-amd64.tar.gz"
         curl -sSfL -o /tmp/kubeconform-CHECKSUMS \

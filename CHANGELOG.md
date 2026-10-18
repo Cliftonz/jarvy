@@ -39,6 +39,13 @@ for divergences from generic release skills.
 - `--format yaml` output may differ cosmetically (quoting, indentation).
   The data it carries is unchanged.
 
+**Security:**
+
+- The Jarvy GitHub Action's `args` input no longer evaluates shell syntax.
+  It is split on whitespace with globbing disabled, so `$(...)`, backticks
+  and variables in `args` are passed through literally. Quoted multi-word
+  arguments (e.g. `--filter "a b"`) are no longer supported.
+
 ## [v0.8.4] - Windows install and hook fixes, nuget pin handling (2026-09-18)
 
 **Fixes:**

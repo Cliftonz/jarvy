@@ -46,13 +46,16 @@ jobs:
       prerelease: ${{ steps.r.outputs.prerelease }}
     steps:
       - id: r
+        env:
+          RESOLVED_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          TAG="$RESOLVED_TAG"
           VERSION="${TAG#v}"          # keep any -rc.N / -beta.N suffix
           CORE="${VERSION%%-*}"       # semver core only, for --version compare
-          if [ "${{ github.event_name }}" = "release" ]; then
-            PRE="${{ github.event.release.prerelease }}"
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            PRE="$RELEASE_PRERELEASE"
           elif [[ "$TAG" == *-* ]]; then PRE=true; else PRE=false; fi
           {
             echo "tag=$TAG"

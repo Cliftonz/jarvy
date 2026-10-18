@@ -94,17 +94,18 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           # Manual dispatch → use provided tag; otherwise auto-detect the
           # newest prerelease. Auto-detect uses the same query as
           # `docs/release-testing.md`'s soak flow: newest release with
           # `prerelease: true`.
-          MANUAL_TAG='${{ inputs.tag }}'
+          MANUAL_TAG="$DISPATCH_TAG"
           if [ -n "$MANUAL_TAG" ]; then
             echo "Manual dispatch — using tag: $MANUAL_TAG"
             TAG="$MANUAL_TAG"
           else
-            TAG=$(gh api "repos/${{ github.repository }}/releases?per_page=25" \
+            TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=25" \
               --jq '[.[] | select(.prerelease == true and .draft == false)] | .[0].tag_name // empty')
             if [ -z "$TAG" ]; then
               echo "No prerelease found — nothing to soak."

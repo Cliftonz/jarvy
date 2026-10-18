@@ -530,7 +530,7 @@ jobs:
       - name: Exercise composite action's commands inline against a synthetic signed tag
         run: |
           set -euo pipefail
-          # The composite action reads `${{ github.ref_name }}` from
+          # The composite action reads `github.ref_name` from
           # GitHub Actions context, which can't be overridden from a
           # caller workflow's `uses:` step. So we replicate the
           # action's commands here and assert each step works against
