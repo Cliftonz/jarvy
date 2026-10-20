@@ -399,12 +399,16 @@ jobs:
         run: |
           set -euo pipefail
           cd _soak
+          SOAK_DIR="$(pwd)"
           # Build a small polyglot fixture and exercise the discover
           # pass — this is the "does the wizard's back-end still work?"
           # signal. jq (not python3) so the assertion runs on Windows
           # too; jq ships pre-installed on every runner.
-          mkdir -p fixture
-          cd fixture
+          # The fixture lives in $RUNNER_TEMP, outside the checkout:
+          # discover searches parent dirs for jarvy.toml and would
+          # otherwise find the repo's own config and scan the repo.
+          mkdir -p "$RUNNER_TEMP/discover-fixture"
+          cd "$RUNNER_TEMP/discover-fixture"
           {
             echo '[package]'
             echo 'name = "fixture"'
@@ -415,7 +419,7 @@ jobs:
           touch pnpm-lock.yaml
           # `discover` is telemetry-gated + fully deterministic — safe
           # to run inside CI without polluting production data.
-          BIN="$(cd .. && pwd)/jarvy"
+          BIN="$SOAK_DIR/jarvy"
           # On Windows the binary is jarvy.exe.
           [ -f "$BIN.exe" ] && BIN="$BIN.exe"
           "$BIN" discover --format json > report.json
