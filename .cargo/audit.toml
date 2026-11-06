@@ -1,0 +1,4 @@
+[advisories]
+# pin-utils is unmaintained. Dev-only: expectrl 0.9 (already the latest
+# release) -> nix 0.26 -> pin-utils. Mirrored in deny.toml.
+ignore = ["RUSTSEC-2026-0441"]

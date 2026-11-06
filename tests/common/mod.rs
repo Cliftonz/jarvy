@@ -111,6 +111,56 @@ pub fn is_linux_elf(path: &Path) -> bool {
     }
 }
 
+pub struct DockerContainer {
+    pub id: String,
+}
+
+pub struct ExecOutput {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl DockerContainer {
+    pub fn run<I, S>(args: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<std::ffi::OsStr>,
+    {
+        let out = Command::new("docker")
+            .args(["run", "-d", "--rm"])
+            .args(args)
+            .output()
+            .expect("spawn docker run");
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+        }
+        Ok(Self {
+            id: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        })
+    }
+
+    pub fn exec(&self, cmd: &[&str]) -> ExecOutput {
+        let out = Command::new("docker")
+            .arg("exec")
+            .arg(&self.id)
+            .args(cmd)
+            .output()
+            .expect("spawn docker exec");
+        ExecOutput {
+            exit_code: out.status.code().expect("docker exec exit code"),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        }
+    }
+}
+
+impl Drop for DockerContainer {
+    fn drop(&mut self) {
+        let _ = Command::new("docker").args(["rm", "-f", &self.id]).output();
+    }
+}
+
 /// First 12 chars of the SHA-256 of the file at `path`. Lets failure
 /// messages identify *which* jarvy binary was mounted — useful when
 /// `JARVY_TEST_BIN` points at a stale cross-build dir.
