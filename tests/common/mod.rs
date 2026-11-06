@@ -55,9 +55,9 @@ pub fn jarvy_fast_cmd() -> Command {
 // ---------------------------------------------------------------------
 // Container-test helpers shared by `sandbox_integration.rs` and
 // `e2e_install_pipeline.rs`. The two test families have divergent
-// `skip_reason`/`container_request` bodies (intentionally — see PRD-053
-// review F2/F3), but these three pure functions and the magic-path
-// constants are byte-identical between them and live here to prevent
+// `skip_reason` and container-start bodies (intentionally; see PRD-053
+// review F2/F3), but the docker probe, binary helpers, `DockerContainer`
+// and the magic-path constants are shared and live here to prevent
 // drift.
 // ---------------------------------------------------------------------
 
@@ -122,13 +122,9 @@ pub struct ExecOutput {
 }
 
 impl DockerContainer {
-    pub fn run<I, S>(args: I) -> Result<Self, String>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<std::ffi::OsStr>,
-    {
+    pub fn run(args: &[&str]) -> Result<Self, String> {
         let out = Command::new("docker")
-            .args(["run", "-d", "--rm"])
+            .args(["run", "-d"])
             .args(args)
             .output()
             .expect("spawn docker run");

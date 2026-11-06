@@ -73,7 +73,7 @@ fn skip_reason() -> Option<String> {
         return Some(
             "JARVY_TEST_BIN not set — sandbox tests require a cross-built linux-gnu \
              jarvy (try `make test-sandbox`). Skipping to avoid GLIBC mismatch when \
-             exec'd inside an older testcontainer."
+             exec'd inside an older-glibc container."
                 .to_string(),
         );
     }
@@ -143,10 +143,13 @@ fn start_container(
         format!("{tag}@{digest}")
     };
     let mut args = vec![
-        "-v".to_string(),
-        format!("{}:/usr/local/bin/jarvy:ro", jarvy.display()),
-        "-v".to_string(),
-        format!("{}:/workspace", workdir.path().display()),
+        "--mount".to_string(),
+        format!(
+            "type=bind,src={},dst=/usr/local/bin/jarvy,readonly",
+            jarvy.display()
+        ),
+        "--mount".to_string(),
+        format!("type=bind,src={},dst=/workspace", workdir.path().display()),
         // Keep ~/.jarvy on a writable tmpfs path inside the container
         // so the probe + log writers don't blow up on the read-only
         // root jarvy doesn't actually create.
@@ -164,7 +167,7 @@ fn start_container(
         "sleep".to_string(),
         "120".to_string(),
     ]);
-    DockerContainer::run(args)
+    DockerContainer::run(&args.iter().map(String::as_str).collect::<Vec<_>>())
 }
 
 #[test]
@@ -457,6 +460,11 @@ fn banner_suppressed_with_jarvy_quiet_env() {
     ]);
 
     let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
+    assert_eq!(
+        exit_code, 0,
+        "expected dry-run success (0); got {exit_code}. stderr:\n{stderr}"
+    );
     assert!(
         !stderr.contains("seamless mode"),
         "expected banner muted by JARVY_QUIET=1; got stderr:\n{stderr}"

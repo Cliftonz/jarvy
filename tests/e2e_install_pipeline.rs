@@ -427,15 +427,18 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     // completion, so a sleep would burn time for no signal (PRD-054
     // perf review F1).
     let platform = format!("linux/{docker_platform}");
-    let mount = format!("{}:{CONTAINER_JARVY_BIN}:ro", jarvy.display());
+    let mount = format!(
+        "type=bind,src={},dst={CONTAINER_JARVY_BIN},readonly",
+        jarvy.display()
+    );
     let jarvy_home = format!("JARVY_HOME={CONTAINER_JARVY_HOME}");
     let home = format!("HOME={CONTAINER_HOME}");
     let image_ref = format!("{}:{pinned_tag}", spec.image);
-    let build_request = || {
-        DockerContainer::run([
+    let start_container = || {
+        DockerContainer::run(&[
             "--platform",
             &platform,
-            "-v",
+            "--mount",
             &mount,
             "-e",
             &jarvy_home,
@@ -463,9 +466,9 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     // still hits a transient error, return Skip (infra problem, not a
     // jarvy regression) so CI doesn't red-flag an unauthenticated
     // Docker Hub rate cap.
-    let container = match build_request() {
+    let container = match start_container() {
         Ok(c) => c,
-        Err(e) if is_platform_mismatch_error(&e.to_string()) => {
+        Err(e) if is_platform_mismatch_error(&e) => {
             return SmokeResult::Skip(format!(
                 "image {}:{} has no manifest for linux/{docker_platform} \
                  (host_arch={host_arch}, picked target_arch={target_arch}, \
@@ -474,18 +477,18 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
                 spec.image, spec.tag
             ));
         }
-        Err(e) if is_transient_pull_error(&e.to_string()) => {
+        Err(e) if is_transient_pull_error(&e) => {
             eprintln!("[{}] transient pull error, retrying in 5s: {e}", spec.label);
             std::thread::sleep(std::time::Duration::from_secs(5));
-            match build_request() {
+            match start_container() {
                 Ok(c) => c,
-                Err(e2) if is_platform_mismatch_error(&e2.to_string()) => {
+                Err(e2) if is_platform_mismatch_error(&e2) => {
                     return SmokeResult::Skip(format!(
                         "image {}:{} has no manifest for linux/{docker_platform} after retry",
                         spec.image, spec.tag
                     ));
                 }
-                Err(e2) if is_transient_pull_error(&e2.to_string()) => {
+                Err(e2) if is_transient_pull_error(&e2) => {
                     return SmokeResult::Skip(format!(
                         "transient docker-hub error after retry ({e2}) — likely unauthenticated pull rate limit"
                     ));
@@ -582,29 +585,33 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     SmokeResult::Pass
 }
 
-/// Match docker pull errors worth retrying once. Covers Docker Hub
-/// rate limit (429) and 5xx. Returns false for permanent failures like
-/// "no matching manifest" (wrong arch) which a retry can't fix.
+/// Match `docker run` pull errors worth retrying once: Docker Hub's
+/// rate-limit text ("pull rate limit", "too many requests") and a
+/// registry 5xx, worded "received unexpected HTTP status: 5xx" by the
+/// classic image store or "unexpected status from <method> request to
+/// <url>: 5xx" by the containerd image store. Returns false when the
+/// message also says "no matching manifest" (wrong arch), which a
+/// retry can't fix.
 fn is_transient_pull_error(msg: &str) -> bool {
     let lc = msg.to_lowercase();
     (lc.contains("pull rate limit")
         || lc.contains("too many requests")
-        || lc.contains("status code 429")
-        || lc.contains("status code 500")
-        || lc.contains("status code 502")
-        || lc.contains("status code 503")
-        || lc.contains("status code 504"))
+        || lc.contains("received unexpected http status: 5")
+        || (lc.contains("unexpected status from") && lc.contains(": 5")))
         && !lc.contains("no matching manifest")
 }
 
-/// True when the start error means "this image doesn't have a
-/// manifest for the platform we asked for". That's an image-vs-host
+/// True when the `docker run` error means "this image doesn't have a
+/// manifest for the platform we asked for": a remote manifest list
+/// without that platform, or a locally cached image whose platform
+/// "does not match the specified platform". That's an image-vs-host
 /// arch skew (e.g. `archlinux:latest` ships amd64-only and we're on
-/// aarch64 with no x86_64 jarvy built) — not a jarvy regression, so
+/// aarch64 with no x86_64 jarvy built), not a jarvy regression, so
 /// the caller converts it to a Skip rather than a Fail.
 fn is_platform_mismatch_error(msg: &str) -> bool {
     let lc = msg.to_lowercase();
     lc.contains("does not provide the specified platform")
+        || lc.contains("does not match the specified platform")
         || lc.contains("no matching manifest")
         || lc.contains("no match for platform in manifest")
 }
