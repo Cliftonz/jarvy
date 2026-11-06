@@ -532,6 +532,13 @@ jobs:
           [ "$OBSERVED_CORE" = "$EXPECTED_CORE" ] || { echo "::error::N-2 mismatch"; exit 1; }
           echo "✓ N-2 verified: $OBSERVED"
 
+      # Same as Path 2+4: jarvy update refuses without cosign.
+      - name: Install cosign (required by jarvy update signature verify)
+        if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v2.6.5
+
       - name: Path 3 — jarvy update --version <target> --method binary
         if: steps.resolve.outputs.skip != 'true' && steps.bootstrap.outputs.skip != 'true'
         shell: bash
