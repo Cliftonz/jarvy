@@ -3,7 +3,7 @@
 //!
 //! Bind-mounts the locally built `jarvy` (read-only) into a fresh
 //! container per distro and runs two smoke commands:
-//!   1. `jarvy --version` — must match `^jarvy \d+(\.\d+)+$` on stdout
+//!   1. `jarvy --version`: must match `^jarvy \d+(\.\d+)+(-prerelease)?$` on stdout
 //!      with stderr empty. The version digits are not compared against
 //!      `CARGO_PKG_VERSION` because `src/cli/args.rs` hardcodes the
 //!      clap display string independently.
@@ -539,7 +539,7 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     }
     if !version_pattern().is_match(version_out.stdout.trim()) {
         return SmokeResult::Fail(format!(
-            "[{}] stdout does not match `^jarvy \\d+(\\.\\d+)+$`; got `{}` (container={}, bin_sha={})\nstderr:\n{}",
+            "[{}] stdout does not match `^jarvy \\d+(\\.\\d+)+(-prerelease)?$`; got `{}` (container={}, bin_sha={})\nstderr:\n{}",
             spec.label,
             version_out.stdout.trim(),
             container_id,
@@ -616,12 +616,16 @@ fn is_platform_mismatch_error(msg: &str) -> bool {
         || lc.contains("no match for platform in manifest")
 }
 
-/// `^jarvy X.Y[.Z...]$` — matches the clap-rendered version line
-/// without coupling the assertion to a specific version number.
+/// `^jarvy X.Y[.Z...][-prerelease]$`: matches the clap-rendered version
+/// line, including a semver prerelease suffix such as `-rc.1`, without
+/// coupling the assertion to a specific version number.
 /// Compiled once, shared across all 9 tests.
 fn version_pattern() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"^jarvy \d+(?:\.\d+)+$").expect("version regex compiles"))
+    RE.get_or_init(|| {
+        regex::Regex::new(r"^jarvy \d+(?:\.\d+)+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
+            .expect("version regex compiles")
+    })
 }
 
 // ---------------------------------------------------------------------

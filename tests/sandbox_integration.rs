@@ -386,7 +386,7 @@ fn verify_only_does_not_write_state_on_partial_match() {
     );
 }
 
-/// PRD-053 banner suppression: `--json` mutes the seamless-mode
+/// PRD-053 banner suppression: `--log-format=json` mutes the seamless-mode
 /// stderr banner so JSON consumers don't see it interleaved with
 /// stderr-routed structured output. The tracing event still fires
 /// (verified via log file in unit tests); this guards the
@@ -410,22 +410,28 @@ fn banner_suppressed_with_json_flag() {
     )
     .expect("start container");
 
-    // `--dry-run --format=json` runs the banner-emission code path
-    // but should mute it. We're not testing the JSON output shape
-    // here — only that the banner is gone.
+    // `--dry-run --log-format=json` runs the banner-emission code path
+    // but should mute it. `jarvy setup` has no `--format` flag. We're
+    // not testing the JSON output shape here, only that the banner is
+    // gone.
     let exec = container.exec(&[
         "jarvy",
         "setup",
         "--dry-run",
-        "--format=json",
+        "--log-format=json",
         "--file",
         "/workspace/jarvy.toml",
     ]);
 
     let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
+    assert_eq!(
+        exit_code, 0,
+        "expected dry-run success (0); got {exit_code}. stderr:\n{stderr}"
+    );
     assert!(
         !stderr.contains("seamless mode"),
-        "expected banner muted by --format=json; got stderr:\n{stderr}"
+        "expected banner muted by --log-format=json; got stderr:\n{stderr}"
     );
 }
 
