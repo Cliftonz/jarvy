@@ -44,3 +44,7 @@ updates:
       - "npm"
     commit-message:
       prefix: "chore(vscode):"
+    # Keep @types/vscode within the engines.vscode floor; raise both together deliberately.
+    ignore:
+      - dependency-name: "@types/vscode"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
