@@ -125,6 +125,7 @@
   "overrides": {
     "serialize-javascript": "^7.0.5",
     "diff": "^9.0.0",
-    "minimatch": "^11.0.1"
+    "minimatch": "^11.0.1",
+    "glob": "^14.0.2"
   }
 }
