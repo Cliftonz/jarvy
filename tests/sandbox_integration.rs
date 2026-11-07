@@ -34,10 +34,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{docker_available, host_jarvy_path, is_linux_elf};
-use testcontainers::core::{AccessMode, CmdWaitFor, ExecCommand, Mount, WaitFor};
-use testcontainers::runners::SyncRunner;
-use testcontainers::{GenericImage, ImageExt};
+use common::{DockerContainer, docker_available, host_jarvy_path, is_linux_elf};
 
 // Pinned image digests. Tags like `bookworm-slim` move under the
 // operator's feet — pin by digest so a registry push (or a tag-replay
@@ -63,7 +60,7 @@ const BUILDPACK_DEPS_BOOKWORM_SCM_DIGEST: &str =
 /// `cargo build --release --bin jarvy` on a glibc-2.39 ubuntu-latest
 /// runner, then runs `cargo test --tests` which picks up *all* test
 /// binaries — including this one. The host-built jarvy exec'd inside
-/// the older-glibc testcontainers fails with
+/// the older-glibc test containers fails with
 /// `libc.so.6: version GLIBC_2.39 not found` and these sandbox tests
 /// red the whole job. The dedicated `make test-sandbox` target sets
 /// `JARVY_TEST_BIN` to a cross-built linux-gnu jarvy that exec's
@@ -76,7 +73,7 @@ fn skip_reason() -> Option<String> {
         return Some(
             "JARVY_TEST_BIN not set — sandbox tests require a cross-built linux-gnu \
              jarvy (try `make test-sandbox`). Skipping to avoid GLIBC mismatch when \
-             exec'd inside an older testcontainer."
+             exec'd inside an older-glibc container."
                 .to_string(),
         );
     }
@@ -121,7 +118,7 @@ fn write_workspace_toml_with(dir: &tempfile::TempDir, content: &str) {
     std::fs::write(dir.path().join("jarvy.toml"), content).expect("write jarvy.toml");
 }
 
-/// Build a baseline debian image with jarvy mounted in and the
+/// Start a baseline debian container with jarvy mounted in and the
 /// project config staged. `tag` is appended with the pinned digest
 /// (`<tag>@sha256:...`) so Docker resolves to the exact image bytes
 /// the suite was tested against, regardless of registry tag drift.
@@ -132,44 +129,45 @@ fn write_workspace_toml_with(dir: &tempfile::TempDir, content: &str) {
 /// The mounted jarvy binary is bind-mounted **read-only** so a
 /// malicious container can't truncate or replace the host binary
 /// mid-test (PRD-053 security review F8).
-fn container_request(
+fn start_container(
     image: &str,
     tag: &str,
     digest: &str,
     workdir: &tempfile::TempDir,
     extra_env: &[(&str, &str)],
-) -> testcontainers::ContainerRequest<GenericImage> {
+) -> Result<DockerContainer, String> {
     let jarvy = host_jarvy_path();
     let pinned_tag = if digest.is_empty() {
         tag.to_string()
     } else {
         format!("{tag}@{digest}")
     };
-    let mut req = GenericImage::new(image, pinned_tag.as_str())
-        .with_wait_for(WaitFor::seconds(1))
-        .with_cmd(vec!["sleep", "120"])
-        .with_mount(
-            Mount::bind_mount(jarvy.to_string_lossy().into_owned(), "/usr/local/bin/jarvy")
-                .with_access_mode(AccessMode::ReadOnly),
-        )
-        .with_mount(Mount::bind_mount(
-            workdir.path().to_string_lossy().into_owned(),
-            "/workspace",
-        ))
+    let mut args = vec![
+        "--mount".to_string(),
+        format!(
+            "type=bind,src={},dst=/usr/local/bin/jarvy,readonly",
+            jarvy.display()
+        ),
+        "--mount".to_string(),
+        format!("type=bind,src={},dst=/workspace", workdir.path().display()),
         // Keep ~/.jarvy on a writable tmpfs path inside the container
         // so the probe + log writers don't blow up on the read-only
         // root jarvy doesn't actually create.
-        .with_env_var("JARVY_HOME", "/tmp/.jarvy")
-        .with_env_var("HOME", "/tmp");
+        "-e".to_string(),
+        "JARVY_HOME=/tmp/.jarvy".to_string(),
+        "-e".to_string(),
+        "HOME=/tmp".to_string(),
+    ];
     for (k, v) in extra_env {
-        req = req.with_env_var(*k, *v);
+        args.push("-e".to_string());
+        args.push(format!("{k}={v}"));
     }
-    req
-}
-
-fn exec_wait(cmd: Vec<&str>) -> ExecCommand {
-    ExecCommand::new(cmd.into_iter().map(String::from).collect::<Vec<_>>())
-        .with_cmd_ready_condition(CmdWaitFor::exit())
+    args.extend([
+        format!("{image}:{pinned_tag}"),
+        "sleep".to_string(),
+        "120".to_string(),
+    ]);
+    DockerContainer::run(&args.iter().map(String::as_str).collect::<Vec<_>>())
 }
 
 #[test]
@@ -182,32 +180,28 @@ fn generic_container_emits_seamless_banner() {
     let workdir = tempfile::tempdir().expect("tmpdir");
     write_workspace_toml(&workdir);
 
-    let container = container_request(
+    let container = start_container(
         "debian",
         "bookworm-slim",
         DEBIAN_BOOKWORM_SLIM_DIGEST,
         &workdir,
         &[],
     )
-    .start()
     .expect("start container");
 
     // `--dry-run` makes setup non-mutating but still flows through
     // `main()` so the banner emission runs. `/.dockerenv` is
     // present inside any docker container and exec stdin is a pipe
     // (non-TTY), so the generic-container fallback should fire.
-    let mut exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--dry-run",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup --dry-run");
+    let exec = container.exec(&[
+        "jarvy",
+        "setup",
+        "--dry-run",
+        "--file",
+        "/workspace/jarvy.toml",
+    ]);
 
-    let stderr = exec.stderr_to_vec().expect("read stderr");
-    let stderr = String::from_utf8_lossy(&stderr);
+    let stderr = &exec.stderr;
     assert!(
         stderr.contains("seamless mode") && stderr.contains("container"),
         "expected seamless-mode banner mentioning 'container' on stderr; got:\n{stderr}"
@@ -226,31 +220,19 @@ fn verify_only_branch_exits_prereq_missing_on_gap() {
 
     // `bookworm-slim` ships without git. Force the verify-only
     // capability and assert PREREQ_MISSING (3) exit.
-    let container = container_request(
+    let container = start_container(
         "debian",
         "bookworm-slim",
         DEBIAN_BOOKWORM_SLIM_DIGEST,
         &workdir,
         &[("JARVY_FORCE_VERIFY_ONLY", "1"), ("JARVY_SANDBOX", "1")],
     )
-    .start()
     .expect("start container");
 
-    let mut exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup");
+    let exec = container.exec(&["jarvy", "setup", "--file", "/workspace/jarvy.toml"]);
 
-    let stderr_bytes = exec.stderr_to_vec().expect("read stderr");
-    let stderr = String::from_utf8_lossy(&stderr_bytes);
-    let exit_code = exec
-        .exit_code()
-        .expect("exit_code call ok")
-        .expect("exit code available");
+    let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
 
     assert_eq!(
         exit_code, 3,
@@ -277,31 +259,19 @@ fn verify_only_branch_exits_zero_when_all_present() {
     // `debian:bookworm` does *not* — that was a wrong assumption in
     // the PRD draft. The SCM variant is the smallest official Debian
     // image with git baked in.
-    let container = container_request(
+    let container = start_container(
         "buildpack-deps",
         "bookworm-scm",
         BUILDPACK_DEPS_BOOKWORM_SCM_DIGEST,
         &workdir,
         &[("JARVY_FORCE_VERIFY_ONLY", "1"), ("JARVY_SANDBOX", "1")],
     )
-    .start()
     .expect("start container");
 
-    let mut exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup");
+    let exec = container.exec(&["jarvy", "setup", "--file", "/workspace/jarvy.toml"]);
 
-    let stderr_bytes = exec.stderr_to_vec().expect("read stderr");
-    let stderr = String::from_utf8_lossy(&stderr_bytes);
-    let exit_code = exec
-        .exit_code()
-        .expect("exit_code call ok")
-        .expect("exit code available");
+    let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
 
     assert_eq!(
         exit_code, 0,
@@ -328,33 +298,20 @@ fn auto_baseline_writes_state_file_on_clean_seamless_run() {
     // has git pre-installed so version_check comes back clean and the
     // auto-baseline branch in setup_cmd fires. Plain `debian:bookworm`
     // would not — git is not in the base Debian image.
-    let container = container_request(
+    let container = start_container(
         "buildpack-deps",
         "bookworm-scm",
         BUILDPACK_DEPS_BOOKWORM_SCM_DIGEST,
         &workdir,
         &[("JARVY_SANDBOX", "1")],
     )
-    .start()
     .expect("start container");
 
-    let mut exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup");
+    let exec = container.exec(&["jarvy", "setup", "--file", "/workspace/jarvy.toml"]);
 
-    let stdout_bytes = exec.stdout_to_vec().unwrap_or_default();
-    let stderr_bytes = exec.stderr_to_vec().unwrap_or_default();
-    let stdout = String::from_utf8_lossy(&stdout_bytes);
-    let stderr = String::from_utf8_lossy(&stderr_bytes);
-    let exit_code = exec
-        .exit_code()
-        .expect("exit_code call ok")
-        .expect("exit code available");
+    let stdout = &exec.stdout;
+    let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
 
     assert_eq!(
         exit_code, 0,
@@ -399,31 +356,19 @@ fn verify_only_does_not_write_state_on_partial_match() {
     let workdir = tempfile::tempdir().expect("tmpdir");
     write_workspace_toml_with(&workdir, SETUP_TOML_TWO_TOOLS);
 
-    let container = container_request(
+    let container = start_container(
         "buildpack-deps",
         "bookworm-scm",
         BUILDPACK_DEPS_BOOKWORM_SCM_DIGEST,
         &workdir,
         &[("JARVY_FORCE_VERIFY_ONLY", "1"), ("JARVY_SANDBOX", "1")],
     )
-    .start()
     .expect("start container");
 
-    let mut exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup");
+    let exec = container.exec(&["jarvy", "setup", "--file", "/workspace/jarvy.toml"]);
 
-    let stderr_bytes = exec.stderr_to_vec().expect("read stderr");
-    let stderr = String::from_utf8_lossy(&stderr_bytes);
-    let exit_code = exec
-        .exit_code()
-        .expect("exit_code call ok")
-        .expect("exit code available");
+    let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
 
     assert_eq!(
         exit_code, 3,
@@ -441,7 +386,7 @@ fn verify_only_does_not_write_state_on_partial_match() {
     );
 }
 
-/// PRD-053 banner suppression: `--json` mutes the seamless-mode
+/// PRD-053 banner suppression: `--log-format=json` mutes the seamless-mode
 /// stderr banner so JSON consumers don't see it interleaved with
 /// stderr-routed structured output. The tracing event still fires
 /// (verified via log file in unit tests); this guards the
@@ -456,35 +401,37 @@ fn banner_suppressed_with_json_flag() {
     let workdir = tempfile::tempdir().expect("tmpdir");
     write_workspace_toml(&workdir);
 
-    let container = container_request(
+    let container = start_container(
         "debian",
         "bookworm-slim",
         DEBIAN_BOOKWORM_SLIM_DIGEST,
         &workdir,
         &[],
     )
-    .start()
     .expect("start container");
 
-    // `--dry-run --format=json` runs the banner-emission code path
-    // but should mute it. We're not testing the JSON output shape
-    // here — only that the banner is gone.
-    let mut exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--dry-run",
-            "--format=json",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup --dry-run --format=json");
+    // `--dry-run --log-format=json` runs the banner-emission code path
+    // but should mute it. `jarvy setup` has no `--format` flag. We're
+    // not testing the JSON output shape here, only that the banner is
+    // gone.
+    let exec = container.exec(&[
+        "jarvy",
+        "setup",
+        "--dry-run",
+        "--log-format=json",
+        "--file",
+        "/workspace/jarvy.toml",
+    ]);
 
-    let stderr = exec.stderr_to_vec().expect("read stderr");
-    let stderr = String::from_utf8_lossy(&stderr);
+    let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
+    assert_eq!(
+        exit_code, 0,
+        "expected dry-run success (0); got {exit_code}. stderr:\n{stderr}"
+    );
     assert!(
         !stderr.contains("seamless mode"),
-        "expected banner muted by --format=json; got stderr:\n{stderr}"
+        "expected banner muted by --log-format=json; got stderr:\n{stderr}"
     );
 }
 
@@ -501,28 +448,29 @@ fn banner_suppressed_with_jarvy_quiet_env() {
     let workdir = tempfile::tempdir().expect("tmpdir");
     write_workspace_toml(&workdir);
 
-    let container = container_request(
+    let container = start_container(
         "debian",
         "bookworm-slim",
         DEBIAN_BOOKWORM_SLIM_DIGEST,
         &workdir,
         &[("JARVY_QUIET", "1")],
     )
-    .start()
     .expect("start container");
 
-    let mut exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--dry-run",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup --dry-run");
+    let exec = container.exec(&[
+        "jarvy",
+        "setup",
+        "--dry-run",
+        "--file",
+        "/workspace/jarvy.toml",
+    ]);
 
-    let stderr = exec.stderr_to_vec().expect("read stderr");
-    let stderr = String::from_utf8_lossy(&stderr);
+    let stderr = &exec.stderr;
+    let exit_code = exec.exit_code;
+    assert_eq!(
+        exit_code, 0,
+        "expected dry-run success (0); got {exit_code}. stderr:\n{stderr}"
+    );
     assert!(
         !stderr.contains("seamless mode"),
         "expected banner muted by JARVY_QUIET=1; got stderr:\n{stderr}"
@@ -549,29 +497,18 @@ fn verify_only_does_not_overwrite_existing_state_json() {
     let sentinel = r#"{"version":"1","sentinel":"do-not-overwrite"}"#;
     std::fs::write(&state_path, sentinel).expect("write sentinel state.json");
 
-    let container = container_request(
+    let container = start_container(
         "buildpack-deps",
         "bookworm-scm",
         BUILDPACK_DEPS_BOOKWORM_SCM_DIGEST,
         &workdir,
         &[("JARVY_FORCE_VERIFY_ONLY", "1"), ("JARVY_SANDBOX", "1")],
     )
-    .start()
     .expect("start container");
 
-    let exec = container
-        .exec(exec_wait(vec![
-            "jarvy",
-            "setup",
-            "--file",
-            "/workspace/jarvy.toml",
-        ]))
-        .expect("exec jarvy setup");
+    let exec = container.exec(&["jarvy", "setup", "--file", "/workspace/jarvy.toml"]);
 
-    let exit_code = exec
-        .exit_code()
-        .expect("exit_code call ok")
-        .expect("exit code available");
+    let exit_code = exec.exit_code;
     assert_eq!(exit_code, 0, "expected verify-only pass; got {exit_code}");
 
     let after = std::fs::read_to_string(&state_path).expect("read state.json after");

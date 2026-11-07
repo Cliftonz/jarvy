@@ -3,7 +3,7 @@
 //!
 //! Bind-mounts the locally built `jarvy` (read-only) into a fresh
 //! container per distro and runs two smoke commands:
-//!   1. `jarvy --version` — must match `^jarvy \d+(\.\d+)+$` on stdout
+//!   1. `jarvy --version`: must match `^jarvy \d+(\.\d+)+(-prerelease)?$` on stdout
 //!      with stderr empty. The version digits are not compared against
 //!      `CARGO_PKG_VERSION` because `src/cli/args.rs` hardcodes the
 //!      clap display string independently.
@@ -77,11 +77,8 @@ use std::time::Instant;
 
 use common::{
     CONTAINER_HOME, CONTAINER_JARVY_BIN, CONTAINER_JARVY_HOME, CONTAINER_LIFETIME_SECS,
-    docker_available, is_linux_elf, scrub_for_panic, short_sha256,
+    DockerContainer, docker_available, is_linux_elf, scrub_for_panic, short_sha256,
 };
-use testcontainers::core::{AccessMode, CmdWaitFor, ExecCommand, Mount};
-use testcontainers::runners::SyncRunner;
-use testcontainers::{GenericImage, ImageExt};
 
 // Pinned manifest-list digests. Pinned 2026-05-14. See bump procedure
 // in the module header.
@@ -426,33 +423,41 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
         bin_sha
     );
 
-    // ContainerRequest is not Clone; build a fresh one per attempt
-    // via this closure so we can retry on transient Docker Hub errors.
-    //
-    // No `with_wait_for` — `CmdWaitFor::exit()` on the subsequent exec
-    // already blocks on completion; a wall-clock sleep would burn time
-    // for no signal (PRD-054 perf review F1).
-    let jarvy_path = jarvy.clone();
-    let build_request = || {
-        GenericImage::new(spec.image, pinned_tag.as_str())
-            .with_platform(format!("linux/{docker_platform}"))
-            .with_cmd(vec!["sleep", CONTAINER_LIFETIME_SECS])
-            .with_mount(
-                Mount::bind_mount(
-                    jarvy_path.to_string_lossy().into_owned(),
-                    CONTAINER_JARVY_BIN,
-                )
-                .with_access_mode(AccessMode::ReadOnly),
-            )
-            .with_env_var("JARVY_HOME", CONTAINER_JARVY_HOME)
-            .with_env_var("HOME", CONTAINER_HOME)
-            .with_env_var("JARVY_TELEMETRY", "0")
+    // No wall-clock wait after start: `docker exec` already blocks on
+    // completion, so a sleep would burn time for no signal (PRD-054
+    // perf review F1).
+    let platform = format!("linux/{docker_platform}");
+    let mount = format!(
+        "type=bind,src={},dst={CONTAINER_JARVY_BIN},readonly",
+        jarvy.display()
+    );
+    let jarvy_home = format!("JARVY_HOME={CONTAINER_JARVY_HOME}");
+    let home = format!("HOME={CONTAINER_HOME}");
+    let image_ref = format!("{}:{pinned_tag}", spec.image);
+    let start_container = || {
+        DockerContainer::run(&[
+            "--platform",
+            &platform,
+            "--mount",
+            &mount,
+            "-e",
+            &jarvy_home,
+            "-e",
+            &home,
+            "-e",
+            "JARVY_TELEMETRY=0",
             // Defense-in-depth: smoke test does not need root or
             // default caps. RO rootfs would also be ideal but some
             // distros' init scripts write to /var even on a `sleep`
             // cmd; leave that off.
-            .with_cap_drop("ALL")
-            .with_security_opt("no-new-privileges:true")
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            &image_ref,
+            "sleep",
+            CONTAINER_LIFETIME_SECS,
+        ])
     };
 
     // One-shot retry on transient Docker Hub blips (rate limit, 5xx).
@@ -461,9 +466,9 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     // still hits a transient error, return Skip (infra problem, not a
     // jarvy regression) so CI doesn't red-flag an unauthenticated
     // Docker Hub rate cap.
-    let container = match build_request().start() {
+    let container = match start_container() {
         Ok(c) => c,
-        Err(e) if is_platform_mismatch_error(&e.to_string()) => {
+        Err(e) if is_platform_mismatch_error(&e) => {
             return SmokeResult::Skip(format!(
                 "image {}:{} has no manifest for linux/{docker_platform} \
                  (host_arch={host_arch}, picked target_arch={target_arch}, \
@@ -472,18 +477,18 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
                 spec.image, spec.tag
             ));
         }
-        Err(e) if is_transient_pull_error(&e.to_string()) => {
+        Err(e) if is_transient_pull_error(&e) => {
             eprintln!("[{}] transient pull error, retrying in 5s: {e}", spec.label);
             std::thread::sleep(std::time::Duration::from_secs(5));
-            match build_request().start() {
+            match start_container() {
                 Ok(c) => c,
-                Err(e2) if is_platform_mismatch_error(&e2.to_string()) => {
+                Err(e2) if is_platform_mismatch_error(&e2) => {
                     return SmokeResult::Skip(format!(
                         "image {}:{} has no manifest for linux/{docker_platform} after retry",
                         spec.image, spec.tag
                     ));
                 }
-                Err(e2) if is_transient_pull_error(&e2.to_string()) => {
+                Err(e2) if is_transient_pull_error(&e2) => {
                     return SmokeResult::Skip(format!(
                         "transient docker-hub error after retry ({e2}) — likely unauthenticated pull rate limit"
                     ));
@@ -503,7 +508,7 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
             ));
         }
     };
-    let container_id = container.id().to_string();
+    let container_id = &container.id;
 
     eprintln!(
         "[{}] container_id={} ready (t={}ms)",
@@ -518,15 +523,7 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     // string isn't compared against `CARGO_PKG_VERSION` because
     // `src/cli/args.rs` hardcodes the clap version display string
     // independently of the package version.
-    let version_out = match exec_capture(&container, &["jarvy", "--version"]) {
-        Ok(o) => o,
-        Err(e) => {
-            return SmokeResult::Fail(format!(
-                "[{}] --version exec failed (container={}): {e}",
-                spec.label, container_id
-            ));
-        }
-    };
+    let version_out = container.exec(&["jarvy", "--version"]);
     if version_out.exit_code != 0 {
         return SmokeResult::Fail(format!(
             "[{}] `jarvy --version` exited {} on {}:{} (container={}, bin_sha={})\nstdout:\n{}\nstderr:\n{}",
@@ -542,7 +539,7 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     }
     if !version_pattern().is_match(version_out.stdout.trim()) {
         return SmokeResult::Fail(format!(
-            "[{}] stdout does not match `^jarvy \\d+(\\.\\d+)+$`; got `{}` (container={}, bin_sha={})\nstderr:\n{}",
+            "[{}] stdout does not match `^jarvy \\d+(\\.\\d+)+(-prerelease)?$`; got `{}` (container={}, bin_sha={})\nstderr:\n{}",
             spec.label,
             version_out.stdout.trim(),
             container_id,
@@ -565,15 +562,7 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     // Smoke 2: stack-touching subcommand. `--default-hooks` walks the
     // tool registry, exercising the inventory init + OS detection
     // path. A binary broken in tokio/tracing/registry init fails here.
-    let hooks_out = match exec_capture(&container, &["jarvy", "tools", "--default-hooks"]) {
-        Ok(o) => o,
-        Err(e) => {
-            return SmokeResult::Fail(format!(
-                "[{}] tools --default-hooks exec failed (container={}): {e}",
-                spec.label, container_id
-            ));
-        }
-    };
+    let hooks_out = container.exec(&["jarvy", "tools", "--default-hooks"]);
     if hooks_out.exit_code != 0 {
         return SmokeResult::Fail(format!(
             "[{}] `jarvy tools --default-hooks` exited {} on {}:{} (container={}, bin_sha={})\nstdout:\n{}\nstderr:\n{}",
@@ -596,68 +585,46 @@ fn exec_smoke(spec: &SmokeSpec) -> SmokeResult {
     SmokeResult::Pass
 }
 
-/// Match docker pull errors worth retrying once. Covers Docker Hub
-/// rate limit (429), 5xx, and the generic "failed to pull" wrapping
-/// testcontainers applies. Returns false for permanent failures like
-/// "no matching manifest" (wrong arch) which a retry can't fix.
+/// Match `docker run` pull errors worth retrying once: Docker Hub's
+/// rate-limit text ("pull rate limit", "too many requests") and a
+/// registry 5xx, worded "received unexpected HTTP status: 5xx" by the
+/// classic image store or "unexpected status from <method> request to
+/// <url>: 5xx" by the containerd image store. Returns false when the
+/// message also says "no matching manifest" (wrong arch), which a
+/// retry can't fix.
 fn is_transient_pull_error(msg: &str) -> bool {
     let lc = msg.to_lowercase();
     (lc.contains("pull rate limit")
         || lc.contains("too many requests")
-        || lc.contains("status code 429")
-        || lc.contains("status code 500")
-        || lc.contains("status code 502")
-        || lc.contains("status code 503")
-        || lc.contains("status code 504"))
+        || lc.contains("received unexpected http status: 5")
+        || (lc.contains("unexpected status from") && lc.contains(": 5")))
         && !lc.contains("no matching manifest")
 }
 
-/// True when the start error means "this image doesn't have a
-/// manifest for the platform we asked for". That's an image-vs-host
+/// True when the `docker run` error means "this image doesn't have a
+/// manifest for the platform we asked for": a remote manifest list
+/// without that platform, or a locally cached image whose platform
+/// "does not match the specified platform". That's an image-vs-host
 /// arch skew (e.g. `archlinux:latest` ships amd64-only and we're on
-/// aarch64 with no x86_64 jarvy built) — not a jarvy regression, so
+/// aarch64 with no x86_64 jarvy built), not a jarvy regression, so
 /// the caller converts it to a Skip rather than a Fail.
 fn is_platform_mismatch_error(msg: &str) -> bool {
     let lc = msg.to_lowercase();
     lc.contains("does not provide the specified platform")
+        || lc.contains("does not match the specified platform")
         || lc.contains("no matching manifest")
         || lc.contains("no match for platform in manifest")
 }
 
-/// `^jarvy X.Y[.Z...]$` — matches the clap-rendered version line
-/// without coupling the assertion to a specific version number.
+/// `^jarvy X.Y[.Z...][-prerelease]$`: matches the clap-rendered version
+/// line, including a semver prerelease suffix such as `-rc.1`, without
+/// coupling the assertion to a specific version number.
 /// Compiled once, shared across all 9 tests.
 fn version_pattern() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"^jarvy \d+(?:\.\d+)+$").expect("version regex compiles"))
-}
-
-/// Captured stdio + exit code from one `exec` inside a container.
-struct ExecOut {
-    exit_code: i64,
-    stdout: String,
-    stderr: String,
-}
-
-fn exec_capture(
-    container: &testcontainers::Container<GenericImage>,
-    cmd: &[&str],
-) -> Result<ExecOut, String> {
-    let exec_cmd = ExecCommand::new(cmd.iter().map(|s| s.to_string()).collect::<Vec<_>>())
-        .with_cmd_ready_condition(CmdWaitFor::exit());
-    let mut run = container
-        .exec(exec_cmd)
-        .map_err(|e| format!("exec({:?}): {e}", cmd))?;
-    let stdout = String::from_utf8_lossy(&run.stdout_to_vec().unwrap_or_default()).into_owned();
-    let stderr = String::from_utf8_lossy(&run.stderr_to_vec().unwrap_or_default()).into_owned();
-    let exit_code = run
-        .exit_code()
-        .map_err(|e| format!("exit_code({:?}): {e}", cmd))?
-        .ok_or_else(|| format!("no exit code for {:?}", cmd))?;
-    Ok(ExecOut {
-        exit_code,
-        stdout,
-        stderr,
+    RE.get_or_init(|| {
+        regex::Regex::new(r"^jarvy \d+(?:\.\d+)+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
+            .expect("version regex compiles")
     })
 }
 
