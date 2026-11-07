@@ -78,15 +78,18 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: Install cross
+        run: cargo install cross --locked
+
       - name: Build jarvy
-        run: cargo build --release --bin jarvy
+        run: cross build --release --target x86_64-unknown-linux-gnu --bin jarvy
 
       - name: Run docker-gated integration tests
         env:
-          JARVY_TEST_BIN: ${{ github.workspace }}/target/release/jarvy
-          JARVY_TEST_BIN_X86_64: ${{ github.workspace }}/target/release/jarvy
+          JARVY_TEST_BIN: ${{ github.workspace }}/target/x86_64-unknown-linux-gnu/release/jarvy
+          JARVY_TEST_BIN_X86_64: ${{ github.workspace }}/target/x86_64-unknown-linux-gnu/release/jarvy
           JARVY_E2E_INSTALL: '1'
-        run: cargo test --release --test sandbox_integration --test e2e_install_pipeline -- --nocapture
+        run: cargo test --release --no-fail-fast --test sandbox_integration --test e2e_install_pipeline -- --nocapture
 
   native-host:
     name: Native host (brew on macOS, winget on Windows)
