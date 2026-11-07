@@ -57,7 +57,6 @@ jobs:
       - name: Build jarvy
         run: cargo build --release --bin jarvy
 
-      # Run the docker-based matrix test (spins up multiple distros)
       - name: Run container tests
         env:
           JARVY_BIN: target/release/jarvy
