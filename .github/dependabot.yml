@@ -41,7 +41,7 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "npm"
+      - "javascript"
     commit-message:
       prefix: "chore(vscode):"
     # Keep @types/vscode within the engines.vscode floor; raise both together deliberately.
