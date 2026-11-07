@@ -1627,25 +1627,29 @@ impl PkgOps {
 #[cfg(all(test, unix))]
 mod version_probe_tests {
     use super::*;
-    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
 
+    // A child shell writes the script so this process never holds a writable
+    // fd to it. A sibling test thread forking in that window inherits the fd
+    // until its exec, and exec of the script then fails with ETXTBSY.
     fn fake_cli(dir: &tempfile::TempDir, name: &str, script: &str) -> String {
         let path = dir.path().join(name);
-        let mut f = std::fs::File::create(&path).unwrap();
-        write!(f, "#!/bin/sh\n{script}").unwrap();
-        f.sync_all().unwrap();
+        let status = std::process::Command::new("/bin/sh")
+            .args([
+                "-c",
+                "printf '#!/bin/sh\\n%s' \"$1\" > \"$2\"",
+                "sh",
+                script,
+            ])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(status.success());
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         path.to_string_lossy().into_owned()
     }
 
-    // Serialized with `install_via_cargo_install_prereq_when_cargo_absent`
-    // (below in this module tree) — that test empties $PATH globally for
-    // its duration, which races with the fake-CLI spawn here under
-    // parallel test runners and made this test flake reliably in the
-    // main.rs `[[bin]]` unittest binary under `cargo llvm-cov`.
     #[test]
-    #[serial_test::serial]
     fn nonzero_exit_version_output_still_parses() {
         let dir = tempfile::tempdir().unwrap();
         // argocd-style: prints version, exits non-zero (server unreachable)
@@ -1657,7 +1661,6 @@ mod version_probe_tests {
     }
 
     #[test]
-    #[serial_test::serial]
     fn version_subcommand_only_cli_is_probed() {
         let dir = tempfile::tempdir().unwrap();
         // cue-style: --version / -V fail, only `version` subcommand answers
