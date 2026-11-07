@@ -1650,7 +1650,6 @@ mod version_probe_tests {
     }
 
     #[test]
-    #[serial_test::serial]
     fn nonzero_exit_version_output_still_parses() {
         let dir = tempfile::tempdir().unwrap();
         // argocd-style: prints version, exits non-zero (server unreachable)
@@ -1662,7 +1661,6 @@ mod version_probe_tests {
     }
 
     #[test]
-    #[serial_test::serial]
     fn version_subcommand_only_cli_is_probed() {
         let dir = tempfile::tempdir().unwrap();
         // cue-style: --version / -V fail, only `version` subcommand answers
