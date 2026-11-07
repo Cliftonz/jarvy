@@ -373,15 +373,15 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("cat must spawn on Unix");
+        let mut stdout = child.stdout.take().unwrap();
+        let reader = std::thread::spawn(move || {
+            let mut got = String::new();
+            stdout.read_to_string(&mut got).unwrap();
+            got
+        });
         send_prompt_to_child_stdin(&mut child, &big, "cat")
             .expect("large-buffer write must succeed");
-        let mut got = String::new();
-        child
-            .stdout
-            .take()
-            .unwrap()
-            .read_to_string(&mut got)
-            .unwrap();
+        let got = reader.join().unwrap();
         let status = child.wait().unwrap();
         assert!(status.success());
         assert_eq!(got.len(), big.len(), "large prompt byte count must match");
