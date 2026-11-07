@@ -63,9 +63,9 @@ jobs:
       - name: Generate lockfile
         run: cargo generate-lockfile
 
-      # No ignores, matching deny.toml's empty [advisories].ignore. Any
-      # future ignore must land in both places (cargo-audit has no shared
-      # config with cargo-deny).
+      # Ignores live in .cargo/audit.toml (read automatically) and mirror
+      # deny.toml's [advisories].ignore. Any future ignore must land in both
+      # places (cargo-audit has no shared config with cargo-deny).
       - name: Run cargo-audit
         run: cargo audit --deny warnings
 

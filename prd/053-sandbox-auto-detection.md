@@ -332,7 +332,8 @@ prefix length.)
 ## Test Harness Notes
 
 The integration suite in `tests/sandbox_integration.rs` spins real
-Docker containers via `testcontainers-rs` 0.27 (blocking runner).
+Docker containers via the `docker` CLI (`DockerContainer` in
+`tests/common/mod.rs`).
 The harness is cross-platform:
 
 - **Linux CI (ubuntu-latest)**: `cargo test` exercises the suite

@@ -32,7 +32,7 @@ endif
 # Image set the install-pipeline matrix exercises. Kept in sync with
 # the digest constants in tests/e2e_install_pipeline.rs. Pre-pulling
 # parallelizes outside the cargo-test timer and survives Docker Hub
-# throttle better than letting testcontainers race for them.
+# throttle better than letting parallel tests race to pull them.
 E2E_IMAGES := ubuntu:22.04 ubuntu:24.04 debian:bookworm-slim fedora:40 \
               rockylinux:9 amazonlinux:2 archlinux:latest \
               opensuse/leap:15.6 alpine:3.20

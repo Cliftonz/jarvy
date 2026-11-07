@@ -32,8 +32,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux-testcontainers:
-    name: Linux (Testcontainers - ${{ matrix.pm }})
+  linux-pm-matrix:
+    name: "Linux (pm: ${{ matrix.pm }})"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -57,8 +57,8 @@ jobs:
       - name: Build jarvy
         run: cargo build --release --bin jarvy
 
-      # Run the Testcontainers-based matrix test (spins up multiple distros)
-      - name: Run Test Containers tests
+      # Run the docker-based matrix test (spins up multiple distros)
+      - name: Run container tests
         env:
           JARVY_BIN: target/release/jarvy
           PACKAGE_MANAGER: ${{ matrix.pm }}
@@ -68,7 +68,7 @@ jobs:
     name: Native host (brew on macOS, winget on Windows)
     # macOS minutes are $0.062/min (10x Linux) and Windows is $0.01/min.
     # PR-time native-host runs were the second-largest macOS consumer
-    # behind release.yml. PRs get Linux-only (linux-testcontainers above);
+    # behind release.yml. PRs get Linux-only (linux-pm-matrix above);
     # native-host fires on release tags + workflow_dispatch so cross-OS
     # install verification still gates the canonical artifact builds.
     if: github.event_name != 'pull_request'
