@@ -357,10 +357,10 @@ mod tests {
     /// runs on macOS + Linux in practice and this path is
     /// stdlib-only — the Windows behavior can only regress in ways
     /// that would also fail the Unix build.
-    /// A prompt larger than any platform's default pipe buffer must
-    /// still deliver byte-exact. Linux default PIPE_BUF is 64 KiB;
-    /// macOS is 16 KiB. Push 128 KiB through to prove the BufWriter
-    /// pattern handles the multi-chunk write correctly.
+    /// A prompt larger than the default pipe capacity (64 KiB on Linux,
+    /// 16 KiB on macOS) must still deliver byte-exact. The 128 KiB
+    /// prompt exceeds it, so stdout is drained concurrently: otherwise
+    /// cat blocks once its stdout pipe fills and stops reading stdin.
     #[cfg(unix)]
     #[test]
     fn send_prompt_delivers_prompt_exceeding_pipe_buffer() {
