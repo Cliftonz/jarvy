@@ -314,7 +314,12 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             let tmp = tempfile::tempdir().unwrap();
             let script = tmp.path().join("pgrep");
-            std::fs::write(&script, pgrep_body).unwrap();
+            let status = std::process::Command::new("/bin/sh")
+                .args(["-c", "printf '%s' \"$1\" > \"$2\"", "sh", pgrep_body])
+                .arg(&script)
+                .status()
+                .unwrap();
+            assert!(status.success());
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
             let prev_path = std::env::var_os("PATH");
