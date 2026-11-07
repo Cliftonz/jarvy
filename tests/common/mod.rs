@@ -55,9 +55,9 @@ pub fn jarvy_fast_cmd() -> Command {
 // ---------------------------------------------------------------------
 // Container-test helpers shared by `sandbox_integration.rs` and
 // `e2e_install_pipeline.rs`. The two test families have divergent
-// `skip_reason`/`container_request` bodies (intentionally — see PRD-053
-// review F2/F3), but these three pure functions and the magic-path
-// constants are byte-identical between them and live here to prevent
+// `skip_reason` and container-start bodies (intentionally; see PRD-053
+// review F2/F3), but the docker probe, binary helpers, `DockerContainer`
+// and the magic-path constants are shared and live here to prevent
 // drift.
 // ---------------------------------------------------------------------
 
@@ -108,6 +108,52 @@ pub fn is_linux_elf(path: &Path) -> bool {
     match std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut buf)) {
         Ok(()) => buf == [0x7f, b'E', b'L', b'F'],
         Err(_) => false,
+    }
+}
+
+pub struct DockerContainer {
+    pub id: String,
+}
+
+pub struct ExecOutput {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl DockerContainer {
+    pub fn run(args: &[&str]) -> Result<Self, String> {
+        let out = Command::new("docker")
+            .args(["run", "-d"])
+            .args(args)
+            .output()
+            .expect("spawn docker run");
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+        }
+        Ok(Self {
+            id: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        })
+    }
+
+    pub fn exec(&self, cmd: &[&str]) -> ExecOutput {
+        let out = Command::new("docker")
+            .arg("exec")
+            .arg(&self.id)
+            .args(cmd)
+            .output()
+            .expect("spawn docker exec");
+        ExecOutput {
+            exit_code: out.status.code().expect("docker exec exit code"),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        }
+    }
+}
+
+impl Drop for DockerContainer {
+    fn drop(&mut self) {
+        let _ = Command::new("docker").args(["rm", "-f", &self.id]).output();
     }
 }
 

