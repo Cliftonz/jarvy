@@ -158,6 +158,13 @@ fn start_container(
         "-e".to_string(),
         "HOME=/tmp".to_string(),
     ];
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::metadata(workdir.path()).expect("stat workdir");
+        args.push("--user".to_string());
+        args.push(format!("{}:{}", meta.uid(), meta.gid()));
+    }
     for (k, v) in extra_env {
         args.push("-e".to_string());
         args.push(format!("{k}={v}"));
