@@ -343,24 +343,10 @@ mod tests {
         );
     }
 
-    /// Verify the stdin-write path actually delivers the prompt bytes
-    /// to the child. The bug this exists to prevent: a merge-conflict
-    /// resolution "cleans up" the `stdin.write_all(prompt.as_bytes())`
-    /// line into `let _ = child.stdin.take();` or forgets to close
-    /// stdin — either would compile, ship, and cause every real
-    /// wizard invocation to hang on the child waiting for EOF (or
-    /// process an empty prompt).
-    ///
-    /// Uses `cat` as a fake agent: reads stdin, writes it back to
-    /// stdout, exits on EOF. Unix-only (Windows has no equivalent
-    /// stock binary that behaves identically), but the wizard itself
-    /// runs on macOS + Linux in practice and this path is
-    /// stdlib-only — the Windows behavior can only regress in ways
-    /// that would also fail the Unix build.
-    /// A prompt larger than any platform's default pipe buffer must
-    /// still deliver byte-exact. Linux default PIPE_BUF is 64 KiB;
-    /// macOS is 16 KiB. Push 128 KiB through to prove the BufWriter
-    /// pattern handles the multi-chunk write correctly.
+    /// A prompt larger than the default pipe capacity (64 KiB on Linux,
+    /// 16 KiB on macOS) must still deliver byte-exact. The 128 KiB
+    /// prompt exceeds it, so stdout is drained concurrently: otherwise
+    /// cat blocks once its stdout pipe fills and stops reading stdin.
     #[cfg(unix)]
     #[test]
     fn send_prompt_delivers_prompt_exceeding_pipe_buffer() {
@@ -373,15 +359,15 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("cat must spawn on Unix");
+        let mut stdout = child.stdout.take().unwrap();
+        let reader = std::thread::spawn(move || {
+            let mut got = String::new();
+            stdout.read_to_string(&mut got).unwrap();
+            got
+        });
         send_prompt_to_child_stdin(&mut child, &big, "cat")
             .expect("large-buffer write must succeed");
-        let mut got = String::new();
-        child
-            .stdout
-            .take()
-            .unwrap()
-            .read_to_string(&mut got)
-            .unwrap();
+        let got = reader.join().unwrap();
         let status = child.wait().unwrap();
         assert!(status.success());
         assert_eq!(got.len(), big.len(), "large prompt byte count must match");
@@ -406,6 +392,20 @@ mod tests {
         assert!(status.success(), "cat must exit cleanly on empty stdin");
     }
 
+    /// Verify the stdin-write path actually delivers the prompt bytes
+    /// to the child. The bug this exists to prevent: a merge-conflict
+    /// resolution "cleans up" the `stdin.write_all(prompt.as_bytes())`
+    /// line into `let _ = child.stdin.take();` or forgets to close
+    /// stdin; either would compile, ship, and cause every real
+    /// wizard invocation to hang on the child waiting for EOF (or
+    /// process an empty prompt).
+    ///
+    /// Uses `cat` as a fake agent: reads stdin, writes it back to
+    /// stdout, exits on EOF. Unix-only (Windows has no equivalent
+    /// stock binary that behaves identically), but the wizard itself
+    /// runs on macOS + Linux in practice and this path is
+    /// stdlib-only, so the Windows behavior can only regress in ways
+    /// that would also fail the Unix build.
     #[cfg(unix)]
     #[test]
     fn send_prompt_to_child_stdin_delivers_exact_bytes() {
