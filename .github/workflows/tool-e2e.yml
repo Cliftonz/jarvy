@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - 'src/tools/**'
+      - 'src/sandbox/**'
       - 'crates/jarvy-templates/**'
       - 'tests/cli_*.rs'
       - 'tests/e2e_*.rs'
@@ -19,6 +20,7 @@ on:
       - 'tests/tools_*.rs'
       - 'dist/scripts/install.*'
       - 'Cargo.toml'
+      - 'Cargo.lock'
       - '.github/workflows/tool-e2e.yml'
   push:
     tags:
@@ -89,6 +91,8 @@ jobs:
           JARVY_TEST_BIN: ${{ github.workspace }}/target/x86_64-unknown-linux-gnu/release/jarvy
           JARVY_TEST_BIN_X86_64: ${{ github.workspace }}/target/x86_64-unknown-linux-gnu/release/jarvy
           JARVY_E2E_INSTALL: '1'
+          JARVY_E2E_INSTALL_REQUIRED: '1'
+          JARVY_SANDBOX_REQUIRED: '1'
         run: cargo test --release --no-fail-fast --test sandbox_integration --test e2e_install_pipeline -- --nocapture
 
   native-host:
