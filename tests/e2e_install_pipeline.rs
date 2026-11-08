@@ -126,8 +126,8 @@ fn skip_reason() -> Option<&'static str> {
 fn compute_skip_reason() -> Option<String> {
     let opted_in = std::env::var("JARVY_E2E_INSTALL").ok().as_deref() == Some("1");
     // Loud-fail used to gate `on_ci && is_linux && docker_available()`,
-    // but the dedicated e2e-install workflow that sets
-    // `JARVY_E2E_INSTALL=1` no longer exists in this repo. As written
+    // but only the `docker-integration` job in tool-e2e.yml sets
+    // `JARVY_E2E_INSTALL=1`. As written
     // the panic fired on every generic Test workflow run (which has
     // `CI=true` and docker available on the ubuntu-latest runner) and
     // turned the whole Test job red — making the install-pipeline
@@ -135,8 +135,8 @@ fn compute_skip_reason() -> Option<String> {
     // for setting up the cross-arch binaries it needs. That's the
     // opposite of "regression risk" protection. Gate the loud-fail
     // behind an explicit `JARVY_E2E_INSTALL_REQUIRED=1` marker so the
-    // generic Test job skips silently while a future dedicated
-    // workflow can still demand the matrix actually run.
+    // generic Test job skips silently while a dedicated job can still
+    // demand the matrix actually run.
     let required = std::env::var("JARVY_E2E_INSTALL_REQUIRED").ok().as_deref() == Some("1");
 
     if !opted_in {

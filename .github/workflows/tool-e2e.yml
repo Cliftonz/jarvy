@@ -79,7 +79,7 @@ jobs:
           cache-on-failure: true
 
       - name: Install cross
-        run: cargo install cross --locked
+        run: cargo install cross --locked --version 0.2.5
 
       - name: Build jarvy
         run: cross build --release --target x86_64-unknown-linux-gnu --bin jarvy
@@ -95,7 +95,8 @@ jobs:
     name: Native host (brew on macOS, winget on Windows)
     # macOS minutes are $0.062/min (10x Linux) and Windows is $0.01/min.
     # PR-time native-host runs were the second-largest macOS consumer
-    # behind release.yml. PRs get Linux-only (linux-pm-matrix above);
+    # behind release.yml. PRs get Linux-only (linux-pm-matrix and
+    # docker-integration above);
     # native-host fires on release tags + workflow_dispatch so cross-OS
     # install verification still gates the canonical artifact builds.
     if: github.event_name != 'pull_request'

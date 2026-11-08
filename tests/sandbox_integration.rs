@@ -158,6 +158,9 @@ fn start_container(
         "-e".to_string(),
         "HOME=/tmp".to_string(),
     ];
+    // Files jarvy writes into the bind-mounted workdir (its 0700
+    // `.jarvy` dir) must be owned by the host test user, or the host
+    // cannot read them back.
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;

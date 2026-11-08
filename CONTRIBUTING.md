@@ -78,8 +78,8 @@ PROPTEST_CASES=10000 cargo test --test property
 
 `tests/sandbox_integration.rs` exercises the sandbox detector and
 verify-only / auto-baseline paths (PRD-053) against real Docker
-containers. Linux CI runners pick this up automatically as part of
-`cargo test`. macOS / Apple Silicon contributors need a cross-built
+containers. CI runs it in the `docker-integration` job of
+`.github/workflows/tool-e2e.yml`. macOS / Apple Silicon contributors need a cross-built
 Linux binary so the container exec doesn't get a mach-o binary it
 can't run.
 
