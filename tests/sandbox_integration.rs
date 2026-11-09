@@ -29,6 +29,7 @@
 //! Tests skip silently when Docker is unreachable or when the
 //! resolved binary is not a Linux ELF (so a stray `cargo test` on
 //! macOS without the cross-build setup doesn't paint the suite red).
+//! Set `JARVY_SANDBOX_REQUIRED=1` to turn any skip into a panic.
 
 mod common;
 
@@ -65,7 +66,7 @@ const BUILDPACK_DEPS_BOOKWORM_SCM_DIGEST: &str =
 /// red the whole job. The dedicated `make test-sandbox` target sets
 /// `JARVY_TEST_BIN` to a cross-built linux-gnu jarvy that exec's
 /// cleanly; anything else skips with a clear message.
-fn skip_reason() -> Option<String> {
+fn compute_skip_reason() -> Option<String> {
     if !docker_available() {
         return Some("docker daemon not reachable".to_string());
     }
@@ -90,6 +91,16 @@ fn skip_reason() -> Option<String> {
         ));
     }
     None
+}
+
+fn skip_reason() -> Option<String> {
+    let reason = compute_skip_reason();
+    if let Some(why) = &reason
+        && std::env::var("JARVY_SANDBOX_REQUIRED").ok().as_deref() == Some("1")
+    {
+        panic!("sandbox tests would skip ({why}) but JARVY_SANDBOX_REQUIRED=1 was set");
+    }
+    reason
 }
 
 /// Minimal `jarvy.toml` content used by the setup-path tests. `git`
@@ -158,6 +169,16 @@ fn start_container(
         "-e".to_string(),
         "HOME=/tmp".to_string(),
     ];
+    // Files jarvy writes into the bind-mounted workdir (its 0700
+    // `.jarvy` dir) must be owned by the host test user, or the host
+    // cannot read them back.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::metadata(workdir.path()).expect("stat workdir");
+        args.push("--user".to_string());
+        args.push(format!("{}:{}", meta.uid(), meta.gid()));
+    }
     for (k, v) in extra_env {
         args.push("-e".to_string());
         args.push(format!("{k}={v}"));
