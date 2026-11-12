@@ -764,6 +764,17 @@ macro_rules! define_tool {
             brew: Some($brew),
         })
     };
+    (@linux apt: $apt:expr, dnf: $dnf:expr, pacman: $pacman:expr) => {
+        Some($crate::tools::spec::LinuxInstall {
+            apt: Some($apt),
+            dnf: Some($dnf),
+            yum: Some($dnf),
+            zypper: Some($dnf),
+            pacman: Some($pacman),
+            apk: None,
+            brew: None,
+        })
+    };
     (@linux apt: $apt:expr, dnf: $dnf:expr, pacman: $pacman:expr, apk: $apk:expr) => {
         Some($crate::tools::spec::LinuxInstall {
             apt: Some($apt),
