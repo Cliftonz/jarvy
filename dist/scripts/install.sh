@@ -400,6 +400,9 @@ main() {
     # script exit, after main() has returned, so a local would be unbound
     # under `set -u`. The trap reads them lazily instead of embedding the
     # paths, which would break on a quote in TMPDIR or JARVY_INSTALL_DIR.
+    # Reset staged so a value inherited from the caller's environment is
+    # never handed to the trap's rm -rf.
+    staged=
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir" ${staged:+"$staged"}' EXIT
 
