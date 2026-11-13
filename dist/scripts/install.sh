@@ -425,10 +425,18 @@ main() {
     # Install
     log_info "Installing to $JARVY_INSTALL_DIR..."
     mkdir -p "$JARVY_INSTALL_DIR"
-    cp "$tmp_dir/jarvy" "$JARVY_INSTALL_DIR/jarvy" 2>/dev/null || \
-        cp "$tmp_dir/jarvy.exe" "$JARVY_INSTALL_DIR/jarvy.exe" 2>/dev/null || \
-        cp "$tmp_dir/"*/jarvy* "$JARVY_INSTALL_DIR/" 2>/dev/null
-    chmod +x "$JARVY_INSTALL_DIR/jarvy" 2>/dev/null || true
+    if [ "$archive_ext" = "zip" ]; then
+        cp "$tmp_dir/jarvy.exe" "$JARVY_INSTALL_DIR/jarvy.exe"
+    else
+        # Rename over the target instead of writing into it: Linux refuses
+        # to open a running executable for writing (ETXTBSY), and the
+        # same-filesystem rename never exposes a half-written binary.
+        local staged
+        staged="$(mktemp "$JARVY_INSTALL_DIR/.jarvy.XXXXXX")"
+        cp "$tmp_dir/jarvy" "$staged"
+        chmod +x "$staged"
+        mv -f "$staged" "$JARVY_INSTALL_DIR/jarvy"
+    fi
 
     log_success "Jarvy v$version installed to $JARVY_INSTALL_DIR/jarvy"
 
