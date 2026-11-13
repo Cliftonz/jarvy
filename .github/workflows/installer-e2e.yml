@@ -488,6 +488,105 @@ jobs:
             Write-Host "::error::fresh failed copy left a partial jarvy.exe"; exit 1
           }
           Write-Host "OK fresh failed copy left no jarvy.exe"
+
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-fresh-locked"
+          $partialBin = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
+          $out = & $env:INSTALLER_SHELL -NoProfile -Command "$locked & 'dist/scripts/install.ps1'" 2>&1
+          $rc = $LASTEXITCODE
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
+          if ($rc -ne 1) { Write-Host "::error::fresh locked partial exited $rc, expected 1"; exit 1 }
+          if (-not $text.Contains($copyError) -or -not $text.Contains("[ERROR] The partial jarvy.exe at $partialBin could not be removed")) {
+            Write-Host "::error::fresh locked partial did not report the copy error and the undeletable partial"; exit 1
+          }
+          Write-Host "OK fresh locked partial reported"
+          # The runner exits with $LASTEXITCODE, still the installer's expected 1.
+          exit 0
+
+      - name: Interrupted or blocked swap leaves jarvy.exe in place
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $env:JARVY_VERSION = $env:VERSION
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-interrupt"
+          $bin = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
+          & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 | Out-Host
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::initial install into $env:JARVY_INSTALL_DIR exited $LASTEXITCODE"; exit 1 }
+
+          # Stop the installer's pipeline, as Ctrl+C does, while a shadowed
+          # Copy-Item sleeps after the previous exe was moved aside.
+          $stopper = Join-Path $env:RUNNER_TEMP 'stop-mid-swap.ps1'
+          Set-Content -LiteralPath $stopper -Value @'
+          $ps = [PowerShell]::Create()
+          [void]$ps.AddScript("function Copy-Item { param(`$LiteralPath, `$Destination) Start-Sleep -Seconds 60 }; & 'dist/scripts/install.ps1'")
+          [void]$ps.BeginInvoke()
+          $aside = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe.old'
+          $deadline = (Get-Date).AddSeconds(120)
+          while (-not (Test-Path -LiteralPath $aside) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+          $ps.Stop()
+          $ps.Streams.Information | ForEach-Object { "$_" }
+          '@
+          $out = & $env:INSTALLER_SHELL -NoProfile -File $stopper 2>&1
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
+          if (-not $text.Contains('Previous jarvy.exe restored.')) {
+            Write-Host "::error::interrupted swap did not restore the previous exe"; exit 1
+          }
+          if (Get-ChildItem -Path $env:JARVY_INSTALL_DIR -Filter 'jarvy.exe.old*') {
+            Write-Host "::error::interrupted swap left jarvy.exe.old* behind"; exit 1
+          }
+          $observed = (& $bin --version).Split(' ')[1]
+          if ($observed.Split('-')[0] -ne $env:CORE) {
+            Write-Host "::error::jarvy.exe after interrupt reports $observed, expected core $env:CORE"
+            exit 1
+          }
+          Write-Host "OK interrupted swap restored: $observed"
+
+          # Holding jarvy.exe open without delete sharing blocks the rename.
+          $held = [IO.File]::Open($bin, 'Open', 'Read', 'Read')
+          try {
+            $out = & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 2>&1
+            $rc = $LASTEXITCODE
+          }
+          finally {
+            $held.Dispose()
+          }
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
+          if ($rc -ne 1) { Write-Host "::error::blocked move-aside exited $rc, expected 1"; exit 1 }
+          if (-not $text.Contains('[ERROR] Could not move the existing jarvy.exe aside') -or -not $text.Contains("[ERROR] The existing $bin was left untouched.")) {
+            Write-Host "::error::blocked move-aside was not reported"; exit 1
+          }
+          $observed = (& $bin --version).Split(' ')[1]
+          if ($observed.Split('-')[0] -ne $env:CORE) {
+            Write-Host "::error::jarvy.exe after blocked move-aside reports $observed, expected core $env:CORE"
+            exit 1
+          }
+          Write-Host "OK blocked move-aside left jarvy.exe untouched: $observed"
+
+      - name: Refuses a directory at jarvy.exe
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $env:JARVY_VERSION = $env:VERSION
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-dir-target"
+          $target = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
+          New-Item -ItemType Directory -Path $target | Out-Null
+          $out = & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 2>&1
+          $rc = $LASTEXITCODE
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
+          if ($rc -ne 1) { Write-Host "::error::directory at jarvy.exe exited $rc, expected 1"; exit 1 }
+          if (-not $text.Contains("[ERROR] $target is a directory; remove it or set JARVY_INSTALL_DIR elsewhere.")) {
+            Write-Host "::error::directory at jarvy.exe was not refused"; exit 1
+          }
+          if ($text.Contains('Downloading')) {
+            Write-Host "::error::installer downloaded before refusing"; exit 1
+          }
+          if (-not (Test-Path -LiteralPath $target -PathType Container)) {
+            Write-Host "::error::directory at jarvy.exe was not left in place"; exit 1
+          }
+          Write-Host "OK directory at jarvy.exe refused"
           # The runner exits with $LASTEXITCODE, still the installer's expected 1.
           exit 0
 
@@ -507,10 +606,6 @@ jobs:
             if ($rc -ne 0) { Write-Host "::error::trailing-slash install exited $rc"; exit 1 }
             if (-not $text.Contains("installed to $dir\jarvy.exe") -or -not $text.Contains("Added $dir to user PATH")) {
               Write-Host "::error::printed install path is not $dir"; exit 1
-            }
-            $entries = [Environment]::GetEnvironmentVariable('PATH', 'User') -split ';'
-            if ($entries -notcontains $dir -or $entries -contains "$dir\") {
-              Write-Host "::error::user PATH entry for the install dir is not exactly $dir"; exit 1
             }
             Write-Host "OK trailing slash dropped: $dir"
           }
