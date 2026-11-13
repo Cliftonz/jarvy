@@ -13,11 +13,16 @@ name: Installer E2E
 #   * proves add_to_path writes the shell rc line
 #
 # Triggers on every release (stable AND prerelease) so a cut is validated
-# through the installer, plus manual dispatch to reverify any tag.
+# through the installer, plus manual dispatch to reverify any tag. PRs that
+# touch the installers run them against the pinned PR_TAG release below.
 
 on:
   release:
     types: [published]
+  pull_request:
+    paths:
+      - 'dist/scripts/**'
+      - '.github/workflows/installer-e2e.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -29,11 +34,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: installer-e2e-${{ github.event.release.tag_name || inputs.tag }}
+  group: installer-e2e-${{ github.event.release.tag_name || inputs.tag || github.ref }}
   cancel-in-progress: false
 
 env:
   JARVY_TELEMETRY: '0'
+  # A real published release for PR runs to install; bump when a newer
+  # stable release ships.
+  PR_TAG: v0.8.4
 
 jobs:
   setup:
@@ -47,7 +55,7 @@ jobs:
     steps:
       - id: r
         env:
-          RESOLVED_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RESOLVED_TAG: ${{ github.event.release.tag_name || inputs.tag || env.PR_TAG }}
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
@@ -230,13 +238,20 @@ jobs:
           "$JARVY_INSTALL_DIR/jarvy" --version
 
   windows:
-    name: install.ps1 (Windows x86_64)
+    name: install.ps1 (Windows x86_64, ${{ matrix.shell }})
     needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        # powershell is Windows PowerShell 5.1, what `irm | iex` runs on
+        # stock Windows; pwsh is PowerShell 7.
+        shell: [pwsh, powershell]
     runs-on: windows-latest
     timeout-minutes: 15
     env:
       VERSION: ${{ needs.setup.outputs.version }}
       CORE: ${{ needs.setup.outputs.core }}
+      INSTALLER_SHELL: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -245,12 +260,12 @@ jobs:
         run: |
           $env:JARVY_VERSION = $env:VERSION
           $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-e2e"
-          # Run the installer in a child pwsh so its internal `exit` on
+          # Run the installer in a child shell so its internal `exit` on
           # failure doesn't skip the assertions below.
-          $out = & pwsh -NoProfile -File dist/scripts/install.ps1 2>&1
+          $out = & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 2>&1
           $rc = $LASTEXITCODE
-          $text = $out | Out-String
-          Write-Host $text
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
           if ($rc -ne 0) { Write-Host "::error::install.ps1 exited $rc"; exit 1 }
           if ($text -notmatch 'Checksum verified') {
             Write-Host "::error::install.ps1 did not verify the checksum"; exit 1
@@ -271,7 +286,7 @@ jobs:
           # Forward slashes and a space, so the installer must normalize the
           # dir to match the path Get-Process reports.
           $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP/jarvy e2e/fwd" -replace '\\', '/'
-          & pwsh -NoProfile -File dist/scripts/install.ps1 | Out-Host
+          & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 | Out-Host
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::initial install into $env:JARVY_INSTALL_DIR exited $LASTEXITCODE"; exit 1 }
           $bin = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
           # Hold `jarvy mcp` open on a live stdin pipe, the way Claude Code
@@ -284,10 +299,10 @@ jobs:
             Start-Sleep -Seconds 2
             if ($proc.HasExited) { Write-Host "::error::jarvy mcp exited before reinstall"; exit 1 }
 
-            $out = & pwsh -NoProfile -File dist/scripts/install.ps1 2>&1
+            $out = & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 2>&1
             $rc = $LASTEXITCODE
-            $text = $out | Out-String
-            Write-Host $text
+            Write-Host ($out | Out-String)
+            $text = ($out -join ' ') -replace '\s+', ' '
             if ($rc -ne 0) { Write-Host "::error::reinstall over running exe exited $rc"; exit 1 }
             if ($text -notmatch 'keep the old version until restarted') {
               Write-Host "::error::no warning about running sessions"; exit 1
@@ -305,10 +320,10 @@ jobs:
 
             # The first process now runs from jarvy.exe.old, so the stale
             # .old cannot be deleted and the exe must park under a unique name.
-            $out = & pwsh -NoProfile -File dist/scripts/install.ps1 2>&1
+            $out = & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 2>&1
             $rc = $LASTEXITCODE
-            $text = $out | Out-String
-            Write-Host $text
+            Write-Host ($out | Out-String)
+            $text = ($out -join ' ') -replace '\s+', ' '
             if ($rc -ne 0) { Write-Host "::error::reinstall over running .old exited $rc"; exit 1 }
             if ($text -notmatch 'keep the old version until restarted') {
               Write-Host "::error::no warning about running sessions on stale-.old reinstall"; exit 1
@@ -326,3 +341,53 @@ jobs:
           finally {
             $proc.Kill()
           }
+
+      - name: Failed copy rolls back to the previous jarvy.exe
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $env:JARVY_VERSION = $env:VERSION
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-rollback"
+          $bin = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
+          & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 | Out-Host
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::initial install into $env:JARVY_INSTALL_DIR exited $LASTEXITCODE"; exit 1 }
+
+          # Shadow Copy-Item so the copy fails after the old exe was moved
+          # aside: R1 leaves a partial jarvy.exe, R2 also holds it locked so
+          # the move-back fails.
+          $partial = "function Copy-Item { param(`$Path, `$LiteralPath, `$Destination) [IO.File]::WriteAllText(`$Destination, 'partial'); throw (New-Object IO.IOException 'injected copy failure') };"
+          $locked = "function Copy-Item { param(`$Path, `$LiteralPath, `$Destination) `$global:h = [IO.File]::Open(`$Destination, 'Create', 'ReadWrite', 'None'); throw (New-Object IO.IOException 'injected copy failure') };"
+
+          $out = & $env:INSTALLER_SHELL -NoProfile -Command "$partial & 'dist/scripts/install.ps1'" 2>&1
+          $rc = $LASTEXITCODE
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
+          if ($rc -eq 0) { Write-Host "::error::install succeeded despite a failing copy"; exit 1 }
+          if ($text -notmatch 'injected copy failure') {
+            Write-Host "::error::original copy error not shown"; exit 1
+          }
+          if (Get-ChildItem -Path $env:JARVY_INSTALL_DIR -Filter 'jarvy.exe.old*') {
+            Write-Host "::error::previous exe was not moved back from jarvy.exe.old*"; exit 1
+          }
+          $observed = (& $bin --version).Split(' ')[1]
+          if ($observed.Split('-')[0] -ne $env:CORE) {
+            Write-Host "::error::restored jarvy.exe reports $observed, expected core $env:CORE"
+            exit 1
+          }
+          Write-Host "OK partial copy rolled back: $observed"
+
+          $out = & $env:INSTALLER_SHELL -NoProfile -Command "$locked & 'dist/scripts/install.ps1'" 2>&1
+          $rc = $LASTEXITCODE
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
+          $aside = "$bin.old"
+          if ($rc -ne 1) { Write-Host "::error::stranded swap exited $rc, expected 1"; exit 1 }
+          if (-not $text.Contains("[ERROR] The previous binary is at $aside; rename it to $bin manually.")) {
+            Write-Host "::error::stranded swap did not name the aside file"; exit 1
+          }
+          if (-not (Test-Path -LiteralPath $aside)) {
+            Write-Host "::error::aside file $aside is missing"; exit 1
+          }
+          Write-Host "OK stranded swap reported the aside file"
+          # The runner exits with $LASTEXITCODE, still the installer's expected 1.
+          exit 0
