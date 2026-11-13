@@ -1,8 +1,9 @@
 name: Test
 
 on:
-  # PR gate: Linux only. Public-repo Linux minutes are free; macOS + Windows
-  # are not (macOS is 10x Linux per-minute). Cross-OS validation lives on
+  # PR gate: Linux, plus one small Windows job for the installer-swap
+  # tests. Public-repo Linux minutes are free; macOS + Windows are not
+  # (macOS is 10x Linux per-minute). Full cross-OS validation lives on
   # the release-tag matrix below + the nightly e2e-cross-platform run.
   # Doc-only / CI-only / examples-only PRs skipped via paths-ignore so a
   # README tweak doesn't fire the test suite.
@@ -97,9 +98,7 @@ jobs:
       - name: Verify packaged crate compiles
         run: cargo publish -p jarvy --dry-run
 
-  # Windows-only binary-swap tests (#[cfg(windows)] in update::installer)
-  # on PRs. Tag pushes and manual runs already cover them in the full
-  # Windows matrix leg below, so this job is PR-only.
+  # PR-only: tag pushes and manual runs already run the full Windows matrix.
   windows-installer:
     name: Installer swap (windows-latest)
     if: github.event_name == 'pull_request'
