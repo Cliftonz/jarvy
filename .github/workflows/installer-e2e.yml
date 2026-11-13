@@ -307,7 +307,7 @@ jobs:
           echo "✓ PATH line written to .bashrc"
 
       - name: Latest-channel resolution (stable releases only)
-        if: needs.setup.outputs.prerelease == 'false'
+        if: needs.setup.outputs.prerelease == 'false' && (github.event_name == 'release' || github.event_name == 'workflow_dispatch')
         run: |
           set -euo pipefail
           # Exercise get_latest_version: no pinned version, stable channel.
