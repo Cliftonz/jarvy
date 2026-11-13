@@ -15,7 +15,7 @@
 # POSIX sh up to here so `curl ... | sh` under dash reaches this message
 # instead of a syntax error further down.
 if [ -z "${BASH_VERSION:-}" ]; then
-    echo "ERROR: install.sh requires bash. Run it with: curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash" >&2
+    echo "ERROR: install.sh requires bash. Run it with bash (pipe it to bash, not sh)." >&2
     exit 1
 fi
 
@@ -363,13 +363,16 @@ main() {
     platform="$(detect_platform)"
     log_info "Detected platform: $platform"
 
-    # Determine archive extension
     if [[ "$platform" == *"windows"* ]]; then
         archive_ext="zip"
     else
         archive_ext="tar.gz"
     fi
 
+    if [ -L "$JARVY_INSTALL_DIR" ] && [ ! -e "$JARVY_INSTALL_DIR" ]; then
+        log_error "Install directory $JARVY_INSTALL_DIR is a symlink to a missing location. Fix the link, or set JARVY_INSTALL_DIR to another directory."
+        exit 1
+    fi
     if [ "$archive_ext" = "tar.gz" ]; then
         if [ -L "$JARVY_INSTALL_DIR/jarvy" ] && [ -e "$JARVY_INSTALL_DIR/jarvy" ]; then
             log_error "$JARVY_INSTALL_DIR/jarvy is a symlink, so jarvy there is managed elsewhere (e.g. Homebrew)."

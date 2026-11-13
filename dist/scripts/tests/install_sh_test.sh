@@ -208,10 +208,17 @@ staged="$WORK/sentinel" run_install "$DIR" "$WORK/failing-curl"
 assert_rc "failed download fails the install" 1 "$RC"
 assert_eq "inherited \$staged survives an early exit" "yes" "$([ -d "$WORK/sentinel" ] && echo yes || echo no)"
 
+ln -s "$WORK/missing-location" "$WORK/dangling-install-dir"
+run_install "$WORK/dangling-install-dir"
+assert_rc "dangling install dir is refused" 1 "$RC"
+assert_eq "dangling install dir refusal names the cause" "1" "$(printf '%s' "$OUT" | grep -c 'symlink to a missing location')"
+assert_eq "dangling install dir refused before any download" "no" "$([ -e "$WORK/curl-called" ] && echo yes || echo no)"
+
 if command -v dash >/dev/null 2>&1; then
     OUT="$(dash "$INSTALL_SH" 2>&1)"
     assert_rc "dash run exits non-zero" 1 $?
     assert_eq "dash run gets the bash guard message" "1" "$(printf '%s' "$OUT" | grep -c 'requires bash')"
+    assert_eq "bash guard message pins no branch URL" "0" "$(printf '%s' "$OUT" | grep -c 'raw.githubusercontent')"
 else
     echo "  skip dash not installed"
 fi
