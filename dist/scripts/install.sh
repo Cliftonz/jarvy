@@ -12,6 +12,13 @@
 #   JARVY_SKIP_CHECKSUM  - Set to 1 to skip SHA256 integrity verification
 #                          (NOT recommended — bypasses supply-chain check)
 
+# POSIX sh up to here so `curl ... | sh` under dash reaches this message
+# instead of a syntax error further down.
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "ERROR: install.sh requires bash. Run it with: curl -fsSL https://raw.githubusercontent.com/Cliftonz/jarvy/main/dist/scripts/install.sh | bash" >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 JARVY_VERSION="${JARVY_VERSION:-latest}"
@@ -347,7 +354,7 @@ add_to_path() {
 }
 
 main() {
-    local platform version url archive_ext tmp_dir
+    local platform version url archive_ext
 
     log_info "Jarvy Installer"
     echo ""
@@ -355,6 +362,25 @@ main() {
     # Detect platform
     platform="$(detect_platform)"
     log_info "Detected platform: $platform"
+
+    # Determine archive extension
+    if [[ "$platform" == *"windows"* ]]; then
+        archive_ext="zip"
+    else
+        archive_ext="tar.gz"
+    fi
+
+    if [ "$archive_ext" = "tar.gz" ]; then
+        if [ -L "$JARVY_INSTALL_DIR/jarvy" ] && [ -e "$JARVY_INSTALL_DIR/jarvy" ]; then
+            log_error "$JARVY_INSTALL_DIR/jarvy is a symlink, so jarvy there is managed elsewhere (e.g. Homebrew)."
+            log_error "Upgrade it through that tool, or set JARVY_INSTALL_DIR to another directory."
+            exit 1
+        fi
+        if [ -d "$JARVY_INSTALL_DIR/jarvy" ]; then
+            log_error "$JARVY_INSTALL_DIR/jarvy is a directory. Remove it, or set JARVY_INSTALL_DIR to another directory."
+            exit 1
+        fi
+    fi
 
     # Get version
     if [ "$JARVY_VERSION" = "latest" ]; then
@@ -366,28 +392,16 @@ main() {
     fi
     log_info "Installing version: v$version"
 
-    # Determine archive extension
-    if [[ "$platform" == *"windows"* ]]; then
-        archive_ext="zip"
-    else
-        archive_ext="tar.gz"
-    fi
-
     # Build download URL
     url="https://github.com/${JARVY_REPO}/releases/download/v${version}/jarvy-v${version}-${platform}.${archive_ext}"
     log_info "Download URL: $url"
 
-    # Create temporary directory. Bake the resolved path into the trap
-    # command NOW (double quotes expand at registration) rather than
-    # referencing $tmp_dir lazily: `tmp_dir` is a `local` in main(), but
-    # the EXIT trap fires at *script* exit when that local is out of
-    # scope — under `set -u` a lazy `$tmp_dir` then throws "unbound
-    # variable" and the trap exits 1, failing every install after a
-    # successful download. mktemp -d output contains no quotes, so the
-    # single-quoted embedding is safe.
+    # tmp_dir and staged are globals, not locals: the EXIT trap fires at
+    # script exit, after main() has returned, so a local would be unbound
+    # under `set -u`. The trap reads them lazily instead of embedding the
+    # paths, which would break on a quote in TMPDIR or JARVY_INSTALL_DIR.
     tmp_dir=$(mktemp -d)
-    # shellcheck disable=SC2064  # expand-now is the intent (see comment above)
-    trap "rm -rf '$tmp_dir'" EXIT
+    trap 'rm -rf "$tmp_dir" ${staged:+"$staged"}' EXIT
 
     # Download
     log_info "Downloading..."
@@ -428,18 +442,11 @@ main() {
     if [ "$archive_ext" = "zip" ]; then
         cp "$tmp_dir/jarvy.exe" "$JARVY_INSTALL_DIR/jarvy.exe"
     else
-        if [ -L "$JARVY_INSTALL_DIR/jarvy" ]; then
-            log_error "$JARVY_INSTALL_DIR/jarvy is a symlink, so jarvy there is managed elsewhere (e.g. Homebrew)."
-            log_error "Upgrade it through that tool, or set JARVY_INSTALL_DIR to another directory."
-            exit 1
-        fi
         # Rename over the target instead of writing into it: rewriting a
-        # running binary in place fails (Linux ETXTBSY) or gets it killed
-        # (macOS code signing), and a rename never exposes a partial file.
-        local staged
+        # running binary in place fails on Linux (ETXTBSY), and on macOS
+        # code signing kills the rewritten binary when it next runs. A
+        # rename never exposes a partial file.
         staged="$(mktemp "$JARVY_INSTALL_DIR/.jarvy.XXXXXX")"
-        # shellcheck disable=SC2064  # expand-now, same as the tmp_dir trap
-        trap "rm -rf '$tmp_dir' '$staged'" EXIT
         cp "$tmp_dir/jarvy" "$staged"
         chmod 755 "$staged"
         mv -f "$staged" "$JARVY_INSTALL_DIR/jarvy"
