@@ -36,6 +36,7 @@ pub mod btop;
 pub mod buf;
 pub mod buildah;
 pub mod bun;
+pub mod caddy;
 pub mod cargo_generate;
 pub mod cargo_nextest;
 pub mod cargo_seek;
