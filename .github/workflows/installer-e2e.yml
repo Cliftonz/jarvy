@@ -90,6 +90,7 @@ jobs:
       VERSION: ${{ needs.setup.outputs.version }}
       CORE: ${{ needs.setup.outputs.core }}
       PRERELEASE: ${{ needs.setup.outputs.prerelease }}
+      # Beside the checkout: job-level env can't expand $HOME or use runner.temp.
       E2E_INSTALL_DIR: ${{ github.workspace }}/../jarvy-e2e/bin
       # install.sh's gh_api_fetch sends this as a Bearer token; macOS hosted runners share egress IPs and hit the unauthenticated /releases/latest rate limit.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
