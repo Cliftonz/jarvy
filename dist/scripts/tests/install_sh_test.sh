@@ -214,6 +214,12 @@ assert_rc "dangling install dir is refused" 1 "$RC"
 assert_eq "dangling install dir refusal names the cause" "1" "$(printf '%s' "$OUT" | grep -c 'symlink to a missing location')"
 assert_eq "dangling install dir refused before any download" "no" "$([ -e "$WORK/curl-called" ] && echo yes || echo no)"
 
+ln -s "$WORK/unmounted" "$WORK/dangling-parent"
+run_install "$WORK/dangling-parent/bin"
+assert_rc "dangling parent of install dir is refused" 1 "$RC"
+assert_eq "dangling parent refusal names the cause" "1" "$(printf '%s' "$OUT" | grep -c 'symlink to a missing location')"
+assert_eq "dangling parent refused before any download" "no" "$([ -e "$WORK/curl-called" ] && echo yes || echo no)"
+
 if command -v dash >/dev/null 2>&1; then
     OUT="$(dash "$INSTALL_SH" 2>&1)"
     assert_rc "dash run exits non-zero" 1 $?

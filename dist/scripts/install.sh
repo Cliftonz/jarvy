@@ -369,10 +369,14 @@ main() {
         archive_ext="tar.gz"
     fi
 
-    if [ -L "$JARVY_INSTALL_DIR" ] && [ ! -e "$JARVY_INSTALL_DIR" ]; then
-        log_error "Install directory $JARVY_INSTALL_DIR is a symlink to a missing location. Fix the link, or set JARVY_INSTALL_DIR to another directory."
-        exit 1
-    fi
+    local missing="$JARVY_INSTALL_DIR"
+    while [ ! -e "$missing" ]; do
+        if [ -L "$missing" ]; then
+            log_error "$missing is a symlink to a missing location, so $JARVY_INSTALL_DIR cannot be created. Fix the link, or set JARVY_INSTALL_DIR to another directory."
+            exit 1
+        fi
+        missing="$(dirname "$missing")"
+    done
     if [ "$archive_ext" = "tar.gz" ]; then
         if [ -L "$JARVY_INSTALL_DIR/jarvy" ] && [ -e "$JARVY_INSTALL_DIR/jarvy" ]; then
             log_error "$JARVY_INSTALL_DIR/jarvy is a symlink, so jarvy there is managed elsewhere (e.g. Homebrew)."
