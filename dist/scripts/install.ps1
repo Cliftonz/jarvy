@@ -253,20 +253,24 @@ function Install-Jarvy {
             Copy-Item -LiteralPath $jarvy.FullName -Destination $target
         }
         catch {
-            # Move the previous exe back over whatever the failed copy left.
-            # If that also fails, name the aside file so the user can
-            # restore it by hand.
-            $copyError = $_
+            # Leave the install dir as it was before the copy: move the
+            # previous exe back over whatever the failed copy left, or
+            # remove a partial exe on a fresh install. If the move-back
+            # fails, name the aside file so the user can restore it by hand.
+            Write-Err "Failed to install new binary: $_"
             if ($aside) {
                 try { Move-Item -LiteralPath $aside -Destination $target -Force }
                 catch {
-                    Write-Err "Failed to install new binary: $copyError"
                     Write-Err "Could not move the previous binary back: $_"
                     Write-Err "The previous binary is at $aside; rename it to $target manually."
                     exit 1
                 }
+                Write-Info "Previous jarvy.exe restored."
             }
-            throw $copyError
+            elseif (Test-Path -LiteralPath $target) {
+                Remove-Item -LiteralPath $target -Force
+            }
+            exit 1
         }
 
         Write-Success "Jarvy v$version installed to $target"
@@ -284,8 +288,9 @@ function Install-Jarvy {
             Write-Warn "PATH updated. Please restart your terminal for changes to take effect."
         }
         elseif (-not (Get-Command jarvy -ErrorAction SilentlyContinue)) {
-            Write-Info "Add the following to your PATH:"
-            Write-Host "    $installPath"
+            # Add-ToPath only declines when the dir is already on the user
+            # PATH, so this session simply predates that entry.
+            Write-Warn "$installPath is already on your user PATH. Please restart your terminal to use jarvy."
         }
 
         Write-Host ""
