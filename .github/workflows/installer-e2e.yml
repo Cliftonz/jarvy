@@ -175,3 +175,43 @@ jobs:
             exit 1
           }
           Write-Host "OK installed + verified: $observed"
+
+      - name: Reinstall over a running jarvy.exe
+        shell: pwsh
+        run: |
+          $env:JARVY_VERSION = $env:VERSION
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-e2e"
+          $bin = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
+          # Hold `jarvy mcp` open on a live stdin pipe, the way Claude Code
+          # and Cursor keep it running as an MCP server.
+          $psi = [System.Diagnostics.ProcessStartInfo]::new($bin, 'mcp')
+          $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.UseShellExecute = $false
+          $proc = [System.Diagnostics.Process]::Start($psi)
+          try {
+            Start-Sleep -Seconds 2
+            if ($proc.HasExited) { Write-Host "::error::jarvy mcp exited before reinstall"; exit 1 }
+
+            $out = & pwsh -NoProfile -File dist/scripts/install.ps1 2>&1
+            $rc = $LASTEXITCODE
+            $text = $out | Out-String
+            Write-Host $text
+            if ($rc -ne 0) { Write-Host "::error::reinstall over running exe exited $rc"; exit 1 }
+            if ($text -notmatch 'keep the old version until restarted') {
+              Write-Host "::error::no warning about running sessions"; exit 1
+            }
+
+            $observed = (& $bin --version).Split(' ')[1]
+            if ($observed.Split('-')[0] -ne $env:CORE) {
+              Write-Host "::error::version mismatch after reinstall: $observed, expected core $env:CORE"
+              exit 1
+            }
+            if (-not (Get-ChildItem -Path $env:JARVY_INSTALL_DIR -Filter 'jarvy.exe.old*')) {
+              Write-Host "::error::running exe was not moved aside to jarvy.exe.old*"; exit 1
+            }
+            Write-Host "OK reinstalled over running exe: $observed"
+          }
+          finally {
+            $proc.Kill()
+          }

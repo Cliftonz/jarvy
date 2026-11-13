@@ -224,9 +224,28 @@ function Install-Jarvy {
             exit 1
         }
 
-        Copy-Item -Path $jarvy.FullName -Destination (Join-Path $InstallDir "jarvy.exe") -Force
+        # Windows refuses to overwrite a running exe (e.g. `jarvy mcp` held
+        # open by an editor) but allows renaming it, so move the current
+        # binary aside first. Mirrors the self-updater's `.old` swap.
+        $target = Join-Path $InstallDir "jarvy.exe"
+        $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target })
+        if (Test-Path $target) {
+            $aside = "$target.old"
+            if (Test-Path $aside) {
+                # A stale .old that is itself still running cannot be deleted.
+                try { Remove-Item -Path $aside -Force }
+                catch { $aside = "$target.old.$(Get-Random)" }
+            }
+            Move-Item -Path $target -Destination $aside
+        }
+
+        Copy-Item -Path $jarvy.FullName -Destination $target
 
         Write-Success "Jarvy v$version installed to $InstallDir\jarvy.exe"
+
+        if ($running.Count -gt 0) {
+            Write-Warn "Running jarvy sessions (e.g. Claude Code / Cursor MCP servers) keep the old version until restarted to pick up v$version."
+        }
 
         # Add to PATH
         $pathUpdated = Add-ToPath -Directory $InstallDir
