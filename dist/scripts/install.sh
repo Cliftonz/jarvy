@@ -428,13 +428,20 @@ main() {
     if [ "$archive_ext" = "zip" ]; then
         cp "$tmp_dir/jarvy.exe" "$JARVY_INSTALL_DIR/jarvy.exe"
     else
-        # Rename over the target instead of writing into it: Linux refuses
-        # to open a running executable for writing (ETXTBSY), and the
-        # same-filesystem rename never exposes a half-written binary.
+        if [ -L "$JARVY_INSTALL_DIR/jarvy" ]; then
+            log_error "$JARVY_INSTALL_DIR/jarvy is a symlink, so jarvy there is managed elsewhere (e.g. Homebrew)."
+            log_error "Upgrade it through that tool, or set JARVY_INSTALL_DIR to another directory."
+            exit 1
+        fi
+        # Rename over the target instead of writing into it: rewriting a
+        # running binary in place fails (Linux ETXTBSY) or gets it killed
+        # (macOS code signing), and a rename never exposes a partial file.
         local staged
         staged="$(mktemp "$JARVY_INSTALL_DIR/.jarvy.XXXXXX")"
+        # shellcheck disable=SC2064  # expand-now, same as the tmp_dir trap
+        trap "rm -rf '$tmp_dir' '$staged'" EXIT
         cp "$tmp_dir/jarvy" "$staged"
-        chmod +x "$staged"
+        chmod 755 "$staged"
         mv -f "$staged" "$JARVY_INSTALL_DIR/jarvy"
     fi
 
