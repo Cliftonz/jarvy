@@ -35,7 +35,7 @@ permissions:
 
 concurrency:
   group: installer-e2e-${{ github.event.release.tag_name || inputs.tag || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   JARVY_TELEMETRY: '0'
@@ -436,18 +436,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::initial install into $env:JARVY_INSTALL_DIR exited $LASTEXITCODE"; exit 1 }
 
           # Shadow Copy-Item so the copy fails after the old exe was moved
-          # aside: R1 leaves a partial jarvy.exe, R2 also holds it locked so
-          # the move-back fails.
-          $partial = "function Copy-Item { param(`$Path, `$LiteralPath, `$Destination) [IO.File]::WriteAllText(`$Destination, 'partial'); throw (New-Object IO.IOException 'injected copy failure') };"
-          $locked = "function Copy-Item { param(`$Path, `$LiteralPath, `$Destination) `$global:h = [IO.File]::Open(`$Destination, 'Create', 'ReadWrite', 'None'); throw (New-Object IO.IOException 'injected copy failure') };"
+          # aside. $partial leaves a partial jarvy.exe behind; $locked also
+          # holds that partial open so moving the previous exe back fails.
+          $partial = "function Copy-Item { param(`$LiteralPath, `$Destination) [IO.File]::WriteAllText(`$Destination, 'partial'); throw (New-Object IO.IOException 'injected copy failure') };"
+          $locked = "function Copy-Item { param(`$LiteralPath, `$Destination) `$global:h = [IO.File]::Open(`$Destination, 'Create', 'ReadWrite', 'None'); throw (New-Object IO.IOException 'injected copy failure') };"
+          $copyError = '[ERROR] Failed to install new binary: injected copy failure'
 
           $out = & $env:INSTALLER_SHELL -NoProfile -Command "$partial & 'dist/scripts/install.ps1'" 2>&1
           $rc = $LASTEXITCODE
           Write-Host ($out | Out-String)
           $text = ($out -join ' ') -replace '\s+', ' '
-          if ($rc -eq 0) { Write-Host "::error::install succeeded despite a failing copy"; exit 1 }
-          if ($text -notmatch 'injected copy failure') {
-            Write-Host "::error::original copy error not shown"; exit 1
+          if ($rc -ne 1) { Write-Host "::error::failed copy exited $rc, expected 1"; exit 1 }
+          if (-not $text.Contains($copyError) -or -not $text.Contains('[INFO] Previous jarvy.exe restored.')) {
+            Write-Host "::error::failed copy did not report the copy error and the restore"; exit 1
           }
           if (Get-ChildItem -Path $env:JARVY_INSTALL_DIR -Filter 'jarvy.exe.old*') {
             Write-Host "::error::previous exe was not moved back from jarvy.exe.old*"; exit 1
@@ -465,12 +466,54 @@ jobs:
           $text = ($out -join ' ') -replace '\s+', ' '
           $aside = "$bin.old"
           if ($rc -ne 1) { Write-Host "::error::stranded swap exited $rc, expected 1"; exit 1 }
-          if (-not $text.Contains("[ERROR] The previous binary is at $aside; rename it to $bin manually.")) {
-            Write-Host "::error::stranded swap did not name the aside file"; exit 1
+          if (-not $text.Contains($copyError) -or -not $text.Contains("[ERROR] The previous binary is at $aside; rename it to $bin manually.")) {
+            Write-Host "::error::stranded swap did not report the copy error and name the aside file"; exit 1
           }
           if (-not (Test-Path -LiteralPath $aside)) {
             Write-Host "::error::aside file $aside is missing"; exit 1
           }
           Write-Host "OK stranded swap reported the aside file"
+
+          # Fresh install: nothing to move back, so the partial exe must go.
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-fresh-fail"
+          $out = & $env:INSTALLER_SHELL -NoProfile -Command "$partial & 'dist/scripts/install.ps1'" 2>&1
+          $rc = $LASTEXITCODE
+          Write-Host ($out | Out-String)
+          $text = ($out -join ' ') -replace '\s+', ' '
+          if ($rc -ne 1) { Write-Host "::error::fresh failed copy exited $rc, expected 1"; exit 1 }
+          if (-not $text.Contains($copyError)) {
+            Write-Host "::error::fresh failed copy did not report the copy error"; exit 1
+          }
+          if (Test-Path -LiteralPath (Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe')) {
+            Write-Host "::error::fresh failed copy left a partial jarvy.exe"; exit 1
+          }
+          Write-Host "OK fresh failed copy left no jarvy.exe"
           # The runner exits with $LASTEXITCODE, still the installer's expected 1.
           exit 0
+
+      - name: Trailing-slash install dir is normalized
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $savedPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+          $env:JARVY_VERSION = $env:VERSION
+          $dir = "$env:RUNNER_TEMP\jarvy-trailing"
+          $env:JARVY_INSTALL_DIR = "$dir\"
+          try {
+            $out = & $env:INSTALLER_SHELL -NoProfile -File dist/scripts/install.ps1 2>&1
+            $rc = $LASTEXITCODE
+            Write-Host ($out | Out-String)
+            $text = ($out -join ' ') -replace '\s+', ' '
+            if ($rc -ne 0) { Write-Host "::error::trailing-slash install exited $rc"; exit 1 }
+            if (-not $text.Contains("installed to $dir\jarvy.exe") -or -not $text.Contains("Added $dir to user PATH")) {
+              Write-Host "::error::printed install path is not $dir"; exit 1
+            }
+            $entries = [Environment]::GetEnvironmentVariable('PATH', 'User') -split ';'
+            if ($entries -notcontains $dir -or $entries -contains "$dir\") {
+              Write-Host "::error::user PATH entry for the install dir is not exactly $dir"; exit 1
+            }
+            Write-Host "OK trailing slash dropped: $dir"
+          }
+          finally {
+            [Environment]::SetEnvironmentVariable('PATH', $savedPath, 'User')
+          }
