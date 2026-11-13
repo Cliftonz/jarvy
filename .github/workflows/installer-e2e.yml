@@ -109,6 +109,38 @@ jobs:
           fi
           echo "✓ installed + verified: $OBSERVED"
 
+      - name: Reinstall over a running jarvy
+        run: |
+          set -euo pipefail
+          export JARVY_VERSION="$VERSION"
+          export JARVY_INSTALL_DIR="$HOME/jarvy-e2e/bin"
+          export JARVY_NO_MODIFY_PATH=1
+          bin="$JARVY_INSTALL_DIR/jarvy"
+          # Hold `jarvy mcp` open on a live stdin pipe, the way Claude Code
+          # and Cursor keep it running as an MCP server.
+          tail -f /dev/null | "$bin" mcp >/dev/null &
+          pid=$!
+          trap 'kill "$pid"' EXIT
+          sleep 2
+          kill -0 "$pid" || { echo "::error::jarvy mcp exited before reinstall"; exit 1; }
+
+          set +e
+          bash dist/scripts/install.sh > reinstall.log 2>&1
+          rc=$?
+          set -e
+          cat reinstall.log
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::reinstall over running binary exited $rc"
+            exit 1
+          fi
+
+          OBSERVED="$("$bin" --version | awk '{print $2}')"
+          if [ "${OBSERVED%%-*}" != "$CORE" ]; then
+            echo "::error::version mismatch after reinstall: $OBSERVED, expected core $CORE"
+            exit 1
+          fi
+          echo "✓ reinstalled over running binary: $OBSERVED"
+
       - name: add_to_path writes the shell rc line
         run: |
           set -euo pipefail
