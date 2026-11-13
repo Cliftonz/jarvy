@@ -513,17 +513,16 @@ impl BinaryInstaller {
     }
 }
 
-/// The previous `target` is moved to a `<target>.old` sibling; unix removes
-/// it best-effort once the new binary is in place, Windows keeps it because
-/// a running executable cannot be unlinked there. Two renames instead of a
-/// delete-then-rename: a running executable can be renamed on every
-/// platform, but Windows refuses to delete or overwrite it, and Linux
-/// refuses to write into it (ETXTBSY). A stale `.old` from an earlier swap
-/// is removed; when it cannot be (Windows, an old jarvy still running from
-/// it), the previous `target` goes to a unique `<target>.old.<pid>-<nanos>`
-/// sibling instead.
+/// The previous `target` is moved to a `<target>.old` sibling, or to a
+/// unique `<target>.old.<pid>-<nanos>` sibling when a stale `.old` from an
+/// earlier swap cannot be removed (Windows, an old jarvy still running from
+/// it). Unix removes the aside best-effort once the new binary is in place,
+/// Windows keeps it because a running executable cannot be unlinked there.
+/// Two renames instead of a delete-then-rename: a running executable can be
+/// renamed on every platform, but Windows refuses to delete or overwrite it,
+/// and Linux refuses to write into it (ETXTBSY).
 pub(crate) fn swap_into_place(source: &Path, target: &Path) -> io::Result<()> {
-    let old = aside_path(target);
+    let old = claim_aside_path(target);
     fs::rename(target, &old)?;
     match fs::rename(source, target) {
         Ok(()) => {
@@ -546,14 +545,14 @@ pub(crate) fn stage_beside(source: &Path, target: &Path) -> io::Result<PathBuf> 
     Ok(staged)
 }
 
-fn aside_path(target: &Path) -> PathBuf {
+fn claim_aside_path(target: &Path) -> PathBuf {
     let old = sibling_with_suffix(target, ".old");
     if !old.exists() || fs::remove_file(&old).is_ok() {
         return old;
     }
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock is after the unix epoch")
+        .unwrap_or_default()
         .as_nanos();
     sibling_with_suffix(target, &format!(".old.{}-{nanos}", std::process::id()))
 }
