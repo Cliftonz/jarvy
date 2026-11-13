@@ -179,6 +179,12 @@ function Install-Jarvy {
     $url = "https://github.com/$JarvyRepo/releases/download/v$version/jarvy-v$version-$platform.zip"
     Write-Info "Download URL: $url"
 
+    $existingTarget = Join-Path $InstallDir "jarvy.exe"
+    if (Test-Path -LiteralPath $existingTarget -PathType Container) {
+        Write-Err "$((Get-Item -LiteralPath $existingTarget).FullName) is a directory; remove it or set JARVY_INSTALL_DIR elsewhere."
+        exit 1
+    }
+
     # Create temporary directory
     $tempDir = Join-Path $env:TEMP "jarvy-install-$(Get-Random)"
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
@@ -246,19 +252,33 @@ function Install-Jarvy {
                 try { Remove-Item -LiteralPath $aside -Force }
                 catch { $aside = "$target.old.$(Get-Random)" }
             }
-            Move-Item -LiteralPath $target -Destination $aside
+            try { Move-Item -LiteralPath $target -Destination $aside }
+            catch {
+                Write-Err "Could not move the existing jarvy.exe aside: $_"
+                Write-Err "The existing $target was left untouched."
+                exit 1
+            }
         }
 
+        # Until the new exe is in place, any exit (a failed copy or Ctrl+C)
+        # puts the install dir back the way it was.
+        $installed = $false
         try {
             Copy-Item -LiteralPath $jarvy.FullName -Destination $target
+            $installed = $true
         }
         catch {
-            # Leave the install dir as it was before the copy: move the
-            # previous exe back over whatever the failed copy left, or
-            # remove a partial exe on a fresh install. If the move-back
-            # fails, name the aside file so the user can restore it by hand.
             Write-Err "Failed to install new binary: $_"
-            if ($aside) {
+            if (-not $aside -and (Test-Path -LiteralPath $target)) {
+                try { Remove-Item -LiteralPath $target -Force }
+                catch {
+                    Write-Err "The partial jarvy.exe at $target could not be removed: $_"
+                    exit 1
+                }
+            }
+        }
+        finally {
+            if ($aside -and -not $installed) {
                 try { Move-Item -LiteralPath $aside -Destination $target -Force }
                 catch {
                     Write-Err "Could not move the previous binary back: $_"
@@ -267,11 +287,8 @@ function Install-Jarvy {
                 }
                 Write-Info "Previous jarvy.exe restored."
             }
-            elseif (Test-Path -LiteralPath $target) {
-                Remove-Item -LiteralPath $target -Force
-            }
-            exit 1
         }
+        if (-not $installed) { exit 1 }
 
         Write-Success "Jarvy v$version installed to $target"
 
