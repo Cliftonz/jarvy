@@ -74,7 +74,7 @@ jobs:
         include:
           - os: ubuntu-latest
             name: Ubuntu x86_64
-          - os: macos-14
+          - os: macos-15
             name: macOS arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
