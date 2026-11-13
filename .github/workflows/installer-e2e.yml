@@ -212,7 +212,11 @@ jobs:
         shell: pwsh
         run: |
           $env:JARVY_VERSION = $env:VERSION
-          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP\jarvy-e2e"
+          # Forward slashes and a space, so the installer must normalize the
+          # dir to match the path Get-Process reports.
+          $env:JARVY_INSTALL_DIR = "$env:RUNNER_TEMP/jarvy e2e/fwd" -replace '\\', '/'
+          & pwsh -NoProfile -File dist/scripts/install.ps1 | Out-Host
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::initial install into $env:JARVY_INSTALL_DIR exited $LASTEXITCODE"; exit 1 }
           $bin = Join-Path $env:JARVY_INSTALL_DIR 'jarvy.exe'
           # Hold `jarvy mcp` open on a live stdin pipe, the way Claude Code
           # and Cursor keep it running as an MCP server.

@@ -224,34 +224,39 @@ function Install-Jarvy {
             exit 1
         }
 
-        # Windows refuses to overwrite a running exe (e.g. `jarvy mcp` held
-        # open by an editor) but allows renaming it, so move the current
-        # binary aside first. Mirrors the self-updater's `.old` swap.
         # Get-Item yields the full long-name path that Get-Process reports,
         # whatever form JARVY_INSTALL_DIR was given in.
         $target = Join-Path (Get-Item -LiteralPath $InstallDir).FullName "jarvy.exe"
-        $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue |
-            Where-Object { $_.Path -eq $target -or $_.Path -like "$target.old*" })
+        $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target })
+
+        # Windows refuses to overwrite a running exe (e.g. `jarvy mcp` held
+        # open by an editor) but allows renaming it, so move the current
+        # binary aside first. Mirrors the self-updater's `.old` swap.
         $aside = $null
-        if (Test-Path $target) {
+        if (Test-Path -LiteralPath $target) {
             $aside = "$target.old"
-            if (Test-Path $aside) {
+            if (Test-Path -LiteralPath $aside) {
                 # Any stale .old we cannot delete (e.g. still running) is
                 # left in place; park the current exe under a unique name.
-                try { Remove-Item -Path $aside -Force }
+                try { Remove-Item -LiteralPath $aside -Force }
                 catch { $aside = "$target.old.$(Get-Random)" }
             }
-            Move-Item -Path $target -Destination $aside
+            Move-Item -LiteralPath $target -Destination $aside
         }
 
         try {
-            Copy-Item -Path $jarvy.FullName -Destination $target
+            Copy-Item -LiteralPath $jarvy.FullName -Destination $target
         }
         catch {
-            # Restore the previous exe so a failed copy never leaves the
-            # user without jarvy.exe, then abort with the copy error.
-            if ($aside) { Move-Item -Path $aside -Destination $target }
-            throw
+            # Move the previous exe back over whatever the failed copy left.
+            # If that also fails, name the aside file so the user can
+            # restore it by hand.
+            $copyError = $_
+            if ($aside) {
+                try { Move-Item -LiteralPath $aside -Destination $target -Force }
+                catch { throw "failed to install new binary: $copyError; the previous binary is at $aside and could not be moved back, rename it to $target manually" }
+            }
+            throw $copyError
         }
 
         Write-Success "Jarvy v$version installed to $InstallDir\jarvy.exe"
