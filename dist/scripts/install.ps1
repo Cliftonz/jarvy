@@ -227,19 +227,32 @@ function Install-Jarvy {
         # Windows refuses to overwrite a running exe (e.g. `jarvy mcp` held
         # open by an editor) but allows renaming it, so move the current
         # binary aside first. Mirrors the self-updater's `.old` swap.
-        $target = Join-Path $InstallDir "jarvy.exe"
-        $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target })
+        # Get-Item yields the full long-name path that Get-Process reports,
+        # whatever form JARVY_INSTALL_DIR was given in.
+        $target = Join-Path (Get-Item -LiteralPath $InstallDir).FullName "jarvy.exe"
+        $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -eq $target -or $_.Path -like "$target.old*" })
+        $aside = $null
         if (Test-Path $target) {
             $aside = "$target.old"
             if (Test-Path $aside) {
-                # A stale .old that is itself still running cannot be deleted.
+                # Any stale .old we cannot delete (e.g. still running) is
+                # left in place; park the current exe under a unique name.
                 try { Remove-Item -Path $aside -Force }
                 catch { $aside = "$target.old.$(Get-Random)" }
             }
             Move-Item -Path $target -Destination $aside
         }
 
-        Copy-Item -Path $jarvy.FullName -Destination $target
+        try {
+            Copy-Item -Path $jarvy.FullName -Destination $target
+        }
+        catch {
+            # Restore the previous exe so a failed copy never leaves the
+            # user without jarvy.exe, then abort with the copy error.
+            if ($aside) { Move-Item -Path $aside -Destination $target }
+            throw
+        }
 
         Write-Success "Jarvy v$version installed to $InstallDir\jarvy.exe"
 

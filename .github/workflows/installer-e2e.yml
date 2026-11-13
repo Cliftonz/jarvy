@@ -218,7 +218,6 @@ jobs:
           # and Cursor keep it running as an MCP server.
           $psi = [System.Diagnostics.ProcessStartInfo]::new($bin, 'mcp')
           $psi.RedirectStandardInput = $true
-          $psi.RedirectStandardOutput = $true
           $psi.UseShellExecute = $false
           $proc = [System.Diagnostics.Process]::Start($psi)
           try {
@@ -243,6 +242,26 @@ jobs:
               Write-Host "::error::running exe was not moved aside to jarvy.exe.old*"; exit 1
             }
             Write-Host "OK reinstalled over running exe: $observed"
+
+            # The first process now runs from jarvy.exe.old, so the stale
+            # .old cannot be deleted and the exe must park under a unique name.
+            $out = & pwsh -NoProfile -File dist/scripts/install.ps1 2>&1
+            $rc = $LASTEXITCODE
+            $text = $out | Out-String
+            Write-Host $text
+            if ($rc -ne 0) { Write-Host "::error::reinstall over running .old exited $rc"; exit 1 }
+            if ($text -notmatch 'keep the old version until restarted') {
+              Write-Host "::error::no warning about running sessions on stale-.old reinstall"; exit 1
+            }
+            if (-not (Get-ChildItem -Path $env:JARVY_INSTALL_DIR -Filter 'jarvy.exe.old.*')) {
+              Write-Host "::error::stale running .old did not fall back to jarvy.exe.old.<suffix>"; exit 1
+            }
+            $observed = (& $bin --version).Split(' ')[1]
+            if ($observed.Split('-')[0] -ne $env:CORE) {
+              Write-Host "::error::version mismatch after stale-.old reinstall: $observed, expected core $env:CORE"
+              exit 1
+            }
+            Write-Host "OK reinstalled over running .old: $observed"
           }
           finally {
             $proc.Kill()
