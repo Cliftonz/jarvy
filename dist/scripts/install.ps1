@@ -261,7 +261,7 @@ function Install-Jarvy {
         }
 
         # Until the new exe is in place, any exit (a failed copy or Ctrl+C)
-        # puts the install dir back the way it was.
+        # restores the previous exe.
         $installed = $false
         try {
             Copy-Item -LiteralPath $jarvy.FullName -Destination $target
