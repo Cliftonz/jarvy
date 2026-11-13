@@ -227,7 +227,10 @@ function Install-Jarvy {
 
         # Get-Item yields the full long-name path that Get-Process reports,
         # whatever form JARVY_INSTALL_DIR was given in.
-        $installPath = (Get-Item -LiteralPath $InstallDir).FullName
+        $installDirItem = Get-Item -LiteralPath $InstallDir
+        # FullName keeps a trailing separator from JARVY_INSTALL_DIR; a drive
+        # root (no Parent) needs its '\' to stay a root.
+        $installPath = if ($installDirItem.Parent) { $installDirItem.FullName.TrimEnd('\') } else { $installDirItem.FullName }
         $target = Join-Path $installPath "jarvy.exe"
         $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target })
 
@@ -282,7 +285,7 @@ function Install-Jarvy {
         }
         elseif (-not (Get-Command jarvy -ErrorAction SilentlyContinue)) {
             Write-Info "Add the following to your PATH:"
-            Write-Host "    $InstallDir"
+            Write-Host "    $installPath"
         }
 
         Write-Host ""
