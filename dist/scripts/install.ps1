@@ -144,8 +144,9 @@ function Add-ToPath {
     param([string]$Directory)
 
     $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    $present = $userPath -split ';' | Where-Object { $_.TrimEnd('\') -eq $Directory.TrimEnd('\') }
 
-    if ($userPath -notlike "*$Directory*") {
+    if (-not $present) {
         $newPath = "$userPath;$Directory"
         [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
         Write-Info "Added $Directory to user PATH"
@@ -226,7 +227,8 @@ function Install-Jarvy {
 
         # Get-Item yields the full long-name path that Get-Process reports,
         # whatever form JARVY_INSTALL_DIR was given in.
-        $target = Join-Path (Get-Item -LiteralPath $InstallDir).FullName "jarvy.exe"
+        $installPath = (Get-Item -LiteralPath $InstallDir).FullName
+        $target = Join-Path $installPath "jarvy.exe"
         $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target })
 
         # Windows refuses to overwrite a running exe (e.g. `jarvy mcp` held
@@ -237,7 +239,7 @@ function Install-Jarvy {
             $aside = "$target.old"
             if (Test-Path -LiteralPath $aside) {
                 # Any stale .old we cannot delete (e.g. still running) is
-                # left in place; park the current exe under a unique name.
+                # left in place; park the current exe under a random suffix.
                 try { Remove-Item -LiteralPath $aside -Force }
                 catch { $aside = "$target.old.$(Get-Random)" }
             }
@@ -254,19 +256,24 @@ function Install-Jarvy {
             $copyError = $_
             if ($aside) {
                 try { Move-Item -LiteralPath $aside -Destination $target -Force }
-                catch { throw "failed to install new binary: $copyError; the previous binary is at $aside and could not be moved back, rename it to $target manually" }
+                catch {
+                    Write-Err "Failed to install new binary: $copyError"
+                    Write-Err "Could not move the previous binary back: $_"
+                    Write-Err "The previous binary is at $aside; rename it to $target manually."
+                    exit 1
+                }
             }
             throw $copyError
         }
 
-        Write-Success "Jarvy v$version installed to $InstallDir\jarvy.exe"
+        Write-Success "Jarvy v$version installed to $target"
 
         if ($running.Count -gt 0) {
             Write-Warn "Running jarvy sessions (e.g. Claude Code / Cursor MCP servers) keep the old version until restarted to pick up v$version."
         }
 
         # Add to PATH
-        $pathUpdated = Add-ToPath -Directory $InstallDir
+        $pathUpdated = Add-ToPath -Directory $installPath
 
         Write-Host ""
 
