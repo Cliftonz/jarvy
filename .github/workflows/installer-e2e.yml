@@ -90,6 +90,7 @@ jobs:
       VERSION: ${{ needs.setup.outputs.version }}
       CORE: ${{ needs.setup.outputs.core }}
       PRERELEASE: ${{ needs.setup.outputs.prerelease }}
+      E2E_INSTALL_DIR: ${{ github.workspace }}/../jarvy-e2e/bin
       # install.sh's gh_api_fetch sends this as a Bearer token; macOS hosted runners share egress IPs and hit the unauthenticated /releases/latest rate limit.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -99,7 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           export JARVY_VERSION="$VERSION"
-          export JARVY_INSTALL_DIR="$HOME/jarvy-e2e/bin"
+          export JARVY_INSTALL_DIR="$E2E_INSTALL_DIR"
           export JARVY_NO_MODIFY_PATH=1   # invoke by absolute path below
           bash dist/scripts/install.sh 2>&1 | tee install.log
 
@@ -121,7 +122,7 @@ jobs:
         run: |
           set -euo pipefail
           export JARVY_VERSION="$VERSION"
-          export JARVY_INSTALL_DIR="$HOME/jarvy-e2e/bin"
+          export JARVY_INSTALL_DIR="$E2E_INSTALL_DIR"
           export JARVY_NO_MODIFY_PATH=1
           bin="$JARVY_INSTALL_DIR/jarvy"
           # Hold `jarvy mcp` open on a live stdin pipe, the way Claude Code
@@ -144,18 +145,17 @@ jobs:
             echo "::error::version mismatch after reinstall: $OBSERVED, expected core $CORE"
             exit 1
           fi
+          kill -0 "$pid" || { echo "::error::running jarvy mcp died during reinstall"; exit 1; }
           if [ "$(ls -i "$bin" | awk '{print $1}')" = "$inode_before" ]; then
             echo "::error::reinstall did not replace $bin (inode unchanged)"
             exit 1
           fi
-          kill -0 "$pid" || { echo "::error::running jarvy mcp died during reinstall"; exit 1; }
           echo "✓ reinstalled over running binary: $OBSERVED"
 
       - name: Installed jarvy is mode 755
-        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
-          perms="$(ls -l "$HOME/jarvy-e2e/bin/jarvy" | cut -c1-10)"
+          perms="$(ls -l "$E2E_INSTALL_DIR/jarvy" | cut -c1-10)"
           if [ "$perms" != "-rwxr-xr-x" ]; then
             echo "::error::installed jarvy has mode $perms, expected -rwxr-xr-x"
             exit 1
@@ -171,10 +171,16 @@ jobs:
           export JARVY_NO_MODIFY_PATH=1
           shadow="$RUNNER_TEMP/failing-chmod"
           mkdir -p "$shadow"
-          printf '#!/bin/sh\nexit 1\n' > "$shadow/chmod"
+          printf '#!/bin/sh\necho "stub chmod failed" >&2\nexit 1\n' > "$shadow/chmod"
           chmod 755 "$shadow/chmod"
-          if PATH="$shadow:$PATH" bash dist/scripts/install.sh; then
+          if out="$(PATH="$shadow:$PATH" bash dist/scripts/install.sh 2>&1)"; then
+            echo "$out"
             echo "::error::install.sh succeeded with a failing chmod"
+            exit 1
+          fi
+          echo "$out"
+          if ! grep -q "stub chmod failed" <<< "$out"; then
+            echo "::error::install failed, but not at the stubbed chmod"
             exit 1
           fi
           leftover="$(find "$JARVY_INSTALL_DIR" -name '.jarvy.*')"
@@ -195,8 +201,14 @@ jobs:
           target="$RUNNER_TEMP/elsewhere-jarvy"
           touch "$target"
           ln -s "$target" "$JARVY_INSTALL_DIR/jarvy"
-          if bash dist/scripts/install.sh; then
+          if out="$(bash dist/scripts/install.sh 2>&1)"; then
+            echo "$out"
             echo "::error::install.sh replaced a symlinked jarvy instead of refusing"
+            exit 1
+          fi
+          echo "$out"
+          if ! grep -q "is a symlink, so jarvy there is managed elsewhere" <<< "$out"; then
+            echo "::error::install failed, but not with the symlink refusal"
             exit 1
           fi
           if [ "$(readlink "$JARVY_INSTALL_DIR/jarvy")" != "$target" ]; then
@@ -204,6 +216,77 @@ jobs:
             exit 1
           fi
           echo "✓ symlinked jarvy refused and left intact"
+
+      - name: Replaces a dangling symlinked jarvy
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          export JARVY_VERSION="$VERSION"
+          export JARVY_INSTALL_DIR="$RUNNER_TEMP/jarvy-dangling/bin"
+          export JARVY_NO_MODIFY_PATH=1
+          mkdir -p "$JARVY_INSTALL_DIR"
+          ln -s "$RUNNER_TEMP/does-not-exist" "$JARVY_INSTALL_DIR/jarvy"
+          bash dist/scripts/install.sh
+          perms="$(ls -l "$JARVY_INSTALL_DIR/jarvy" | cut -c1-10)"
+          if [ "$perms" != "-rwxr-xr-x" ]; then
+            echo "::error::dangling symlink became $perms, expected a -rwxr-xr-x regular file"
+            exit 1
+          fi
+          echo "✓ dangling symlink replaced by $perms"
+
+      - name: Refuses a directory at the jarvy path
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          export JARVY_VERSION="$VERSION"
+          export JARVY_INSTALL_DIR="$RUNNER_TEMP/jarvy-dirtarget/bin"
+          export JARVY_NO_MODIFY_PATH=1
+          mkdir -p "$JARVY_INSTALL_DIR/jarvy"
+          if out="$(bash dist/scripts/install.sh 2>&1)"; then
+            echo "$out"
+            echo "::error::install.sh did not refuse a directory at the jarvy path"
+            exit 1
+          fi
+          echo "$out"
+          if ! grep -q "jarvy is a directory" <<< "$out"; then
+            echo "::error::install failed, but not with the directory refusal"
+            exit 1
+          fi
+          echo "✓ directory at the jarvy path refused"
+
+      - name: Installs into a dir with an apostrophe
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          export JARVY_VERSION="$VERSION"
+          export JARVY_INSTALL_DIR="$RUNNER_TEMP/o'neil/bin"
+          export JARVY_NO_MODIFY_PATH=1
+          export TMPDIR="$RUNNER_TEMP/apostrophe-tmp"
+          mkdir -p "$TMPDIR"
+          bash dist/scripts/install.sh
+          leftover="$(find "$JARVY_INSTALL_DIR" "$TMPDIR" -mindepth 1 ! -name jarvy)"
+          if [ -n "$leftover" ]; then
+            echo "::error::install left files behind: $leftover"
+            exit 1
+          fi
+          "$JARVY_INSTALL_DIR/jarvy" --version
+          echo "✓ installed into a dir with an apostrophe, nothing left behind"
+
+      - name: sh without bash gets the bash guard
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          set -euo pipefail
+          if out="$(sh dist/scripts/install.sh 2>&1)"; then
+            echo "$out"
+            echo "::error::install.sh ran under sh (dash) without refusing"
+            exit 1
+          fi
+          echo "$out"
+          if ! grep -q "install.sh requires bash" <<< "$out"; then
+            echo "::error::sh run failed, but not with the bash guard message"
+            exit 1
+          fi
+          echo "✓ sh run refused with the bash guard message"
 
       - name: add_to_path writes the shell rc line
         run: |
