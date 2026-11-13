@@ -200,6 +200,14 @@ run_install "$DIR" "$WORK/sigint-chmod"
 assert_rc "SIGINT mid-install exits 130" 130 "$RC"
 assert_eq "SIGINT mid-install leaves nothing behind" "" "$(leftovers "$DIR")"
 
+mkdir -p "$WORK/failing-curl" "$WORK/sentinel"
+printf '#!/bin/sh\nexit 22\n' > "$WORK/failing-curl/curl"
+chmod 755 "$WORK/failing-curl/curl"
+DIR="$WORK/envstaged/bin"
+staged="$WORK/sentinel" run_install "$DIR" "$WORK/failing-curl"
+assert_rc "failed download fails the install" 1 "$RC"
+assert_eq "inherited \$staged survives an early exit" "yes" "$([ -d "$WORK/sentinel" ] && echo yes || echo no)"
+
 if command -v dash >/dev/null 2>&1; then
     OUT="$(dash "$INSTALL_SH" 2>&1)"
     assert_rc "dash run exits non-zero" 1 $?
