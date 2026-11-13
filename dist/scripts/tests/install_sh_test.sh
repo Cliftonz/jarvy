@@ -119,6 +119,116 @@ assert_rc "accepts a matching digest" 0 $?
 verify_checksum "$TMP" "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef00" >/dev/null 2>&1
 assert_rc "rejects a mismatched digest" 1 $?
 
+echo "== main() install target handling =="
+# Runs the whole installer as a subprocess with a PATH-stubbed `curl`
+# that serves a fake tarball, so the swap, trap, and target checks are
+# exercised without a network hop. Expects a Linux or macOS host.
+WORK="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$WORK"' EXIT
+mkdir -p "$WORK/pkg" "$WORK/stub"
+printf '#!/bin/sh\necho "jarvy 1.2.3"\n' > "$WORK/pkg/jarvy"
+chmod 755 "$WORK/pkg/jarvy"
+tar -C "$WORK/pkg" -czf "$WORK/jarvy.tar.gz" jarvy
+cat > "$WORK/stub/curl" <<EOF
+#!/bin/sh
+touch "$WORK/curl-called"
+while [ \$# -gt 0 ]; do
+    if [ "\$1" = "-o" ]; then cp "$WORK/jarvy.tar.gz" "\$2"; exit 0; fi
+    shift
+done
+exit 1
+EOF
+chmod 755 "$WORK/stub/curl"
+
+run_install() {
+    # run_install <install-dir> [extra PATH dir]; sets RC and OUT
+    rm -f "$WORK/curl-called"
+    rm -rf "$WORK/tmp"
+    mkdir -p "$WORK/tmp"
+    OUT="$(PATH="${2:+$2:}$WORK/stub:$PATH" TMPDIR="$WORK/tmp" \
+        JARVY_VERSION=1.2.3 JARVY_SKIP_CHECKSUM=1 JARVY_NO_MODIFY_PATH=1 \
+        JARVY_INSTALL_DIR="$1" bash "$INSTALL_SH" 2>&1)"
+    RC=$?
+}
+leftovers() { find "$1" -name '.jarvy.*' 2>/dev/null; ls -A "$WORK/tmp"; }
+
+DIR="$WORK/o'neil/bin"
+run_install "$DIR"
+assert_rc "apostrophe in install dir installs" 0 "$RC"
+assert_eq "apostrophe in install dir leaves nothing behind" "" "$(leftovers "$DIR")"
+
+DIR="$WORK/linked/bin"
+mkdir -p "$DIR"
+touch "$WORK/elsewhere"
+ln -s "$WORK/elsewhere" "$DIR/jarvy"
+run_install "$DIR"
+assert_rc "live symlink target is refused" 1 "$RC"
+assert_eq "live symlink refusal names the cause" "1" "$(printf '%s' "$OUT" | grep -c 'is a symlink')"
+assert_eq "live symlink refused before any download" "no" "$([ -e "$WORK/curl-called" ] && echo yes || echo no)"
+assert_eq "live symlink left intact" "$WORK/elsewhere" "$(readlink "$DIR/jarvy")"
+
+DIR="$WORK/dangling/bin"
+mkdir -p "$DIR"
+ln -s "$WORK/does-not-exist" "$DIR/jarvy"
+run_install "$DIR"
+assert_rc "dangling symlink target is replaced" 0 "$RC"
+assert_eq "dangling symlink replaced by a 0755 regular file" "-rwxr-xr-x" "$(ls -l "$DIR/jarvy" | cut -c1-10)"
+
+DIR="$WORK/dirtarget/bin"
+mkdir -p "$DIR/jarvy"
+run_install "$DIR"
+assert_rc "directory target is refused" 1 "$RC"
+assert_eq "directory refusal names the cause" "1" "$(printf '%s' "$OUT" | grep -c 'is a directory')"
+assert_eq "directory target refused before any download" "no" "$([ -e "$WORK/curl-called" ] && echo yes || echo no)"
+
+mkdir -p "$WORK/failing-chmod"
+printf '#!/bin/sh\necho "stub chmod failed" >&2\nexit 1\n' > "$WORK/failing-chmod/chmod"
+chmod 755 "$WORK/failing-chmod/chmod"
+DIR="$WORK/chmodfail/bin"
+run_install "$DIR" "$WORK/failing-chmod"
+assert_rc "failing chmod fails the install" 1 "$RC"
+assert_eq "failing chmod error is shown" "1" "$(printf '%s' "$OUT" | grep -c 'stub chmod failed')"
+assert_eq "failing chmod leaves nothing behind" "" "$(leftovers "$DIR")"
+
+# The stub interrupts the installer, then dies of SIGINT itself so bash
+# treats the interrupt as unhandled and exits instead of continuing.
+mkdir -p "$WORK/sigint-chmod"
+printf '#!/bin/sh\nkill -INT "$PPID"\nkill -INT $$\n' > "$WORK/sigint-chmod/chmod"
+chmod 755 "$WORK/sigint-chmod/chmod"
+DIR="$WORK/sigint/bin"
+run_install "$DIR" "$WORK/sigint-chmod"
+assert_rc "SIGINT mid-install exits 130" 130 "$RC"
+assert_eq "SIGINT mid-install leaves nothing behind" "" "$(leftovers "$DIR")"
+
+mkdir -p "$WORK/failing-curl" "$WORK/sentinel"
+printf '#!/bin/sh\nexit 22\n' > "$WORK/failing-curl/curl"
+chmod 755 "$WORK/failing-curl/curl"
+DIR="$WORK/envstaged/bin"
+staged="$WORK/sentinel" run_install "$DIR" "$WORK/failing-curl"
+assert_rc "failed download fails the install" 1 "$RC"
+assert_eq "inherited \$staged survives an early exit" "yes" "$([ -d "$WORK/sentinel" ] && echo yes || echo no)"
+
+ln -s "$WORK/missing-location" "$WORK/dangling-install-dir"
+run_install "$WORK/dangling-install-dir"
+assert_rc "dangling install dir is refused" 1 "$RC"
+assert_eq "dangling install dir refusal names the cause" "1" "$(printf '%s' "$OUT" | grep -c 'symlink to a missing location')"
+assert_eq "dangling install dir refused before any download" "no" "$([ -e "$WORK/curl-called" ] && echo yes || echo no)"
+
+ln -s "$WORK/unmounted" "$WORK/dangling-parent"
+run_install "$WORK/dangling-parent/bin"
+assert_rc "dangling parent of install dir is refused" 1 "$RC"
+assert_eq "dangling parent refusal names the cause" "1" "$(printf '%s' "$OUT" | grep -c 'symlink to a missing location')"
+assert_eq "dangling parent refused before any download" "no" "$([ -e "$WORK/curl-called" ] && echo yes || echo no)"
+
+if command -v dash >/dev/null 2>&1; then
+    OUT="$(dash "$INSTALL_SH" 2>&1)"
+    assert_rc "dash run exits non-zero" 1 $?
+    assert_eq "dash run gets the bash guard message" "1" "$(printf '%s' "$OUT" | grep -c 'requires bash')"
+    assert_eq "bash guard message pins no branch URL" "0" "$(printf '%s' "$OUT" | grep -c 'raw.githubusercontent')"
+else
+    echo "  skip dash not installed"
+fi
+
 echo ""
 echo "install.sh unit tests: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

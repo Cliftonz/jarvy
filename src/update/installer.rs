@@ -513,15 +513,16 @@ impl BinaryInstaller {
     }
 }
 
-/// The previous `target` is moved to a `<target>.old` sibling; unix removes
-/// it best-effort once the new binary is in place, Windows keeps it because
-/// a running executable cannot be unlinked there. Two renames instead of a
-/// delete-then-rename: a running executable can be renamed on every
-/// platform, but Windows refuses to delete or overwrite it, and Linux
-/// refuses to write into it (ETXTBSY). A stale `.old` from an earlier swap
-/// is replaced.
+/// The previous `target` is moved to a `<target>.old` sibling, or to a
+/// unique `<target>.old.<pid>-<nanos>` sibling when a stale `.old` from an
+/// earlier swap cannot be removed (Windows, an old jarvy still running from
+/// it). Unix removes the aside best-effort once the new binary is in place,
+/// Windows keeps it because a running executable cannot be unlinked there.
+/// Two renames instead of a delete-then-rename: a running executable can be
+/// renamed on every platform, but Windows refuses to delete or overwrite it,
+/// and Linux refuses to write into it (ETXTBSY).
 pub(crate) fn swap_into_place(source: &Path, target: &Path) -> io::Result<()> {
-    let old = sibling_with_suffix(target, ".old");
+    let old = claim_aside_path(target);
     fs::rename(target, &old)?;
     match fs::rename(source, target) {
         Ok(()) => {
@@ -542,6 +543,18 @@ pub(crate) fn stage_beside(source: &Path, target: &Path) -> io::Result<PathBuf> 
     let staged = sibling_with_suffix(target, ".new");
     fs::copy(source, &staged)?;
     Ok(staged)
+}
+
+fn claim_aside_path(target: &Path) -> PathBuf {
+    let old = sibling_with_suffix(target, ".old");
+    if !old.exists() || fs::remove_file(&old).is_ok() {
+        return old;
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    sibling_with_suffix(target, &format!(".old.{}-{nanos}", std::process::id()))
 }
 
 fn swap_is_stranded(target: &Path) -> bool {
@@ -797,6 +810,42 @@ mod tests {
         assert_eq!(fs::read(&old_sibling).unwrap(), b"old");
         #[cfg(unix)]
         assert!(!old_sibling.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn swap_into_place_moves_target_to_unique_old_when_stale_old_is_held_open() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("jarvy.exe");
+        let source = dir.path().join("jarvy.exe.new");
+        let old_sibling = sibling_with_suffix(&target, ".old");
+        fs::write(&target, b"old").unwrap();
+        fs::write(&source, b"new").unwrap();
+        fs::write(&old_sibling, b"running").unwrap();
+        let _held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&old_sibling)
+            .unwrap();
+
+        swap_into_place(&source, &target).unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), b"new");
+        assert_eq!(fs::read(&old_sibling).unwrap(), b"running");
+        let unique_old: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("jarvy.exe.old.")
+            })
+            .collect();
+        assert_eq!(unique_old.len(), 1, "{unique_old:?}");
+        assert_eq!(fs::read(&unique_old[0]).unwrap(), b"old");
     }
 
     #[cfg(unix)]

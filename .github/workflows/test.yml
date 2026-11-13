@@ -1,8 +1,9 @@
 name: Test
 
 on:
-  # PR gate: Linux only. Public-repo Linux minutes are free; macOS + Windows
-  # are not (macOS is 10x Linux per-minute). Cross-OS validation lives on
+  # PR gate: Linux, plus one small Windows job for the installer-swap
+  # tests. Public-repo Linux minutes are free; macOS + Windows are not
+  # (macOS is 10x Linux per-minute). Full cross-OS validation lives on
   # the release-tag matrix below + the nightly e2e-cross-platform run.
   # Doc-only / CI-only / examples-only PRs skipped via paths-ignore so a
   # README tweak doesn't fire the test suite.
@@ -96,6 +97,25 @@ jobs:
       # CI checkout has none to honor.
       - name: Verify packaged crate compiles
         run: cargo publish -p jarvy --dry-run
+
+  # PR-only: tag pushes and manual runs already run the full Windows matrix.
+  windows-installer:
+    name: Installer swap (windows-latest)
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # v1
+        with:
+          toolchain: stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Run installer tests
+        run: cargo test --all-features --lib update::installer
 
   test:
     name: Test (${{ matrix.os }})
