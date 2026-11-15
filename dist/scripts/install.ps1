@@ -144,8 +144,9 @@ function Add-ToPath {
     param([string]$Directory)
 
     $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    $present = $userPath -split ';' | Where-Object { $_.TrimEnd('\') -eq $Directory.TrimEnd('\') }
 
-    if ($userPath -notlike "*$Directory*") {
+    if (-not $present) {
         $newPath = "$userPath;$Directory"
         [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
         Write-Info "Added $Directory to user PATH"
@@ -177,6 +178,12 @@ function Install-Jarvy {
     $platform = "x86_64-pc-windows-msvc"
     $url = "https://github.com/$JarvyRepo/releases/download/v$version/jarvy-v$version-$platform.zip"
     Write-Info "Download URL: $url"
+
+    $existingTarget = Join-Path $InstallDir "jarvy.exe"
+    if (Test-Path -LiteralPath $existingTarget -PathType Container) {
+        Write-Err "$((Get-Item -LiteralPath $existingTarget).FullName) is a directory; remove it or set JARVY_INSTALL_DIR elsewhere."
+        exit 1
+    }
 
     # Create temporary directory
     $tempDir = Join-Path $env:TEMP "jarvy-install-$(Get-Random)"
@@ -224,12 +231,73 @@ function Install-Jarvy {
             exit 1
         }
 
-        Copy-Item -Path $jarvy.FullName -Destination (Join-Path $InstallDir "jarvy.exe") -Force
+        # Get-Item yields the full long-name path that Get-Process reports,
+        # whatever form JARVY_INSTALL_DIR was given in.
+        $installDirItem = Get-Item -LiteralPath $InstallDir
+        # FullName keeps a trailing separator from JARVY_INSTALL_DIR; a drive
+        # root (no Parent) needs its '\' to stay a root.
+        $installPath = if ($installDirItem.Parent) { $installDirItem.FullName.TrimEnd('\') } else { $installDirItem.FullName }
+        $target = Join-Path $installPath "jarvy.exe"
+        $running = @(Get-Process -Name jarvy -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $target })
 
-        Write-Success "Jarvy v$version installed to $InstallDir\jarvy.exe"
+        # Windows refuses to overwrite a running exe (e.g. `jarvy mcp` held
+        # open by an editor) but allows renaming it, so move the current
+        # binary aside first. Mirrors the self-updater's `.old` swap.
+        $aside = $null
+        if (Test-Path -LiteralPath $target) {
+            $aside = "$target.old"
+            if (Test-Path -LiteralPath $aside) {
+                # Any stale .old we cannot delete (e.g. still running) is
+                # left in place; park the current exe under a random suffix.
+                try { Remove-Item -LiteralPath $aside -Force }
+                catch { $aside = "$target.old.$(Get-Random)" }
+            }
+            try { Move-Item -LiteralPath $target -Destination $aside }
+            catch {
+                Write-Err "Could not move the existing jarvy.exe aside: $_"
+                Write-Err "The existing $target was left untouched."
+                exit 1
+            }
+        }
+
+        # Until the new exe is in place, any exit (a failed copy or Ctrl+C)
+        # restores the previous exe.
+        $installed = $false
+        try {
+            Copy-Item -LiteralPath $jarvy.FullName -Destination $target
+            $installed = $true
+        }
+        catch {
+            Write-Err "Failed to install new binary: $_"
+            if (-not $aside -and (Test-Path -LiteralPath $target)) {
+                try { Remove-Item -LiteralPath $target -Force }
+                catch {
+                    Write-Err "The partial jarvy.exe at $target could not be removed: $_"
+                    exit 1
+                }
+            }
+        }
+        finally {
+            if ($aside -and -not $installed) {
+                try { Move-Item -LiteralPath $aside -Destination $target -Force }
+                catch {
+                    Write-Err "Could not move the previous binary back: $_"
+                    Write-Err "The previous binary is at $aside; rename it to $target manually."
+                    exit 1
+                }
+                Write-Info "Previous jarvy.exe restored."
+            }
+        }
+        if (-not $installed) { exit 1 }
+
+        Write-Success "Jarvy v$version installed to $target"
+
+        if ($running.Count -gt 0) {
+            Write-Warn "Running jarvy sessions (e.g. Claude Code / Cursor MCP servers) keep the old version until restarted to pick up v$version."
+        }
 
         # Add to PATH
-        $pathUpdated = Add-ToPath -Directory $InstallDir
+        $pathUpdated = Add-ToPath -Directory $installPath
 
         Write-Host ""
 
@@ -237,8 +305,9 @@ function Install-Jarvy {
             Write-Warn "PATH updated. Please restart your terminal for changes to take effect."
         }
         elseif (-not (Get-Command jarvy -ErrorAction SilentlyContinue)) {
-            Write-Info "Add the following to your PATH:"
-            Write-Host "    $InstallDir"
+            # Add-ToPath only declines when the dir is already on the user
+            # PATH, so this session simply predates that entry.
+            Write-Warn "$installPath is already on your user PATH. Please restart your terminal to use jarvy."
         }
 
         Write-Host ""
