@@ -63,7 +63,7 @@ jobs:
           # slot if there is demand for prebuilt Intel .dmg artifacts;
           # see .github/workflows/release.yml for the canonical comment.
           # macOS - Apple Silicon
-          - os: macos-14
+          - os: macos-15
             name: macOS ARM (M1)
             platform: macos-arm64
           # Ubuntu LTS versions
