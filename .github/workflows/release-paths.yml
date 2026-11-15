@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             name: macOS arm64
             target_triple: aarch64-apple-darwin
             archive_ext: tar.gz
@@ -345,7 +345,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             name: macOS arm64
             target_triple: aarch64-apple-darwin
             archive_ext: tar.gz
@@ -413,7 +413,7 @@ jobs:
           fi
 
           # Walk stables newest-first; pick the first whose semver core is < CEIL.
-          # `sort -V` is in coreutils on ubuntu/macOS-14; Windows runners are
+          # `sort -V` is in coreutils on ubuntu/macOS-15; Windows runners are
           # only ever Path 3 candidates, and we run this resolver step under
           # bash on Git for Windows which also has sort -V.
           NM2=$(gh release list --repo "$GITHUB_REPOSITORY" \
