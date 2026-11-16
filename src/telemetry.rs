@@ -1136,7 +1136,7 @@ pub fn hook_failed(hook_name: &str, hook_type: &str, error: &str, error_type: &s
     }
 
     let redacted_error = redact_sensitive(error);
-    tracing::error!(
+    tracing::info!(
         event = "hook.failed",
         hook_name = %hook_name,
         hook_type = %hook_type,

@@ -460,3 +460,30 @@ post_install = "echo 'Custom git setup'"
         // kubectl should use default hook
         .stdout(predicate::str::contains("kubectl default_hook"));
 }
+
+#[test]
+fn post_setup_hook_failure_does_not_print_hook_failed_event_to_console() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let config = create_test_config(
+        &temp_dir,
+        r#"
+[provisioner]
+
+[hooks]
+post_setup = "exit 3"
+"#,
+    );
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("jarvy");
+    cmd.arg("setup")
+        .arg("--file")
+        .arg(&config)
+        .env("JARVY_TEST_MODE", "1")
+        .env("JARVY_NO_PERSONAL_CONFIG", "1")
+        .env("JARVY_TELEMETRY", "1")
+        .env("JARVY_OTLP_ENDPOINT", "http://127.0.0.1:1");
+
+    cmd.assert()
+        .stderr(predicate::str::contains("Hook `post_setup` failed"))
+        .stderr(predicate::str::contains("\"hook.failed\"").not());
+}
