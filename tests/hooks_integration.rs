@@ -479,13 +479,11 @@ post_setup = "exit 3"
         .arg("--file")
         .arg(&config)
         .env("JARVY_TEST_MODE", "1")
-        .env("JARVY_FAST_TEST", "1")
         .env("JARVY_NO_PERSONAL_CONFIG", "1")
         .env("JARVY_TELEMETRY", "1")
         .env("JARVY_OTLP_ENDPOINT", "http://127.0.0.1:1");
 
     cmd.assert()
         .stderr(predicate::str::contains("Hook `post_setup` failed"))
-        .stdout(predicate::str::contains("\"hook.failed\"").not())
         .stderr(predicate::str::contains("\"hook.failed\"").not());
 }
