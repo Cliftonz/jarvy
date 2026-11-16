@@ -196,7 +196,7 @@ OTEL-based, **opt-out by default**. Config in `~/.jarvy/config.toml::[telemetry]
 | `maintenance.refused_unsafe_name` | resolver refused a hostile package identifier — TOML ecosystem key or install-receipt package string that fails `validate_package_name` / go-path safety | `purpose = "[cargo]" \| "[npm]" \| "[pip]" \| "[gem]" \| "[nuget]" \| "[maintenance-go]" \| "[receipt]"`, `reason = "path_shaped_key" \| "traversal_segment" \| "receipt_package_invalid"`. NO tool field — the name is attacker-controllable. Refused entries land in the `unchecked` bucket as `refused_unsafe_name`. Warn. Gated. |
 | `tool.already_installed` | skip-detection path | `install_path`, `detection_method`, `prompted_user` |
 | `setup.started` / `setup.completed` | run lifecycle | Carries duration, counts |
-| `hook.started` / `hook.completed` / `hook.failed` / `hook.timeout` | per hook | |
+| `hook.started` / `hook.completed` / `hook.failed` / `hook.timeout` | per hook | `hook.failed` is Info so the default WARN console cap hides it (the human `Hook ... failed` line already prints); file log and OTLP still receive it, `-v` shows it. |
 | `packages.phase_started` / `packages.phase_completed` | run_packages_phase | Carries `dry_run`, `npm`, `pip`, `cargo`, `nuget`, `gem`, `go` booleans, `duration_ms` |
 | `packages.phase_skipped` | early-return | `reason`, `dry_run` |
 | `packages.phase_previewed` | dry-run preview | Per-ecosystem `*_count` (renamed from `packages.dry_run`) |
