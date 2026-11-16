@@ -498,8 +498,8 @@ impl Hook {
     }
 }
 
-/// Candidate Git-for-Windows bash install paths, checked when `bash`
-/// isn't resolvable via PATH. Mirrors
+/// Candidate Git-for-Windows bash install paths for the Windows hook
+/// shell default. Mirrors
 /// `windows::sh_association::DEFAULT_BASH_PATHS` — kept as a separate
 /// constant here because hook shell resolution has no dependency on the
 /// `[windows]` config module.
@@ -514,17 +514,17 @@ const WINDOWS_GIT_BASH_PATHS: &[&str] = &[
     "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
 ];
 
-/// Pure decision: which shell should Windows hooks default to. Bash
-/// (Git for Windows) wins when present; PowerShell is the fallback for
-/// machines without it. Kept free of `#[cfg(windows)]` so it's
-/// unit-testable on any host — see the module doc comment for why bash
-/// is preferred at all. (Same dead-code caveat as
-/// `WINDOWS_GIT_BASH_PATHS` above on non-Windows, non-test builds.)
+/// Pure decision: which shell should Windows hooks default to. Git for
+/// Windows bash wins when installed, returned as its absolute path;
+/// PowerShell is the fallback for machines without it. Never bare
+/// `bash`: Windows `CreateProcess` searches System32 before PATH, so
+/// `Command::new("bash")` lands on the WSL launcher and runs the hook
+/// inside a Linux distro without the host's tools. Kept free of
+/// `#[cfg(windows)]` so it's unit-testable on any host; see the module
+/// doc comment for why bash is preferred at all. (Same dead-code caveat
+/// as `WINDOWS_GIT_BASH_PATHS` above on non-Windows, non-test builds.)
 #[allow(dead_code)]
-fn resolve_windows_hook_shell(bash_on_path: bool, bash_exists: &dyn Fn(&str) -> bool) -> String {
-    if bash_on_path {
-        return "bash".to_string();
-    }
+fn resolve_windows_hook_shell(bash_exists: &dyn Fn(&str) -> bool) -> String {
     WINDOWS_GIT_BASH_PATHS
         .iter()
         .copied()
@@ -537,9 +537,7 @@ fn resolve_windows_hook_shell(bash_on_path: bool, bash_exists: &dyn Fn(&str) -> 
 pub fn detect_shell() -> String {
     #[cfg(windows)]
     {
-        resolve_windows_hook_shell(crate::tools::common::has("bash"), &|p| {
-            std::path::Path::new(p).exists()
-        })
+        resolve_windows_hook_shell(&|p| std::path::Path::new(p).exists())
     }
     #[cfg(not(windows))]
     {
@@ -678,26 +676,20 @@ mod tests {
     }
 
     #[test]
-    fn resolve_windows_hook_shell_prefers_path_bash() {
-        // bash on PATH wins even if a Git-for-Windows install also exists.
-        assert_eq!(resolve_windows_hook_shell(true, &|_| true), "bash");
-    }
-
-    #[test]
-    fn resolve_windows_hook_shell_finds_git_bash_install() {
-        let shell = resolve_windows_hook_shell(false, &|p| p == WINDOWS_GIT_BASH_PATHS[0]);
+    fn resolve_windows_hook_shell_returns_git_bash_absolute_path() {
+        let shell = resolve_windows_hook_shell(&|p| p == WINDOWS_GIT_BASH_PATHS[0]);
         assert_eq!(shell, WINDOWS_GIT_BASH_PATHS[0]);
     }
 
     #[test]
     fn resolve_windows_hook_shell_checks_x86_fallback() {
-        let shell = resolve_windows_hook_shell(false, &|p| p == WINDOWS_GIT_BASH_PATHS[1]);
+        let shell = resolve_windows_hook_shell(&|p| p == WINDOWS_GIT_BASH_PATHS[1]);
         assert_eq!(shell, WINDOWS_GIT_BASH_PATHS[1]);
     }
 
     #[test]
-    fn resolve_windows_hook_shell_falls_back_to_powershell() {
-        assert_eq!(resolve_windows_hook_shell(false, &|_| false), "powershell");
+    fn resolve_windows_hook_shell_falls_back_to_powershell_without_git_bash() {
+        assert_eq!(resolve_windows_hook_shell(&|_| false), "powershell");
     }
 
     #[test]
