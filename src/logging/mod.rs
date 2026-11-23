@@ -624,7 +624,12 @@ mod tests {
         )
         .unwrap();
         let old = std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 24 * 3600);
-        filetime::set_file_mtime(&rotated, filetime::FileTime::from_system_time(old)).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&rotated)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
 
         let active = logs.join("jarvy.log");
         std::fs::write(&active, "{\"fields\":{\"event\":\"noise\"}}\n").unwrap();
@@ -787,7 +792,12 @@ mod tests {
         std::fs::write(&old, "{\"fields\":{\"event\":\"drop\"}}\n").unwrap();
         let old_mtime =
             std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 24 * 3600);
-        filetime::set_file_mtime(&old, filetime::FileTime::from_system_time(old_mtime)).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(old_mtime)
+            .unwrap();
 
         // all=false, max_age_days=30 → only `old` eligible.
         let report = strip_log_lines("event=drop", 30, false, false, false).expect("strip");

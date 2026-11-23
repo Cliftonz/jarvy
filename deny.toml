@@ -23,6 +23,12 @@ ignore = [
     # latest release) -> nix 0.26 -> pin-utils. Mirrored in
     # .cargo/audit.toml.
     "RUSTSEC-2026-0441",
+    # chrono is unmaintained (RUSTSEC-2026-0543, 2026-11). Direct use is four
+    # chrono::Utc::now calls; it is also transitive via machineid-rs -> wmi on
+    # Windows, so dropping the direct dependency alone cannot clear it.
+    # Migration to jiff or time deferred until machineid-rs moves off
+    # wmi/chrono. Mirrored in .cargo/audit.toml.
+    "RUSTSEC-2026-0543",
 ]
 
 # License configuration - compatible with MIT/Apache-2.0

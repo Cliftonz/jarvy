@@ -371,8 +371,8 @@ mod tests {
         // Regression guard for the 10-minute staleness window. A
         // future refactor that inverts the elapsed-time comparison
         // (`>` → `<`), drops the age check, or moves cleanup earlier
-        // MUST fail this test. Uses `filetime` (dev-dep) to force an
-        // arbitrary mtime — `std::fs` doesn't expose an mtime setter.
+        // MUST fail this test. Uses `File::set_modified` to force an
+        // arbitrary mtime.
         let tmp = tempfile::TempDir::new().unwrap();
         unsafe { std::env::set_var("JARVY_HOME", tmp.path()) };
         let session_id = uuid::Uuid::now_v7().to_string();
@@ -382,8 +382,12 @@ mod tests {
         // Backdate the marker's mtime past the staleness window.
         let old =
             std::time::SystemTime::now() - std::time::Duration::from_secs(MAX_TOKEN_AGE_SECS + 60);
-        filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(old))
-            .expect("set_file_mtime must succeed on the temp file");
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(old)
+            .expect("set_modified must succeed on the temp file");
         unsafe { std::env::set_var(SESSION_ID_ENV, &session_id) };
         assert!(
             !is_active(),
@@ -417,7 +421,12 @@ mod tests {
         // start produces this.
         let far_future =
             std::time::SystemTime::now() + std::time::Duration::from_secs(24 * 60 * 60);
-        filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(far_future)).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(far_future)
+            .unwrap();
         unsafe { std::env::set_var(SESSION_ID_ENV, &session_id) };
         assert!(
             !is_active(),
