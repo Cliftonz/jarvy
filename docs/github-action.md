@@ -70,9 +70,9 @@ jobs:
 
 ### Caching
 
-`Cargo.lock` is intentionally gitignored in this repo, so there is no lockfile
-hash to key a cache on. Instead the cache key is the resolved install identity
-plus the runner OS:
+The action installs a released jarvy build rather than this repo's working
+tree, so there is no lockfile hash to key a cache on. Instead the cache key is
+the resolved install identity plus the runner OS:
 
 ```
 jarvy-<runner.os>-<install-method>-<channel>-<version>

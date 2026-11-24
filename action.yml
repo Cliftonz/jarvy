@@ -63,13 +63,13 @@ runs:
   using: composite
   steps:
     # ------------------------------------------------------------------
-    # Cache the installed binary. Cargo.lock is gitignored in this repo,
-    # so there is no lockfile hash to key on — the key is the fully
-    # resolved install identity (version + channel + method) plus the
-    # runner OS. `version: latest` shares one cache entry per channel and
-    # may serve a slightly older binary until the key rotates; pin a
-    # concrete version (recommended) for exact reproducibility, or set
-    # cache: false.
+    # Cache the installed binary. The action installs a released jarvy
+    # build, not this repo's working tree, so the lockfile is not an
+    # input; the key is the fully resolved install identity (version +
+    # channel + method) plus the runner OS. `version: latest` shares one
+    # cache entry per channel and may serve a slightly older binary until
+    # the key rotates; pin a concrete version (recommended) for exact
+    # reproducibility, or set cache: false.
     # ------------------------------------------------------------------
     - name: Restore Jarvy from cache
       id: cache

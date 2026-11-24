@@ -56,13 +56,6 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
 
-      # Cargo.lock is intentionally untracked in this repo (CI floats to
-      # latest-compatible), but cargo-audit refuses to run without one.
-      # Generate it fresh — auditing the latest-compatible resolution is
-      # exactly what this job should check anyway.
-      - name: Generate lockfile
-        run: cargo generate-lockfile
-
       # Ignores live in .cargo/audit.toml (read automatically) and mirror
       # deny.toml's [advisories].ignore. Any future ignore must land in both
       # places (cargo-audit has no shared config with cargo-deny).
@@ -82,15 +75,11 @@ jobs:
         with:
           toolchain: stable
 
-      # Cargo.lock is untracked (see audit job note); cargo-deny needs one.
-      - name: Generate lockfile
-        run: cargo generate-lockfile
-
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check all
-          arguments: --all-features
+          arguments: --all-features --locked
 
   # Job 3: Gitleaks - Secret Scanning
   secrets:

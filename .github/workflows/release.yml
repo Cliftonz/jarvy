@@ -67,7 +67,10 @@ jobs:
       # and `cargo install jarvy` still resolves to the latest stable
       # unless the user pins `--version X.Y.Z-rc.N` explicitly. This
       # convention is what unlocks `cargo install` for prereleases.
-      - name: Verify Cargo.toml version matches tag
+      #
+      # Cargo.lock pins the workspace's own version too, and `--locked`
+      # CI fails on a stale one, so the lock must match the tag as well.
+      - name: Verify Cargo.toml and Cargo.lock versions match tag
         run: |
           set -euo pipefail
           TARGET="${GITHUB_REF_NAME#v}"   # strip leading v; keep -rc.N/-beta.N
@@ -76,7 +79,12 @@ jobs:
             echo "::error::Cargo.toml version (${CARGO_VER}) does not match tag (${TARGET}). Bump Cargo.toml to the exact tag version (including any -rc.N / -beta.N suffix) before tagging."
             exit 1
           fi
-          echo "Cargo.toml version ${CARGO_VER} matches tag ${TARGET}."
+          LOCK_VER=$(awk '/^name = "jarvy"$/ { getline; sub(/^version = "/, ""); sub(/"$/, ""); print; exit }' Cargo.lock)
+          if [ "$LOCK_VER" != "$TARGET" ]; then
+            echo "::error::Cargo.lock records jarvy ${LOCK_VER} but the tag is ${TARGET}. Run cargo check after bumping Cargo.toml and commit the refreshed Cargo.lock."
+            exit 1
+          fi
+          echo "Cargo.toml and Cargo.lock version ${CARGO_VER} match tag ${TARGET}."
 
   # Hard gate: refuse to ship if the Test workflow (test.yml) hasn't
   # gone green for this tag's commit SHA. test.yml + release.yml both
