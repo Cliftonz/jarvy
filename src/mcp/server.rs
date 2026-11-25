@@ -161,8 +161,11 @@ impl McpServer {
         loop {
             match transport.read_request() {
                 Ok(Some(request)) => {
+                    let is_notification = request.id.is_none();
                     let response = self.handle_request(&request);
-                    transport.write_response(&response)?;
+                    if !is_notification {
+                        transport.write_response(&response)?;
+                    }
                 }
                 Ok(None) => {
                     // EOF - client disconnected
