@@ -1,1 +1,23 @@
-{"_jarvy_managed_servers":["jarvy"],"mcpServers":{"jarvy":{"args":["mcp"],"command":"jarvy"},"rust-mcp":{"args":[],"command":"/Users/zacclifton/.cargo/bin/rust-mcp-server","env":{},"type":"stdio"}}}
+{
+  "_jarvy_managed_servers": [
+    "jarvy"
+  ],
+  "mcpServers": {
+    "jarvy": {
+      "args": [
+        "mcp"
+      ],
+      "command": "jarvy"
+    },
+    "rust-mcp": {
+      "args": [],
+      "command": "/Users/zacclifton/.cargo/bin/rust-mcp-server",
+      "env": {},
+      "type": "stdio"
+    },
+    "rustrover": {
+      "url": "http://127.0.0.1:64522/stream",
+      "type": "http"
+    }
+  }
+}
