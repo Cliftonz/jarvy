@@ -18,6 +18,7 @@
 #![cfg(unix)]
 
 use expectrl::{Eof, Expect, Session, session::OsSession};
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::time::Duration;
 
@@ -52,12 +53,16 @@ impl TestEnv {
     }
 
     fn spawn(&self) -> OsSession {
+        self.spawn_with_path(std::env::var("PATH").unwrap_or_default())
+    }
+
+    fn spawn_with_path(&self, path: String) -> OsSession {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_jarvy"));
         cmd.current_dir(self.project.path());
         // Scrubbed env: no CI/sandbox vars leak in, so the interactive
         // flows are deterministic on developer machines AND CI runners.
         cmd.env_clear();
-        cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
+        cmd.env("PATH", path);
         cmd.env("HOME", self.home.path());
         cmd.env("TERM", "xterm-256color");
         cmd.env("JARVY_HOME", self.home.path());
@@ -275,8 +280,19 @@ fn safe_default_test_command_runs_without_confirmation() {
     env.mark_initialized();
     // No jarvy.toml → the "Test the project" slot uses the safe
     // default `cargo test`, which is allowlisted: NO confirm prompt.
+    // A stub `cargo` keeps the real toolchain (20 to 40s on macOS CI) out of the test.
+    let stub_dir = tempfile::tempdir().expect("stub tempdir");
+    let stub = stub_dir.path().join("cargo");
+    std::fs::write(&stub, "#!/bin/sh\nexit 1\n").expect("write cargo stub");
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod cargo stub");
+    let path = format!(
+        "{}:{}",
+        stub_dir.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
 
-    let mut s = env.spawn();
+    let mut s = env.spawn_with_path(path);
     s.expect("What would you like to do today?")
         .expect("menu prompt");
 
@@ -285,10 +301,9 @@ fn safe_default_test_command_runs_without_confirmation() {
         .expect("filtered option visible");
     s.send(ENTER).expect("select");
 
-    // Straight to execution — the confirm gauntlet is skipped for
-    // exact safe defaults. (cargo test then fails fast in the empty
-    // project dir; the menu surfaces the exit code and moves on.)
     s.expect("Running test command: cargo test")
         .expect("executes without confirm prompt");
+    s.expect("test command exited with code 1")
+        .expect("stub exit code surfaced");
     s.expect(Eof).expect("process exits");
 }
