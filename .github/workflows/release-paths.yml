@@ -480,11 +480,23 @@ jobs:
              [ "$(printf '%s\n%s\n' "$NM2_CORE" "$UPDATER_FIX" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)" = "$NM2_CORE" ]; then
             NM2_PREDATES_FIX=true
           fi
+          # N-2 predates the Windows swap fix (v0.8.3)? Before it, the
+          # self_update swap renamed onto the running jarvy.exe, which
+          # Windows always refuses with os error 5 (#206). Unix unaffected.
+          WINDOWS_SWAP_FIX="0.8.3"
+          NM2_PREDATES_WINDOWS_SWAP_FIX=false
+          if [ "$RUNNER_OS" = "Windows" ] && [ "$NM2_CORE" != "$WINDOWS_SWAP_FIX" ] && \
+             [ "$(printf '%s\n%s\n' "$NM2_CORE" "$WINDOWS_SWAP_FIX" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)" = "$NM2_CORE" ]; then
+            NM2_PREDATES_WINDOWS_SWAP_FIX=true
+          fi
           if [ "$NM2_HAS" = "0" ]; then
             echo "::warning::N-2 ($NM2) predates #30 (0 tarballs for triple $TRIPLE); Path 3 skip-version test skipped until N-2 ships tarballs."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           elif [ "$NM2_PREDATES_FIX" = "true" ]; then
             echo "::warning::N-2 ($NM2) predates the updater triple fix (v${UPDATER_FIX}); binary self-update fails by design. Path 3 skipped until N-2 >= v${UPDATER_FIX}."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$NM2_PREDATES_WINDOWS_SWAP_FIX" = "true" ]; then
+            echo "::warning::N-2 ($NM2) predates the Windows swap fix (v${WINDOWS_SWAP_FIX}); its self_update swap renames onto the running jarvy.exe and fails with os error 5 by design (#206). Path 3 on Windows skipped until N-2 >= v${WINDOWS_SWAP_FIX}."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
