@@ -29,15 +29,35 @@ for divergences from generic release skills.
 
 ## [Unreleased]
 
-**Changes:**
+## [v0.9.0] - Install and hook reliability, new tools, dependency hardening (2026-11-26)
 
-- Replace the archived `serde_yaml` crate with `serde-saphyr`. `serde_yaml`
-  pulled in `unsafe-libyaml`, which RUSTSEC-2024-0449 flags; both repos
-  were archived in 2024-03.
-- Minimum supported Rust version is now 1.89 (was 1.88), as required by
-  `serde-saphyr`.
-- `--format yaml` output may differ cosmetically (quoting, indentation).
-  The data it carries is unchanged.
+**Added:**
+
+- Add six tools: `mkcert` and `nss` (locally trusted dev certificates; mkcert
+  pulls in nss on macOS and Linux), `t3code` (T3 Code CLI), `t3code-desktop`
+  (T3 Code desktop app), `deepseek-harness` (`dsh`), and `herdr`.
+
+**Fixes:**
+
+- Reinstall or update jarvy while it is running on Windows. `install.ps1`
+  and `jarvy update` move the running `jarvy.exe` aside to `jarvy.exe.old`
+  before copying the new binary, so a `jarvy mcp` server held open by an
+  editor or agent no longer blocks the upgrade. Running sessions keep the
+  old version until restarted, and the installer warns when it finds one.
+  `install.sh` also reinstalls cleanly over a running jarvy.
+- Run Windows hooks under Git for Windows bash by absolute path. Bare `bash`
+  resolved to `C:\Windows\System32\bash.exe`, the WSL launcher, so hooks ran
+  inside a Linux distro without the host's tools and failed with exit 127.
+  With no Git Bash install, hooks run under PowerShell.
+- Stop the MCP server from replying to JSON-RPC notifications. Clients such
+  as RustRover reported the reply to `notifications/initialized` as a
+  protocol error.
+- Keep the `hook.failed` telemetry line off the console. It is now emitted at
+  info level, so the terminal shows only the "Hook ... failed" message; the
+  log file and OTLP still receive the event, and `-v` shows it.
+- Authenticate `install.ps1`'s GitHub API version lookup with `GITHUB_TOKEN`
+  (or `GH_TOKEN`) when set, avoiding the anonymous 60 requests/hour limit on
+  shared CI runners. Release downloads stay unauthenticated.
 
 **Security:**
 
@@ -45,6 +65,25 @@ for divergences from generic release skills.
   It is split on whitespace with globbing disabled, so `$(...)`, backticks
   and variables in `args` are passed through literally. Quoted multi-word
   arguments (e.g. `--filter "a b"`) are no longer supported.
+- Mask the whole userinfo of a registry URL, username as well as password,
+  in `registry.*` telemetry events and fetch error messages.
+- Emit wizard session ids in telemetry as a 16-hex sha256 prefix instead of
+  the raw UUID, which names the MCP-bypass marker file.
+- Replace the archived `serde_yaml` crate with `serde-saphyr`. `serde_yaml`
+  pulled in `unsafe-libyaml`, flagged by RUSTSEC-2024-0449.
+- Harden CI: actions pinned to commit SHAs, least-privilege workflow tokens,
+  no untrusted expressions interpolated into run scripts, Semgrep blocking
+  on ERROR.
+
+**Changes:**
+
+- Minimum supported Rust version is now 1.89 (was 1.88), as required by
+  `serde-saphyr`.
+- `--format yaml` output may differ cosmetically (quoting, indentation).
+  The data it carries is unchanged.
+- Commit `Cargo.lock`; release builds and the Docker image now build with
+  `--locked`.
+- Bump OpenTelemetry crates to 0.33, `zip` to 9.0, and `dirs` to 7.0.
 
 **Known issues:**
 
@@ -3688,7 +3727,8 @@ and reserve room for 0.1.0 as the first feature-complete milestone.
 - Cross-platform shell detection and hook execution
 - Workspace lint configuration; Rust 2024 edition; MSRV 1.85
 
-[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.8.4...HEAD
+[Unreleased]: https://github.com/Cliftonz/jarvy/compare/v0.9.0...HEAD
+[v0.9.0]: https://github.com/Cliftonz/jarvy/releases/tag/v0.9.0
 [v0.8.4]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.4
 [v0.8.3]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.3
 [v0.8.2]: https://github.com/Cliftonz/jarvy/releases/tag/v0.8.2
