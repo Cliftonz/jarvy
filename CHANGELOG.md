@@ -46,6 +46,17 @@ for divergences from generic release skills.
   and variables in `args` are passed through literally. Quoted multi-word
   arguments (e.g. `--filter "a b"`) are no longer supported.
 
+**Known issues:**
+
+- On **Windows**, if the installed jarvy is v0.6.0 through v0.8.2 and
+  came from `install.ps1` or a raw binary, `jarvy update` cannot
+  upgrade it to this release: it always fails with `Access is denied`,
+  retrying cannot help, and the old binary stays in place. Reinstall
+  with `install.ps1` (or switch to winget / choco / scoop); updating
+  via v0.8.0 to v0.8.2 first does not help. Installs managed by winget,
+  choco or scoop update through their package manager and are not
+  affected (#206).
+
 ## [v0.8.4] - Windows install and hook fixes, nuget pin handling (2026-09-18)
 
 **Fixes:**
@@ -815,11 +826,13 @@ update chain.
 
 **Known issues:**
 
-- Upgrading **from v0.6.2 on Windows** with `jarvy update --method
-  binary` can intermittently fail with `Access is denied` — the retry
-  fix ships in this release but the binary performing that upgrade is
-  v0.6.2's. Re-run the update or use the install script. Upgrades from
-  v0.6.3 onward retry automatically.
+- On **Windows**, `jarvy update --method binary` always fails with
+  `Access is denied` when the installed jarvy is v0.6.0 through
+  v0.8.2. Those versions try to overwrite the running `jarvy.exe`,
+  which Windows refuses; retrying cannot help, and the old binary
+  stays in place. Reinstall with `install.ps1` (or switch to winget /
+  choco / scoop). Updates run by v0.8.3 or later work; updating via
+  v0.8.0 to v0.8.2 first does not help (#206).
 
 **Internal:**
 
